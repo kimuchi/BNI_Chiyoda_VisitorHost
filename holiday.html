@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    body { font-family: sans-serif; padding: 20px; }
+    ul { list-style: none; padding: 0; }
+    li { margin-bottom: 8px; padding: 10px; background: #f0f0f0; border-radius: 4px; display: flex; justify-content: space-between; align-items: center;}
+    button { padding: 6px 12px; cursor: pointer; border: none; border-radius: 4px; }
+    .del-btn { background: #e74c3c; color: white; }
+    .add-btn { background: #3498db; color: white; font-weight: bold;}
+    .save-btn { background: #2ecc71; color: white; font-weight: bold; width: 100%; padding: 12px; margin-top: 15px;}
+  </style>
+</head>
+<body>
+  <h3>休会日の設定</h3>
+  <p style="font-size:13px; color:#555;">休会となる日（水曜日）を選択して追加してください。回数のカウントから除外されます。</p>
+  <div style="display:flex; gap:10px; margin-bottom:20px;">
+    <input type="date" id="newHoliday" style="padding:6px; flex-grow:1;">
+    <button class="add-btn" onclick="addHoliday()">追加</button>
+  </div>
+  
+  <ul id="holidayList"></ul>
+  
+  <button class="save-btn" onclick="save()">保存して閉じる</button>
+
+  <script>
+    var holidays = [];
+    window.onload = function() {
+      google.script.run.withSuccessHandler(function(data){
+        holidays = data;
+        render();
+      }).getHolidays();
+    };
+
+    function render() {
+      var ul = document.getElementById('holidayList');
+      ul.innerHTML = '';
+      holidays.sort();
+      for(var i=0; i<holidays.length; i++) {
+        var li = document.createElement('li');
+        li.innerText = holidays[i];
+        var btn = document.createElement('button');
+        btn.innerText = '削除';
+        btn.className = 'del-btn';
+        btn.onclick = (function(index) {
+          return function() {
+            holidays.splice(index, 1);
+            render();
+          };
+        })(i);
+        li.appendChild(btn);
+        ul.appendChild(li);
+      }
+    }
+
+    function addHoliday() {
+      var dateVal = document.getElementById('newHoliday').value;
+      if(!dateVal) return;
+      var d = new Date(dateVal);
+      var formatted = d.getFullYear() + '/' + ('0'+(d.getMonth()+1)).slice(-2) + '/' + ('0'+d.getDate()).slice(-2);
+      if(holidays.indexOf(formatted) === -1) {
+        holidays.push(formatted);
+        render();
+      }
+      document.getElementById('newHoliday').value = '';
+    }
+
+    function save() {
+      document.body.innerHTML = "<h3 style='color:#0055ff;'>保存中です...</h3>";
+      google.script.run.withSuccessHandler(function(){
+        google.script.host.close();
+      }).saveHolidays(holidays);
+    }
+  </script>
+</body>
+</html>

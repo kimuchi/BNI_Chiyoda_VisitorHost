@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    body { font-family: sans-serif; padding: 20px; }
+    h3 { margin-top: 0; color: #0055ff; }
+    label { display: block; font-weight: bold; margin-bottom: 5px; color: #333; }
+    input[type="text"] { width: 100%; box-sizing: border-box; padding: 10px; margin-bottom: 20px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
+    button { background: #4caf50; color: white; padding: 12px; width: 100%; border: none; font-weight: bold; font-size: 15px; border-radius: 4px; cursor: pointer; }
+    .hint { font-size: 12px; color: #666; margin-bottom: 10px; line-height: 1.4;}
+  </style>
+</head>
+<body>
+  <h3>Gemini API・モデル設定</h3>
+  
+  <label>使用するモデル名</label>
+  <div class="hint">「gemini-1.5-flash」「gemini-2.5-flash」などを指定できます。指定がない場合は最新の軽量モデルが使用されます。</div>
+  <input type="text" id="modelName" placeholder="例: gemini-2.5-flash">
+
+  <label>Gemini APIキー</label>
+  <div class="hint">AIの自動割り振りを使用するために必要です。Google AI Studioから取得したAPIキーを入力してください。</div>
+  <input type="text" id="apiKey" placeholder="AIzaSy...">
+
+  <button onclick="save()">設定を保存する</button>
+
+  <script>
+    window.onload = function() {
+      google.script.run.withSuccessHandler(function(data){
+        document.getElementById('apiKey').value = data.apiKey;
+        document.getElementById('modelName').value = data.modelName;
+      }).getApiSettings();
+    };
+
+    function save() {
+      var data = {
+        apiKey: document.getElementById('apiKey').value,
+        modelName: document.getElementById('modelName').value
+      };
+      
+      document.body.innerHTML = "<h3 style='color:#0055ff; text-align:center; margin-top:50px;'>保存中...</h3>";
+      google.script.run.withSuccessHandler(function(msg){
+        document.body.innerHTML = "<h3 style='color:green; text-align:center; margin-top:50px;'>" + msg + "</h3><p style='text-align:center;'>画面を閉じてください。</p>";
+      }).saveApiSettings(data);
+    }
+  </script>
+</body>
+</html>

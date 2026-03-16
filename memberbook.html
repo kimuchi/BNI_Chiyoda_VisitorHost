@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head><base target="_top"></head>
+<body style="font-family: sans-serif; padding: 20px;">
+  <p style="font-size:14px; color:#333;">メンバーブックのPDFをアップロードします。<br>※更新してもURLは変わらないため、メール送信後でも最新版が見られます。</p>
+  <form id="pdfForm" onsubmit="event.preventDefault(); uploadPdf();">
+    <input type="file" name="pdfFile" accept=".pdf" required><br><br>
+    <button type="submit" id="btn" style="padding:8px 16px; background:#0055ff; color:#fff; border:none; font-weight:bold; border-radius:4px;">アップロード</button>
+  </form>
+  <div id="msg" style="margin-top:15px; font-weight:bold;"></div>
+  
+  <script>
+    function uploadPdf() {
+      document.getElementById('btn').disabled = true;
+      document.getElementById('msg').innerText = 'アップロード・更新中です...';
+      document.getElementById('msg').style.color = '#0055ff';
+      var form = document.getElementById('pdfForm');
+      google.script.run.withSuccessHandler(function(res){
+        document.getElementById('msg').innerHTML = res.msg + "<br><br><a href='" + res.url + "' target='_blank'>現在のURLを確認</a>";
+        document.getElementById('msg').style.color = 'green';
+        document.getElementById('btn').disabled = false;
+      }).withFailureHandler(function(err){
+        document.getElementById('msg').innerText = 'エラー: ' + err.message;
+        document.getElementById('msg').style.color = 'red';
+        document.getElementById('btn').disabled = false;
+      }).uploadMemberBook(form);
+    }
+  </script>
+</body>
+</html>

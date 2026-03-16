@@ -1,0 +1,9 @@
+# Clasp configuration
+.clasp.json
+
+# Dependencies (if you use npm in the future)
+node_modules/
+
+# OS generated files
+.DS_Store
+Thumbs.db

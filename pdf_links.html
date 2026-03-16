@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    body { font-family: sans-serif; padding: 20px; text-align: center;}
+    h3 { margin-top: 0; color: #0055ff; }
+    .link-btn { display: block; background: #eaf2ff; color: #0055ff; padding: 15px; text-decoration: none; font-weight: bold; border-radius: 6px; border: 1px solid #0055ff; margin-bottom: 15px; font-size: 14px;}
+    .link-btn:hover { background: #0055ff; color: #fff; }
+    .disabled { background: #f3f3f3; color: #aaa; border: 1px solid #ccc; pointer-events: none; }
+    .hint { font-size: 12px; color: #666; margin-bottom: 20px; line-height: 1.4;}
+  </style>
+</head>
+<body>
+  <h3>作成済みPDFリンク集</h3>
+  <div class="hint" id="dateText">読み込み中...</div>
+  
+  <div id="linksArea" style="display:none;">
+    <a id="btnList" href="#" target="_blank" class="link-btn disabled">📄 ビジター様リスト (PDF)</a>
+    <a id="btnAlloc" href="#" target="_blank" class="link-btn disabled">📄 ルーム割り振り表 (PDF)</a>
+    <a id="btnBook" href="#" target="_blank" class="link-btn disabled">📄 メンバーブック (PDF)</a>
+  </div>
+
+  <script>
+    window.onload = function() {
+      google.script.run.withSuccessHandler(function(data){
+        document.getElementById('dateText').innerText = "現在記憶されている定例会: " + data.date;
+        
+        var btnList = document.getElementById('btnList');
+        if(data.visitorList) { btnList.href = data.visitorList; btnList.classList.remove('disabled'); }
+        
+        var btnAlloc = document.getElementById('btnAlloc');
+        if(data.allocation) { btnAlloc.href = data.allocation; btnAlloc.classList.remove('disabled'); }
+        
+        var btnBook = document.getElementById('btnBook');
+        if(data.memberBook) { btnBook.href = data.memberBook; btnBook.classList.remove('disabled'); }
+        
+        document.getElementById('linksArea').style.display = 'block';
+      }).getPdfLinks();
+    };
+  </script>
+</body>
+</html>

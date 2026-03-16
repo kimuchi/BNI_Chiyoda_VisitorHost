@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    body { font-family: sans-serif; padding: 15px; }
+    h3 { color: #d35400; margin-top: 0; }
+    .hint { font-size: 12px; color: #555; margin-bottom: 15px; }
+    .member-list { max-height: 350px; overflow-y: auto; border: 1px solid #ccc; padding: 10px; border-radius: 4px; background: #f9f9f9;}
+    .member-item { margin-bottom: 8px; font-size: 14px; }
+    label { cursor: pointer; }
+    .btn-save { background: #4caf50; color: white; padding: 12px; width: 100%; border: none; font-weight: bold; font-size: 15px; border-radius: 4px; margin-top: 15px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h3>ビジターホストの設定</h3>
+  <div class="hint">チェックを入れたメンバーは「ビジターホスト」として記憶され、AI自動割り振りにおいて優先的にファシリ・オリエン担当に選ばれるようになります。</div>
+  
+  <div class="member-list" id="memberList">読み込み中...</div>
+
+  <button class="btn-save" onclick="save()">設定を保存する</button>
+
+  <script>
+    var members = [];
+    var savedHosts = [];
+
+    window.onload = function() {
+      // メンバーリストの取得と、保存されているホスト情報の取得を同時に行う
+      google.script.run.withSuccessHandler(function(list) {
+        members = list;
+        google.script.run.withSuccessHandler(function(hosts) {
+          savedHosts = hosts;
+          render();
+        }).getVisitorHosts();
+      }).getMembersList();
+    };
+
+    function render() {
+      var container = document.getElementById('memberList');
+      container.innerHTML = '';
+      
+      if(members.length === 0) {
+        container.innerHTML = "メンバーリストがありません。先に「メンバーリスト(OCR)の更新」を行ってください。";
+        return;
+      }
+
+      for(var i = 0; i < members.length; i++) {
+        var m = members[i];
+        var isChecked = savedHosts.includes(m.no) ? 'checked' : '';
+        
+        var div = document.createElement('div');
+        div.className = 'member-item';
+        div.innerHTML = `<label><input type="checkbox" id="chk_${m.no}" value="${m.no}" ${isChecked}> ${m.no} : ${m.name}</label>`;
+        container.appendChild(div);
+      }
+    }
+
+    function save() {
+      var newHosts = [];
+      for(var i = 0; i < members.length; i++) {
+        var chk = document.getElementById('chk_' + members[i].no);
+        if(chk && chk.checked) {
+          newHosts.push(members[i].no);
+        }
+      }
+      
+      document.body.innerHTML = "<h3 style='color:#0055ff; text-align:center; margin-top:50px;'>保存中...</h3>";
+      google.script.run.withSuccessHandler(function(msg){
+        document.body.innerHTML = "<h3 style='color:green; text-align:center; margin-top:50px;'>" + msg + "</h3><p style='text-align:center;'>画面を閉じてください。</p>";
+      }).saveVisitorHosts(newHosts);
+    }
+  </script>
+</body>
+</html>

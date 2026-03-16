@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    body { font-family: sans-serif; padding: 20px; background: #f4f5f7;}
+    .card { background: #fff; padding: 15px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 15px;}
+    .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; border-bottom: 1px solid #eee; padding-bottom: 10px;}
+    input[type="text"] { width: 100%; padding: 6px; margin-bottom: 10px; box-sizing: border-box; font-size:13px;}
+    textarea { width: 100%; height: 100px; padding: 6px; box-sizing: border-box; font-size:13px; font-family: monospace;}
+    .checkbox-lbl { font-weight: bold; color: #d35400; cursor: pointer;}
+    .btn-send { background: #e74c3c; color: white; padding: 15px; border: none; width: 100%; font-size: 16px; font-weight: bold; border-radius: 4px; cursor: pointer;}
+    .cc-container { background: #eaf2ff; padding: 15px; border-radius: 6px; margin-bottom: 20px; border: 1px solid #cce0ff;}
+    .cc-container label { display: block; margin-bottom: 8px; font-size: 13px; font-weight: bold; color: #0044cc;}
+    .progress-wrap { width: 100%; background: #ddd; height: 25px; margin: 20px 0; border-radius: 12px; overflow: hidden; display: none;}
+    .progress-bar { width: 0%; background: #4caf50; height: 100%; transition: width 0.3s ease; }
+    .error-log { color: #e74c3c; font-size: 13px; font-weight: bold; margin-top: 5px; text-align: left; background: #fdf2f0; padding: 5px; border-radius: 4px;}
+  </style>
+</head>
+<body>
+  <div id="setupArea">
+    <h3>送信前プレビューと設定</h3>
+    <p style="font-size:13px; color:#555;">個別に内容を編集するか、チェックを外して送信対象から除外できます。</p>
+    
+    <div class="cc-container">
+      <label>共通 Cc: <input type="text" id="commonCc" value="" placeholder="例: info@example.com"></label>
+      <label>共通 Bcc: <input type="text" id="commonBcc" value="" placeholder="例: admin@example.com"></label>
+    </div>
+
+    <div id="emailContainer">読み込み中...</div>
+    
+    <button class="btn-send hidden" id="sendBtn" onclick="startSending()">上記の内容で順番に送信する</button>
+  </div>
+
+  <div id="progressArea" style="display:none; text-align:center; padding-top:40px;">
+    <h3 style="color:#0055ff;">メール送信中...そのままお待ちください</h3>
+    <div class="progress-wrap" style="display:block;">
+      <div id="progressBar" class="progress-bar"></div>
+    </div>
+    <p id="progressText" style="font-weight:bold; font-size:18px;">0 / 0 件 処理完了</p>
+    <p id="progressDetail" style="font-size:14px; color:#666;"></p>
+    <div id="logArea" style="margin-top: 20px; text-align: left;"></div>
+  </div>
+
+  <script>
+    var drafts = [];
+    var sendList = [];
+    var currentIndex = 0;
+    var commonCc = "";
+    var commonBcc = "";
+
+    window.onload = function() {
+      google.script.run.withSuccessHandler(render).withFailureHandler(function(err){
+        document.getElementById('emailContainer').innerHTML = "<p style='color:red; font-weight:bold;'>" + err.message + "</p>";
+      }).generateEmailDrafts();
+    };
+
+    function render(data) {
+      drafts = data.drafts;
+      document.getElementById('commonCc').value = data.cc || "";
+      document.getElementById('commonBcc').value = data.bcc || "";
+
+      var container = document.getElementById('emailContainer');
+      container.innerHTML = '';
+      
+      if(drafts.length === 0) {
+        container.innerHTML = "<b>送信対象のメールアドレスが見つかりませんでした。</b>";
+        return;
+      }
+
+      for (var i = 0; i < drafts.length; i++) {
+        var d = drafts[i];
+        var div = document.createElement('div');
+        div.className = 'card';
+        div.innerHTML = `
+          <div class="card-header">
+            <div>
+              <span style="background:#0055ff; color:#fff; padding:3px 8px; border-radius:12px; font-size:11px;">${d.type}</span>
+              <strong>${d.name} 様</strong> (${d.email})
+            </div>
+            <label class="checkbox-lbl"><input type="checkbox" id="chk_${i}" checked> 送信する</label>
+          </div>
+          <input type="text" id="subj_${i}" value="${d.subject}">
+          <textarea id="body_${i}">${d.body}</textarea>
+        `;
+        container.appendChild(div);
+      }
+      document.getElementById('sendBtn').classList.remove('hidden');
+    }
+
+    function startSending() {
+      if(!confirm("チェックが入っている全員にメールを順番に送信します。\nよろしいですか？")) return;
+      
+      commonCc = document.getElementById('commonCc').value;
+      commonBcc = document.getElementById('commonBcc').value;
+
+      sendList = [];
+      for (var i = 0; i < drafts.length; i++) {
+        if(document.getElementById('chk_' + i).checked) {
+          drafts[i].subject = document.getElementById('subj_' + i).value;
+          drafts[i].body = document.getElementById('body_' + i).value;
+          sendList.push(drafts[i]);
+        }
+      }
+
+      if(sendList.length === 0) {
+        alert("送信対象が選択されていません。");
+        return;
+      }
+
+      // プログレス画面に切り替え
+      document.getElementById('setupArea').style.display = 'none';
+      document.getElementById('progressArea').style.display = 'block';
+      document.getElementById('progressText').innerText = "0 / " + sendList.length + " 件 処理完了";
+      
+      currentIndex = 0;
+      sendNext();
+    }
+
+    // 1件ずつ再帰的に送信
+    function sendNext() {
+      if(currentIndex >= sendList.length) {
+        document.getElementById('progressDetail').innerText = "完了";
+        document.getElementById('progressArea').innerHTML += "<h3 style='color:green; text-align:center; margin-top:30px;'>すべての処理が完了しました！🎉</h3><p style='text-align:center;'>画面を閉じてください。</p>";
+        return;
+      }
+
+      var e = sendList[currentIndex];
+      document.getElementById('progressDetail').innerText = e.name + " 様へ送信中... (" + e.email + ")";
+
+      google.script.run
+        .withSuccessHandler(function(res) {
+          // エラーがあった場合は画面に残す
+          if(!res.success) {
+            var errDiv = document.createElement('div');
+            errDiv.className = 'error-log';
+            errDiv.innerText = "⚠️ " + e.name + " 様: " + res.error;
+            document.getElementById('logArea').appendChild(errDiv);
+          }
+
+          currentIndex++;
+          var pct = Math.floor((currentIndex / sendList.length) * 100);
+          document.getElementById('progressBar').style.width = pct + '%';
+          document.getElementById('progressText').innerText = currentIndex + " / " + sendList.length + " 件 処理完了";
+
+          // 次のメールへ進む
+          sendNext();
+        })
+        .withFailureHandler(function(err) {
+          // GAS自体の通信エラーなど
+          var errDiv = document.createElement('div');
+          errDiv.className = 'error-log';
+          errDiv.innerText = "⚠️ システムエラー (" + e.name + " 様): " + err.message;
+          document.getElementById('logArea').appendChild(errDiv);
+
+          currentIndex++;
+          sendNext();
+        })
+        .sendSingleEmail(e, commonCc, commonBcc);
+    }
+  </script>
+</body>
+</html>

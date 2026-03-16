@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    body { font-family: sans-serif; padding: 20px; margin: 0;}
+    #drop_zone { border: 2px dashed #ccc; padding: 30px; text-align: center; margin-bottom: 20px; background: #f9f9f9; color: #555;}
+    .hidden { display: none; }
+    button { padding: 10px 20px; cursor: pointer; border:none; border-radius:4px; font-weight:bold;}
+    .btn-primary { background: #0055ff; color: #fff; }
+    .btn-success { background: #4caf50; color: #fff; }
+    
+    /* 表のスタイル */
+    .table-container { overflow-x: auto; max-height: 500px; border: 1px solid #ccc; margin-bottom: 15px;}
+    table { border-collapse: collapse; width: max-content; }
+    th, td { border: 1px solid #ddd; padding: 5px; text-align: left; font-size: 13px; }
+    th { background-color: #f3f3f3; position: sticky; top: 0; z-index: 10;}
+    input[type="text"] { width: 100%; box-sizing: border-box; padding: 4px; border: 1px solid #ccc; font-size: 13px;}
+    
+    /* レビュー必要な箇所の強調 */
+    .needs-review input { background-color: #ffe6e6; border: 1px solid #ff4d4d; font-weight: bold;}
+    .inviter-review { background-color: #fff3cd; }
+  </style>
+</head>
+<body>
+  <div id="step1">
+    <h3>1. 定例会を選択</h3>
+    <select id="meetingSelect" style="padding:8px; margin-bottom:15px; width:100%;"><option value="">計算中...</option></select>
+    
+    <h3>2. CSVファイルを選択またはドロップ</h3>
+    <div id="drop_zone">ここにCSVファイルをドロップ<br><br>または<br><br><input type="file" id="csvFile" accept=".csv"></div>
+    <button class="btn-success" onclick="processFile()">全データを解析して編集画面へ</button>
+  </div>
+
+  <div id="step2" class="hidden">
+    <h3>データの全件確認・編集</h3>
+    <p style="font-size:12px; color:#555;">※スペースが無かった氏名（赤色）や、招待者が不明な箇所（黄色）は自動推測されています。修正してください。</p>
+    
+    <div class="table-container">
+      <table id="dataTable">
+        <thead id="dataHead"></thead>
+        <tbody id="dataBody"></tbody>
+      </table>
+    </div>
+
+    <button class="btn-primary" onclick="submitFinal()" style="width:100%;">この内容でシートとPDFを作成する</button>
+  </div>
+
+  <div id="loading" class="hidden" style="margin-top:20px; font-weight:bold; color:#0055ff;">処理中です。しばらくお待ちください...</div>
+
+  <script>
+    var parsedData = null, parsedHeader = null, membersList = [];
+
+    window.onload = function() {
+      google.script.run.withSuccessHandler(function(candidates) {
+        var sel = document.getElementById('meetingSelect');
+        sel.innerHTML = '';
+        for(var i=0; i<candidates.length; i++){
+          var opt = document.createElement('option');
+          opt.value = candidates[i].dateValue; opt.dataset.display = candidates[i].display; opt.text = candidates[i].display;
+          sel.appendChild(opt);
+        }
+      }).getMeetingCandidates();
+    };
+
+    var dropZone = document.getElementById('drop_zone');
+    dropZone.addEventListener('dragover', function(e) { e.preventDefault(); dropZone.style.background = '#e9e9e9'; });
+    dropZone.addEventListener('dragleave', function(e) { e.preventDefault(); dropZone.style.background = '#f9f9f9'; });
+    dropZone.addEventListener('drop', function(e) {
+      e.preventDefault(); dropZone.style.background = '#f9f9f9';
+      if (e.dataTransfer.files.length > 0) document.getElementById('csvFile').files = e.dataTransfer.files;
+    });
+
+    function processFile() {
+      var sel = document.getElementById('meetingSelect');
+      if (!sel.value) return alert('定例会を選択してください');
+      var fileInput = document.getElementById('csvFile').files[0];
+      if (!fileInput) return alert('CSVファイルを選択してください');
+
+      document.getElementById('step1').classList.add('hidden');
+      document.getElementById('loading').classList.remove('hidden');
+
+      var reader = new FileReader();
+      reader.onload = function(e) {
+        google.script.run.withSuccessHandler(showEditor).withFailureHandler(showError).analyzeCsvData(e.target.result);
+      };
+      reader.readAsText(fileInput, 'Shift_JIS'); 
+    }
+
+    function showEditor(result) {
+      document.getElementById('loading').classList.add('hidden');
+      parsedData = result.rows; parsedHeader = result.header; membersList = result.membersList;
+
+      // ヘッダー生成
+      var thead = document.getElementById('dataHead');
+      var hr = document.createElement('tr');
+      var keys = ["_No"]; // 表示する列
+      for(var i=0; i<parsedHeader.length; i++) keys.push(parsedHeader[i]);
+      
+      for(var i=0; i<keys.length; i++) {
+        var th = document.createElement('th');
+        th.innerText = keys[i] === "_No" ? "自動No." : keys[i];
+        hr.appendChild(th);
+      }
+      thead.appendChild(hr);
+
+      // データ行生成
+      var tbody = document.getElementById('dataBody');
+      for (var r = 0; r < parsedData.length; r++) {
+        var row = parsedData[r];
+        var tr = document.createElement('tr');
+        
+        for (var c = 0; c < keys.length; c++) {
+          var key = keys[c];
+          var td = document.createElement('td');
+          
+          if(key === "_No") {
+            td.innerText = row[key] || "";
+          } else {
+            var input = document.createElement('input');
+            input.type = 'text';
+            input.value = row[key] || "";
+            input.id = "cell_" + r + "_" + c;
+            
+            // 色付けロジック
+            if (row._needsNameReview && (key === "参加者氏名" || key === "ふりがな")) {
+              td.className = "needs-review";
+            }
+            if (row._needsInviterReview && key === "招待者") {
+              td.className = "inviter-review";
+            }
+            td.appendChild(input);
+          }
+          tr.appendChild(td);
+        }
+        tbody.appendChild(tr);
+      }
+      document.getElementById('step2').classList.remove('hidden');
+    }
+
+    function submitFinal() {
+      document.getElementById('step2').classList.add('hidden');
+      document.getElementById('loading').classList.remove('hidden');
+      document.getElementById('loading').innerText = 'シートとPDFを作成しています... 少し時間がかかります。';
+
+      var keys = ["_No"];
+      for(var i=0; i<parsedHeader.length; i++) keys.push(parsedHeader[i]);
+
+      // 編集結果を回収
+      for (var r = 0; r < parsedData.length; r++) {
+        for (var c = 0; c < keys.length; c++) {
+          if (keys[c] !== "_No") {
+            var input = document.getElementById("cell_" + r + "_" + c);
+            if(input) parsedData[r][keys[c]] = input.value;
+          }
+        }
+      }
+
+      var sel = document.getElementById('meetingSelect');
+      var dateVal = sel.value, displayVal = sel.options[sel.selectedIndex].dataset.display;
+
+      google.script.run.withSuccessHandler(function(htmlMsg){
+        document.getElementById('loading').innerHTML = htmlMsg;
+      }).withFailureHandler(showError).createFinalSheet(dateVal, displayVal, parsedData, parsedHeader);
+    }
+
+    function showError(err) {
+      alert("エラーが発生しました: " + err.message);
+      document.getElementById('loading').classList.add('hidden');
+      document.getElementById('step1').classList.remove('hidden');
+    }
+  </script>
+</body>
+</html>

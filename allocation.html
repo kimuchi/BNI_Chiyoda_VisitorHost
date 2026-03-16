@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    body { font-family: sans-serif; padding: 20px; background: #f4f5f7; margin:0; }
+    h3 { margin-top: 0; color: #333; }
+    .top-bar { display: flex; gap: 10px; margin-bottom: 20px; align-items: center; justify-content: space-between;}
+    select { padding: 8px; font-size: 14px; width: 200px; }
+    button { padding: 8px 16px; cursor: pointer; border:none; border-radius:4px; font-weight:bold; }
+    .btn-primary { background: #0055ff; color: #fff; }
+    .btn-success { background: #4caf50; color: #fff; width: 100%; padding: 15px; font-size: 16px; margin-top: 20px;}
+    .btn-ai { background: #8e44ad; color: #fff; display:flex; align-items:center; gap:5px;}
+    .btn-ai:hover { background: #9b59b6; }
+    
+    .dashboard { display: flex; gap: 10px; background: #fff; padding: 15px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 15px; }
+    .stat-box { flex: 1; text-align: center; border-right: 1px solid #eee; padding: 0 5px;}
+    .stat-box:last-child { border-right: none; }
+    .stat-title { font-size: 11px; color: #666; margin-bottom: 5px; }
+    .stat-value { font-size: 20px; font-weight: bold; color: #0055ff; }
+    .ai-panel { display: flex; align-items: center; gap: 15px; background: #fdf2e9; padding: 15px; border-radius: 6px; border: 1px solid #fad7a1; margin-bottom: 15px;}
+
+    .layout { display: flex; gap: 20px; flex-direction: column;}
+    .main-table { width: 100%; border-collapse: collapse; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .main-table th, .main-table td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; vertical-align: middle;}
+    .main-table th { background: #f3f3f3; font-size: 12px; text-align: center;}
+    .th-facil { background: #fff2cc !important; }
+    .th-room { background: #e6f2ff !important; }
+    .th-orien { background: #d9ead3 !important; }
+    
+    .info-col { font-size: 11px; line-height: 1.4; color: #444; background: #fffcf0;}
+    .info-label { font-weight: bold; color: #d35400; }
+    .toggle-btn { background: #eaf2ff; border: 1px solid #0055ff; color: #0055ff; padding: 2px 6px; border-radius: 4px; font-size: 10px; margin-top: 5px; cursor: pointer; display: inline-block; width:100%; box-sizing:border-box;}
+    
+    .detail-row { display: none; background-color: #fdfdfd; }
+    .detail-content { padding: 10px; border-left: 4px solid #0055ff; margin: 4px 10px; font-size: 12px; background: #fff;}
+    .detail-inner-table { width: 100%; border-collapse: collapse; }
+    .detail-inner-table th, .detail-inner-table td { border-bottom: 1px solid #eee; padding: 4px;}
+    .detail-inner-table th { width: 20%; color: #666; font-weight: normal; }
+    
+    textarea.connect-input { width: 100%; box-sizing: border-box; font-size: 11px; border: 1px solid #ccc; padding: 4px; border-radius: 3px; background:#fafafa;}
+    
+    .pool-area { background: #fff; padding: 15px; border: 1px solid #ccc; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);}
+    .pool-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    
+    .chip { padding: 4px 8px; background: #e0e0e0; border-radius: 12px; font-size: 12px; cursor: grab; user-select: none; display: inline-flex; align-items: center; gap: 4px; border: 1px solid #bbb;}
+    .chip.used-room { background: #f9f9f9; color: #aaa; border: 1px dashed #ccc; } 
+    .chip.is-host { border-left: 4px solid #f39c12; } 
+    .chip-facil { background: #fff2cc; border: 1px solid #d6b656; font-weight: bold; cursor: grab; }
+    .chip-room { background: #e6f2ff; border: 1px solid #66b2ff; font-weight: bold; cursor: grab; }
+    .chip-orien { background: #d9ead3; border: 1px solid #93c47d; font-weight: bold; cursor: grab; }
+    
+    .del-btn { cursor: pointer; color: #e74c3c; font-weight: bold; padding: 0 4px; border-radius: 50%; }
+    .dropzone { min-height: 40px; border: 2px dashed transparent; border-radius: 4px; padding: 4px; transition: background 0.2s;}
+    .dropzone.dragover { background: rgba(0, 85, 255, 0.1); border-color: #0055ff; }
+  </style>
+</head>
+<body>
+  <div class="top-bar">
+    <div style="display:flex; gap:10px;">
+      <select id="meetingSelect"><option value="">計算中...</option></select>
+      <button class="btn-primary" onclick="loadData()">データを読み込む</button>
+    </div>
+  </div>
+
+  <div id="loading" style="display:none; color:#0055ff; font-weight:bold; margin-bottom:20px; text-align:center; padding:20px;">
+    処理中です... お待ちください。<br><span style="font-size:12px; font-weight:normal;">※AI割り振り中は数分かかる場合があります。</span>
+  </div>
+
+  <div id="workspace" class="layout" style="display:none;">
+    
+    <div class="dashboard">
+      <div class="stat-box"><div class="stat-title">ビジター数</div><div class="stat-value" id="statVis">0</div></div>
+      <div class="stat-box"><div class="stat-title">ゲスト数</div><div class="stat-value" id="statGuest">0</div></div>
+      <div class="stat-box"><div class="stat-title">代理数</div><div class="stat-value" id="statSub">0</div></div>
+      <div class="stat-box"><div class="stat-title">ルーム数 (配置済)</div><div class="stat-value" id="statRooms">0</div></div>
+      <div class="stat-box"><div class="stat-title">平均総人数/ルーム</div><div class="stat-value" id="statAvg">0.0</div></div>
+      <div class="stat-box"><div class="stat-title">未配置メンバー残</div><div class="stat-value" id="statPool">0</div></div>
+    </div>
+
+    <div class="ai-panel">
+      <div><span style="font-size:24px;">✨</span></div>
+      <div style="flex:1;">
+        <div style="font-weight:bold; color:#d35400;">Gemini AI 自動割り振り</div>
+        <div style="font-size:12px; color:#666;">※ファシリ・オリエンは確度・属性を考慮してホストから優先配置されます。「ルーム」は全体を均等に再配置します。</div>
+      </div>
+      <div>
+        <label style="font-size:13px; font-weight:bold; margin-right:10px;">
+          最大人数(ビジター含め全合計): <input type="number" id="maxRoomSize" value="5" style="width:50px; padding:4px;"> 名
+        </label>
+        <button class="btn-ai" onclick="runAI()">AIに提案させる</button>
+      </div>
+    </div>
+
+    <div>
+      <h3 style="color:#333;">割り振りボード</h3>
+      <table class="main-table">
+        <thead>
+          <tr>
+            <th width="3%">No.</th>
+            <th width="10%">お名前</th>
+            <th width="10%">カテゴリー</th>
+            <th width="16%">確度・特性・メモ</th>
+            <th width="10%">つなげたい<br>メンバー</th>
+            <th width="8%">招待者</th>
+            <th width="13%" class="th-facil">ファシリテーター<br>(1名)</th>
+            <th width="15%" class="th-room">ルームメンバー<br>(複数可・枠共有)</th>
+            <th width="15%" class="th-orien">オリエンテーション<br>(独立・複数可)</th>
+          </tr>
+        </thead>
+        <tbody id="visitorTableBody"></tbody>
+      </table>
+    </div>
+
+    <div class="pool-area">
+      <h3>メンバー待機リスト（招待者以外） <span style="font-size:11px; font-weight:normal; color:#f39c12;">※左端にオレンジ色の線がある人は「ビジターホスト」です</span></h3>
+      <div class="pool-grid" id="memberPool"></div>
+    </div>
+
+    <button class="btn-success" onclick="generateSheet()">この内容でシートとPDFを作成する</button>
+  </div>
+
+  <script>
+    var state = { visitors: [], pool: [], facilAlloc: {}, orienAlloc: {}, roomAlloc: {}, connectReq: {}, hosts: [], mergedWith: {} };
+
+    window.onload = function() {
+      google.script.run.withSuccessHandler(function(candidates) {
+        var sel = document.getElementById('meetingSelect');
+        sel.innerHTML = '';
+        for(var i=0; i<candidates.length; i++){
+          var opt = document.createElement('option');
+          opt.value = candidates[i].dateValue; opt.dataset.display = candidates[i].display; opt.text = candidates[i].display;
+          sel.appendChild(opt);
+        }
+      }).getMeetingCandidates();
+    };
+
+    function loadData() {
+      var sel = document.getElementById('meetingSelect');
+      if (!sel.value) return alert('定例会を選択してください');
+      
+      document.getElementById('loading').style.display = 'block';
+      document.getElementById('workspace').style.display = 'none';
+      
+      google.script.run.withSuccessHandler(function(data) {
+        document.getElementById('loading').style.display = 'none';
+        state = data;
+        if(!state.roomAlloc) state.roomAlloc = {};
+        if(!state.connectReq) state.connectReq = {};
+        if(!state.mergedWith) state.mergedWith = {};
+        if(!state.hosts) state.hosts = [];
+        render();
+        document.getElementById('workspace').style.display = 'flex';
+      }).withFailureHandler(function(err){
+        alert("エラー: " + err.message);
+        document.getElementById('loading').style.display = 'none';
+      }).getAllocationData(sel.value);
+    }
+
+    function runAI() {
+      var maxSize = document.getElementById('maxRoomSize').value;
+      if(maxSize < 1) return alert("最大人数は1名以上にしてください。");
+      
+      document.getElementById('workspace').style.display = 'none';
+      document.getElementById('loading').style.display = 'block';
+      document.getElementById('loading').innerHTML = 'Gemini AI が PDFを読み込み、シナジーを考慮した最適な配置を考案中です...<br><span style="font-size:12px; font-weight:normal;">数分かかる場合があります。そのままお待ちください。</span>';
+
+      google.script.run.withSuccessHandler(function(newState) {
+        state = newState;
+        render();
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('workspace').style.display = 'flex';
+      }).withFailureHandler(function(err) {
+        alert("AI処理中にエラーが発生しました。\n" + err.message);
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('workspace').style.display = 'flex';
+      }).callGeminiAutoAllocation(state, parseInt(maxSize));
+    }
+
+    function getInRoomIds() {
+      var ids = [];
+      Object.values(state.facilAlloc).forEach(v => { if(v) ids.push(String(v)); });
+      Object.values(state.roomAlloc).forEach(arr => { 
+        if(arr) arr.forEach(v => { if(v) ids.push(String(v)); }); 
+      });
+      return Array.from(new Set(ids));
+    }
+
+    function updateDashboard() {
+      var visCount = 0, guestCount = 0, subCount = 0;
+      state.visitors.forEach(v => {
+        if (v.no.indexOf("V") === 0) visCount++;
+        else if (v.no.indexOf("G") === 0) guestCount++;
+        else subCount++; 
+      });
+      document.getElementById('statVis').innerText = visCount;
+      document.getElementById('statGuest').innerText = guestCount;
+      document.getElementById('statSub').innerText = subCount;
+
+      var activeRooms = new Set();
+      state.visitors.forEach(v => {
+        if(!state.mergedWith[v.no]) {
+          if(state.facilAlloc[v.no] || (state.roomAlloc[v.no] && state.roomAlloc[v.no].length > 0)) activeRooms.add(v.no);
+        }
+      });
+      
+      var roomCount = activeRooms.size;
+      document.getElementById('statRooms').innerText = roomCount;
+      
+      var totalPeopleInRooms = 0;
+      activeRooms.forEach(vNo => {
+        if(state.facilAlloc[vNo]) totalPeopleInRooms++;
+        if(state.roomAlloc[vNo]) totalPeopleInRooms += state.roomAlloc[vNo].length;
+      });
+      
+      state.visitors.forEach(v => {
+        totalPeopleInRooms += 1; 
+        if (v.inviter) totalPeopleInRooms += 1;
+      });
+      
+      document.getElementById('statAvg').innerText = roomCount > 0 ? (totalPeopleInRooms / roomCount).toFixed(1) : "0.0";
+      
+      var inRoomIds = getInRoomIds();
+      // プールの中にいる人で、ルームに入っていない人を厳密にカウント
+      var unassignedCount = state.pool.filter(m => !inRoomIds.includes(String(m.no))).length;
+      document.getElementById('statPool').innerText = unassignedCount;
+    }
+
+    function handleConnectInput(visitorNo, value) {
+      var cleanValue = value.split('\n').map(function(l) { return l.trim(); }).filter(function(l) { return l !== ''; }).join('\n');
+      state.connectReq[visitorNo] = cleanValue;
+      if(state.mergedWith[visitorNo]) return; 
+      
+      var lines = cleanValue.split('\n');
+      var inRoomIds = getInRoomIds();
+      if(!state.roomAlloc[visitorNo]) state.roomAlloc[visitorNo] = [];
+      
+      lines.forEach(function(line) {
+        var nameClean = line.replace(/[\s　]/g, '');
+        if(!nameClean) return;
+        var member = state.pool.find(m => m.name.replace(/[\s　]/g, '') === nameClean);
+        if(member && !inRoomIds.includes(String(member.no))) {
+          state.roomAlloc[visitorNo].push(String(member.no));
+          inRoomIds.push(String(member.no));
+        }
+      });
+      render();
+    }
+
+    // 合同先として選んだときのロジック（チェーン禁止・移動）
+    function setMerge(vNo, targetNo) {
+      if (targetNo) {
+        if (state.mergedWith[targetNo]) {
+           alert("選択先は既に別のルームと合同になっています。複雑になるため合同先には指定できません。");
+           render(); return;
+        }
+        if (state.visitors.some(ov => state.mergedWith[ov.no] === vNo)) {
+           alert("他のルームを受け入れている親ルームのため、単独ルームから変更することはできません。");
+           render(); return;
+        }
+        
+        state.mergedWith[vNo] = targetNo;
+        
+        // 元のファシリとメンバーを対象ルームへ引越し
+        if (!state.roomAlloc[targetNo]) state.roomAlloc[targetNo] = [];
+        if (state.facilAlloc[vNo]) {
+           if (!state.roomAlloc[targetNo].includes(state.facilAlloc[vNo])) state.roomAlloc[targetNo].push(state.facilAlloc[vNo]);
+           delete state.facilAlloc[vNo];
+        }
+        if (state.roomAlloc[vNo] && state.roomAlloc[vNo].length > 0) {
+           state.roomAlloc[vNo].forEach(mId => {
+              if (!state.roomAlloc[targetNo].includes(mId)) state.roomAlloc[targetNo].push(mId);
+           });
+           state.roomAlloc[vNo] = [];
+        }
+      } else {
+        delete state.mergedWith[vNo];
+      }
+      render();
+    }
+
+    function render() {
+      updateDashboard(); 
+      
+      var tbody = document.getElementById('visitorTableBody');
+      tbody.innerHTML = '';
+      var usedRoomMembers = getInRoomIds();
+
+      for (var i = 0; i < state.visitors.length; i++) {
+        var v = state.visitors[i];
+        
+        var kakudo = v.details['メンバーになる確度'] || '-';
+        var shincho = v.details['慎重・即決など'] || '-';
+        var memoHite = v.details['メモ（非表示）'] || '';
+        var memoDisp = v.details['メモ（ビジターリストに表示）'] || '';
+        var combinedMemo = (memoHite ? memoHite + "\n" : "") + memoDisp;
+        var shortMemo = combinedMemo.length > 40 ? combinedMemo.substring(0, 40) + '...' : combinedMemo;
+        
+        var isMerged = state.mergedWith[v.no] ? true : false;
+        var isTargetOfMerge = state.visitors.some(ov => state.mergedWith[ov.no] === v.no);
+        
+        var tr = document.createElement('tr');
+        var html = `
+          <td align="center">${v.no}</td>
+          <td style="font-size:12px; font-weight:bold;">${v.name}<br>
+            <button id="btn_${v.no}" class="toggle-btn" onclick="toggleDetail('${v.no}')">▼ 全情報</button>
+          </td>
+          <td style="font-size:11px;">${v.cat}</td>
+          <td class="info-col">
+            <span class="info-label">確度:</span> ${kakudo} / <span class="info-label">特性:</span> ${shincho}<br>
+            <span class="info-label">メモ:</span> <span style="font-size:10px;">${shortMemo.replace(/\n/g, '<br>') || '-'}</span>
+          </td>
+          <td><textarea class="connect-input" rows="3" placeholder="名前を改行で入力" onblur="handleConnectInput('${v.no}', this.value)">${state.connectReq[v.no] || ''}</textarea></td>
+          <td style="font-size:11px;">${v.inviter}</td>
+        `;
+        
+        var tdFacilRoom = document.createElement('td');
+        tdFacilRoom.colSpan = 2; 
+        
+        var mergeSelectHtml = '';
+        if (isTargetOfMerge) {
+          mergeSelectHtml = `<div style="font-size:10px; color:#d35400; font-weight:bold; margin-bottom:5px; text-align:center;">※他ルームを受け入れているため単独固定</div>`;
+        } else {
+          mergeSelectHtml = `<select onchange="setMerge('${v.no}', this.value)" style="width:100%; font-size:10px; padding:2px; margin-bottom:5px; border:1px solid #ccc; background:#fafafa;">
+            <option value="">-- 単独ルーム（通常） --</option>
+            ${state.visitors.filter(ov => ov.no !== v.no && !state.mergedWith[ov.no]).map(ov => `<option value="${ov.no}" ${state.mergedWith[v.no]===ov.no ? 'selected':''}>合同先: ${ov.no} ${ov.name}</option>`).join('')}
+          </select>`;
+        }
+
+        if (isMerged) {
+          tdFacilRoom.innerHTML = mergeSelectHtml + `<div style="text-align:center; padding:10px; background:#f9f9f9; color:#888; font-weight:bold; border-radius:4px; border:1px dashed #ccc;">【合同】${state.mergedWith[v.no]} と同室</div>`;
+          tr.innerHTML = html;
+          tr.appendChild(tdFacilRoom);
+        } else {
+          var tdFacil = document.createElement('td');
+          tdFacil.innerHTML = mergeSelectHtml;
+          var dzFacil = document.createElement('div');
+          dzFacil.className = 'dropzone'; dzFacil.setAttribute('ondragover', 'allowDrop(event)'); dzFacil.setAttribute('ondragleave', 'leaveDrop(event)'); dzFacil.setAttribute('ondrop', `dropFacil(event, '${v.no}')`);
+          if (state.facilAlloc[v.no]) {
+            var m = state.pool.find(p => String(p.no) === String(state.facilAlloc[v.no]));
+            if(m) dzFacil.innerHTML = `<div class="chip chip-facil" draggable="true" ondragstart="dragStart(event, '${m.no}')">${m.name} <span class="del-btn" onclick="removeFacil('${v.no}')">×</span></div>`;
+          }
+          tdFacil.appendChild(dzFacil); 
+
+          var tdRoom = document.createElement('td');
+          var dzRoom = document.createElement('div');
+          dzRoom.className = 'dropzone'; dzRoom.setAttribute('ondragover', 'allowDrop(event)'); dzRoom.setAttribute('ondragleave', 'leaveDrop(event)'); dzRoom.setAttribute('ondrop', `dropRoom(event, '${v.no}')`);
+          if (state.roomAlloc[v.no]) {
+            state.roomAlloc[v.no].forEach(mId => {
+              var m = state.pool.find(p => String(p.no) === String(mId));
+              if(m) dzRoom.innerHTML += `<div class="chip chip-room" style="margin:2px;" draggable="true" ondragstart="dragStart(event, '${m.no}')">${m.name} <span class="del-btn" onclick="removeRoom('${v.no}', '${m.no}')">×</span></div>`;
+            });
+          }
+          tdRoom.appendChild(dzRoom); 
+          
+          tr.innerHTML = html;
+          tr.appendChild(tdFacil);
+          tr.appendChild(tdRoom);
+        }
+
+        // オリエンは合同ルームでも独立して設定可能
+        var tdOrien = document.createElement('td');
+        var dzOrien = document.createElement('div');
+        dzOrien.className = 'dropzone'; dzOrien.setAttribute('ondragover', 'allowDrop(event)'); dzOrien.setAttribute('ondragleave', 'leaveDrop(event)'); dzOrien.setAttribute('ondrop', `dropOrien(event, '${v.no}')`);
+        if (state.orienAlloc[v.no]) {
+          state.orienAlloc[v.no].forEach(mId => {
+            var m = state.pool.find(p => String(p.no) === String(mId));
+            if(m) dzOrien.innerHTML += `<div class="chip chip-orien" style="margin:2px;" draggable="true" ondragstart="dragStart(event, '${m.no}')">${m.name} <span class="del-btn" onclick="removeOrien('${v.no}', '${m.no}')">×</span></div>`;
+          });
+        }
+        tdOrien.appendChild(dzOrien); tr.appendChild(tdOrien);
+
+        tbody.appendChild(tr);
+
+        var detailTr = document.createElement('tr');
+        detailTr.id = 'detail_' + v.no; detailTr.className = 'detail-row';
+        var detailHtml = `<td colspan="9"><div class="detail-content"><table class="detail-inner-table">`;
+        for(var key in v.details) {
+          var val = v.details[key];
+          if(val && String(val).trim() !== "" && key !== "_No" && key !== "出席ステータス" && key !== "支払状況") {
+            var displayVal = String(val).indexOf('http') === 0 ? `<a href="${val}" target="_blank" style="color:#0055ff;">リンクを開く</a>` : String(val).replace(/\n/g, '<br>');
+            detailHtml += `<tr><th>${key}</th><td>${displayVal}</td></tr>`;
+          }
+        }
+        detailHtml += `</table></div></td>`;
+        detailTr.innerHTML = detailHtml;
+        tbody.appendChild(detailTr);
+      }
+
+      var poolDiv = document.getElementById('memberPool');
+      poolDiv.innerHTML = '';
+      state.pool.forEach(m => {
+        var mNoStr = String(m.no);
+        var isUsed = usedRoomMembers.includes(mNoStr);
+        var isHost = state.hosts.map(String).includes(mNoStr); 
+        
+        var div = document.createElement('div');
+        div.className = 'chip ' + (isUsed ? 'used-room' : '') + (isHost ? ' is-host' : '');
+        div.innerText = m.name;
+        div.setAttribute('draggable', 'true');
+        div.setAttribute('ondragstart', `dragStart(event, '${mNoStr}')`);
+        if (isUsed) {
+          div.title = "既にファシリかルームメンバーに配置済みです（ドラッグで移動やオリエンに追加可能です）";
+        }
+        poolDiv.appendChild(div);
+      });
+    }
+
+    function toggleDetail(visitorNo) {
+      var row = document.getElementById('detail_' + visitorNo);
+      var btn = document.getElementById('btn_' + visitorNo);
+      if (row.style.display === 'table-row') {
+        row.style.display = 'none'; btn.innerText = '▼ 全情報'; btn.style.background = '#eaf2ff'; btn.style.color = '#0055ff';
+      } else {
+        row.style.display = 'table-row'; btn.innerText = '▲ 閉じる'; btn.style.background = '#0055ff'; btn.style.color = '#fff';
+      }
+    }
+
+    function dragStart(e, memberId) { e.dataTransfer.setData('text/plain', String(memberId)); }
+    function allowDrop(e) { e.preventDefault(); e.currentTarget.classList.add('dragover'); }
+    function leaveDrop(e) { e.currentTarget.classList.remove('dragover'); }
+    
+    // 他のルーム（ファシリ、ルームメンバー）から完全に削除する
+    function removeFromAllRooms(memberId) {
+      var mId = String(memberId);
+      Object.keys(state.facilAlloc).forEach(vNo => { if(String(state.facilAlloc[vNo]) === mId) delete state.facilAlloc[vNo]; });
+      Object.keys(state.roomAlloc).forEach(vNo => { 
+        state.roomAlloc[vNo] = state.roomAlloc[vNo].filter(function(id) { return String(id) !== mId; });
+      });
+    }
+
+    function dropFacil(e, visitorNo) {
+      e.preventDefault(); e.currentTarget.classList.remove('dragover');
+      var memberId = e.dataTransfer.getData('text/plain');
+      if (!memberId || state.mergedWith[visitorNo]) return; 
+      
+      removeFromAllRooms(memberId);
+      state.facilAlloc[visitorNo] = memberId;
+      
+      // ファシリはオリエンにも自動で上書き同期させる
+      state.orienAlloc[visitorNo] = [memberId];
+      render();
+    }
+    
+    function dropRoom(e, visitorNo) {
+      e.preventDefault(); e.currentTarget.classList.remove('dragover');
+      var memberId = e.dataTransfer.getData('text/plain');
+      if (!memberId || state.mergedWith[visitorNo]) return; 
+      
+      removeFromAllRooms(memberId);
+      if(!state.roomAlloc[visitorNo]) state.roomAlloc[visitorNo] = [];
+      if(state.roomAlloc[visitorNo].map(String).indexOf(memberId) === -1) {
+        state.roomAlloc[visitorNo].push(memberId);
+      }
+      render();
+    }
+    
+    function dropOrien(e, visitorNo) {
+      e.preventDefault(); e.currentTarget.classList.remove('dragover');
+      var memberId = e.dataTransfer.getData('text/plain');
+      if (!memberId) return;
+      
+      if(!state.orienAlloc[visitorNo]) state.orienAlloc[visitorNo] = [];
+      if(state.orienAlloc[visitorNo].map(String).indexOf(memberId) === -1) {
+        state.orienAlloc[visitorNo].push(memberId);
+      }
+      render();
+    }
+    
+    function removeFacil(visitorNo) { delete state.facilAlloc[visitorNo]; render(); }
+    function removeRoom(visitorNo, memberId) { 
+      var arr = state.roomAlloc[visitorNo]; 
+      var idx = arr.map(String).indexOf(String(memberId)); 
+      if(idx !== -1) arr.splice(idx, 1); 
+      render(); 
+    }
+    function removeOrien(visitorNo, memberId) { 
+      var arr = state.orienAlloc[visitorNo]; 
+      var idx = arr.map(String).indexOf(String(memberId)); 
+      if(idx !== -1) arr.splice(idx, 1); 
+      render(); 
+    }
+
+    function generateSheet() {
+      document.getElementById('workspace').style.display = 'none';
+      document.getElementById('loading').style.display = 'block';
+      document.getElementById('loading').innerHTML = 'シートとPDFを作成しています... お待ちください。';
+      var sel = document.getElementById('meetingSelect'), dateVal = sel.value, displayVal = sel.options[sel.selectedIndex].dataset.display;
+      google.script.run.withSuccessHandler(function(msg){
+        document.body.innerHTML = "<div style='text-align:center; padding:50px;'>" + msg + "</div>";
+      }).withFailureHandler(function(err){
+        alert("エラー: " + err.message);
+        document.getElementById('workspace').style.display = 'flex';
+        document.getElementById('loading').style.display = 'none';
+      }).saveAllocationSheet(dateVal, displayVal, state.visitors, state.pool, state.facilAlloc, state.orienAlloc, state.roomAlloc, state.connectReq, state.mergedWith);
+    }
+  </script>
+</body>
+</html>

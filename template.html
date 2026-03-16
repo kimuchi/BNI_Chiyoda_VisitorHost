@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    body { font-family: sans-serif; padding: 15px; }
+    .input-subj { width: 100%; box-sizing: border-box; padding: 8px; margin-bottom: 5px; font-size:13px; font-weight:bold; border: 1px solid #ccc; border-radius:3px;}
+    textarea { width: 100%; height: 100px; box-sizing: border-box; padding: 8px; margin-bottom: 20px; font-size:13px; font-family: monospace; border: 1px solid #ccc; border-radius:3px;}
+    .label { font-weight: bold; color: #0055ff; margin-bottom: 5px; border-bottom: 1px solid #cce0ff; padding-bottom: 3px;}
+    .hint { font-size: 11px; color: #555; margin-bottom: 15px; background: #f9f9f9; padding: 8px; border-radius: 4px; line-height:1.5;}
+    code { background: #e9e9e9; padding: 2px 4px; border-radius: 3px; font-weight:bold; color:#d35400;}
+  </style>
+</head>
+<body>
+  <h3>メールテンプレートの設定</h3>
+  <div class="hint">
+    <strong>使用可能な変数:</strong><br>
+    <code>{{name}}</code> 参加者氏名<br>
+    <code>{{inviter}}</code> 招待者氏名（※名簿の「招待者」列から自動挿入）<br>
+    <code>{{date}}</code> 開催日（例: 2026年3月18日）<br>
+    <code>{{visitorlist}}</code> ビジターリストPDFのURL<br>
+    <code>{{memberbook}}</code> メンバーブックPDFのURL
+  </div>
+
+  <div class="label" style="color:#d35400; border-bottom: 1px solid #f9cdb3;">共通 Cc (任意・カンマ区切りで複数可)</div>
+  <input type="text" class="input-subj" id="tplCc" placeholder="例: info@example.com" style="margin-bottom:15px; font-weight:normal;">
+
+  <div class="label" style="color:#d35400; border-bottom: 1px solid #f9cdb3;">共通 Bcc (任意・カンマ区切りで複数可)</div>
+  <input type="text" class="input-subj" id="tplBcc" placeholder="例: admin@example.com" style="margin-bottom:25px; font-weight:normal;">
+
+  <div class="label">Visitor用</div>
+  <input type="text" class="input-subj" id="tplVisitorSubj" placeholder="件名を入力">
+  <textarea id="tplVisitorBody" placeholder="本文を入力"></textarea>
+
+  <div class="label">Guest用</div>
+  <input type="text" class="input-subj" id="tplGuestSubj" placeholder="件名を入力">
+  <textarea id="tplGuestBody" placeholder="本文を入力"></textarea>
+
+  <div class="label">Substitute (代理)用</div>
+  <input type="text" class="input-subj" id="tplSubstituteSubj" placeholder="件名を入力">
+  <textarea id="tplSubstituteBody" placeholder="本文を入力"></textarea>
+
+  <button onclick="save()" style="background:#4caf50; color:white; border:none; padding:12px 20px; width:100%; font-weight:bold; border-radius:4px; font-size:15px; cursor:pointer;">保存する</button>
+
+  <script>
+    window.onload = function() {
+      google.script.run.withSuccessHandler(function(data){
+        document.getElementById('tplCc').value = data.cc;
+        document.getElementById('tplBcc').value = data.bcc;
+        document.getElementById('tplVisitorSubj').value = data.visitorSubj;
+        document.getElementById('tplVisitorBody').value = data.visitorBody;
+        document.getElementById('tplGuestSubj').value = data.guestSubj;
+        document.getElementById('tplGuestBody').value = data.guestBody;
+        document.getElementById('tplSubstituteSubj').value = data.substituteSubj;
+        document.getElementById('tplSubstituteBody').value = data.substituteBody;
+      }).getTemplates();
+    };
+
+    function save() {
+      var data = {
+        cc: document.getElementById('tplCc').value,
+        bcc: document.getElementById('tplBcc').value,
+        visitorSubj: document.getElementById('tplVisitorSubj').value,
+        visitorBody: document.getElementById('tplVisitorBody').value,
+        guestSubj: document.getElementById('tplGuestSubj').value,
+        guestBody: document.getElementById('tplGuestBody').value,
+        substituteSubj: document.getElementById('tplSubstituteSubj').value,
+        substituteBody: document.getElementById('tplSubstituteBody').value
+      };
+      document.body.innerHTML = "<h3 style='color:#0055ff; text-align:center; margin-top:50px;'>保存中...</h3>";
+      google.script.run.withSuccessHandler(function(res){
+        document.body.innerHTML = "<h3 style='color:green; text-align:center; margin-top:50px;'>" + res + "</h3><p style='text-align:center;'>画面を閉じてください。</p>";
+      }).saveTemplates(data);
+    }
+  </script>
+</body>
+</html>

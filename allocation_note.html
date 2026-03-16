@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    body { font-family: sans-serif; padding: 20px; }
+    h3 { margin-top: 0; color: #0055ff; }
+    textarea { width: 100%; height: 200px; box-sizing: border-box; padding: 10px; margin-bottom: 20px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; font-family: sans-serif; line-height: 1.5; }
+    button { background: #4caf50; color: white; padding: 12px; width: 100%; border: none; font-weight: bold; font-size: 15px; border-radius: 4px; cursor: pointer; }
+    .hint { font-size: 12px; color: #666; margin-bottom: 10px; line-height: 1.4;}
+  </style>
+</head>
+<body>
+  <h3>割り振り表の特記事項設定</h3>
+  <div class="hint">割り振り表の下部に記載する注意事項や案内文を自由に編集できます。1行目は強調（太字・オレンジ色）で表示されます。</div>
+
+  <textarea id="noteText"></textarea>
+
+  <button onclick="save()">設定を保存する</button>
+
+  <script>
+    window.onload = function() {
+      google.script.run.withSuccessHandler(function(data){
+        document.getElementById('noteText').value = data;
+      }).getAllocationNote();
+    };
+
+    function save() {
+      var text = document.getElementById('noteText').value;
+      document.body.innerHTML = "<h3 style='color:#0055ff; text-align:center; margin-top:50px;'>保存中...</h3>";
+      google.script.run.withSuccessHandler(function(msg){
+        document.body.innerHTML = "<h3 style='color:green; text-align:center; margin-top:50px;'>" + msg + "</h3><p style='text-align:center;'>画面を閉じてください。</p>";
+      }).saveAllocationNote(text);
+    }
+  </script>
+</body>
+</html>
