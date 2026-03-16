@@ -1,0 +1,25 @@
+# Documentation
+README.md
+MANUAL.md
+
+# Git
+.git/**
+.gitignore
+
+# Clasp configuration (should not be pushed to GAS)
+.clasp.json
+.claspignore
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Dependencies
+node_modules/**
+
+# IDE / Editor
+.vscode/**
+.idea/**
+*.swp
+*.swo
+*~
