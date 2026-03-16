@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    body { font-family: sans-serif; padding: 20px; margin: 0; }
+    label { font-weight: bold; display: block; margin-top: 15px; }
+    input[type="text"] { width: 100%; padding: 8px; margin-top: 5px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+    .hint { font-size: 12px; color: #666; margin-top: 4px; }
+    button { padding: 10px 20px; cursor: pointer; border: none; border-radius: 4px; font-weight: bold; background: #0055ff; color: #fff; margin-top: 20px; }
+    .info-box { background: #f0f7ff; border: 1px solid #b3d4fc; border-radius: 6px; padding: 12px; margin-bottom: 15px; font-size: 13px; line-height: 1.6; }
+    .info-box strong { color: #0055ff; }
+    .warning { background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; padding: 10px; margin-top: 10px; font-size: 12px; }
+    #msg { margin-top: 10px; font-weight: bold; color: green; }
+  </style>
+</head>
+<body>
+  <div class="info-box">
+    <strong>Webアプリとは？</strong><br>
+    メールの送信元を、スプレッドシートを操作しているユーザーではなく、<strong>Webアプリをデプロイしたユーザー</strong>のGmailアカウントから送信するための設定です。<br><br>
+    URLが空の場合は、スプレッドシートを操作中のユーザーのGmailから直接送信されます。
+  </div>
+
+  <label for="webAppUrl">WebアプリURL</label>
+  <input type="text" id="webAppUrl" placeholder="https://script.google.com/macros/s/xxxxx/exec">
+  <p class="hint">GASエディタ「デプロイ」>「新しいデプロイ」>「ウェブアプリ」で取得したURLを入力</p>
+
+  <label for="secretToken">認証トークン</label>
+  <input type="text" id="secretToken" placeholder="デフォルトのトークンを使用">
+  <p class="hint">送信側と受信側で同じトークンを設定してください（空欄＝デフォルト値を使用）</p>
+
+  <div class="warning">
+    ⚠️ これらの設定はスクリプトプロパティに保存され、ソースコードには含まれません。Gitリポジトリにプッシュされる心配はありません。
+  </div>
+
+  <button onclick="save()">保存</button>
+  <div id="msg"></div>
+
+  <script>
+    window.onload = function() {
+      google.script.run.withSuccessHandler(function(data) {
+        document.getElementById('webAppUrl').value = data.webAppUrl;
+        if (data.secretToken) document.getElementById('secretToken').value = data.secretToken;
+      }).getWebAppSettings();
+    };
+    function save() {
+      var data = {
+        webAppUrl: document.getElementById('webAppUrl').value,
+        secretToken: document.getElementById('secretToken').value
+      };
+      google.script.run.withSuccessHandler(function(msg) {
+        document.getElementById('msg').innerText = msg;
+      }).saveWebAppSettings(data);
+    }
+  </script>
+</body>
+</html>

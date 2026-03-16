@@ -15,6 +15,7 @@ function onOpen() {
     .addItem('⚙️ 割り振り表の特記事項設定', 'openAllocationNoteDialog')
     .addItem('⚙️ ビジターホストの設定', 'openVisitorHostDialog')
     .addItem('⚙️ Gemini API・モデル設定', 'openApiSettingsDialog')
+    .addItem('⚙️ Webアプリ(送信元)設定', 'openWebAppSettingsDialog')
     .addToUi();
 }
 
@@ -29,6 +30,7 @@ function openAllocationDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlSer
 function openVisitorHostDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('visitor_host').setWidth(400).setHeight(500), 'ビジターホストの設定'); }
 function openApiSettingsDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('api_settings').setWidth(450).setHeight(350), 'Gemini API・モデル設定'); }
 function openPdfLinksDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('pdf_links').setWidth(450).setHeight(400), '作成済みPDFの確認'); }
+function openWebAppSettingsDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('webapp_settings').setWidth(500).setHeight(450), 'Webアプリ(送信元)設定'); }
 
 function getPdfLinks() {
   var props = PropertiesService.getScriptProperties();
@@ -46,6 +48,17 @@ function saveApiSettings(data) {
   var props = PropertiesService.getScriptProperties();
   props.setProperty('GEMINI_API_KEY', data.apiKey.trim()); props.setProperty('GEMINI_MODEL_NAME', data.modelName.trim());
   return "APIキーとモデルを保存しました。";
+}
+
+function getWebAppSettings() {
+  var props = PropertiesService.getScriptProperties();
+  return { webAppUrl: props.getProperty('WEB_APP_URL') || "", secretToken: props.getProperty('SECRET_TOKEN') || SECRET_TOKEN };
+}
+function saveWebAppSettings(data) {
+  var props = PropertiesService.getScriptProperties();
+  props.setProperty('WEB_APP_URL', data.webAppUrl.trim());
+  if (data.secretToken && data.secretToken.trim() !== "") props.setProperty('SECRET_TOKEN', data.secretToken.trim());
+  return "Webアプリ設定を保存しました。";
 }
 
 function getAllocationNote() {
@@ -241,8 +254,11 @@ function processPdfForm(formObject) {
 }
 
 // === メール関連処理 ===
-var WEB_APP_URL = ""; 
-var SECRET_TOKEN = "ActiveChapterSecret2026"; 
+var SECRET_TOKEN = "ActiveChapterSecret2026";
+
+function getWebAppUrl() {
+  return PropertiesService.getScriptProperties().getProperty('WEB_APP_URL') || "";
+}
 
 function getTemplates() {
   var props = PropertiesService.getScriptProperties();
@@ -306,12 +322,14 @@ function sendSingleEmail(e, cc, bcc) {
     var toEmail = e.email ? e.email.toString().trim() : "";
     if (!toEmail || toEmail.indexOf('@') === -1) return { success: false, error: "無効なメールアドレス形式 (" + toEmail + ")" };
     
-    if (WEB_APP_URL === "") {
+    var webAppUrl = getWebAppUrl();
+    if (webAppUrl === "") {
       GmailApp.sendEmail(toEmail, e.subject, e.body, options);
       return { success: true };
     } else {
-      var payload = { token: SECRET_TOKEN, to: toEmail, subject: e.subject, body: e.body, options: options };
-      var res = UrlFetchApp.fetch(WEB_APP_URL, { method: "post", contentType: "application/json", payload: JSON.stringify(payload), muteHttpExceptions: true });
+      var token = PropertiesService.getScriptProperties().getProperty('SECRET_TOKEN') || SECRET_TOKEN;
+      var payload = { token: token, to: toEmail, subject: e.subject, body: e.body, options: options };
+      var res = UrlFetchApp.fetch(webAppUrl, { method: "post", contentType: "application/json", payload: JSON.stringify(payload), muteHttpExceptions: true });
       var resData = JSON.parse(res.getContentText());
       if (!resData.success) throw new Error(resData.error);
       return { success: true };
@@ -322,7 +340,8 @@ function sendSingleEmail(e, cc, bcc) {
 function doPost(e) {
   try {
     var params = JSON.parse(e.postData.contents);
-    if (params.token !== SECRET_TOKEN) throw new Error("アクセス権限がありません");
+    var token = PropertiesService.getScriptProperties().getProperty('SECRET_TOKEN') || SECRET_TOKEN;
+    if (params.token !== token) throw new Error("アクセス権限がありません");
     GmailApp.sendEmail(params.to, params.subject, params.body, params.options);
     return ContentService.createTextOutput(JSON.stringify({success: true})).setMimeType(ContentService.MimeType.JSON);
   } catch (err) {
