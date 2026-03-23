@@ -113,7 +113,7 @@
     </div>
 
     <div class="pool-area">
-      <h3>メンバー待機リスト（招待者以外） <span style="font-size:11px; font-weight:normal; color:#f39c12;">※左端にオレンジ色の線がある人は「ビジターホスト」です</span></h3>
+      <h3>メンバー待機リスト（招待者以外） <span style="font-size:11px; font-weight:normal; color:#f39c12;">※左端にオレンジ色の線がある人は「ビジターホスト」です。数字は優先順位です。</span></h3>
       <div class="pool-grid" id="memberPool"></div>
     </div>
 
@@ -121,7 +121,7 @@
   </div>
 
   <script>
-    var state = { visitors: [], pool: [], facilAlloc: {}, orienAlloc: {}, roomAlloc: {}, connectReq: {}, hosts: [], mergedWith: {} };
+    var state = { visitors: [], pool: [], facilAlloc: {}, orienAlloc: {}, roomAlloc: {}, connectReq: {}, hosts: [], mergedWith: {}, priorities: {} };
 
     window.onload = function() {
       google.script.run.withSuccessHandler(function(candidates) {
@@ -149,6 +149,7 @@
         if(!state.connectReq) state.connectReq = {};
         if(!state.mergedWith) state.mergedWith = {};
         if(!state.hosts) state.hosts = [];
+        if(!state.priorities) state.priorities = {};
         render();
         document.getElementById('workspace').style.display = 'flex';
       }).withFailureHandler(function(err){
@@ -395,8 +396,9 @@
         var isHost = state.hosts.map(String).includes(mNoStr); 
         
         var div = document.createElement('div');
+        var hasPriority = state.priorities[mNoStr] !== undefined;
         div.className = 'chip ' + (isUsed ? 'used-room' : '') + (isHost ? ' is-host' : '');
-        div.innerText = m.name;
+        div.innerText = m.name + (hasPriority ? ' [' + state.priorities[mNoStr] + ']' : '');
         div.setAttribute('draggable', 'true');
         div.setAttribute('ondragstart', `dragStart(event, '${mNoStr}')`);
         if (isUsed) {

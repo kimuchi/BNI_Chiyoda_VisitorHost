@@ -355,6 +355,15 @@ function getVisitorHosts() {
 }
 function saveVisitorHosts(hostIds) { PropertiesService.getScriptProperties().setProperty('VISITOR_HOSTS', JSON.stringify(hostIds)); return "保存しました。"; }
 
+function getMemberPriorities() {
+  var props = PropertiesService.getScriptProperties(), data = props.getProperty('MEMBER_PRIORITIES');
+  return data ? JSON.parse(data) : {};
+}
+function saveMemberPriorities(priorities) {
+  PropertiesService.getScriptProperties().setProperty('MEMBER_PRIORITIES', JSON.stringify(priorities));
+  return "保存しました。";
+}
+
 function getAllocationData(meetingDateVal) {
   var ss = SpreadsheetApp.getActiveSpreadsheet(), dateObj = new Date(meetingDateVal), mmdd = Utilities.formatDate(dateObj, "Asia/Tokyo", "MMdd");
   var sheetName = mmdd + "参加者", allocSheetName = mmdd + "割り振り表", dataSheet = ss.getSheetByName(sheetName);
@@ -439,7 +448,7 @@ function getAllocationData(meetingDateVal) {
          }
      }
   }
-  return { visitors: visitors, pool: pool, facilAlloc: facilAlloc, orienAlloc: orienAlloc, roomAlloc: roomAlloc, connectReq: connectReq, hosts: getVisitorHosts(), mergedWith: mergedWith };
+  return { visitors: visitors, pool: pool, facilAlloc: facilAlloc, orienAlloc: orienAlloc, roomAlloc: roomAlloc, connectReq: connectReq, hosts: getVisitorHosts(), mergedWith: mergedWith, priorities: getMemberPriorities() };
 }
 
 function saveAllocationSheet(meetingDateVal, displayVal, visitors, pool, facilAlloc, orienAlloc, roomAlloc, connectReq, mergedWith) {
@@ -525,9 +534,7 @@ function saveAllocationSheet(meetingDateVal, displayVal, visitors, pool, facilAl
       if (roomAlloc[primaryNo] && roomAlloc[primaryNo].map(String).indexOf(mNoStr) !== -1) roles.push(v.name + " 様 (ルーム)");
       if (orienAlloc[v.no] && orienAlloc[v.no].map(String).indexOf(mNoStr) !== -1) roles.push(v.name + " 様 (オリエン)");
     });
-    if (roles.length > 0) {
-      allMemberRoles.push([m.no, m.name, roles.join("\n"), "", "", "", "", ""]);
-    }
+    allMemberRoles.push([m.no, m.name, roles.length > 0 ? roles.join("\n") : "", "", "", "", "", ""]);
   });
 
   outputData.push(["【メンバー別 ルーム・オリエン担当表】", "", "", "", "", "", "", ""]);
@@ -602,7 +609,13 @@ function callGeminiAutoAllocation(currentState, maxRoomSize) {
     if (currentState.facilAlloc[vNo]) usedInRooms.add(String(currentState.facilAlloc[vNo])); 
   }
 
+  var memberPriorities = getMemberPriorities();
   var availableHosts = currentState.hosts.map(String).filter(function(h) { return !usedInRooms.has(h); });
+  availableHosts.sort(function(a, b) {
+    var pA = memberPriorities[a] !== undefined ? memberPriorities[a] : Infinity;
+    var pB = memberPriorities[b] !== undefined ? memberPriorities[b] : Infinity;
+    return pA - pB;
+  });
 
   var sortedVisitors = currentState.visitors.filter(function(v) { return !currentState.mergedWith[v.no]; }).sort(function(a, b) {
     var kA = parseInt(String(a.details['メンバーになる確度'] || "0").replace(/[Ａ-Ｚａ-ｚ０-９]/g, function(s) { return String.fromCharCode(s.charCodeAt(0) - 0xFEE0); })) || 0;
