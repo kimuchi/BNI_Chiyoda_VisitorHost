@@ -16,6 +16,8 @@ function onOpen() {
     .addItem('⚙️ ビジターホストの設定', 'openVisitorHostDialog')
     .addItem('⚙️ Gemini API・モデル設定', 'openApiSettingsDialog')
     .addItem('⚙️ Webアプリ(送信元)設定', 'openWebAppSettingsDialog')
+    .addSeparator()
+    .addItem('📖 ご利用マニュアル', 'openManualDialog')
     .addToUi();
 }
 
@@ -31,6 +33,7 @@ function openVisitorHostDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlSe
 function openApiSettingsDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('api_settings').setWidth(450).setHeight(350), 'Gemini API・モデル設定'); }
 function openPdfLinksDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('pdf_links').setWidth(450).setHeight(400), '作成済みPDFの確認'); }
 function openWebAppSettingsDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('webapp_settings').setWidth(500).setHeight(450), 'Webアプリ(送信元)設定'); }
+function openManualDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('manual_viewer').setWidth(800).setHeight(700), 'ご利用マニュアル'); }
 
 function getPdfLinks() {
   var props = PropertiesService.getScriptProperties();
@@ -72,6 +75,10 @@ function getAllocationNote() {
 function saveAllocationNote(text) {
   PropertiesService.getScriptProperties().setProperty('ALLOCATION_NOTE', text);
   return "保存しました。";
+}
+
+function getManualHtml() {
+  return HtmlService.createHtmlOutputFromFile('manual_content').getContent();
 }
 
 function getHolidays() {
@@ -434,15 +441,20 @@ function getAllocationData(meetingDateVal) {
                  }
              }
              
+             // ファシリがルームメンバーに重複していたら除去
+             if (facilAlloc[vNo] && roomAlloc[vNo]) {
+                 roomAlloc[vNo] = roomAlloc[vNo].filter(function(id) { return String(id) !== String(facilAlloc[vNo]); });
+             }
+
              orienAlloc[vNo] = [];
              var oNamesStr = orienIdx !== -1 ? (row[orienIdx] ? row[orienIdx].toString() : "") : "";
              if(oNamesStr) {
                  var oNames = oNamesStr.split("\n");
-                 for(var j=0; j<oNames.length; j++) { 
+                 for(var j=0; j<oNames.length; j++) {
                    var omName = normalizeSpace(oNames[j]);
                    if(!omName) continue;
-                   var om = pool.filter(function(x){ return normalizeSpace(x.name) === omName; })[0]; 
-                   if(om) orienAlloc[vNo].push(String(om.no)); 
+                   var om = pool.filter(function(x){ return normalizeSpace(x.name) === omName; })[0];
+                   if(om) orienAlloc[vNo].push(String(om.no));
                  }
              }
          }
@@ -474,15 +486,18 @@ function saveAllocationSheet(meetingDateVal, displayVal, visitors, pool, facilAl
   var totalPeopleInRooms = 0;
   activeRooms.forEach(function(vNo){
     var v = visitors.filter(function(x){ return x.no === vNo; })[0];
+    // ファシリ＋ルームメンバーをカウント（オリエンは含めない。重複はSetで排除）
+    var uniqueMembers = new Set();
+    if (facilAlloc[vNo]) uniqueMembers.add(String(facilAlloc[vNo]));
+    if (roomAlloc[vNo]) roomAlloc[vNo].forEach(function(id){ uniqueMembers.add(String(id)); });
+    totalPeopleInRooms += uniqueMembers.size;
     totalPeopleInRooms += 1; // ビジター本人
-    if (v && v.inviter) totalPeopleInRooms += 1; // 招待者
-    if (facilAlloc[vNo]) totalPeopleInRooms++;
-    if (roomAlloc[vNo]) totalPeopleInRooms += roomAlloc[vNo].length;
+    if (v && v.inviter && String(v.inviter).trim() !== "") totalPeopleInRooms += 1; // 招待者
     // 合同で入ってきた子ビジター分も加算
     visitors.forEach(function(cv){
       if (mergedWith[cv.no] === vNo) {
         totalPeopleInRooms += 1; // 子ビジター本人
-        if (cv.inviter) totalPeopleInRooms += 1; // 子ビジターの招待者
+        if (cv.inviter && String(cv.inviter).trim() !== "") totalPeopleInRooms += 1;
       }
     });
   });

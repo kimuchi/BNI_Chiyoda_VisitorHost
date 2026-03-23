@@ -1,0 +1,693 @@
+<h1>Activeチャプター 名簿・割り振りシステム ご利用マニュアル</h1>
+<p>本システムは、Googleスプレッドシート上で <strong>「ビジターリストの作成」「ブレイクアウトルームの割り振り」「案内メールの一括送信」</strong> を半自動化し、定例会の準備にかかる作業時間を大幅に削減するための専用ツールです。</p>
+<hr />
+<h2>【重要】初回実行時のGoogle認証について</h2>
+<p>スプレッドシートのメニューから初めてシステム（スクリプト）を起動した際、Googleから <strong>「承認が必要です」</strong> というメッセージが表示されます。これは、システムがあなたの代わりにPDFを作成したりメールを送信したりするための許可を求めているためです。</p>
+<p>以下の手順で許可を行ってください。</p>
+<ol>
+<li>「承認が必要です」のポップアップで <strong>「続行」</strong> をクリックします。</li>
+<li>アカウントの選択画面で、ご自身の <strong>Googleアカウント</strong> をクリックします。</li>
+<li>「Google はこのアプリを確認していません」という警告画面が出たら、左下の <strong>「詳細」</strong> をクリックします。</li>
+<li>一番下に表示される <strong>「〇〇（安全ではないページ）に移動」</strong> をクリックします。</li>
+<li>最後に <strong>「許可」</strong> をクリックします。</li>
+</ol>
+<blockquote>
+<p>この操作は初回のみです。次回以降は表示されません。</p>
+</blockquote>
+<h3>本システムが要求する権限（スコープ）</h3>
+<table>
+<thead>
+<tr>
+<th>権限</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Google スプレッドシートの読み書き</td>
+<td>名簿データの読み書き、シートの作成</td>
+</tr>
+<tr>
+<td>Google ドライブへのアクセス</td>
+<td>PDF ファイルの作成・保存・共有設定</td>
+</tr>
+<tr>
+<td>Gmail の送信</td>
+<td>ビジター向け案内メールの一括送信</td>
+</tr>
+<tr>
+<td>外部サービスへの接続 (UrlFetch)</td>
+<td>Gemini API の呼び出し（AI自動割り振り機能）</td>
+</tr>
+<tr>
+<td>Google ドキュメントへのアクセス</td>
+<td>メンバーリストPDFのOCR処理（Google Docs変換による文字抽出）</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>1. 事前準備（データの入手と確認）</h2>
+<p>定例会の準備を始める前に、以下のデータを手元に用意してください。</p>
+<h3>1-1. ビジターリストのCSVファイル</h3>
+<p>「Spreading」にログインし、当該の定例会を選択して「CSVダウンロード」からパソコンに保存してください。</p>
+<blockquote>
+<p><strong>補足</strong>: SpreadingからダウンロードされるCSVは <strong>Shift_JIS（SJIS）</strong> エンコーディングです。本システムはShift_JISを自動的に読み取るよう設計されているため、エンコーディングの変換は不要です。ダウンロードしたファイルをそのままお使いください。</p>
+</blockquote>
+<h3>1-2. メンバーリストのPDFファイル</h3>
+<p>最新のメンバーリストPDFを、専用インターフェースからダウンロードしておいてください。</p>
+<h3>1-3.「紹介したい（つなげたい）メンバー」の確認</h3>
+<blockquote>
+<p><strong>重要</strong>: Spreadingの仕様上、「紹介したいメンバー（つなげたいメンバー）」の情報はCSVファイルに書き出されません。</p>
+</blockquote>
+<p>そのため、お手数ですがSpreadingの画面上で各ビジターの詳細情報を個別に開き、誰とつなげたいのかを確認・メモしておく（または後述の割り振り画面でコピペする）必要があります。</p>
+<hr />
+<h2>2. 初期設定（初回・変更時のみ実行）</h2>
+<p>メニューバー右端の <strong>「名簿システム」</strong> から、環境の土台となる設定を行います。</p>
+<h3>2-1. メンバーリスト(OCR)の更新</h3>
+<p><strong>メニュー</strong>: <code>名簿システム</code> &gt; <code>メンバーリスト(OCR)の更新</code></p>
+<p>ダウンロードした「メンバーリストのPDF」をアップロードします。</p>
+<ul>
+<li>アップロードされたPDFはGoogle ドキュメントに変換され、OCRでテキストが抽出されます。</li>
+<li>抽出された番号と氏名が「メンバーリスト」シートに自動書き出しされます。</li>
+<li>処理後、一時的に作成されたGoogle ドキュメントは自動削除されます。</li>
+<li><strong>結果確認</strong>: 処理完了後、「メンバーリスト」シートを開いて抽出結果を確認してください。名前の読み取りに誤りがある場合は手動で修正してください。</li>
+</ul>
+<h3>2-2. メンバーブック(PDF)の更新</h3>
+<p><strong>メニュー</strong>: <code>名簿システム</code> &gt; <code>メンバーブック(PDF)の更新</code></p>
+<p>メールでビジターに配布する「メンバーブック（資料）」のPDFをアップロードします。</p>
+<ul>
+<li>初回はGoogleドライブに新規作成、2回目以降は同じファイルを上書き更新します。</li>
+<li>アップロード後、リンク付きで誰でも閲覧可能な状態に設定されます。</li>
+<li>このPDFのURLはメールテンプレートの <code>{{memberbook}}</code> 変数で自動挿入されます。</li>
+<li>AI自動割り振り時にも、メンバーブックの内容がGeminiに送信され、シナジー分析に活用されます。</li>
+</ul>
+<h3>2-3. 休会日の管理</h3>
+<p><strong>メニュー</strong>: <code>名簿システム</code> &gt; <code>休会日の管理</code></p>
+<p>お盆や年末年始など、定例会がお休みになる日を追加します。</p>
+<ul>
+<li>日付を入力して「追加」ボタンを押すと、リストに追加されます。</li>
+<li>不要な日付は「削除」ボタンで削除できます。</li>
+<li>登録された休会日は、定例会の候補日選択時に自動でスキップされます。</li>
+<li>データは「休会日」シート（非表示）に保存されます。</li>
+</ul>
+<h3>2-4. メールテンプレート設定</h3>
+<p><strong>メニュー</strong>: <code>名簿システム</code> &gt; <code>メールテンプレート設定</code></p>
+<p>各ビジターに送るメールの件名と本文を設定します。</p>
+<ul>
+<li><strong>種別ごとのテンプレート</strong>: Visitor（ビジター）、Guest（ゲスト）、Substitute（代理）の3種別に、それぞれ件名・本文テンプレートを設定できます。</li>
+<li><strong>共通CC/BCC</strong>: 全メールに共通のCC・BCCアドレスを設定できます。</li>
+<li><strong>利用可能な差し込み変数</strong>:</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>変数</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>{{name}}</code></td>
+<td>参加者氏名</td>
+</tr>
+<tr>
+<td><code>{{inviter}}</code></td>
+<td>招待者氏名</td>
+</tr>
+<tr>
+<td><code>{{date}}</code></td>
+<td>開催日（YYYY年M月D日 形式）</td>
+</tr>
+<tr>
+<td><code>{{visitorlist}}</code></td>
+<td>ビジター様リストPDFのURL</td>
+</tr>
+<tr>
+<td><code>{{memberbook}}</code></td>
+<td>メンバーブックPDFのURL</td>
+</tr>
+</tbody>
+</table>
+<h3>2-5. 割り振り表の特記事項設定</h3>
+<p><strong>メニュー</strong>: <code>名簿システム</code> &gt; <code>割り振り表の特記事項設定</code></p>
+<p>割り振り表PDFの下部に記載する「当日の動き」などの注意書きを自由に編集できます。</p>
+<ul>
+<li>複数行入力が可能です。</li>
+<li>1行目に <code>※</code> をつけると太字・オレンジ色で強調表示されます。</li>
+<li>既定値として「ビジターホストの皆様へ（当日の動き）」のサンプルテキストが設定されています。</li>
+</ul>
+<h3>2-6. ビジターホスト・優先順位の設定</h3>
+<p><strong>メニュー</strong>: <code>名簿システム</code> &gt; <code>ビジターホストの設定</code></p>
+<p>ビジターホストの指定と、オリエンテーション割り振りの優先順位を設定します。</p>
+<ul>
+<li><strong>ビジターホスト（チェックボックス）</strong>: チェックを入れたメンバーは、AI自動割り振り時に <strong>ファシリテーター</strong> および <strong>オリエンテーション担当</strong> として優先配置されます。</li>
+<li><strong>優先順位（数値入力）</strong>: 全メンバーに対して数値を設定できます。数値が <strong>小さいほど優先度が高く</strong>、オリエンに優先的に割り振られます。<strong>空欄のメンバーは最も優先度が低い</strong> 扱いになります。</li>
+<li>ビジターホストの中でも優先順位の数値が若い順にファシリ・オリエンへ配置されます。</li>
+<li>確度が高い順・Visitor優先でビジターをソートし、優先順位が若いホストから順番に割り当てられます。</li>
+</ul>
+<h3>2-7. Gemini API・モデル設定</h3>
+<p><strong>メニュー</strong>: <code>名簿システム</code> &gt; <code>Gemini API・モデル設定</code></p>
+<p>割り振りの「AI自動化」を使うためのAPIキーを設定します。</p>
+<ul>
+<li><strong>APIキー</strong>: <a target="_blank" href="https://aistudio.google.com/">Google AI Studio</a> から取得したGemini APIキーを入力してください。</li>
+<li><strong>モデル名</strong>: 使用するGeminiモデルを指定します（デフォルト: <code>gemini-2.5-flash</code>）。</li>
+<li>APIキーはスクリプトプロパティに安全に保存されます。</li>
+</ul>
+<h3>2-8. Webアプリ（送信元）設定</h3>
+<p><strong>メニュー</strong>: <code>名簿システム</code> &gt; <code>Webアプリ(送信元)設定</code></p>
+<p>メールの送信元アカウントを制御するための設定です。</p>
+<ul>
+<li><strong>WebアプリURL</strong>: GASをWebアプリとしてデプロイした際に取得するURLを入力します（詳細は後述の「Webアプリのデプロイ」を参照）。</li>
+<li><strong>認証トークン</strong>: 送信元と受信元で共有する認証トークンです（デフォルト値が設定済み）。</li>
+<li>URLが <strong>空の場合</strong>: スプレッドシートを操作中のユーザーのGmailアカウントから直接メールが送信されます。</li>
+<li>URLが <strong>設定されている場合</strong>: Webアプリをデプロイしたユーザー（通常はチャプターの管理者アカウント）のGmailからメールが送信されます。</li>
+</ul>
+<blockquote>
+<p><strong>セキュリティ</strong>: WebアプリURLと認証トークンはスクリプトプロパティに保存されるため、ソースコード（Gitリポジトリ）には含まれません。</p>
+</blockquote>
+<hr />
+<h2>3. ビジター名簿とPDFの作成（毎週の作業）</h2>
+<p>Spreadingのデータから、見やすい参加者名簿シートとPDFを作成します。</p>
+<p><strong>メニュー</strong>: <code>名簿システム</code> &gt; <code>1. CSVから名簿・PDF作成</code></p>
+<h3>操作手順</h3>
+<ol>
+<li>メニューから <strong>「1. CSVから名簿・PDF作成」</strong> をクリックします。</li>
+<li>対象の定例会（日付と回数）をプルダウンから選びます。</li>
+<li>ダウンロードしておいた <strong>「ビジターリストのCSV」</strong> を点線枠内にドラッグ＆ドロップし、<strong>「全データを解析して編集画面へ」</strong> を押します。</li>
+<li><strong>データの全件確認・編集画面</strong> が開きます。</li>
+<li>スペースが抜けている名前は自動で推測され <strong>赤く</strong> 表示されます。</li>
+<li>招待者がメンバー名と完全に一致しない場合は <strong>黄色く</strong> 表示されます。</li>
+<li>不自然な箇所があれば、Excelのように画面上で直接文字を打ち換えて修正してください。</li>
+<li><strong>「この内容でシートとPDFを作成する」</strong> をクリックすると、スプレッドシートにデータが書き込まれ、同時に全員が閲覧可能なPDF（ビジター様リスト）が自動生成されます。</li>
+</ol>
+<h3>自動処理の詳細</h3>
+<table>
+<thead>
+<tr>
+<th>処理</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Shift_JIS読み取り</td>
+<td>SpreadingのCSV（Shift_JISエンコーディング）を自動的に正しく読み取り</td>
+</tr>
+<tr>
+<td>全角→半角変換</td>
+<td>英数字の全角文字を自動的に半角に変換</td>
+</tr>
+<tr>
+<td>名前スペース推測</td>
+<td>姓名の間にスペースがない場合、3〜5文字なら2文字目以降にスペースを自動挿入</td>
+</tr>
+<tr>
+<td>招待者マッチング</td>
+<td>メンバーリストと照合し、部分一致でも正式名称に自動補完</td>
+</tr>
+<tr>
+<td>ソート</td>
+<td>種別順（Visitor → Guest → Substitute）→ ふりがな順に自動整列</td>
+</tr>
+<tr>
+<td>採番</td>
+<td>Visitor=V01〜、Guest=G01〜、代理=代理+メンバーNo で自動付番</td>
+</tr>
+</tbody>
+</table>
+<h3>作成されるシート</h3>
+<ul>
+<li><strong><code>MMdd参加者</code></strong>: 全データ（メールアドレス等を含む）の作業用シート</li>
+<li><strong><code>MMdd参加者_印刷用</code></strong>: PDF出力用の整形済みシート（7列: No., 参加者氏名, ふりがな, カテゴリー, 会社名, 招待者, 備考）</li>
+</ul>
+<hr />
+<h2>4. ルーム・オリエン割り振り表の作成（毎週の作業）</h2>
+<p>作成した名簿を基に、朝のブレイクアウトルームとオリエンテーションの担当を決めます。</p>
+<p><strong>メニュー</strong>: <code>名簿システム</code> &gt; <code>3. ルーム・オリエン割り振り表</code></p>
+<h3>操作手順</h3>
+<ol>
+<li>メニューから <strong>「3. ルーム・オリエン割り振り表」</strong> をクリックします。</li>
+<li>対象の定例会を選択して <strong>「データを読み込む」</strong> を押します。</li>
+<li>画面が開き、以下の機能を使って割り振りを行います。</li>
+</ol>
+<h3>画面の機能詳細</h3>
+<h4>ダッシュボード</h4>
+<p>画面上部に以下の情報がリアルタイムで表示されます。</p>
+<ul>
+<li>ビジター・ゲスト・代理のそれぞれの人数</li>
+<li>現在のルーム数</li>
+<li>1ルームあたりの平均総人数（ビジター本人・招待者・ファシリ・ルームメンバーの合計。オリエンは含まない）</li>
+<li>未配置メンバーの残り人数</li>
+</ul>
+<h4>全情報ボタン（▼）</h4>
+<p>ビジターの確度、性格、メモなどをその場でパッと展開して確認できます。CSVに含まれる全カラムの詳細データを表示します。</p>
+<h4>つなげたいメンバー（手動入力）</h4>
+<p>SpreadingのCSVに載らない「つなげたいメンバー」は、Spreading画面を見ながらこの欄に改行区切りで入力（コピペ）してください。入力して枠外をクリックすると、自動的にその人がルームメンバーとしてチップで配置されます。</p>
+<h4>ドラッグ＆ドロップ（完全自由）</h4>
+<ul>
+<li>画面下の待機リスト（プール）から、メンバーのチップをドラッグして配置します。</li>
+<li>配置済みのチップも直接ドラッグして、他のルームのファシリやルームメンバー、オリエン枠へ自由に移動（お引越し）させることができます。</li>
+<li>チップには「No. 氏名」の形式でメンバー情報が表示されます。</li>
+</ul>
+<h4>合同ルームの設定</h4>
+<p>ビジター同士を同じ部屋にする場合、ファシリ枠の上のプルダウンから「合同先」を選びます。すると、設定されていたメンバーが自動的に親ルームへ引っ越し、設定が同期されます。</p>
+<blockquote>
+<p>合同ルームのチェーン（A→B→C のような三重合同）は自動的に防止されます。</p>
+</blockquote>
+<h3>Gemini AI 自動割り振り</h3>
+<ol>
+<li><strong>「最大人数（デフォルト5名）」</strong> を指定して <strong>「AIに提案させる」</strong> ボタンを押します。</li>
+<li>AIが数分かけてPDFのメンバーブック情報やビジターのメモ（シナジー）を解析します。</li>
+<li>システム側で <strong>「確度が高い順 ＞ Visitor優先」</strong> でビジターホストをファシリテーター＆オリエンに優先配置します。</li>
+<li>その上で全ルームの人数が均等になるようにAIが残りのメンバーを最適配置します。</li>
+</ol>
+<h4>AIの割り振りロジック</h4>
+<ol>
+<li><strong>ビジターホストの優先配置</strong>: ビジターを確度順（高→低）→ 種別順（Visitor &gt; Guest &gt; Substitute）でソートし、優先順位の数値が若い順にビジターホストをファシリテーターへ順次割当</li>
+<li><strong>ファシリ＝オリエン担当</strong>: ファシリテーターに配置されたメンバーは自動的にオリエン担当も兼務</li>
+<li><strong>ルームメンバーのAI配置</strong>: Gemini APIがメンバーブックPDFの内容、ビジターのメモ、つなげたいメンバー情報を総合的に分析して最適配置</li>
+<li><strong>制約条件</strong>: 1人のメンバーは1ルームのみ、合同ルームには割当なし、最大人数制限を遵守</li>
+</ol>
+<h3>出力</h3>
+<p><strong>「この内容でシートとPDFを作成する」</strong> をクリックすると以下が作成されます。</p>
+<ul>
+<li><strong><code>MMdd割り振り表</code>シート</strong>: 全割り振りデータ</li>
+<li><strong>割り振り表PDF</strong>: A4縦向きで以下を含む</li>
+<li>ダッシュボード（人数統計）</li>
+<li>ビジターごとの割り振り一覧（ファシリテーター、ルームメンバー、オリエンテーション）</li>
+<li>特記事項（当日の動き）</li>
+<li><strong>メンバー別 逆引き担当表</strong>（全メンバーを掲載。ルームに入らないメンバーも名前が表示される）</li>
+</ul>
+<hr />
+<h2>5. メールの確認・一括送信</h2>
+<p>完成したPDFのURLを差し込んだ案内メールを一括送信します。</p>
+<p><strong>メニュー</strong>: <code>名簿システム</code> &gt; <code>2. メールの確認・一括送信</code></p>
+<h3>前提条件</h3>
+<p>先ほどの「名簿作成」で生成された <strong>「〇〇参加者」というシート（タブ）を開いた状態</strong> で実行してください。</p>
+<h3>操作手順</h3>
+<ol>
+<li>メニューから <strong>「2. メールの確認・一括送信」</strong> をクリックします。</li>
+<li>全員のメールのプレビュー画面（宛先、件名、本文）が表示されます。</li>
+<li>テンプレートの設定に基づき、氏名や開催日、ビジターリスト・メンバーブックのPDF URLがすでに差し込まれています。</li>
+<li>各メールには種別（Visitor/Guest/Substitute）がバッジで表示されます。</li>
+<li>個別に追記・修正したい文章があれば、この画面で直接テキストエリアを編集できます。</li>
+<li>送信したくない人（既に個別連絡済みなど）がいる場合は、右上の <strong>「送信する」のチェック</strong> を外します。</li>
+<li><strong>「上記の内容で順番に送信する」</strong> をクリックすると、ゲージが進みながら1件ずつ確実に送信が行われます。</li>
+</ol>
+<h3>メール送信の仕組み</h3>
+<ul>
+<li>送信者名は「Activeチャプター」として送信されます。</li>
+<li>CC/BCCはテンプレート設定で指定したアドレスが全メールに適用されます（送信画面でも上書き可能）。</li>
+<li>エラーがあった場合は画面に赤字で報告され、システムが途中で止まることはありません（残りのメールは引き続き送信されます）。</li>
+<li>無効なメールアドレス形式の場合はスキップされ、エラーとして報告されます。</li>
+<li>進捗はプログレスバーでリアルタイム表示されます。</li>
+</ul>
+<h3>メール送信元の制御（2つのモード）</h3>
+<p>本システムでは、メールの送信元を以下の2つのモードで切り替えられます。</p>
+<table>
+<thead>
+<tr>
+<th>モード</th>
+<th>条件</th>
+<th>送信元</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>直接送信モード</strong></td>
+<td>WebアプリURLが未設定（空）</td>
+<td>スプレッドシートを操作中のユーザーのGmail</td>
+</tr>
+<tr>
+<td><strong>Webアプリ経由モード</strong></td>
+<td>WebアプリURLが設定済み</td>
+<td>WebアプリをデプロイしたユーザーのGmail</td>
+</tr>
+</tbody>
+</table>
+<p>チャプター共有のメールアドレス（例: 管理者のGmail）から送信したい場合は、そのアカウントでWebアプリをデプロイし、URLを設定してください。</p>
+<hr />
+<h2>6. 作成済みPDFの再確認</h2>
+<p>「さっき作ったPDFのURLをもう一度確認したい」という場合に使います。</p>
+<p><strong>メニュー</strong>: <code>名簿システム</code> &gt; <code>4. 作成済みPDFの確認</code></p>
+<h3>操作手順</h3>
+<ol>
+<li>メニューから <strong>「4. 作成済みPDFの確認」</strong> をクリックします。</li>
+<li>直近で作成された以下のリンクボタンが表示されます。</li>
+<li><strong>ビジター様リスト</strong> PDF</li>
+<li><strong>ルーム割り振り表</strong> PDF</li>
+<li><strong>メンバーブック</strong> PDF</li>
+<li>クリックするだけで、Googleドライブ上の該当PDFをすぐに開くことができます。</li>
+<li>まだ作成されていないPDFはボタンがグレーアウト（無効化）されます。</li>
+</ol>
+<hr />
+<h2>7. Webアプリのデプロイ（送信元アカウントの設定）</h2>
+<p>特定のGoogleアカウントからメールを送信したい場合、GASプロジェクトを「Webアプリ」としてデプロイする必要があります。</p>
+<h3>なぜWebアプリのデプロイが必要か</h3>
+<p>スプレッドシートのスクリプトからメールを送信すると、<strong>操作しているユーザーのGmail</strong> から送信されます。しかし、チャプターの運営では「誰が操作しても同じ送信元（管理者のGmail）から送信したい」というケースがあります。</p>
+<p>Webアプリとしてデプロイすると、<strong>デプロイしたユーザーの権限</strong> でスクリプトが実行されるため、送信元を固定できます。</p>
+<h3>デプロイ手順</h3>
+<ol>
+<li><strong>送信元にしたいGoogleアカウント</strong> でGASエディタを開きます。</li>
+<li>スプレッドシートのメニューから <code>拡張機能</code> &gt; <code>Apps Script</code> をクリック。</li>
+<li>右上の <strong>「デプロイ」</strong> ボタン &gt; <strong>「新しいデプロイ」</strong> をクリックします。</li>
+<li>左上の歯車アイコンをクリックし、種類として <strong>「ウェブアプリ」</strong> を選択します。</li>
+<li>以下の設定を行います。</li>
+</ol>
+<table>
+<thead>
+<tr>
+<th>設定項目</th>
+<th>値</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>説明</td>
+<td>任意（例: 「メール送信用」）</td>
+</tr>
+<tr>
+<td>次のユーザーとして実行</td>
+<td><strong>自分</strong></td>
+</tr>
+<tr>
+<td>アクセスできるユーザー</td>
+<td><strong>全員</strong></td>
+</tr>
+</tbody>
+</table>
+<ol>
+<li><strong>「デプロイ」</strong> をクリックします。</li>
+<li>表示された <strong>WebアプリURL</strong> （<code>https://script.google.com/macros/s/xxxxx/exec</code> の形式）をコピーします。</li>
+<li>スプレッドシートに戻り、<code>名簿システム</code> &gt; <code>Webアプリ(送信元)設定</code> を開きます。</li>
+<li>コピーしたURLを <strong>「WebアプリURL」</strong> 欄に貼り付けて <strong>「保存」</strong> をクリックします。</li>
+</ol>
+<h3>デプロイの更新（コード変更時に必須）</h3>
+<blockquote>
+<p><strong>重要</strong>: GASエディタやclasp pushでコードを変更しただけでは、Webアプリには反映されません。コードを変更するたびに、以下の手順でデプロイを更新する必要があります。Webアプリは「デプロイ時点のコードのスナップショット」で動作しているためです。</p>
+</blockquote>
+<h4>GASエディタから更新する場合</h4>
+<ol>
+<li>GASエディタで <strong>「デプロイ」</strong> &gt; <strong>「デプロイを管理」</strong> をクリックします。</li>
+<li>鉛筆アイコン（編集）をクリックします。</li>
+<li>バージョンを <strong>「新しいバージョン」</strong> に変更します。</li>
+<li><strong>「デプロイ」</strong> をクリックします。</li>
+</ol>
+<blockquote>
+<p><strong>注意</strong>: 「新しいデプロイ」ではなく「デプロイを管理」から更新してください。新しいデプロイを作成するとURLが変わり、設定の再登録が必要になります。</p>
+</blockquote>
+<h4>clasp から更新する場合</h4>
+<pre><code class="language-bash"># 1. コードをプッシュ
+clasp push
+
+# 2. 既存のデプロイIDを確認
+clasp deployments
+
+# 3. デプロイを更新（URLが変わらない）
+clasp deploy -i &lt;デプロイID&gt; --description &quot;更新内容のメモ&quot;
+</code></pre>
+<h4>コード変更後の作業まとめ</h4>
+<table>
+<thead>
+<tr>
+<th>手順</th>
+<th>コマンド / 操作</th>
+<th>説明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code>clasp push</code> または GASエディタで編集</td>
+<td>コードをGASプロジェクトに反映</td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>clasp deploy -i &lt;ID&gt;</code> または「デプロイを管理」から更新</td>
+<td>Webアプリに最新コードを反映</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><code>clasp push</code> だけで終わると、スプレッドシートから直接実行する機能（メニュー操作など）は更新されますが、<strong>Webアプリ経由のメール送信は古いコードのまま</strong> になります。</p>
+</blockquote>
+<h3>clasp を使ったデプロイ</h3>
+<p>コマンドラインからデプロイする場合:</p>
+<pre><code class="language-bash"># 初回デプロイ
+clasp deploy --description &quot;メール送信用&quot;
+
+# デプロイ後、表示されるデプロイIDを確認
+clasp deployments
+
+# コード更新後の再デプロイ（既存のデプロイIDを指定）
+clasp deploy -i &lt;デプロイID&gt; --description &quot;メール送信用 v2&quot;
+</code></pre>
+<p>デプロイ後のWebアプリURLは以下の形式です:</p>
+<pre><code>https://script.google.com/macros/s/&lt;デプロイID&gt;/exec
+</code></pre>
+<hr />
+<h2>8. システムの技術仕様</h2>
+<h3>アーキテクチャ</h3>
+<p>本システムはGoogle Apps Script（GAS）で構築されており、以下のコンポーネントで構成されています。</p>
+<table>
+<thead>
+<tr>
+<th>コンポーネント</th>
+<th>ファイル</th>
+<th>役割</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>サーバーサイド</td>
+<td><code>コード.js</code></td>
+<td>全ビジネスロジック、データ処理、API連携</td>
+</tr>
+<tr>
+<td>CSV取込画面</td>
+<td><code>dialog.html</code></td>
+<td>CSV解析、データ編集、名簿作成</td>
+</tr>
+<tr>
+<td>割り振り画面</td>
+<td><code>allocation.html</code></td>
+<td>ドラッグ＆ドロップUI、AI連携</td>
+</tr>
+<tr>
+<td>メール送信画面</td>
+<td><code>email.html</code></td>
+<td>メールプレビュー・一括送信</td>
+</tr>
+<tr>
+<td>PDF確認画面</td>
+<td><code>pdf_links.html</code></td>
+<td>作成済みPDFのリンク表示</td>
+</tr>
+<tr>
+<td>設定画面群</td>
+<td><code>pdf.html</code>, <code>memberbook.html</code>, <code>holiday.html</code>, <code>template.html</code>, <code>allocation_note.html</code>, <code>visitor_host.html</code>, <code>api_settings.html</code>, <code>webapp_settings.html</code></td>
+<td>各種設定ダイアログ</td>
+</tr>
+<tr>
+<td>マニフェスト</td>
+<td><code>appsscript.json</code></td>
+<td>GASプロジェクト設定</td>
+</tr>
+</tbody>
+</table>
+<h3>使用しているGoogle サービス</h3>
+<table>
+<thead>
+<tr>
+<th>サービス</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SpreadsheetApp</td>
+<td>スプレッドシートの読み書き</td>
+</tr>
+<tr>
+<td>DriveApp / Drive API (v3)</td>
+<td>PDF作成・共有設定・ファイル管理</td>
+</tr>
+<tr>
+<td>GmailApp</td>
+<td>メール送信</td>
+</tr>
+<tr>
+<td>DocumentApp</td>
+<td>PDF→テキスト変換（OCR）</td>
+</tr>
+<tr>
+<td>UrlFetchApp</td>
+<td>Gemini API呼び出し・PDF出力</td>
+</tr>
+<tr>
+<td>PropertiesService</td>
+<td>設定値の永続化（APIキー、テンプレート等）</td>
+</tr>
+<tr>
+<td>HtmlService</td>
+<td>カスタムダイアログの表示</td>
+</tr>
+</tbody>
+</table>
+<h3>データの保存先</h3>
+<table>
+<thead>
+<tr>
+<th>データ種別</th>
+<th>保存先</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>メンバーリスト</td>
+<td>「メンバーリスト」シート</td>
+</tr>
+<tr>
+<td>休会日</td>
+<td>「休会日」シート（非表示）</td>
+</tr>
+<tr>
+<td>参加者データ</td>
+<td>「MMdd参加者」シート（定例会ごと）</td>
+</tr>
+<tr>
+<td>印刷用データ</td>
+<td>「MMdd参加者_印刷用」シート（定例会ごと）</td>
+</tr>
+<tr>
+<td>割り振りデータ</td>
+<td>「MMdd割り振り表」シート（定例会ごと）</td>
+</tr>
+<tr>
+<td>メンバーブックPDF</td>
+<td>Googleドライブ（ファイルID をスクリプトプロパティで管理）</td>
+</tr>
+<tr>
+<td>各種設定値</td>
+<td>スクリプトプロパティ</td>
+</tr>
+</tbody>
+</table>
+<h3>スクリプトプロパティ一覧</h3>
+<table>
+<thead>
+<tr>
+<th>キー</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GEMINI_API_KEY</code></td>
+<td>Gemini APIキー</td>
+</tr>
+<tr>
+<td><code>GEMINI_MODEL_NAME</code></td>
+<td>使用するGeminiモデル名</td>
+</tr>
+<tr>
+<td><code>MEMBER_BOOK_ID</code></td>
+<td>メンバーブックPDFのドライブファイルID</td>
+</tr>
+<tr>
+<td><code>MEMBER_BOOK_URL</code></td>
+<td>メンバーブックPDFの共有URL</td>
+</tr>
+<tr>
+<td><code>LATEST_VISITOR_LIST_URL</code></td>
+<td>最新のビジターリストPDFのURL</td>
+</tr>
+<tr>
+<td><code>LATEST_ALLOCATION_URL</code></td>
+<td>最新の割り振り表PDFのURL</td>
+</tr>
+<tr>
+<td><code>LATEST_MEETING_DATE</code></td>
+<td>最新の定例会日付</td>
+</tr>
+<tr>
+<td><code>ALLOCATION_NOTE</code></td>
+<td>割り振り表の特記事項テキスト</td>
+</tr>
+<tr>
+<td><code>VISITOR_HOSTS</code></td>
+<td>ビジターホストのメンバーNo配列（JSON）</td>
+</tr>
+<tr>
+<td><code>MEMBER_PRIORITIES</code></td>
+<td>メンバーごとのオリエン優先順位（JSON: {メンバーNo: 数値}）</td>
+</tr>
+<tr>
+<td><code>MAIL_TPL_CC</code></td>
+<td>メールテンプレートCC</td>
+</tr>
+<tr>
+<td><code>MAIL_TPL_BCC</code></td>
+<td>メールテンプレートBCC</td>
+</tr>
+<tr>
+<td><code>MAIL_TPL_VISITOR_SUBJ</code></td>
+<td>Visitorメール件名テンプレート</td>
+</tr>
+<tr>
+<td><code>MAIL_TPL_VISITOR_BODY</code></td>
+<td>Visitorメール本文テンプレート</td>
+</tr>
+<tr>
+<td><code>MAIL_TPL_GUEST_SUBJ</code></td>
+<td>Guestメール件名テンプレート</td>
+</tr>
+<tr>
+<td><code>MAIL_TPL_GUEST_BODY</code></td>
+<td>Guestメール本文テンプレート</td>
+</tr>
+<tr>
+<td><code>MAIL_TPL_SUBSTITUTE_SUBJ</code></td>
+<td>Substituteメール件名テンプレート</td>
+</tr>
+<tr>
+<td><code>MAIL_TPL_SUBSTITUTE_BODY</code></td>
+<td>Substituteメール本文テンプレート</td>
+</tr>
+<tr>
+<td><code>WEB_APP_URL</code></td>
+<td>Webアプリ（メール送信元制御用）のURL</td>
+</tr>
+<tr>
+<td><code>SECRET_TOKEN</code></td>
+<td>Webアプリの認証トークン</td>
+</tr>
+</tbody>
+</table>
+<h3>定例会の基準日計算</h3>
+<p>定例会は毎週水曜日に開催されます。候補日の算出は以下のロジックで行われます。</p>
+<ul>
+<li><strong>基準日</strong>: 2026/03/18（第509回）</li>
+<li><strong>計算</strong>: 基準日から7日ずつ加算し、今日以降かつ休会日でない直近4回分を候補として表示</li>
+<li><strong>回数</strong>: 休会日でない場合のみカウントアップ（休会日は回数をスキップ）</li>
+</ul>
+<hr />
+<h2>よくあるトラブルと対処法</h2>
+<h3>Q: メニューに「名簿システム」が表示されない</h3>
+<p>スプレッドシートを開き直してください。<code>onOpen()</code> 関数がメニューを生成するため、初回読み込み時にメニューが作成されます。</p>
+<h3>Q: CSVのドラッグ＆ドロップが反応しない</h3>
+<p>Spreadingからダウンロードしたそのままのファイル（Shift_JIS形式）を使用してください。テキストエディタ等で別のエンコーディングに変換した場合、文字化けの原因になります。</p>
+<h3>Q: メンバーリストのOCR結果がおかしい</h3>
+<p>PDFの画質やフォーマットによっては正しく読み取れない場合があります。「メンバーリスト」シートを直接手動で修正してください。</p>
+<h3>Q: AI割り振りでエラーが出る</h3>
+<ul>
+<li>Gemini APIキーが正しく設定されているか確認してください。</li>
+<li>メンバーブックPDFがアップロードされているか確認してください（なくても動作しますが、精度が下がります）。</li>
+<li>APIの利用制限に達していないか確認してください。</li>
+</ul>
+<h3>Q: メール送信でエラーが出る</h3>
+<ul>
+<li>「〇〇参加者」シートがアクティブ（表示中）になっているか確認してください。</li>
+<li>メールアドレスに <code>@</code> が含まれていない場合は無効と判定されスキップされます。</li>
+<li>Gmailの1日あたりの送信制限（通常500件/日）を超えていないか確認してください。</li>
+</ul>
