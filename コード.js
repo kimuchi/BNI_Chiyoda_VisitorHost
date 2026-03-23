@@ -471,16 +471,20 @@ function saveAllocationSheet(meetingDateVal, displayVal, visitors, pool, facilAl
   });
   var roomCount = activeRooms.size;
   
-  var totalMembersInRooms = 0;
+  var totalPeopleInRooms = 0;
   activeRooms.forEach(function(vNo){
-    if (facilAlloc[vNo]) totalMembersInRooms++;
-    if (roomAlloc[vNo]) totalMembersInRooms += roomAlloc[vNo].length;
-  });
-  
-  var totalPeopleInRooms = totalMembersInRooms;
-  visitors.forEach(function(v){
-     totalPeopleInRooms += 1; 
-     if(v.inviter) totalPeopleInRooms += 1;
+    var v = visitors.filter(function(x){ return x.no === vNo; })[0];
+    totalPeopleInRooms += 1; // ビジター本人
+    if (v && v.inviter) totalPeopleInRooms += 1; // 招待者
+    if (facilAlloc[vNo]) totalPeopleInRooms++;
+    if (roomAlloc[vNo]) totalPeopleInRooms += roomAlloc[vNo].length;
+    // 合同で入ってきた子ビジター分も加算
+    visitors.forEach(function(cv){
+      if (mergedWith[cv.no] === vNo) {
+        totalPeopleInRooms += 1; // 子ビジター本人
+        if (cv.inviter) totalPeopleInRooms += 1; // 子ビジターの招待者
+      }
+    });
   });
   
   var avgMembers = roomCount > 0 ? (totalPeopleInRooms / roomCount).toFixed(1) : "0.0";
@@ -589,7 +593,7 @@ function saveAllocationSheet(meetingDateVal, displayVal, visitors, pool, facilAl
 
 function exportAllocationSheetToPdf(sheet, fileName) {
   var ss = SpreadsheetApp.getActiveSpreadsheet(), spreadsheetId = ss.getId(), sheetId = sheet.getSheetId(), lastRow = sheet.getLastRow();
-  var url = "https://docs.google.com/spreadsheets/d/" + spreadsheetId + "/export?exportFormat=pdf&format=pdf&size=A4&portrait=false&fitw=true&sheetnames=false&printtitle=false&pagenumbers=false&gridlines=false&fzr=false&gid=" + sheetId + "&r1=0&c1=0&r2=" + lastRow + "&c2=8";
+  var url = "https://docs.google.com/spreadsheets/d/" + spreadsheetId + "/export?exportFormat=pdf&format=pdf&size=A4&portrait=true&fitw=true&sheetnames=false&printtitle=false&pagenumbers=false&gridlines=false&fzr=false&gid=" + sheetId + "&r1=0&c1=0&r2=" + lastRow + "&c2=8";
   var token = ScriptApp.getOAuthToken(), response = UrlFetchApp.fetch(url, { headers: { 'Authorization': 'Bearer ' + token }, muteHttpExceptions: true });
   var file = DriveApp.getFileById(spreadsheetId), folder = file.getParents().hasNext() ? file.getParents().next() : DriveApp.getRootFolder();
   var pdfFile = folder.createFile(response.getBlob().setName(fileName));
