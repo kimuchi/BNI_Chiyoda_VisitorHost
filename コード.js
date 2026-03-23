@@ -483,6 +483,13 @@ function saveAllocationSheet(meetingDateVal, displayVal, visitors, pool, facilAl
   });
   var roomCount = activeRooms.size;
   
+  // 招待者ごとの招待数を集計（同じ招待者が複数人招待→どれか1ルームに行くので 1/N で按分）
+  var inviterCounts = {};
+  visitors.forEach(function(v){
+    var inv = v.inviter ? String(v.inviter).trim() : "";
+    if (inv !== "") inviterCounts[inv] = (inviterCounts[inv] || 0) + 1;
+  });
+
   var totalPeopleInRooms = 0;
   activeRooms.forEach(function(vNo){
     var v = visitors.filter(function(x){ return x.no === vNo; })[0];
@@ -492,12 +499,15 @@ function saveAllocationSheet(meetingDateVal, displayVal, visitors, pool, facilAl
     if (roomAlloc[vNo]) roomAlloc[vNo].forEach(function(id){ uniqueMembers.add(String(id)); });
     totalPeopleInRooms += uniqueMembers.size;
     totalPeopleInRooms += 1; // ビジター本人
-    if (v && v.inviter && String(v.inviter).trim() !== "") totalPeopleInRooms += 1; // 招待者
+    // 招待者は招待数で按分（複数招待→どれか1ルームへ行くため）
+    var invName = (v && v.inviter) ? String(v.inviter).trim() : "";
+    if (invName !== "") totalPeopleInRooms += 1 / (inviterCounts[invName] || 1);
     // 合同で入ってきた子ビジター分も加算
     visitors.forEach(function(cv){
       if (mergedWith[cv.no] === vNo) {
         totalPeopleInRooms += 1; // 子ビジター本人
-        if (cv.inviter && String(cv.inviter).trim() !== "") totalPeopleInRooms += 1;
+        var childInv = cv.inviter ? String(cv.inviter).trim() : "";
+        if (childInv !== "") totalPeopleInRooms += 1 / (inviterCounts[childInv] || 1);
       }
     });
   });
