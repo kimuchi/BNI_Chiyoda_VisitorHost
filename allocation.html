@@ -208,7 +208,7 @@
       var roomCount = activeRooms.size;
       document.getElementById('statRooms').innerText = roomCount;
       
-      // 招待者名を正規化（全角スペース・半角スペース・複数スペースを統一）
+      // 招待者名を正規化（サーバー側で既にメンバー名に正規化済みだが、念のためスペースを除去して比較）
       function normalizeInv(name) {
         return name ? String(name).replace(/[\s\u3000\u00A0]+/g, '').trim() : '';
       }
@@ -219,7 +219,6 @@
         var inv = normalizeInv(v.inviter);
         if (inv !== '') inviterCounts[inv] = (inviterCounts[inv] || 0) + 1;
       });
-      console.log('[updateDashboard] inviterCounts:', JSON.stringify(inviterCounts));
 
       var totalPeopleInRooms = 0;
       activeRooms.forEach(vNo => {
@@ -232,11 +231,7 @@
         totalPeopleInRooms += 1; // ビジター本人
         // 招待者は招待数で按分（複数招待→どれか1ルームへ行くため）
         var invName = normalizeInv(v ? v.inviter : '');
-        if (invName !== '') {
-          var fraction = 1 / (inviterCounts[invName] || 1);
-          console.log('[updateDashboard] ' + vNo + ' inviter="' + invName + '" count=' + (inviterCounts[invName] || 1) + ' fraction=' + fraction);
-          totalPeopleInRooms += fraction;
-        }
+        if (invName !== '') totalPeopleInRooms += 1 / (inviterCounts[invName] || 1);
         // 合同で入ってきた子ビジター分も加算
         state.visitors.forEach(cv => {
           if (state.mergedWith[cv.no] === vNo) {
@@ -246,7 +241,6 @@
           }
         });
       });
-      console.log('[updateDashboard] totalPeopleInRooms=' + totalPeopleInRooms + ' roomCount=' + roomCount);
       
       document.getElementById('statAvg').innerText = roomCount > 0 ? (totalPeopleInRooms / roomCount).toFixed(1) : "0.0";
       

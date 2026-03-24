@@ -127,6 +127,31 @@ function formatNameSuggest(str) {
 }
 function normalizeSpace(str) { return str ? str.toString().replace(/[\s]+/g, ' ').trim() : ""; }
 
+// 異体字対応のファジー名前マッチ（邊/邉、齋/斎/齊 等の1文字違いを許容）
+function fuzzyNameMatch(searchStr, memberStr) {
+  if (searchStr === memberStr) return true;
+  if (searchStr.indexOf(memberStr) !== -1 || memberStr.indexOf(searchStr) !== -1) return true;
+  // 同じ長さで1文字だけ異なる場合を許容（異体字対応）
+  if (searchStr.length === memberStr.length && searchStr.length >= 2) {
+    var diff = 0;
+    for (var i = 0; i < searchStr.length; i++) { if (searchStr[i] !== memberStr[i]) diff++; }
+    if (diff <= 1) return true;
+  }
+  return false;
+}
+
+// メンバーリストから招待者名を照合し、正規化されたメンバー名を返す（見つからなければ元の名前を返す）
+function matchInviterToMember(inviterName, membersList) {
+  if (!inviterName) return "";
+  var searchInv = String(inviterName).replace(/[\s\u3000さん]/g, "");
+  if (searchInv === "") return "";
+  for (var k = 0; k < membersList.length; k++) {
+    var mNameSearch = membersList[k].name.replace(/[\s]/g, "");
+    if (fuzzyNameMatch(searchInv, mNameSearch)) return membersList[k].name;
+  }
+  return String(inviterName);
+}
+
 function getMembersList() {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("メンバーリスト");
   if (!sheet) return [];
@@ -163,7 +188,7 @@ function analyzeCsvData(csvText) {
     if (searchInviter !== "") {
       for (var k = 0; k < membersList.length; k++) {
         var mNameSearch = membersList[k].name.replace(/[\s]/g, "");
-        if (searchInviter.indexOf(mNameSearch) !== -1 || mNameSearch.indexOf(searchInviter) !== -1) { matchedMember = membersList[k]; break; }
+        if (fuzzyNameMatch(searchInviter, mNameSearch)) { matchedMember = membersList[k]; break; }
       }
     }
     if (matchedMember) { r["招待者"] = matchedMember.name; } else if (originalInviter !== "") { r._needsInviterReview = true; r["招待者"] = formatNameSuggest(originalInviter); }
@@ -380,17 +405,21 @@ function getAllocationData(meetingDateVal) {
   if(headerRowIdx === -1) throw new Error("シート形式が不正です。");
   var headers = data[headerRowIdx], noIdx = headers.indexOf("No."), nameIdx = headers.indexOf("参加者氏名"), catIdx = headers.indexOf("カテゴリー"), invIdx = headers.indexOf("招待者");
 
+  var membersList = getMembersList();
+
   var visitors = [], inviters = {};
   for(var i = headerRowIdx + 1; i < data.length; i++) {
     var row = data[i];
     if(!row[noIdx]) continue;
     var detailsObj = {};
     for(var j=0; j<headers.length; j++) detailsObj[headers[j]] = row[j];
-    visitors.push({ no: String(row[noIdx]), name: row[nameIdx], cat: row[catIdx], inviter: row[invIdx], details: detailsObj });
-    if(row[invIdx]) inviters[normalizeSpace(row[invIdx])] = true;
+    // 招待者名をメンバーリストと照合して正規化（異体字対応: 邊/邉 等）
+    var rawInviter = matchInviterToMember(row[invIdx], membersList);
+    visitors.push({ no: String(row[noIdx]), name: row[nameIdx], cat: row[catIdx], inviter: rawInviter, details: detailsObj });
+    if(rawInviter) inviters[normalizeSpace(rawInviter)] = true;
   }
 
-  var membersList = getMembersList(), pool = [];
+  var pool = [];
   for(var i = 0; i < membersList.length; i++) {
      if(!inviters[normalizeSpace(membersList[i].name)]) pool.push(membersList[i]);
   }
