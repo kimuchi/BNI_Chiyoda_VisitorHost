@@ -237,20 +237,30 @@ function createFinalSheet(meetingDateVal, meetingDisplay, finalRows, originalHea
   var widths = [40, 100, 110, 160, 160, 100, 180];
   for(var w=0; w<widths.length; w++) printSheet.setColumnWidth(w+1, widths[w]);
   SpreadsheetApp.flush();
-  var pdfUrl = exportSheetToPdf(printSheet, meetingDisplay + " ビジター様リスト.pdf");
+  var pdfUrl = exportSheetToPdf(printSheet, meetingDisplay + " ビジター様リスト.pdf", meetingDateVal);
   PropertiesService.getScriptProperties().setProperty('LATEST_VISITOR_LIST_URL', pdfUrl);
   PropertiesService.getScriptProperties().setProperty('LATEST_MEETING_DATE', meetingDateVal); 
   ss.setActiveSheet(dataSheet);
   return "<h3>処理が完了しました🎉</h3><p>PDFを作成し、全員が閲覧できるよう権限を付与しました。</p><br><a href='" + pdfUrl + "' target='_blank' style='background:#0055ff; color:#fff; padding:10px 20px; text-decoration:none; border-radius:5px; font-weight:bold;'>📄 作成されたPDFを開く</a>";
 }
 
-function exportSheetToPdf(sheet, fileName) {
+function exportSheetToPdf(sheet, fileName, meetingDateVal) {
   var ss = SpreadsheetApp.getActiveSpreadsheet(), spreadsheetId = ss.getId(), sheetId = sheet.getSheetId(), lastRow = sheet.getLastRow();
   var url = "https://docs.google.com/spreadsheets/d/" + spreadsheetId + "/export?exportFormat=pdf&format=pdf&size=A4&portrait=true&fitw=true&sheetnames=false&printtitle=false&pagenumbers=false&gridlines=false&fzr=false&gid=" + sheetId + "&r1=0&c1=0&r2=" + lastRow + "&c2=7";
   var token = ScriptApp.getOAuthToken(), response = UrlFetchApp.fetch(url, { headers: { 'Authorization': 'Bearer ' + token }, muteHttpExceptions: true });
+  var blob = response.getBlob().setName(fileName);
+  var props = PropertiesService.getScriptProperties();
+  // 開催日ごとにファイルIDを管理（同日なら上書き更新、別日なら新規作成）
+  var mmdd = meetingDateVal ? Utilities.formatDate(new Date(meetingDateVal), "Asia/Tokyo", "MMdd") : "";
+  var propKey = mmdd ? 'VISITOR_LIST_PDF_ID_' + mmdd : '';
+  var fileId = propKey ? props.getProperty(propKey) : null;
+  if (fileId) {
+    try { Drive.Files.update({}, fileId, blob); return DriveApp.getFileById(fileId).getUrl(); } catch(e) { fileId = null; }
+  }
   var file = DriveApp.getFileById(spreadsheetId), folder = file.getParents().hasNext() ? file.getParents().next() : DriveApp.getRootFolder();
-  var pdfFile = folder.createFile(response.getBlob().setName(fileName));
+  var pdfFile = folder.createFile(blob);
   pdfFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  if (propKey) props.setProperty(propKey, pdfFile.getId());
   return pdfFile.getUrl();
 }
 
@@ -645,18 +655,27 @@ function saveAllocationSheet(meetingDateVal, displayVal, visitors, pool, facilAl
   for(var w=0; w<widths.length; w++) sheet.setColumnWidth(w+1, widths[w]);
   SpreadsheetApp.flush();
   
-  var pdfUrl = exportAllocationSheetToPdf(sheet, displayVal + " 割り振り表.pdf");
+  var pdfUrl = exportAllocationSheetToPdf(sheet, displayVal + " 割り振り表.pdf", meetingDateVal);
   PropertiesService.getScriptProperties().setProperty('LATEST_ALLOCATION_URL', pdfUrl); 
   return "<h3>作成完了しました🎉</h3><p>割り振り表を作成しました。</p><br><a href='" + pdfUrl + "' target='_blank' style='background:#0055ff; color:#fff; padding:10px 20px; text-decoration:none; border-radius:5px; font-weight:bold;'>📄 作成されたPDFを開く</a>";
 }
 
-function exportAllocationSheetToPdf(sheet, fileName) {
+function exportAllocationSheetToPdf(sheet, fileName, meetingDateVal) {
   var ss = SpreadsheetApp.getActiveSpreadsheet(), spreadsheetId = ss.getId(), sheetId = sheet.getSheetId(), lastRow = sheet.getLastRow();
   var url = "https://docs.google.com/spreadsheets/d/" + spreadsheetId + "/export?exportFormat=pdf&format=pdf&size=A4&portrait=true&fitw=true&sheetnames=false&printtitle=false&pagenumbers=false&gridlines=false&fzr=false&gid=" + sheetId + "&r1=0&c1=0&r2=" + lastRow + "&c2=8";
   var token = ScriptApp.getOAuthToken(), response = UrlFetchApp.fetch(url, { headers: { 'Authorization': 'Bearer ' + token }, muteHttpExceptions: true });
+  var blob = response.getBlob().setName(fileName);
+  var props = PropertiesService.getScriptProperties();
+  var mmdd = meetingDateVal ? Utilities.formatDate(new Date(meetingDateVal), "Asia/Tokyo", "MMdd") : "";
+  var propKey = mmdd ? 'ALLOCATION_PDF_ID_' + mmdd : '';
+  var fileId = propKey ? props.getProperty(propKey) : null;
+  if (fileId) {
+    try { Drive.Files.update({}, fileId, blob); return DriveApp.getFileById(fileId).getUrl(); } catch(e) { fileId = null; }
+  }
   var file = DriveApp.getFileById(spreadsheetId), folder = file.getParents().hasNext() ? file.getParents().next() : DriveApp.getRootFolder();
-  var pdfFile = folder.createFile(response.getBlob().setName(fileName));
+  var pdfFile = folder.createFile(blob);
   pdfFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  if (propKey) props.setProperty(propKey, pdfFile.getId());
   return pdfFile.getUrl();
 }
 
