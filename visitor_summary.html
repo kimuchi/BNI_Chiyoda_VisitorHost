@@ -10,6 +10,7 @@
   .toolbar button:hover { background: #e8e8e8; }
   .toolbar button.primary { background: #1a73e8; color: #fff; border-color: #1a73e8; }
   .toolbar button.primary:hover { background: #1557b0; }
+  .toolbar select { padding: 5px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; background: #fff; }
   .copied-msg { color: #2e7d32; font-size: 12px; opacity: 0; transition: opacity 0.3s; }
   .copied-msg.show { opacity: 1; }
   .summary-box { background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 16px; font-family: 'MS Gothic', 'Courier New', monospace; font-size: 13px; line-height: 1.7; white-space: pre-wrap; word-break: break-all; max-height: 460px; overflow-y: auto; }
@@ -20,6 +21,9 @@
 <div id="loading" class="loading">読み込み中...</div>
 <div id="content" style="display:none;">
   <div class="toolbar">
+    <select id="dateSelect" onchange="loadData()">
+      <option value="">読み込み中...</option>
+    </select>
     <button class="primary" onclick="copyText()">クリップボードにコピー</button>
     <span id="copiedMsg" class="copied-msg">コピーしました</span>
   </div>
@@ -88,21 +92,54 @@ function showCopied() {
   setTimeout(function(){ msg.classList.remove('show'); }, 2000);
 }
 
-google.script.run.withSuccessHandler(function(d) {
-  document.getElementById('loading').style.display = 'none';
-  if (d.error) {
-    document.getElementById('error').textContent = d.error;
+function loadData(mmdd) {
+  document.getElementById('loading').style.display = 'block';
+  document.getElementById('content').style.display = 'none';
+  document.getElementById('error').style.display = 'none';
+  var sel = document.getElementById('dateSelect');
+  var param = mmdd || sel.value || null;
+  google.script.run.withSuccessHandler(function(d) {
+    document.getElementById('loading').style.display = 'none';
+    if (d.error) {
+      document.getElementById('error').textContent = d.error;
+      document.getElementById('error').style.display = 'block';
+      return;
+    }
+    document.getElementById('summaryBox').textContent = buildSummary(d);
+    document.getElementById('content').style.display = 'block';
+  }).withFailureHandler(function(e) {
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('error').textContent = 'エラー: ' + e.message;
+    document.getElementById('error').style.display = 'block';
+  }).getVisitorSummaryData(param);
+}
+
+// 初期化：日付一覧を取得してセレクタに設定し、最新（次回）を自動選択
+google.script.run.withSuccessHandler(function(result) {
+  var sel = document.getElementById('dateSelect');
+  sel.innerHTML = '';
+  if (!result.dates || result.dates.length === 0) {
+    sel.innerHTML = '<option value="">定例会データなし</option>';
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('error').textContent = '定例会データがまだ作成されていません。';
     document.getElementById('error').style.display = 'block';
     return;
   }
-  var text = buildSummary(d);
-  document.getElementById('summaryBox').textContent = text;
-  document.getElementById('content').style.display = 'block';
+  result.dates.forEach(function(mmdd) {
+    var opt = document.createElement('option');
+    opt.value = mmdd;
+    opt.textContent = mmdd.substring(0,2) + '/' + mmdd.substring(2,4) + ' 定例会';
+    if (mmdd === result.latest) opt.textContent += '（次回）';
+    sel.appendChild(opt);
+  });
+  // デフォルトは最新（次回）
+  if (result.latest) sel.value = result.latest;
+  loadData();
 }).withFailureHandler(function(e) {
   document.getElementById('loading').style.display = 'none';
   document.getElementById('error').textContent = 'エラー: ' + e.message;
   document.getElementById('error').style.display = 'block';
-}).getVisitorSummaryData();
+}).getMeetingDateList();
 </script>
 </body>
 </html>

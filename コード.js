@@ -46,12 +46,45 @@ function getPdfLinks() {
 
 function openVisitorSummaryDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('visitor_summary').setWidth(650).setHeight(600), 'ビジター情報サマリー'); }
 
-function getVisitorSummaryData() {
-  var props = PropertiesService.getScriptProperties();
-  var meetingDateVal = props.getProperty('LATEST_MEETING_DATE');
-  if (!meetingDateVal) return { error: "定例会データがまだ作成されていません。先にCSVから名簿を作成してください。" };
-  var ss = SpreadsheetApp.getActiveSpreadsheet(), dateObj = new Date(meetingDateVal);
-  var mmdd = Utilities.formatDate(dateObj, "Asia/Tokyo", "MMdd");
+function getMeetingDateList() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheets = ss.getSheets(), list = [];
+  var re = /^(\d{4})参加者$/;
+  for (var i = 0; i < sheets.length; i++) {
+    var m = sheets[i].getName().match(re);
+    if (m) list.push(m[1]); // "0325" etc.
+  }
+  // 降順ソート（新しい日付が先）
+  list.sort(function(a, b) { return b.localeCompare(a); });
+  var latest = PropertiesService.getScriptProperties().getProperty('LATEST_MEETING_DATE') || "";
+  var latestMmdd = "";
+  if (latest) {
+    var d = new Date(latest);
+    latestMmdd = Utilities.formatDate(d, "Asia/Tokyo", "MMdd");
+  }
+  return { dates: list, latest: latestMmdd };
+}
+
+function getVisitorSummaryData(mmddParam) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var mmdd, dateObj;
+  if (mmddParam) {
+    // mmddParam is like "0325" — resolve to a full date by finding the sheet
+    mmdd = mmddParam;
+    var month = parseInt(mmdd.substring(0, 2), 10) - 1;
+    var day = parseInt(mmdd.substring(2, 4), 10);
+    // Guess the year based on proximity to current date
+    var now = new Date();
+    dateObj = new Date(now.getFullYear(), month, day);
+    if (dateObj.getTime() - now.getTime() > 6 * 30 * 24 * 3600000) dateObj.setFullYear(now.getFullYear() - 1);
+    else if (now.getTime() - dateObj.getTime() > 6 * 30 * 24 * 3600000) dateObj.setFullYear(now.getFullYear() + 1);
+  } else {
+    var props = PropertiesService.getScriptProperties();
+    var meetingDateVal = props.getProperty('LATEST_MEETING_DATE');
+    if (!meetingDateVal) return { error: "定例会データがまだ作成されていません。先にCSVから名簿を作成してください。" };
+    dateObj = new Date(meetingDateVal);
+    mmdd = Utilities.formatDate(dateObj, "Asia/Tokyo", "MMdd");
+  }
   var sheetName = mmdd + "参加者", dataSheet = ss.getSheetByName(sheetName);
   if (!dataSheet) return { error: "シート「" + sheetName + "」が見つかりません。" };
 
