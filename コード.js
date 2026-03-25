@@ -91,7 +91,7 @@ function getVisitorSummaryData() {
   };
 }
 
-
+function getApiSettings() {
   var props = PropertiesService.getScriptProperties();
   return { apiKey: props.getProperty('GEMINI_API_KEY') || "", modelName: props.getProperty('GEMINI_MODEL_NAME') || "gemini-2.5-flash" };
 }
