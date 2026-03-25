@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  body { font-family: 'Segoe UI', Meiryo, sans-serif; margin: 0; padding: 16px; background: #f8f9fa; }
+  .loading { text-align: center; padding: 40px; color: #666; }
+  .error { color: #d32f2f; padding: 20px; text-align: center; }
+  .toolbar { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; }
+  .toolbar button { padding: 6px 14px; border: 1px solid #ccc; border-radius: 4px; background: #fff; cursor: pointer; font-size: 13px; }
+  .toolbar button:hover { background: #e8e8e8; }
+  .toolbar button.primary { background: #1a73e8; color: #fff; border-color: #1a73e8; }
+  .toolbar button.primary:hover { background: #1557b0; }
+  .copied-msg { color: #2e7d32; font-size: 12px; opacity: 0; transition: opacity 0.3s; }
+  .copied-msg.show { opacity: 1; }
+  .summary-box { background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 16px; font-family: 'MS Gothic', 'Courier New', monospace; font-size: 13px; line-height: 1.7; white-space: pre-wrap; word-break: break-all; max-height: 460px; overflow-y: auto; }
+  .note { font-size: 11px; color: #888; margin-top: 8px; }
+</style>
+</head>
+<body>
+<div id="loading" class="loading">読み込み中...</div>
+<div id="content" style="display:none;">
+  <div class="toolbar">
+    <button class="primary" onclick="copyText()">クリップボードにコピー</button>
+    <span id="copiedMsg" class="copied-msg">コピーしました</span>
+  </div>
+  <div id="summaryBox" class="summary-box"></div>
+  <div class="note">※「支払状況」列の値で入金判定しています。データに列がない場合はすべて「未入金」として表示されます。</div>
+</div>
+<div id="error" class="error" style="display:none;"></div>
+
+<script>
+function isPaid(status) {
+  if (!status) return false;
+  var s = String(status).trim();
+  // 「入金済」「入金済み」「paid」「済」等を入金済みとみなす
+  return /入金済|支払済|paid|^済$/i.test(s);
+}
+
+function buildSummary(d) {
+  var lines = [];
+  lines.push('第' + d.meetingCount + '回(' + d.dateMd + ')定例会ビジター情報 【' + d.lastUpdated + '】');
+
+  function renderGroup(label, entries) {
+    var paid = entries.filter(function(e){ return isPaid(e.paid); });
+    var unpaid = entries.filter(function(e){ return !isPaid(e.paid); });
+    lines.push('');
+    lines.push('● ' + label + '：' + entries.length + '名');
+    lines.push('■入金済み ：' + paid.length + '名');
+    paid.forEach(function(e) {
+      lines.push('・' + e.name + '（' + e.kana + '）【' + e.cat + '】招待者\u3000' + e.inviter);
+    });
+    lines.push('■未入金：' + unpaid.length + '名');
+    unpaid.forEach(function(e) {
+      lines.push('・' + e.name + '（' + e.kana + '）【' + e.cat + '】招待者\u3000' + e.inviter);
+    });
+  }
+
+  renderGroup('ビジター', d.visitors);
+  renderGroup('ゲスト', d.guests);
+
+  // 代理は入金区分なし
+  lines.push('');
+  lines.push('● 代理：' + d.substitutes.length + '名');
+  d.substitutes.forEach(function(e) {
+    lines.push('・' + e.name + '（' + e.kana + '）【' + e.cat + '】招待者\u3000' + e.inviter);
+  });
+
+  lines.push('');
+  lines.push('※招待者の方は[spreading]にご入力ください。');
+  lines.push('');
+  lines.push('■メンバーの皆様はSpredingにてビジター様の詳細情報を事前に確認してください。');
+
+  return lines.join('\n');
+}
+
+function copyText() {
+  var box = document.getElementById('summaryBox');
+  var text = box.textContent;
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(function() { showCopied(); });
+  } else {
+    var ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+    showCopied();
+  }
+}
+
+function showCopied() {
+  var msg = document.getElementById('copiedMsg');
+  msg.classList.add('show');
+  setTimeout(function(){ msg.classList.remove('show'); }, 2000);
+}
+
+google.script.run.withSuccessHandler(function(d) {
+  document.getElementById('loading').style.display = 'none';
+  if (d.error) {
+    document.getElementById('error').textContent = d.error;
+    document.getElementById('error').style.display = 'block';
+    return;
+  }
+  var text = buildSummary(d);
+  document.getElementById('summaryBox').textContent = text;
+  document.getElementById('content').style.display = 'block';
+}).withFailureHandler(function(e) {
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('error').textContent = 'エラー: ' + e.message;
+  document.getElementById('error').style.display = 'block';
+}).getVisitorSummaryData();
+</script>
+</body>
+</html>

@@ -6,7 +6,8 @@ function onOpen() {
     .addItem('1. CSVから名簿・PDF作成', 'openCsvDialog')
     .addItem('2. メールの確認・一括送信', 'openEmailDialog')
     .addItem('3. ルーム・オリエン割り振り表', 'openAllocationDialog')
-    .addItem('4. 作成済みPDFの確認', 'openPdfLinksDialog')
+    .addItem('4. ビジター情報サマリー', 'openVisitorSummaryDialog')
+    .addItem('5. 作成済みPDFの確認', 'openPdfLinksDialog')
     .addSeparator()
     .addItem('⚙️ メンバーブック(PDF)の更新', 'openMemberBookDialog')
     .addItem('⚙️ メンバーリスト(OCR)の更新', 'openPdfDialog')
@@ -43,7 +44,54 @@ function getPdfLinks() {
   };
 }
 
-function getApiSettings() {
+function openVisitorSummaryDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('visitor_summary').setWidth(650).setHeight(600), 'ビジター情報サマリー'); }
+
+function getVisitorSummaryData() {
+  var props = PropertiesService.getScriptProperties();
+  var meetingDateVal = props.getProperty('LATEST_MEETING_DATE');
+  if (!meetingDateVal) return { error: "定例会データがまだ作成されていません。先にCSVから名簿を作成してください。" };
+  var ss = SpreadsheetApp.getActiveSpreadsheet(), dateObj = new Date(meetingDateVal);
+  var mmdd = Utilities.formatDate(dateObj, "Asia/Tokyo", "MMdd");
+  var sheetName = mmdd + "参加者", dataSheet = ss.getSheetByName(sheetName);
+  if (!dataSheet) return { error: "シート「" + sheetName + "」が見つかりません。" };
+
+  // 定例会回数を計算
+  var baseDate = new Date("2026/03/18 00:00:00"), baseCount = 509, holidays = getHolidays();
+  var currDate = new Date(baseDate.getTime()), currCount = baseCount, meetingCount = 0;
+  for (var limit = 0; limit < 200; limit++) {
+    var dStr = Utilities.formatDate(currDate, "Asia/Tokyo", "yyyy/MM/dd");
+    if (dStr === meetingDateVal) { meetingCount = currCount; break; }
+    if (holidays.indexOf(dStr) === -1) currCount++;
+    currDate.setDate(currDate.getDate() + 7);
+  }
+
+  var data = dataSheet.getDataRange().getValues(), headers = data[0];
+  var noIdx = headers.indexOf("No."), nameIdx = headers.indexOf("参加者氏名"), kanaIdx = headers.indexOf("ふりがな");
+  var catIdx = headers.indexOf("カテゴリー"), invIdx = headers.indexOf("招待者"), typeIdx = headers.indexOf("種別");
+  var payIdx = headers.indexOf("支払状況");
+
+  var visitors = [], guests = [], substitutes = [];
+  for (var i = 1; i < data.length; i++) {
+    var row = data[i];
+    if (!row[noIdx]) continue;
+    var entry = { no: String(row[noIdx]), name: row[nameIdx] || "", kana: row[kanaIdx] || "", cat: row[catIdx] || "", inviter: row[invIdx] || "", type: typeIdx !== -1 ? (row[typeIdx] || "") : "", paid: payIdx !== -1 ? String(row[payIdx] || "").trim() : "" };
+    if (entry.type === "Guest") guests.push(entry);
+    else if (entry.type === "Substitute") substitutes.push(entry);
+    else visitors.push(entry);
+  }
+
+  // シートの最終更新日時を取得（DriveApp経由）
+  var fileId = ss.getId(), file = DriveApp.getFileById(fileId);
+  var lastUpdated = Utilities.formatDate(file.getLastUpdated(), "Asia/Tokyo", "M/d HH:mm");
+
+  var md = Utilities.formatDate(dateObj, "Asia/Tokyo", "M/d");
+  return {
+    meetingCount: meetingCount, dateMd: md, lastUpdated: lastUpdated,
+    visitors: visitors, guests: guests, substitutes: substitutes
+  };
+}
+
+
   var props = PropertiesService.getScriptProperties();
   return { apiKey: props.getProperty('GEMINI_API_KEY') || "", modelName: props.getProperty('GEMINI_MODEL_NAME') || "gemini-2.5-flash" };
 }
