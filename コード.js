@@ -89,13 +89,34 @@ function getVisitorSummaryData(mmddParam) {
   if (!dataSheet) return { error: "シート「" + sheetName + "」が見つかりません。" };
 
   // 定例会回数を計算
+  var targetDateStr = Utilities.formatDate(dateObj, "Asia/Tokyo", "yyyy/MM/dd");
   var baseDate = new Date("2026/03/18 00:00:00"), baseCount = 509, holidays = getHolidays();
-  var currDate = new Date(baseDate.getTime()), currCount = baseCount, meetingCount = 0;
-  for (var limit = 0; limit < 200; limit++) {
-    var dStr = Utilities.formatDate(currDate, "Asia/Tokyo", "yyyy/MM/dd");
-    if (dStr === meetingDateVal) { meetingCount = currCount; break; }
-    if (holidays.indexOf(dStr) === -1) currCount++;
-    currDate.setDate(currDate.getDate() + 7);
+  var meetingCount = 0;
+  // 対象日が基準日以降なら前方探索
+  if (dateObj.getTime() >= baseDate.getTime()) {
+    var currDate = new Date(baseDate.getTime()), currCount = baseCount;
+    for (var limit = 0; limit < 500; limit++) {
+      var dStr = Utilities.formatDate(currDate, "Asia/Tokyo", "yyyy/MM/dd");
+      if (dStr === targetDateStr) { meetingCount = currCount; break; }
+      if (holidays.indexOf(dStr) === -1) currCount++;
+      currDate.setDate(currDate.getDate() + 7);
+    }
+  } else {
+    // 対象日が基準日より前なら後方探索
+    var currDate = new Date(baseDate.getTime()), currCount = baseCount;
+    currDate.setDate(currDate.getDate() - 7);
+    currCount--;
+    for (var limit = 0; limit < 500; limit++) {
+      var dStr = Utilities.formatDate(currDate, "Asia/Tokyo", "yyyy/MM/dd");
+      if (holidays.indexOf(dStr) !== -1) {
+        // 休会日はカウントしない
+        currDate.setDate(currDate.getDate() - 7);
+        continue;
+      }
+      if (dStr === targetDateStr) { meetingCount = currCount; break; }
+      currCount--;
+      currDate.setDate(currDate.getDate() - 7);
+    }
   }
 
   var data = dataSheet.getDataRange().getValues(), headers = data[0];
