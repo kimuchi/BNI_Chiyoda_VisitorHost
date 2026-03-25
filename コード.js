@@ -68,13 +68,16 @@ function getVisitorSummaryData() {
   var data = dataSheet.getDataRange().getValues(), headers = data[0];
   var noIdx = headers.indexOf("No."), nameIdx = headers.indexOf("参加者氏名"), kanaIdx = headers.indexOf("ふりがな");
   var catIdx = headers.indexOf("カテゴリー"), invIdx = headers.indexOf("招待者"), typeIdx = headers.indexOf("種別");
-  var payIdx = headers.indexOf("支払状況");
+  var billedIdx = headers.indexOf("請求額"), paidAmtIdx = headers.indexOf("支払額");
 
   var visitors = [], guests = [], substitutes = [];
   for (var i = 1; i < data.length; i++) {
     var row = data[i];
     if (!row[noIdx]) continue;
-    var entry = { no: String(row[noIdx]), name: row[nameIdx] || "", kana: row[kanaIdx] || "", cat: row[catIdx] || "", inviter: row[invIdx] || "", type: typeIdx !== -1 ? (row[typeIdx] || "") : "", paid: payIdx !== -1 ? String(row[payIdx] || "").trim() : "" };
+    var billed = billedIdx !== -1 ? Number(row[billedIdx]) || 0 : 0;
+    var paidAmt = paidAmtIdx !== -1 ? Number(row[paidAmtIdx]) || 0 : 0;
+    var isPaid = billed > 0 ? paidAmt >= billed : true;  // 請求額なし→判定不能→入金済み扱い
+    var entry = { no: String(row[noIdx]), name: row[nameIdx] || "", kana: row[kanaIdx] || "", cat: row[catIdx] || "", inviter: row[invIdx] || "", type: typeIdx !== -1 ? (row[typeIdx] || "") : "", paid: isPaid };
     if (entry.type === "Guest") guests.push(entry);
     else if (entry.type === "Substitute") substitutes.push(entry);
     else visitors.push(entry);

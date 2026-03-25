@@ -24,16 +24,13 @@
     <span id="copiedMsg" class="copied-msg">コピーしました</span>
   </div>
   <div id="summaryBox" class="summary-box"></div>
-  <div class="note">※「支払状況」列の値で入金判定しています。データに列がない場合はすべて「未入金」として表示されます。</div>
+  <div class="note">※「請求額」と「支払額」の比較で入金判定しています（請求額＞0 かつ 支払額＜請求額 → 未入金）。</div>
 </div>
 <div id="error" class="error" style="display:none;"></div>
 
 <script>
-function isPaid(status) {
-  if (!status) return false;
-  var s = String(status).trim();
-  // 「入金済」「入金済み」「paid」「済」等を入金済みとみなす
-  return /入金済|支払済|paid|^済$/i.test(s);
+function isPaid(entry) {
+  return !!entry.paid;
 }
 
 function buildSummary(d) {
@@ -41,8 +38,8 @@ function buildSummary(d) {
   lines.push('第' + d.meetingCount + '回(' + d.dateMd + ')定例会ビジター情報 【' + d.lastUpdated + '】');
 
   function renderGroup(label, entries) {
-    var paid = entries.filter(function(e){ return isPaid(e.paid); });
-    var unpaid = entries.filter(function(e){ return !isPaid(e.paid); });
+    var paid = entries.filter(function(e){ return isPaid(e); });
+    var unpaid = entries.filter(function(e){ return !isPaid(e); });
     lines.push('');
     lines.push('● ' + label + '：' + entries.length + '名');
     lines.push('■入金済み ：' + paid.length + '名');
