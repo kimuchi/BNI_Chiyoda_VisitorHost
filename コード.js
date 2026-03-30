@@ -137,6 +137,13 @@ function getVisitorSummaryData(mmddParam) {
     else visitors.push(entry);
   }
 
+  // 代理をメンバーリストの番号順にソート
+  substitutes.sort(function(a, b) {
+    var numA = parseInt(a.no.replace(/[^0-9]/g, ""), 10) || 9999;
+    var numB = parseInt(b.no.replace(/[^0-9]/g, ""), 10) || 9999;
+    return numA - numB;
+  });
+
   // シートの最終更新日時を取得（DriveApp経由）
   var fileId = ss.getId(), file = DriveApp.getFileById(fileId);
   var lastUpdated = Utilities.formatDate(file.getLastUpdated(), "Asia/Tokyo", "M/d HH:mm");
