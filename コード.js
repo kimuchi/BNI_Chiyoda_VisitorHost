@@ -406,7 +406,16 @@ function exportSheetToPdf(sheet, fileName, meetingDateVal) {
   var propKey = mmdd ? 'VISITOR_LIST_PDF_ID_' + mmdd : '';
   var fileId = propKey ? props.getProperty(propKey) : null;
   if (fileId) {
-    try { Drive.Files.update({}, fileId, blob); return DriveApp.getFileById(fileId).getUrl(); } catch(e) { fileId = null; }
+    try {
+      var existing = DriveApp.getFileById(fileId);
+      if (!existing.isTrashed()) {
+        Drive.Files.update({ title: fileName }, fileId, blob);
+        return existing.getUrl();
+      }
+    } catch(e) {
+      Logger.log("PDF update failed (fileId=" + fileId + "): " + e.message);
+    }
+    if (propKey) props.deleteProperty(propKey);
   }
   var file = DriveApp.getFileById(spreadsheetId), folder = file.getParents().hasNext() ? file.getParents().next() : DriveApp.getRootFolder();
   var pdfFile = folder.createFile(blob);
@@ -821,7 +830,16 @@ function exportAllocationSheetToPdf(sheet, fileName, meetingDateVal) {
   var propKey = mmdd ? 'ALLOCATION_PDF_ID_' + mmdd : '';
   var fileId = propKey ? props.getProperty(propKey) : null;
   if (fileId) {
-    try { Drive.Files.update({}, fileId, blob); return DriveApp.getFileById(fileId).getUrl(); } catch(e) { fileId = null; }
+    try {
+      var existing = DriveApp.getFileById(fileId);
+      if (!existing.isTrashed()) {
+        Drive.Files.update({ title: fileName }, fileId, blob);
+        return existing.getUrl();
+      }
+    } catch(e) {
+      Logger.log("PDF update failed (fileId=" + fileId + "): " + e.message);
+    }
+    if (propKey) props.deleteProperty(propKey);
   }
   var file = DriveApp.getFileById(spreadsheetId), folder = file.getParents().hasNext() ? file.getParents().next() : DriveApp.getRootFolder();
   var pdfFile = folder.createFile(blob);
