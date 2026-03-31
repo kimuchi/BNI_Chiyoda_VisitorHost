@@ -138,7 +138,17 @@ function getVisitorSummaryData(mmddParam) {
   }
 
   // 代理をメンバーリストの番号順にソート
+  var membersList = getMembersList();
+  var memberOrder = {};
+  for (var mi = 0; mi < membersList.length; mi++) {
+    memberOrder[membersList[mi].name] = mi;
+  }
   substitutes.sort(function(a, b) {
+    // 招待者名（＝代理元メンバー名）でメンバーリスト順に並べる
+    var orderA = (a.inviter in memberOrder) ? memberOrder[a.inviter] : 9999;
+    var orderB = (b.inviter in memberOrder) ? memberOrder[b.inviter] : 9999;
+    if (orderA !== orderB) return orderA - orderB;
+    // 同一招待者なら No. の数値でソート
     var numA = parseInt(a.no.replace(/[^0-9]/g, ""), 10) || 9999;
     var numB = parseInt(b.no.replace(/[^0-9]/g, ""), 10) || 9999;
     return numA - numB;
