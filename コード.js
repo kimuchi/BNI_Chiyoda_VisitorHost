@@ -377,11 +377,15 @@ function createFinalSheet(meetingDateVal, meetingDisplay, finalRows, originalHea
     // ヘッダー＋データに罫線
     var tableRange = printSheet.getRange(sec.headerRow, 1, sec.dataCount + 1, 7);
     tableRange.setWrap(true).setVerticalAlignment("middle").setBorder(true, true, true, true, true, true);
-    // データ行の配置
+    // データ行の配置と行高
     if (sec.dataCount > 0) {
-      printSheet.getRange(sec.dataStart, 1, sec.dataCount, 7).setHorizontalAlignment("left");
+      var dataRange = printSheet.getRange(sec.dataStart, 1, sec.dataCount, 7);
+      dataRange.setHorizontalAlignment("left");
       printSheet.getRange(sec.dataStart, 1, sec.dataCount, 3).setHorizontalAlignment("center");
       printSheet.getRange(sec.dataStart, 6, sec.dataCount, 1).setHorizontalAlignment("center");
+      for (var ri = 0; ri < sec.dataCount; ri++) {
+        printSheet.setRowHeight(sec.dataStart + ri, 40);
+      }
     }
   }
 
