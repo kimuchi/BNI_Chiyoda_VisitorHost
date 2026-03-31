@@ -125,34 +125,22 @@ function getVisitorSummaryData(mmddParam) {
   var billedIdx = headers.indexOf("請求額"), paidAmtIdx = headers.indexOf("支払額");
 
   var visitors = [], guests = [], substitutes = [];
+  var memoDispIdx = headers.indexOf("メモ（ビジターリストに表示）");
+  var memoHideIdx = headers.indexOf("メモ（非表示）");
   for (var i = 1; i < data.length; i++) {
     var row = data[i];
     if (!row[noIdx]) continue;
     var billed = billedIdx !== -1 ? Number(row[billedIdx]) || 0 : 0;
     var paidAmt = paidAmtIdx !== -1 ? Number(row[paidAmtIdx]) || 0 : 0;
     var isPaid = billed > 0 ? paidAmt >= billed : true;  // 請求額なし→判定不能→入金済み扱い
-    var entry = { no: String(row[noIdx]), name: row[nameIdx] || "", kana: row[kanaIdx] || "", cat: row[catIdx] || "", inviter: row[invIdx] || "", type: typeIdx !== -1 ? (row[typeIdx] || "") : "", paid: isPaid };
+    var entry = { no: String(row[noIdx]), name: row[nameIdx] || "", kana: row[kanaIdx] || "", cat: row[catIdx] || "", inviter: row[invIdx] || "", type: typeIdx !== -1 ? (row[typeIdx] || "") : "", paid: isPaid,
+      memoDisp: memoDispIdx !== -1 ? (row[memoDispIdx] || "") : "",
+      memoHide: memoHideIdx !== -1 ? (row[memoHideIdx] || "") : "",
+      rowIndex: i + 1 };
     if (entry.type === "Guest") guests.push(entry);
     else if (entry.type === "Substitute") substitutes.push(entry);
     else visitors.push(entry);
   }
-
-  // 代理をメンバーリストの番号順にソート
-  var membersList = getMembersList();
-  var memberOrder = {};
-  for (var mi = 0; mi < membersList.length; mi++) {
-    memberOrder[membersList[mi].name] = mi;
-  }
-  substitutes.sort(function(a, b) {
-    // 招待者名（＝代理元メンバー名）でメンバーリスト順に並べる
-    var orderA = (a.inviter in memberOrder) ? memberOrder[a.inviter] : 9999;
-    var orderB = (b.inviter in memberOrder) ? memberOrder[b.inviter] : 9999;
-    if (orderA !== orderB) return orderA - orderB;
-    // 同一招待者なら No. の数値でソート
-    var numA = parseInt(a.no.replace(/[^0-9]/g, ""), 10) || 9999;
-    var numB = parseInt(b.no.replace(/[^0-9]/g, ""), 10) || 9999;
-    return numA - numB;
-  });
 
   // シートの最終更新日時を取得（DriveApp経由）
   var fileId = ss.getId(), file = DriveApp.getFileById(fileId);
@@ -163,6 +151,35 @@ function getVisitorSummaryData(mmddParam) {
     meetingCount: meetingCount, dateMd: md, lastUpdated: lastUpdated,
     visitors: visitors, guests: guests, substitutes: substitutes
   };
+}
+
+function moveMemoToHidden(mmdd, rowIndex) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheetName = mmdd + "参加者", sheet = ss.getSheetByName(sheetName);
+  if (!sheet) return { error: "シートが見つかりません" };
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  var dispIdx = headers.indexOf("メモ（ビジターリストに表示）");
+  var hideIdx = headers.indexOf("メモ（非表示）");
+  if (dispIdx === -1) return { error: "メモ（ビジターリストに表示）列が見つかりません" };
+  if (hideIdx === -1) return { error: "メモ（非表示）列が見つかりません" };
+  var dispVal = String(sheet.getRange(rowIndex, dispIdx + 1).getValue() || "").trim();
+  if (!dispVal) return { error: "移動するメモがありません" };
+  var hideVal = String(sheet.getRange(rowIndex, hideIdx + 1).getValue() || "").trim();
+  var newHide = hideVal ? dispVal + " " + hideVal : dispVal;
+  sheet.getRange(rowIndex, hideIdx + 1).setValue(newHide);
+  sheet.getRange(rowIndex, dispIdx + 1).setValue("");
+  // 印刷用シートの備考列も更新
+  var printSheet = ss.getSheetByName(mmdd + "参加者_印刷用");
+  if (printSheet) {
+    var pHeaders = printSheet.getRange(5, 1, 1, printSheet.getLastColumn()).getValues()[0];
+    var pBikoIdx = pHeaders.indexOf("備考");
+    if (pBikoIdx !== -1) {
+      // 印刷用シートの行を探す（データ行はrow 6から、参加者シートのrow 2がrow 6に対応）
+      var printRow = rowIndex - 1 + 5; // rowIndex is 1-based data row (2=first data), print starts at row 6
+      printSheet.getRange(printRow, pBikoIdx + 1).setValue("");
+    }
+  }
+  return { success: true, newMemoHide: newHide };
 }
 
 function getApiSettings() {
