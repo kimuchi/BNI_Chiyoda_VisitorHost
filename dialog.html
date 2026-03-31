@@ -9,24 +9,36 @@
     button { padding: 10px 20px; cursor: pointer; border:none; border-radius:4px; font-weight:bold;}
     .btn-primary { background: #0055ff; color: #fff; }
     .btn-success { background: #4caf50; color: #fff; }
-    
+
     /* 表のスタイル */
     .table-container { overflow-x: auto; max-height: 500px; border: 1px solid #ccc; margin-bottom: 15px;}
     table { border-collapse: collapse; width: max-content; }
     th, td { border: 1px solid #ddd; padding: 5px; text-align: left; font-size: 13px; }
     th { background-color: #f3f3f3; position: sticky; top: 0; z-index: 10;}
     input[type="text"] { width: 100%; box-sizing: border-box; padding: 4px; border: 1px solid #ccc; font-size: 13px;}
-    
+
     /* レビュー必要な箇所の強調 */
     .needs-review input { background-color: #ffe6e6; border: 1px solid #ff4d4d; font-weight: bold;}
     .inviter-review { background-color: #fff3cd; }
+
+    /* 並び替えボタン */
+    .reorder-btns { display: inline-flex; gap: 1px; margin-left: 4px; }
+    .reorder-btns button { padding: 1px 5px; font-size: 11px; border: 1px solid #ccc; border-radius: 3px; background: #fff; cursor: pointer; line-height: 1.2; font-weight: normal; }
+    .reorder-btns button:hover { background: #e0e0e0; }
+    .reorder-btns button:disabled { opacity: 0.3; cursor: default; }
+
+    /* 備考移動ボタン */
+    .memo-move-btn { padding: 1px 6px; font-size: 11px; border: 1px solid #f0ad4e; border-radius: 3px; background: #fcf8e3; cursor: pointer; color: #8a6d3b; font-weight: normal; margin-left: 4px; white-space: nowrap; }
+    .memo-move-btn:hover { background: #f0e68c; }
+    .memo-cell-wrap { display: flex; align-items: center; }
+    .memo-cell-wrap input { flex: 1; }
   </style>
 </head>
 <body>
   <div id="step1">
     <h3>1. 定例会を選択</h3>
     <select id="meetingSelect" style="padding:8px; margin-bottom:15px; width:100%;"><option value="">計算中...</option></select>
-    
+
     <h3>2. CSVファイルを選択またはドロップ</h3>
     <div id="drop_zone">ここにCSVファイルをドロップ<br><br>または<br><br><input type="file" id="csvFile" accept=".csv"></div>
     <button class="btn-success" onclick="processFile()">全データを解析して編集画面へ</button>
@@ -35,7 +47,7 @@
   <div id="step2" class="hidden">
     <h3>データの全件確認・編集</h3>
     <p style="font-size:12px; color:#555;">※スペースが無かった氏名（赤色）や、招待者が不明な箇所（黄色）は自動推測されています。修正してください。</p>
-    
+
     <div class="table-container">
       <table id="dataTable">
         <thead id="dataHead"></thead>
@@ -84,45 +96,148 @@
       reader.onload = function(e) {
         google.script.run.withSuccessHandler(showEditor).withFailureHandler(showError).analyzeCsvData(e.target.result);
       };
-      reader.readAsText(fileInput, 'Shift_JIS'); 
+      reader.readAsText(fileInput, 'Shift_JIS');
     }
 
-    function showEditor(result) {
-      document.getElementById('loading').classList.add('hidden');
-      parsedData = result.rows; parsedHeader = result.header; membersList = result.membersList;
+    // 代理行のインデックス一覧を取得
+    function getSubstituteIndices() {
+      var indices = [];
+      for (var i = 0; i < parsedData.length; i++) {
+        if (parsedData[i]["種別"] === "Substitute") indices.push(i);
+      }
+      return indices;
+    }
 
-      // ヘッダー生成
+    // 2行のDOM要素とデータを入れ替える
+    function swapRows(idxA, idxB) {
+      // データ入れ替え前にUI値を回収
+      collectEditedValues();
+      // parsedData入れ替え
+      var tmp = parsedData[idxA];
+      parsedData[idxA] = parsedData[idxB];
+      parsedData[idxB] = tmp;
+      // テーブル再描画
+      rebuildTable();
+    }
+
+    function moveSubstitute(dataIdx, dir) {
+      var subIndices = getSubstituteIndices();
+      var posInSubs = subIndices.indexOf(dataIdx);
+      if (posInSubs === -1) return;
+      var targetPos = posInSubs + dir;
+      if (targetPos < 0 || targetPos >= subIndices.length) return;
+      var targetDataIdx = subIndices[targetPos];
+      swapRows(dataIdx, targetDataIdx);
+    }
+
+    // メモ（ビジターリストに表示）→ メモ（非表示）の先頭に移動
+    function moveMemoToHidden(dataIdx) {
+      collectEditedValues();
+      var row = parsedData[dataIdx];
+      var dispKey = "メモ（ビジターリストに表示）";
+      var hideKey = "メモ（非表示）";
+      var dispVal = (row[dispKey] || "").trim();
+      if (!dispVal) return;
+      var hideVal = (row[hideKey] || "").trim();
+      row[hideKey] = hideVal ? dispVal + " " + hideVal : dispVal;
+      row[dispKey] = "";
+      rebuildTable();
+    }
+
+    // 編集中の値をparsedDataに回収
+    function collectEditedValues() {
+      var keys = ["_No"];
+      for (var i = 0; i < parsedHeader.length; i++) keys.push(parsedHeader[i]);
+      for (var r = 0; r < parsedData.length; r++) {
+        for (var c = 0; c < keys.length; c++) {
+          if (keys[c] !== "_No") {
+            var input = document.getElementById("cell_" + r + "_" + c);
+            if (input) parsedData[r][keys[c]] = input.value;
+          }
+        }
+      }
+    }
+
+    // テーブル全体を再描画
+    function rebuildTable() {
       var thead = document.getElementById('dataHead');
+      var tbody = document.getElementById('dataBody');
+      thead.innerHTML = '';
+      tbody.innerHTML = '';
+
+      var keys = ["_No"];
+      for (var i = 0; i < parsedHeader.length; i++) keys.push(parsedHeader[i]);
+
+      // ヘッダー
       var hr = document.createElement('tr');
-      var keys = ["_No"]; // 表示する列
-      for(var i=0; i<parsedHeader.length; i++) keys.push(parsedHeader[i]);
-      
-      for(var i=0; i<keys.length; i++) {
+      for (var i = 0; i < keys.length; i++) {
         var th = document.createElement('th');
         th.innerText = keys[i] === "_No" ? "自動No." : keys[i];
         hr.appendChild(th);
       }
       thead.appendChild(hr);
 
-      // データ行生成
-      var tbody = document.getElementById('dataBody');
+      // データ行
+      var subIndices = getSubstituteIndices();
       for (var r = 0; r < parsedData.length; r++) {
         var row = parsedData[r];
         var tr = document.createElement('tr');
-        
+        var isSub = (row["種別"] === "Substitute");
+        var subPos = subIndices.indexOf(r);
+
         for (var c = 0; c < keys.length; c++) {
           var key = keys[c];
           var td = document.createElement('td');
-          
-          if(key === "_No") {
-            td.innerText = row[key] || "";
+
+          if (key === "_No") {
+            var noSpan = document.createElement('span');
+            noSpan.innerText = row[key] || "";
+            td.appendChild(noSpan);
+            // 代理行に並び替えボタン
+            if (isSub) {
+              var btns = document.createElement('span');
+              btns.className = 'reorder-btns';
+              var upBtn = document.createElement('button');
+              upBtn.textContent = '\u2191';
+              upBtn.disabled = (subPos === 0);
+              upBtn.onclick = (function(idx){ return function(){ moveSubstitute(idx, -1); }; })(r);
+              var downBtn = document.createElement('button');
+              downBtn.textContent = '\u2193';
+              downBtn.disabled = (subPos === subIndices.length - 1);
+              downBtn.onclick = (function(idx){ return function(){ moveSubstitute(idx, 1); }; })(r);
+              btns.appendChild(upBtn);
+              btns.appendChild(downBtn);
+              td.appendChild(btns);
+            }
+          } else if (key === "メモ（ビジターリストに表示）") {
+            var wrap = document.createElement('div');
+            wrap.className = 'memo-cell-wrap';
+            var input = document.createElement('input');
+            input.type = 'text';
+            input.value = row[key] || "";
+            input.id = "cell_" + r + "_" + c;
+            wrap.appendChild(input);
+            // 値がある場合のみ移動ボタン表示
+            if ((row[key] || "").trim()) {
+              var moveBtn = document.createElement('button');
+              moveBtn.className = 'memo-move-btn';
+              moveBtn.textContent = '\u2192\u975e\u8868\u793a';
+              moveBtn.title = '\u30d3\u30b8\u30bf\u30fc\u30ea\u30b9\u30c8\u306e\u5099\u8003\u304b\u3089\u524a\u9664\u3057\u3001\u975e\u8868\u793a\u30e1\u30e2\u306b\u79fb\u52d5';
+              moveBtn.onclick = (function(idx){ return function(){ moveMemoToHidden(idx); }; })(r);
+              wrap.appendChild(moveBtn);
+            }
+            if (row._needsNameReview && (key === "参加者氏名" || key === "ふりがな")) {
+              td.className = "needs-review";
+            }
+            if (row._needsInviterReview && key === "招待者") {
+              td.className = "inviter-review";
+            }
+            td.appendChild(wrap);
           } else {
             var input = document.createElement('input');
             input.type = 'text';
             input.value = row[key] || "";
             input.id = "cell_" + r + "_" + c;
-            
-            // 色付けロジック
             if (row._needsNameReview && (key === "参加者氏名" || key === "ふりがな")) {
               td.className = "needs-review";
             }
@@ -135,6 +250,12 @@
         }
         tbody.appendChild(tr);
       }
+    }
+
+    function showEditor(result) {
+      document.getElementById('loading').classList.add('hidden');
+      parsedData = result.rows; parsedHeader = result.header; membersList = result.membersList;
+      rebuildTable();
       document.getElementById('step2').classList.remove('hidden');
     }
 
@@ -143,18 +264,8 @@
       document.getElementById('loading').classList.remove('hidden');
       document.getElementById('loading').innerText = 'シートとPDFを作成しています... 少し時間がかかります。';
 
-      var keys = ["_No"];
-      for(var i=0; i<parsedHeader.length; i++) keys.push(parsedHeader[i]);
-
       // 編集結果を回収
-      for (var r = 0; r < parsedData.length; r++) {
-        for (var c = 0; c < keys.length; c++) {
-          if (keys[c] !== "_No") {
-            var input = document.getElementById("cell_" + r + "_" + c);
-            if(input) parsedData[r][keys[c]] = input.value;
-          }
-        }
-      }
+      collectEditedValues();
 
       var sel = document.getElementById('meetingSelect');
       var dateVal = sel.value, displayVal = sel.options[sel.selectedIndex].dataset.display;

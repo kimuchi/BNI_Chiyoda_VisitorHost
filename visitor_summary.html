@@ -5,7 +5,7 @@
   body { font-family: 'Segoe UI', Meiryo, sans-serif; margin: 0; padding: 16px; background: #f8f9fa; }
   .loading { text-align: center; padding: 40px; color: #666; }
   .error { color: #d32f2f; padding: 20px; text-align: center; }
-  .toolbar { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; flex-wrap: wrap; }
+  .toolbar { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; }
   .toolbar button { padding: 6px 14px; border: 1px solid #ccc; border-radius: 4px; background: #fff; cursor: pointer; font-size: 13px; }
   .toolbar button:hover { background: #e8e8e8; }
   .toolbar button.primary { background: #1a73e8; color: #fff; border-color: #1a73e8; }
@@ -13,28 +13,8 @@
   .toolbar select { padding: 5px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; background: #fff; }
   .copied-msg { color: #2e7d32; font-size: 12px; opacity: 0; transition: opacity 0.3s; }
   .copied-msg.show { opacity: 1; }
-
-  .section { margin-bottom: 16px; }
-  .section-title { font-size: 14px; font-weight: bold; margin-bottom: 6px; color: #333; }
-  table.summary-table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; }
-  table.summary-table th { background: #f3f3f3; padding: 6px 10px; text-align: left; border-bottom: 2px solid #ddd; font-weight: bold; white-space: nowrap; }
-  table.summary-table td { padding: 5px 10px; border-bottom: 1px solid #eee; }
-  table.summary-table tr:last-child td { border-bottom: none; }
-  table.summary-table tr.selected { background: #e3f2fd; }
-  .sub-header { color: #555; font-size: 12px; margin: 4px 0 2px 0; font-weight: bold; }
-
-  .reorder-btns { display: inline-flex; gap: 2px; }
-  .reorder-btns button { padding: 2px 7px; font-size: 12px; border: 1px solid #ccc; border-radius: 3px; background: #fff; cursor: pointer; line-height: 1.2; }
-  .reorder-btns button:hover { background: #e0e0e0; }
-  .reorder-btns button:disabled { opacity: 0.3; cursor: default; }
-
-  .memo-btn { padding: 1px 6px; font-size: 11px; border: 1px solid #f0ad4e; border-radius: 3px; background: #fcf8e3; cursor: pointer; color: #8a6d3b; }
-  .memo-btn:hover { background: #f0e68c; }
-  .memo-text { font-size: 11px; color: #666; }
-  .unpaid { color: #d32f2f; font-weight: bold; }
-  .paid { color: #2e7d32; }
+  .summary-box { background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 16px; font-family: 'MS Gothic', 'Courier New', monospace; font-size: 13px; line-height: 1.7; white-space: pre-wrap; word-break: break-all; max-height: 460px; overflow-y: auto; }
   .note { font-size: 11px; color: #888; margin-top: 8px; }
-  .header-line { background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 10px 14px; margin-bottom: 12px; font-size: 14px; font-weight: bold; }
 </style>
 </head>
 <body>
@@ -47,122 +27,21 @@
     <button class="primary" onclick="copyText()">クリップボードにコピー</button>
     <span id="copiedMsg" class="copied-msg">コピーしました</span>
   </div>
-  <div id="headerLine" class="header-line"></div>
-  <div id="visitorSection" class="section"></div>
-  <div id="guestSection" class="section"></div>
-  <div id="substituteSection" class="section"></div>
-  <div id="footerLines" style="background:#fff;border:1px solid #ddd;border-radius:6px;padding:10px 14px;font-size:13px;line-height:1.7;"></div>
+  <div id="summaryBox" class="summary-box"></div>
   <div class="note">※「請求額」と「支払額」の比較で入金判定しています（請求額＞0 かつ 支払額＜請求額 → 未入金）。</div>
 </div>
 <div id="error" class="error" style="display:none;"></div>
 
 <script>
-var currentData = null;
-var currentMmdd = '';
-
-function isPaid(entry) { return !!entry.paid; }
-
-function renderPaidGroup(entries) {
-  var paid = entries.filter(function(e){ return isPaid(e); });
-  var unpaid = entries.filter(function(e){ return !isPaid(e); });
-  var html = '<table class="summary-table"><tr><th>氏名</th><th>ふりがな</th><th>カテゴリー</th><th>招待者</th><th>入金</th><th>備考</th></tr>';
-  if (paid.length > 0) {
-    html += '<tr><td colspan="6" class="sub-header">■入金済み：' + paid.length + '名</td></tr>';
-    paid.forEach(function(e) {
-      html += '<tr><td>' + esc(e.name) + '</td><td>' + esc(e.kana) + '</td><td>' + esc(e.cat) + '</td><td>' + esc(e.inviter) + '</td><td class="paid">済</td><td>' + renderMemoCell(e) + '</td></tr>';
-    });
-  }
-  if (unpaid.length > 0) {
-    html += '<tr><td colspan="6" class="sub-header">■未入金：' + unpaid.length + '名</td></tr>';
-    unpaid.forEach(function(e) {
-      html += '<tr><td>' + esc(e.name) + '</td><td>' + esc(e.kana) + '</td><td>' + esc(e.cat) + '</td><td>' + esc(e.inviter) + '</td><td class="unpaid">未</td><td>' + renderMemoCell(e) + '</td></tr>';
-    });
-  }
-  html += '</table>';
-  return html;
+function isPaid(entry) {
+  return !!entry.paid;
 }
 
-function renderSubstituteTable(entries) {
-  var html = '<table class="summary-table"><tr><th style="width:60px"></th><th>氏名</th><th>ふりがな</th><th>カテゴリー</th><th>招待者</th><th>備考</th></tr>';
-  entries.forEach(function(e, idx) {
-    html += '<tr><td><div class="reorder-btns">';
-    html += '<button onclick="moveSub(' + idx + ',-1)"' + (idx === 0 ? ' disabled' : '') + '>&uarr;</button>';
-    html += '<button onclick="moveSub(' + idx + ',1)"' + (idx === entries.length - 1 ? ' disabled' : '') + '>&darr;</button>';
-    html += '</div></td>';
-    html += '<td>' + esc(e.name) + '</td><td>' + esc(e.kana) + '</td><td>' + esc(e.cat) + '</td><td>' + esc(e.inviter) + '</td><td>' + renderMemoCell(e) + '</td></tr>';
-  });
-  html += '</table>';
-  return html;
-}
-
-function renderMemoCell(e) {
-  var html = '';
-  if (e.memoDisp) {
-    html += '<span class="memo-text">' + esc(e.memoDisp) + '</span> ';
-    html += '<button class="memo-btn" onclick="moveMemo(' + e.rowIndex + ')" title="備考を非表示メモへ移動">→非表示</button>';
-  }
-  return html;
-}
-
-function esc(s) {
-  var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML;
-}
-
-function renderAll(d) {
-  currentData = d;
-  document.getElementById('headerLine').textContent = '第' + d.meetingCount + '回(' + d.dateMd + ')定例会ビジター情報 【' + d.lastUpdated + '】';
-
-  var vSec = document.getElementById('visitorSection');
-  if (d.visitors.length > 0) {
-    vSec.innerHTML = '<div class="section-title">● ビジター：' + d.visitors.length + '名</div>' + renderPaidGroup(d.visitors);
-    vSec.style.display = '';
-  } else { vSec.style.display = 'none'; }
-
-  var gSec = document.getElementById('guestSection');
-  if (d.guests.length > 0) {
-    gSec.innerHTML = '<div class="section-title">● ゲスト：' + d.guests.length + '名</div>' + renderPaidGroup(d.guests);
-    gSec.style.display = '';
-  } else { gSec.style.display = 'none'; }
-
-  var sSec = document.getElementById('substituteSection');
-  if (d.substitutes.length > 0) {
-    sSec.innerHTML = '<div class="section-title">● 代理出席：' + d.substitutes.length + '名</div>' + renderSubstituteTable(d.substitutes);
-    sSec.style.display = '';
-  } else { sSec.style.display = 'none'; }
-
-  document.getElementById('footerLines').innerHTML = '※招待者の方は[spreading]にご入力ください。<br>■メンバーの皆様はSpredingにてビジター様の詳細情報を事前に確認してください。';
-}
-
-function moveSub(idx, dir) {
-  var subs = currentData.substitutes;
-  var newIdx = idx + dir;
-  if (newIdx < 0 || newIdx >= subs.length) return;
-  var tmp = subs[idx]; subs[idx] = subs[newIdx]; subs[newIdx] = tmp;
-  renderAll(currentData);
-}
-
-function moveMemo(rowIndex) {
-  google.script.run.withSuccessHandler(function(result) {
-    if (result.error) { alert(result.error); return; }
-    // Update local data
-    var allEntries = currentData.visitors.concat(currentData.guests, currentData.substitutes);
-    allEntries.forEach(function(e) {
-      if (e.rowIndex === rowIndex) {
-        e.memoHide = result.newMemoHide;
-        e.memoDisp = '';
-      }
-    });
-    renderAll(currentData);
-  }).withFailureHandler(function(e) {
-    alert('エラー: ' + e.message);
-  }).moveMemoToHidden(currentMmdd, rowIndex);
-}
-
-function buildTextForCopy(d) {
+function buildSummary(d) {
   var lines = [];
   lines.push('第' + d.meetingCount + '回(' + d.dateMd + ')定例会ビジター情報 【' + d.lastUpdated + '】');
 
-  function renderGroupText(label, entries) {
+  function renderGroup(label, entries) {
     var paid = entries.filter(function(e){ return isPaid(e); });
     var unpaid = entries.filter(function(e){ return !isPaid(e); });
     lines.push('');
@@ -177,16 +56,15 @@ function buildTextForCopy(d) {
     });
   }
 
-  if (d.visitors.length > 0) renderGroupText('ビジター', d.visitors);
-  if (d.guests.length > 0) renderGroupText('ゲスト', d.guests);
+  renderGroup('ビジター', d.visitors);
+  renderGroup('ゲスト', d.guests);
 
-  if (d.substitutes.length > 0) {
-    lines.push('');
-    lines.push('● 代理出席：' + d.substitutes.length + '名');
-    d.substitutes.forEach(function(e) {
-      lines.push('・' + e.name + '（' + e.kana + '）【' + e.cat + '】招待者\u3000' + e.inviter);
-    });
-  }
+  // 代理は入金区分なし
+  lines.push('');
+  lines.push('● 代理：' + d.substitutes.length + '名');
+  d.substitutes.forEach(function(e) {
+    lines.push('・' + e.name + '（' + e.kana + '）【' + e.cat + '】招待者\u3000' + e.inviter);
+  });
 
   lines.push('');
   lines.push('※招待者の方は[spreading]にご入力ください。');
@@ -197,8 +75,8 @@ function buildTextForCopy(d) {
 }
 
 function copyText() {
-  if (!currentData) return;
-  var text = buildTextForCopy(currentData);
+  var box = document.getElementById('summaryBox');
+  var text = box.textContent;
   if (navigator.clipboard) {
     navigator.clipboard.writeText(text).then(function() { showCopied(); });
   } else {
@@ -220,7 +98,6 @@ function loadData(mmdd) {
   document.getElementById('error').style.display = 'none';
   var sel = document.getElementById('dateSelect');
   var param = mmdd || sel.value || null;
-  currentMmdd = param || '';
   google.script.run.withSuccessHandler(function(d) {
     document.getElementById('loading').style.display = 'none';
     if (d.error) {
@@ -228,7 +105,7 @@ function loadData(mmdd) {
       document.getElementById('error').style.display = 'block';
       return;
     }
-    renderAll(d);
+    document.getElementById('summaryBox').textContent = buildSummary(d);
     document.getElementById('content').style.display = 'block';
   }).withFailureHandler(function(e) {
     document.getElementById('loading').style.display = 'none';
@@ -237,7 +114,7 @@ function loadData(mmdd) {
   }).getVisitorSummaryData(param);
 }
 
-// 初期化
+// 初期化：日付一覧を取得してセレクタに設定し、最新（次回）を自動選択
 google.script.run.withSuccessHandler(function(result) {
   var sel = document.getElementById('dateSelect');
   sel.innerHTML = '';
@@ -255,6 +132,7 @@ google.script.run.withSuccessHandler(function(result) {
     if (mmdd === result.latest) opt.textContent += '（次回）';
     sel.appendChild(opt);
   });
+  // デフォルトは最新（次回）
   if (result.latest) sel.value = result.latest;
   loadData();
 }).withFailureHandler(function(e) {
