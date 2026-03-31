@@ -317,28 +317,74 @@ function createFinalSheet(meetingDateVal, meetingDisplay, finalRows, originalHea
   for (var i = 0; i < originalHeader.length; i++) { if (mapKeys.indexOf(originalHeader[i]) === -1) { dataHeaders.push(originalHeader[i]); otherKeys.push(originalHeader[i]); } }
   if (dataHeaders.indexOf("種別") === -1) { dataHeaders.push("種別"); otherKeys.push("種別"); }
   if (dataHeaders.indexOf("メール") === -1) { dataHeaders.push("メール"); otherKeys.push("メール"); }
-  var dataOutput = [dataHeaders], printOutput = [
-    ["Activeチャプターの定例会へようこそ", "", "", "", "", "", ""], ["", "", "", "", "", "", ""], [meetingDisplay, "", "", "", "", "", ""], ["", "", "", "", "", "", ""], fixedHeaders
-  ];
+  // データシート用出力（全件1テーブル）
+  var dataOutput = [dataHeaders];
   for (var i = 0; i < finalRows.length; i++) {
     var r = finalRows[i], baseRow = [ r["_No"]||"", r["参加者氏名"]||"", r["ふりがな"]||"", r["カテゴリー"]||"", r["会社名"]||"", r["招待者"]||"", r["メモ（ビジターリストに表示）"]||"" ];
-    printOutput.push(baseRow);
     var fullRow = baseRow.slice();
     for (var k = 0; k < otherKeys.length; k++) fullRow.push(r[otherKeys[k]] || "");
     dataOutput.push(fullRow);
   }
   dataSheet.getRange(1, 1, dataOutput.length, dataOutput[0].length).setValues(dataOutput);
-  printSheet.getRange(1, 1, printOutput.length, printOutput[0].length).setValues(printOutput);
-  printSheet.getRange("A1").setFontSize(16).setFontWeight("bold"); printSheet.getRange("A3").setFontSize(12).setFontWeight("bold");
-  var lastPrintRow = printOutput.length;
-  var printDataRange = printSheet.getRange(5, 1, lastPrintRow - 4, 7);
-  printDataRange.setWrap(true).setVerticalAlignment("middle").setBorder(true, true, true, true, true, true);
-  printSheet.getRange(5, 1, 1, 7).setBackground("#f3f3f3").setFontWeight("bold").setHorizontalAlignment("center");
-  if (lastPrintRow > 5) {
-    printSheet.getRange(6, 1, lastPrintRow - 5, 7).setHorizontalAlignment("left"); 
-    printSheet.getRange(6, 1, lastPrintRow - 5, 3).setHorizontalAlignment("center");
-    printSheet.getRange(6, 6, lastPrintRow - 5, 1).setHorizontalAlignment("center");
+
+  // 印刷用シート：種別ごとに分割して表を作成
+  var visitors = [], guests = [], subs = [];
+  for (var i = 0; i < finalRows.length; i++) {
+    var r = finalRows[i], type = r["種別"] || "";
+    var baseRow = [ r["_No"]||"", r["参加者氏名"]||"", r["ふりがな"]||"", r["カテゴリー"]||"", r["会社名"]||"", r["招待者"]||"", r["メモ（ビジターリストに表示）"]||"" ];
+    if (type === "Guest") guests.push(baseRow);
+    else if (type === "Substitute") subs.push(baseRow);
+    else visitors.push(baseRow);
   }
+  var emptyRow = ["", "", "", "", "", "", ""];
+  var printOutput = [
+    ["Activeチャプターの定例会へようこそ", "", "", "", "", "", ""],
+    emptyRow.slice(),
+    [meetingDisplay, "", "", "", "", "", ""],
+    emptyRow.slice()
+  ];
+
+  // 各種別のセクション開始行と行数を記録（書式設定用）
+  var sections = [];
+  var groups = [
+    { label: "ビジター", rows: visitors },
+    { label: "ゲスト", rows: guests },
+    { label: "代理出席", rows: subs }
+  ];
+  for (var g = 0; g < groups.length; g++) {
+    if (groups[g].rows.length === 0) continue;
+    var sectionStart = printOutput.length;
+    printOutput.push(["● " + groups[g].label + "（" + groups[g].rows.length + "名）", "", "", "", "", "", ""]);
+    printOutput.push(fixedHeaders.slice());
+    for (var j = 0; j < groups[g].rows.length; j++) {
+      printOutput.push(groups[g].rows[j]);
+    }
+    sections.push({ titleRow: sectionStart + 1, headerRow: sectionStart + 2, dataStart: sectionStart + 3, dataCount: groups[g].rows.length });
+    printOutput.push(emptyRow.slice()); // セクション間の空行
+  }
+
+  printSheet.getRange(1, 1, printOutput.length, 7).setValues(printOutput);
+  printSheet.getRange("A1").setFontSize(16).setFontWeight("bold");
+  printSheet.getRange("A3").setFontSize(12).setFontWeight("bold");
+
+  // 各セクションの書式設定
+  for (var s = 0; s < sections.length; s++) {
+    var sec = sections[s];
+    // セクションタイトル
+    printSheet.getRange(sec.titleRow, 1).setFontSize(11).setFontWeight("bold");
+    // ヘッダー行
+    printSheet.getRange(sec.headerRow, 1, 1, 7).setBackground("#f3f3f3").setFontWeight("bold").setHorizontalAlignment("center");
+    // ヘッダー＋データに罫線
+    var tableRange = printSheet.getRange(sec.headerRow, 1, sec.dataCount + 1, 7);
+    tableRange.setWrap(true).setVerticalAlignment("middle").setBorder(true, true, true, true, true, true);
+    // データ行の配置
+    if (sec.dataCount > 0) {
+      printSheet.getRange(sec.dataStart, 1, sec.dataCount, 7).setHorizontalAlignment("left");
+      printSheet.getRange(sec.dataStart, 1, sec.dataCount, 3).setHorizontalAlignment("center");
+      printSheet.getRange(sec.dataStart, 6, sec.dataCount, 1).setHorizontalAlignment("center");
+    }
+  }
+
   var widths = [40, 100, 110, 160, 160, 100, 180];
   for(var w=0; w<widths.length; w++) printSheet.setColumnWidth(w+1, widths[w]);
   SpreadsheetApp.flush();

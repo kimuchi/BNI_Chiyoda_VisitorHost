@@ -99,35 +99,29 @@
       reader.readAsText(fileInput, 'Shift_JIS');
     }
 
-    // 代理行のインデックス一覧を取得
-    function getSubstituteIndices() {
+    // 同じ種別の行インデックス一覧を取得
+    function getSameTypeIndices(type) {
       var indices = [];
       for (var i = 0; i < parsedData.length; i++) {
-        if (parsedData[i]["種別"] === "Substitute") indices.push(i);
+        if ((parsedData[i]["種別"] || "") === type) indices.push(i);
       }
       return indices;
     }
 
-    // 2行のDOM要素とデータを入れ替える
-    function swapRows(idxA, idxB) {
-      // データ入れ替え前にUI値を回収
+    // 同じ種別内で並び替え
+    function moveEntry(dataIdx, dir) {
       collectEditedValues();
-      // parsedData入れ替え
-      var tmp = parsedData[idxA];
-      parsedData[idxA] = parsedData[idxB];
-      parsedData[idxB] = tmp;
-      // テーブル再描画
+      var type = parsedData[dataIdx]["種別"] || "";
+      var indices = getSameTypeIndices(type);
+      var pos = indices.indexOf(dataIdx);
+      if (pos === -1) return;
+      var targetPos = pos + dir;
+      if (targetPos < 0 || targetPos >= indices.length) return;
+      var targetDataIdx = indices[targetPos];
+      var tmp = parsedData[dataIdx];
+      parsedData[dataIdx] = parsedData[targetDataIdx];
+      parsedData[targetDataIdx] = tmp;
       rebuildTable();
-    }
-
-    function moveSubstitute(dataIdx, dir) {
-      var subIndices = getSubstituteIndices();
-      var posInSubs = subIndices.indexOf(dataIdx);
-      if (posInSubs === -1) return;
-      var targetPos = posInSubs + dir;
-      if (targetPos < 0 || targetPos >= subIndices.length) return;
-      var targetDataIdx = subIndices[targetPos];
-      swapRows(dataIdx, targetDataIdx);
     }
 
     // メモ（ビジターリストに表示）→ メモ（非表示）の先頭に移動
@@ -178,12 +172,20 @@
       thead.appendChild(hr);
 
       // データ行
-      var subIndices = getSubstituteIndices();
+      // 種別ごとのインデックスをキャッシュ
+      var typeIndicesCache = {};
+      for (var r = 0; r < parsedData.length; r++) {
+        var t = parsedData[r]["種別"] || "";
+        if (!typeIndicesCache[t]) typeIndicesCache[t] = [];
+        typeIndicesCache[t].push(r);
+      }
+
       for (var r = 0; r < parsedData.length; r++) {
         var row = parsedData[r];
         var tr = document.createElement('tr');
-        var isSub = (row["種別"] === "Substitute");
-        var subPos = subIndices.indexOf(r);
+        var rowType = row["種別"] || "";
+        var typeIndices = typeIndicesCache[rowType] || [];
+        var posInType = typeIndices.indexOf(r);
 
         for (var c = 0; c < keys.length; c++) {
           var key = keys[c];
@@ -193,18 +195,18 @@
             var noSpan = document.createElement('span');
             noSpan.innerText = row[key] || "";
             td.appendChild(noSpan);
-            // 代理行に並び替えボタン
-            if (isSub) {
+            // 同じ種別内の並び替えボタン（種別内に2人以上いる場合のみ）
+            if (typeIndices.length > 1) {
               var btns = document.createElement('span');
               btns.className = 'reorder-btns';
               var upBtn = document.createElement('button');
               upBtn.textContent = '\u2191';
-              upBtn.disabled = (subPos === 0);
-              upBtn.onclick = (function(idx){ return function(){ moveSubstitute(idx, -1); }; })(r);
+              upBtn.disabled = (posInType === 0);
+              upBtn.onclick = (function(idx){ return function(){ moveEntry(idx, -1); }; })(r);
               var downBtn = document.createElement('button');
               downBtn.textContent = '\u2193';
-              downBtn.disabled = (subPos === subIndices.length - 1);
-              downBtn.onclick = (function(idx){ return function(){ moveSubstitute(idx, 1); }; })(r);
+              downBtn.disabled = (posInType === typeIndices.length - 1);
+              downBtn.onclick = (function(idx){ return function(){ moveEntry(idx, 1); }; })(r);
               btns.appendChild(upBtn);
               btns.appendChild(downBtn);
               td.appendChild(btns);
