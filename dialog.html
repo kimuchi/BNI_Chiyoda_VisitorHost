@@ -20,6 +20,10 @@
     /* レビュー必要な箇所の強調 */
     .needs-review input { background-color: #ffe6e6; border: 1px solid #ff4d4d; font-weight: bold;}
     .inviter-review { background-color: #fff3cd; }
+    tr.drag-over-row td { border-top: 3px solid #0055ff !important; }
+    .drag-handle { cursor: grab; user-select: none; text-align: center; color: #999; font-size: 16px; }
+    .drag-handle:active { cursor: grabbing; }
+    .btn-sort { background: #ff9800; color: #fff; margin-bottom: 10px; }
   </style>
 </head>
 <body>
@@ -36,6 +40,8 @@
     <h3>データの全件確認・編集</h3>
     <p style="font-size:12px; color:#555;">※スペースが無かった氏名（赤色）や、招待者が不明な箇所（黄色）は自動推測されています。修正してください。</p>
     
+    <button class="btn-sort" onclick="sortByFurigana()">ふりがなでソート</button>
+
     <div class="table-container">
       <table id="dataTable">
         <thead id="dataHead"></thead>
@@ -49,7 +55,8 @@
   <div id="loading" class="hidden" style="margin-top:20px; font-weight:bold; color:#0055ff;">処理中です。しばらくお待ちください...</div>
 
   <script>
-    var parsedData = null, parsedHeader = null, membersList = [];
+    var parsedData = null, parsedHeader = null, membersList = [], displayKeys = [];
+    var dragSrcRow = null;
 
     window.onload = function() {
       google.script.run.withSuccessHandler(function(candidates) {
@@ -91,51 +98,107 @@
       document.getElementById('loading').classList.add('hidden');
       parsedData = result.rows; parsedHeader = result.header; membersList = result.membersList;
 
-      // ヘッダー生成
+      displayKeys = ["_No"];
+      for(var i=0; i<parsedHeader.length; i++) displayKeys.push(parsedHeader[i]);
+      renderTable();
+      document.getElementById('step2').classList.remove('hidden');
+    }
+
+    function collectEdits() {
+      var tbody = document.getElementById('dataBody');
+      var rows = tbody.querySelectorAll('tr');
+      for (var r = 0; r < rows.length; r++) {
+        var inputs = rows[r].querySelectorAll('input[type="text"]');
+        var idx = 0;
+        for (var c = 0; c < displayKeys.length; c++) {
+          if (displayKeys[c] !== "_No") { parsedData[r][displayKeys[c]] = inputs[idx].value; idx++; }
+        }
+      }
+    }
+
+    function renumber() {
+      var vCount = 1, gCount = 1;
+      for (var i = 0; i < parsedData.length; i++) {
+        var r = parsedData[i];
+        if (r["種別"] === "Visitor") { r._No = "V" + ("0" + vCount).slice(-2); vCount++; }
+        else if (r["種別"] === "Guest") { r._No = "G" + ("0" + gCount).slice(-2); gCount++; }
+      }
+    }
+
+    function renderTable() {
       var thead = document.getElementById('dataHead');
+      var tbody = document.getElementById('dataBody');
+      thead.innerHTML = ''; tbody.innerHTML = '';
+
       var hr = document.createElement('tr');
-      var keys = ["_No"]; // 表示する列
-      for(var i=0; i<parsedHeader.length; i++) keys.push(parsedHeader[i]);
-      
-      for(var i=0; i<keys.length; i++) {
+      var thDrag = document.createElement('th'); thDrag.innerText = '↕'; hr.appendChild(thDrag);
+      for(var i=0; i<displayKeys.length; i++) {
         var th = document.createElement('th');
-        th.innerText = keys[i] === "_No" ? "自動No." : keys[i];
+        th.innerText = displayKeys[i] === "_No" ? "自動No." : displayKeys[i];
         hr.appendChild(th);
       }
       thead.appendChild(hr);
 
-      // データ行生成
-      var tbody = document.getElementById('dataBody');
       for (var r = 0; r < parsedData.length; r++) {
         var row = parsedData[r];
         var tr = document.createElement('tr');
-        
-        for (var c = 0; c < keys.length; c++) {
-          var key = keys[c];
+        tr.draggable = true;
+        tr.dataset.index = r;
+        tr.addEventListener('dragstart', rowDragStart);
+        tr.addEventListener('dragover', rowDragOver);
+        tr.addEventListener('dragleave', rowDragLeave);
+        tr.addEventListener('drop', rowDrop);
+        tr.addEventListener('dragend', rowDragEnd);
+
+        var tdHandle = document.createElement('td');
+        tdHandle.className = 'drag-handle';
+        tdHandle.innerText = '☰';
+        tr.appendChild(tdHandle);
+
+        for (var c = 0; c < displayKeys.length; c++) {
+          var key = displayKeys[c];
           var td = document.createElement('td');
-          
           if(key === "_No") {
             td.innerText = row[key] || "";
           } else {
             var input = document.createElement('input');
             input.type = 'text';
             input.value = row[key] || "";
-            input.id = "cell_" + r + "_" + c;
-            
-            // 色付けロジック
-            if (row._needsNameReview && (key === "参加者氏名" || key === "ふりがな")) {
-              td.className = "needs-review";
-            }
-            if (row._needsInviterReview && key === "招待者") {
-              td.className = "inviter-review";
-            }
+            if (row._needsNameReview && (key === "参加者氏名" || key === "ふりがな")) td.className = "needs-review";
+            if (row._needsInviterReview && key === "招待者") td.className = "inviter-review";
             td.appendChild(input);
           }
           tr.appendChild(td);
         }
         tbody.appendChild(tr);
       }
-      document.getElementById('step2').classList.remove('hidden');
+    }
+
+    function rowDragStart(e) { dragSrcRow = this; e.dataTransfer.effectAllowed = 'move'; this.style.opacity = '0.4'; }
+    function rowDragOver(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; this.classList.add('drag-over-row'); }
+    function rowDragLeave(e) { this.classList.remove('drag-over-row'); }
+    function rowDragEnd(e) { this.style.opacity = '1'; var rows = document.querySelectorAll('#dataBody tr'); for(var i=0;i<rows.length;i++) rows[i].classList.remove('drag-over-row'); }
+    function rowDrop(e) {
+      e.preventDefault(); this.classList.remove('drag-over-row');
+      if (dragSrcRow === this) return;
+      collectEdits();
+      var fromIdx = parseInt(dragSrcRow.dataset.index), toIdx = parseInt(this.dataset.index);
+      var item = parsedData.splice(fromIdx, 1)[0];
+      parsedData.splice(toIdx, 0, item);
+      renumber();
+      renderTable();
+    }
+
+    function sortByFurigana() {
+      collectEdits();
+      var typeOrder = { "Visitor": 1, "Guest": 2, "Substitute": 3 };
+      parsedData.sort(function(a, b) {
+        var tA = typeOrder[a["種別"]] || 99, tB = typeOrder[b["種別"]] || 99;
+        if (tA !== tB) return tA - tB;
+        return (a["ふりがな"] || "").localeCompare((b["ふりがな"] || ""), 'ja');
+      });
+      renumber();
+      renderTable();
     }
 
     function submitFinal() {
@@ -143,18 +206,7 @@
       document.getElementById('loading').classList.remove('hidden');
       document.getElementById('loading').innerText = 'シートとPDFを作成しています... 少し時間がかかります。';
 
-      var keys = ["_No"];
-      for(var i=0; i<parsedHeader.length; i++) keys.push(parsedHeader[i]);
-
-      // 編集結果を回収
-      for (var r = 0; r < parsedData.length; r++) {
-        for (var c = 0; c < keys.length; c++) {
-          if (keys[c] !== "_No") {
-            var input = document.getElementById("cell_" + r + "_" + c);
-            if(input) parsedData[r][keys[c]] = input.value;
-          }
-        }
-      }
+      collectEdits();
 
       var sel = document.getElementById('meetingSelect');
       var dateVal = sel.value, displayVal = sel.options[sel.selectedIndex].dataset.display;

@@ -120,6 +120,21 @@ function analyzeCsvData(csvText) {
   if (data.length < 2) throw new Error("データがありません");
   var header = data[0];
   for(var h = 0; h < header.length; h++) header[h] = zenkakuToHankaku(header[h]).trim();
+  var enToJa = {
+    "Name": "参加者氏名", "Furigana": "ふりがな", "Company Name": "会社名", "Job Title": "役職",
+    "Website": "ウェブサイト", "Inviter": "招待者", "Relationship With Inviter": "招待者との関係",
+    "Business Category": "ビジネスカテゴリー", "Description Of Category": "カテゴリー",
+    "Email": "メール", "Tel": "電話番号",
+    "Invitee Want To Orientation": "オリエンテーション希望",
+    "Participant Has Right Of Settlement": "決裁権",
+    "Speed Of Decision Making": "決裁スピード",
+    "Prospect Of Becoming A Member": "入会見込み",
+    "Memo For Printing": "メモ（ビジターリストに表示）", "Memo For Member": "メモ（メンバー向け）",
+    "Status": "ステータス", "Support Status": "サポートステータス",
+    "Payment Status": "支払いステータス", "Fee": "費用", "Paid Fee": "支払い済み",
+    "Type": "種別", "Supporters": "サポーター", "Support History": "サポート履歴"
+  };
+  for(var h = 0; h < header.length; h++) { if (enToJa[header[h]]) header[h] = enToJa[header[h]]; }
   var rows = [];
   for (var i = 1; i < data.length; i++) {
     if (data[i].join('').trim() === '') continue;
