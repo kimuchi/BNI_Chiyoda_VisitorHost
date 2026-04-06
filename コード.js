@@ -252,6 +252,7 @@ function createFinalSheet(meetingDateVal, meetingDisplay, finalRows, originalHea
   }
   var widths = [40, 100, 110, 160, 160, 100, 180];
   for(var w=0; w<widths.length; w++) printSheet.setColumnWidth(w+1, widths[w]);
+  for(var row = 6; row <= lastPrintRow; row++) printSheet.setRowHeight(row, 30);
   SpreadsheetApp.flush();
   var pdfUrl = exportSheetToPdf(printSheet, meetingDisplay + " ビジター様リスト.pdf");
   PropertiesService.getScriptProperties().setProperty('LATEST_VISITOR_LIST_URL', pdfUrl);
