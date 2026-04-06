@@ -123,7 +123,7 @@ function analyzeCsvData(csvText) {
   var enToJa = {
     "Name": "参加者氏名", "Furigana": "ふりがな", "Company Name": "会社名", "Job Title": "役職",
     "Website": "ウェブサイト", "Inviter": "招待者", "Relationship With Inviter": "招待者との関係",
-    "Business Category": "ビジネスカテゴリー", "Description Of Category": "カテゴリー",
+    "Business Category": "カテゴリー", "Description Of Category": "カテゴリー詳細",
     "Email": "メール", "Tel": "電話番号",
     "Invitee Want To Orientation": "オリエンテーション希望",
     "Participant Has Right Of Settlement": "決裁権",
@@ -169,6 +169,52 @@ function analyzeCsvData(csvText) {
     results.push(r);
   }
   return { rows: results, header: header, membersList: membersList };
+}
+
+function getExistingVisitorSheets() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet(), sheets = ss.getSheets(), result = [];
+  for (var i = 0; i < sheets.length; i++) {
+    var name = sheets[i].getName();
+    if (/^\d{4}参加者$/.test(name)) result.push(name);
+  }
+  result.sort(); result.reverse();
+  return result;
+}
+
+function loadSheetData(sheetName) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet(), sheet = ss.getSheetByName(sheetName);
+  if (!sheet) throw new Error("シート '" + sheetName + "' が見つかりません");
+  var data = sheet.getDataRange().getValues();
+  if (data.length < 2) throw new Error("データがありません");
+  var sheetHeaders = data[0];
+  var reverseMap = { "No.": "_No", "備考": "メモ（ビジターリストに表示）" };
+  var header = [], internalKeys = [];
+  for (var h = 0; h < sheetHeaders.length; h++) {
+    var raw = sheetHeaders[h].toString().trim();
+    var key = reverseMap[raw] || raw;
+    internalKeys.push(key);
+    if (key !== "_No") header.push(key);
+  }
+  var membersList = getMembersList(), rows = [], vCount = 1, gCount = 1;
+  for (var i = 1; i < data.length; i++) {
+    if (data[i].join('').trim() === '') continue;
+    var obj = {};
+    for (var j = 0; j < internalKeys.length; j++) obj[internalKeys[j]] = data[i][j] != null ? data[i][j].toString() : "";
+    obj._needsNameReview = false;
+    obj._needsInviterReview = false;
+    if (obj["種別"] === "Visitor") { obj._No = "V" + ("0" + vCount).slice(-2); vCount++; }
+    else if (obj["種別"] === "Guest") { obj._No = "G" + ("0" + gCount).slice(-2); gCount++; }
+    else if (obj["種別"] === "Substitute") {
+      var searchInv = (obj["招待者"] || "").replace(/[\s]/g, ""), matched = null;
+      for (var k = 0; k < membersList.length; k++) {
+        var mName = membersList[k].name.replace(/[\s]/g, "");
+        if (searchInv.indexOf(mName) !== -1 || mName.indexOf(searchInv) !== -1) { matched = membersList[k]; break; }
+      }
+      obj._No = matched ? "代理" + matched.no : (obj._No || "代理??");
+    }
+    rows.push(obj);
+  }
+  return { rows: rows, header: header, membersList: membersList };
 }
 
 function createFinalSheet(meetingDateVal, meetingDisplay, finalRows, originalHeader) {

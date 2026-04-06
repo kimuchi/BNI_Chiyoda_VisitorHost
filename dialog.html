@@ -34,6 +34,12 @@
     <h3>2. CSVファイルを選択またはドロップ</h3>
     <div id="drop_zone">ここにCSVファイルをドロップ<br><br>または<br><br><input type="file" id="csvFile" accept=".csv"></div>
     <button class="btn-success" onclick="processFile()">全データを解析して編集画面へ</button>
+
+    <div id="existingSheets" class="hidden" style="margin-top:20px; padding-top:15px; border-top:1px solid #ddd;">
+      <h3>または、作成済みデータを再編集</h3>
+      <select id="sheetSelect" style="padding:8px; margin-bottom:10px; width:100%;"></select>
+      <button class="btn-primary" onclick="loadExisting()">このシートを読み込んで再編集</button>
+    </div>
   </div>
 
   <div id="step2" class="hidden">
@@ -68,6 +74,16 @@
           sel.appendChild(opt);
         }
       }).getMeetingCandidates();
+      google.script.run.withSuccessHandler(function(sheets) {
+        if (sheets.length === 0) return;
+        var sel = document.getElementById('sheetSelect');
+        for(var i=0; i<sheets.length; i++) {
+          var opt = document.createElement('option');
+          opt.value = sheets[i]; opt.text = sheets[i];
+          sel.appendChild(opt);
+        }
+        document.getElementById('existingSheets').classList.remove('hidden');
+      }).getExistingVisitorSheets();
     };
 
     var dropZone = document.getElementById('drop_zone');
@@ -77,6 +93,16 @@
       e.preventDefault(); dropZone.style.background = '#f9f9f9';
       if (e.dataTransfer.files.length > 0) document.getElementById('csvFile').files = e.dataTransfer.files;
     });
+
+    function loadExisting() {
+      var sheetName = document.getElementById('sheetSelect').value;
+      if (!sheetName) return alert('シートを選択してください');
+      var sel = document.getElementById('meetingSelect');
+      if (!sel.value) return alert('定例会を選択してください');
+      document.getElementById('step1').classList.add('hidden');
+      document.getElementById('loading').classList.remove('hidden');
+      google.script.run.withSuccessHandler(showEditor).withFailureHandler(showError).loadSheetData(sheetName);
+    }
 
     function processFile() {
       var sel = document.getElementById('meetingSelect');
