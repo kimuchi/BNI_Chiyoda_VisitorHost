@@ -9,6 +9,7 @@ function onOpen() {
     .addItem('4. 作成済みPDFの確認', 'openPdfLinksDialog')
     .addSeparator()
     .addItem('⚙️ メンバーブック(PDF)の更新', 'openMemberBookDialog')
+    .addItem('⚙️ AI参考資料の管理', 'openAiDocsDialog')
     .addItem('⚙️ メンバーリスト(OCR)の更新', 'openPdfDialog')
     .addItem('⚙️ 休会日の管理', 'openHolidayDialog')
     .addItem('⚙️ メールテンプレート設定', 'openTemplateDialog')
@@ -29,6 +30,39 @@ function openAllocationDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlSer
 function openVisitorHostDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('visitor_host').setWidth(400).setHeight(500), 'ビジターホストの設定'); }
 function openApiSettingsDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('api_settings').setWidth(450).setHeight(350), 'Gemini API・モデル設定'); }
 function openPdfLinksDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('pdf_links').setWidth(450).setHeight(400), '作成済みPDFの確認'); }
+function openAiDocsDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('ai_documents').setWidth(550).setHeight(500), 'AI参考資料の管理'); }
+
+function getAiDocuments() {
+  var json = PropertiesService.getScriptProperties().getProperty('AI_REF_DOCS');
+  if (!json) return [];
+  var docs = JSON.parse(json), result = [];
+  for (var i = 0; i < docs.length; i++) {
+    try { DriveApp.getFileById(docs[i].id); result.push(docs[i]); } catch(e) {}
+  }
+  if (result.length !== docs.length) PropertiesService.getScriptProperties().setProperty('AI_REF_DOCS', JSON.stringify(result));
+  return result;
+}
+
+function uploadAiDocument(formObject) {
+  var blob = formObject.docFile;
+  var ss = SpreadsheetApp.getActiveSpreadsheet(), file = DriveApp.getFileById(ss.getId());
+  var folder = file.getParents().hasNext() ? file.getParents().next() : DriveApp.getRootFolder();
+  var uploaded = folder.createFile(blob);
+  var docs = getAiDocuments();
+  docs.push({ id: uploaded.getId(), name: uploaded.getName(), uploadedAt: new Date().toISOString().slice(0, 10) });
+  PropertiesService.getScriptProperties().setProperty('AI_REF_DOCS', JSON.stringify(docs));
+  return { msg: "「" + uploaded.getName() + "」を登録しました。", docs: docs };
+}
+
+function deleteAiDocument(fileId) {
+  var docs = getAiDocuments(), newDocs = [];
+  for (var i = 0; i < docs.length; i++) {
+    if (docs[i].id === fileId) { try { DriveApp.getFileById(fileId).setTrashed(true); } catch(e) {} }
+    else newDocs.push(docs[i]);
+  }
+  PropertiesService.getScriptProperties().setProperty('AI_REF_DOCS', JSON.stringify(newDocs));
+  return newDocs;
+}
 
 function getPdfLinks() {
   var props = PropertiesService.getScriptProperties();
@@ -685,13 +719,20 @@ function callGeminiAutoAllocation(currentState, maxRoomSize) {
 
   currentState.roomAlloc = {};
 
-  var fileId = props.getProperty('MEMBER_BOOK_ID');
-  var pdfPart = null;
-  if(fileId) {
+  var docParts = [];
+  var memberBookId = props.getProperty('MEMBER_BOOK_ID');
+  if(memberBookId) {
     try {
-      var pdfBlob = DriveApp.getFileById(fileId).getBlob();
-      var base64Pdf = Utilities.base64Encode(pdfBlob.getBytes());
-      pdfPart = { "inlineData": { "mimeType": "application/pdf", "data": base64Pdf } };
+      var mbBlob = DriveApp.getFileById(memberBookId).getBlob();
+      docParts.push({ "inlineData": { "mimeType": "application/pdf", "data": Utilities.base64Encode(mbBlob.getBytes()) } });
+    } catch(e) {}
+  }
+  var aiDocs = getAiDocuments();
+  for (var d = 0; d < aiDocs.length; d++) {
+    try {
+      var docBlob = DriveApp.getFileById(aiDocs[d].id).getBlob();
+      var mime = docBlob.getContentType() || "application/pdf";
+      docParts.push({ "inlineData": { "mimeType": mime, "data": Utilities.base64Encode(docBlob.getBytes()) } });
     } catch(e) {}
   }
 
@@ -705,7 +746,7 @@ function callGeminiAutoAllocation(currentState, maxRoomSize) {
   });
 
   var promptText = "あなたはプロのビジネス交流会コーディネーターです。\n" +
-    "以下のビジター情報、利用可能な待機メンバー、および提供されたメンバーブックPDFの内容を参考に、最適な「ルームメンバー」を決定してください。\n\n" +
+    "以下のビジター情報、利用可能な待機メンバー、および添付されたメンバーブックPDFや参考資料の内容を総合的に参考にして、最適な「ルームメンバー」を決定してください。\n\n" +
     "【制約条件（厳格に守ること）】\n" +
     "1. 「ファシリテーター」と「オリエンテーション」はシステムで決定済みです。出力には「room」の配列のみを含めてください。\n" +
     "2. 各ルームの総人数がなるべく同じになるよう、各ルームの人数を【厳格に平均化】して「ルームメンバー(room)」を割り振ってください。\n" +
@@ -726,7 +767,7 @@ function callGeminiAutoAllocation(currentState, maxRoomSize) {
     "}";
 
   var parts = [{ "text": promptText }];
-  if (pdfPart) parts.push(pdfPart); 
+  for (var p = 0; p < docParts.length; p++) parts.push(docParts[p]);
 
   var payload = { "contents": [{ "parts": parts }] };
   

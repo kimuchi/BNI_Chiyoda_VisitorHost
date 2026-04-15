@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    body { font-family: sans-serif; padding: 20px; margin: 0; }
+    h3 { margin-top: 0; color: #0055ff; }
+    .hint { font-size: 12px; color: #666; line-height: 1.5; margin-bottom: 15px; }
+    .doc-list { margin-bottom: 20px; }
+    .doc-item { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 6px; background: #fafafa; }
+    .doc-name { font-size: 14px; font-weight: bold; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .doc-date { font-size: 11px; color: #999; margin: 0 12px; white-space: nowrap; }
+    .btn-del { background: #e53935; color: #fff; border: none; padding: 5px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; }
+    .empty { color: #999; font-size: 13px; text-align: center; padding: 20px; border: 1px dashed #ccc; border-radius: 4px; }
+    .upload-area { border-top: 1px solid #ddd; padding-top: 15px; }
+    button.btn-upload { background: #4caf50; color: #fff; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 14px; }
+    #msg { margin-top: 10px; font-weight: bold; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <h3>AI参考資料の管理</h3>
+  <div class="hint">
+    ここに登録した資料は、AI自動割り振り時にメンバーブックと一緒にGeminiに送信されます。<br>
+    コンタクトサークルのアンケート結果や、メンバーのつながりたい相手リストなど、割り振りの参考にしたい資料を登録してください。<br>
+    PDF・画像・テキストファイルなどに対応しています。
+  </div>
+
+  <div class="doc-list" id="docList"></div>
+
+  <div class="upload-area">
+    <form id="uploadForm" onsubmit="event.preventDefault(); uploadDoc();">
+      <input type="file" name="docFile" required style="margin-bottom: 10px;"><br>
+      <button type="submit" class="btn-upload" id="btnUpload">資料を追加する</button>
+    </form>
+    <div id="msg"></div>
+  </div>
+
+  <script>
+    function renderList(docs) {
+      var el = document.getElementById('docList');
+      if (!docs || docs.length === 0) {
+        el.innerHTML = '<div class="empty">まだ参考資料が登録されていません</div>';
+        return;
+      }
+      var html = '';
+      for (var i = 0; i < docs.length; i++) {
+        html += '<div class="doc-item">' +
+          '<span class="doc-name">' + escHtml(docs[i].name) + '</span>' +
+          '<span class="doc-date">' + escHtml(docs[i].uploadedAt) + '</span>' +
+          '<button class="btn-del" onclick="deletDoc(\'' + docs[i].id + '\')">削除</button>' +
+          '</div>';
+      }
+      el.innerHTML = html;
+    }
+
+    function escHtml(s) {
+      var d = document.createElement('span'); d.textContent = s; return d.innerHTML;
+    }
+
+    window.onload = function() {
+      google.script.run.withSuccessHandler(renderList).getAiDocuments();
+    };
+
+    function uploadDoc() {
+      document.getElementById('btnUpload').disabled = true;
+      document.getElementById('msg').innerText = 'アップロード中...';
+      document.getElementById('msg').style.color = '#0055ff';
+      var form = document.getElementById('uploadForm');
+      google.script.run.withSuccessHandler(function(res) {
+        renderList(res.docs);
+        document.getElementById('msg').innerText = res.msg;
+        document.getElementById('msg').style.color = 'green';
+        document.getElementById('btnUpload').disabled = false;
+        form.reset();
+      }).withFailureHandler(function(err) {
+        document.getElementById('msg').innerText = 'エラー: ' + err.message;
+        document.getElementById('msg').style.color = 'red';
+        document.getElementById('btnUpload').disabled = false;
+      }).uploadAiDocument(form);
+    }
+
+    function deletDoc(fileId) {
+      if (!confirm('この資料を削除しますか？')) return;
+      google.script.run.withSuccessHandler(renderList).deleteAiDocument(fileId);
+    }
+  </script>
+</body>
+</html>
