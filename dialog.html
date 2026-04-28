@@ -24,6 +24,12 @@
     .drag-handle { cursor: grab; user-select: none; text-align: center; color: #999; font-size: 16px; }
     .drag-handle:active { cursor: grabbing; }
     .btn-sort { background: #ff9800; color: #fff; margin-bottom: 10px; }
+    .row-actions { white-space: nowrap; text-align: center; }
+    .row-actions button { padding: 4px 8px; font-size: 11px; margin: 1px; border-radius: 3px; cursor: pointer; border: 1px solid #ccc; background: #fff; font-weight: normal; }
+    .row-actions .btn-del { color: #c0392b; border-color: #e6b0aa; }
+    .row-actions .btn-del:hover { background: #fdf2f0; }
+    .row-actions .btn-toggle { color: #0044cc; border-color: #cce0ff; }
+    .row-actions .btn-toggle:hover { background: #eaf2ff; }
   </style>
 </head>
 <body>
@@ -39,13 +45,15 @@
       <h3>または、作成済みデータを再編集</h3>
       <select id="sheetSelect" style="padding:8px; margin-bottom:10px; width:100%;"></select>
       <button class="btn-primary" onclick="loadExisting()">このシートを読み込んで再編集</button>
+      <button class="btn-sort" onclick="regeneratePdfOnly()" style="margin-left:8px;">PDFのみ再作成</button>
+      <p style="font-size:11px; color:#666; margin-top:6px;">※「PDFのみ再作成」は、選択した日付の「〇〇参加者_印刷用」シートを直接PDF化します。スプレッドシートを手で修正した場合に使用してください。</p>
     </div>
   </div>
 
   <div id="step2" class="hidden">
     <h3>データの全件確認・編集</h3>
-    <p style="font-size:12px; color:#555;">※スペースが無かった氏名（赤色）や、招待者が不明な箇所（黄色）は自動推測されています。修正してください。</p>
-    
+    <p style="font-size:12px; color:#555;">※スペースが無かった氏名（赤色）や、招待者が不明な箇所（黄色）は自動推測されています。修正してください。<br>※ 操作列の「🗑」で行を削除、「→Guest／→Visitor」で種別を切り替えられます（自動で番号が振り直されます）。</p>
+
     <button class="btn-sort" onclick="sortByFurigana()">ふりがなでソート</button>
 
     <div class="table-container">
@@ -104,6 +112,18 @@
       google.script.run.withSuccessHandler(showEditor).withFailureHandler(showError).loadSheetData(sheetName);
     }
 
+    function regeneratePdfOnly() {
+      var sheetName = document.getElementById('sheetSelect').value;
+      if (!sheetName) return alert('シートを選択してください');
+      if (!confirm("「" + sheetName + "_印刷用」の現在の内容でPDFを再作成します。よろしいですか？")) return;
+      document.getElementById('step1').classList.add('hidden');
+      document.getElementById('loading').classList.remove('hidden');
+      document.getElementById('loading').innerText = 'PDFを再作成しています...';
+      google.script.run.withSuccessHandler(function(htmlMsg){
+        document.getElementById('loading').innerHTML = htmlMsg;
+      }).withFailureHandler(showError).regeneratePdfOnly(sheetName);
+    }
+
     function processFile() {
       var sel = document.getElementById('meetingSelect');
       if (!sel.value) return alert('定例会を選択してください');
@@ -158,6 +178,7 @@
 
       var hr = document.createElement('tr');
       var thDrag = document.createElement('th'); thDrag.innerText = '↕'; hr.appendChild(thDrag);
+      var thAct = document.createElement('th'); thAct.innerText = '操作'; hr.appendChild(thAct);
       for(var i=0; i<displayKeys.length; i++) {
         var th = document.createElement('th');
         th.innerText = displayKeys[i] === "_No" ? "自動No." : displayKeys[i];
@@ -181,6 +202,24 @@
         tdHandle.innerText = '☰';
         tr.appendChild(tdHandle);
 
+        var tdAct = document.createElement('td');
+        tdAct.className = 'row-actions';
+        var delBtn = document.createElement('button');
+        delBtn.className = 'btn-del';
+        delBtn.innerHTML = '🗑';
+        delBtn.title = 'この行を削除';
+        (function(idx){ delBtn.addEventListener('click', function(){ deleteRow(idx); }); })(r);
+        tdAct.appendChild(delBtn);
+        if (row["種別"] === "Visitor" || row["種別"] === "Guest") {
+          var togBtn = document.createElement('button');
+          togBtn.className = 'btn-toggle';
+          togBtn.innerText = row["種別"] === "Visitor" ? "→Guest" : "→Visitor";
+          togBtn.title = 'Visitor/Guest を切り替え';
+          (function(idx){ togBtn.addEventListener('click', function(){ toggleType(idx); }); })(r);
+          tdAct.appendChild(togBtn);
+        }
+        tr.appendChild(tdAct);
+
         for (var c = 0; c < displayKeys.length; c++) {
           var key = displayKeys[c];
           var td = document.createElement('td');
@@ -198,6 +237,27 @@
         }
         tbody.appendChild(tr);
       }
+    }
+
+    function deleteRow(index) {
+      collectEdits();
+      var r = parsedData[index];
+      var label = (r && (r["参加者氏名"] || r["_No"])) || "この行";
+      if (!confirm("「" + label + "」を一覧から削除します。よろしいですか？")) return;
+      parsedData.splice(index, 1);
+      renumber();
+      renderTable();
+    }
+
+    function toggleType(index) {
+      collectEdits();
+      var r = parsedData[index];
+      if (!r) return;
+      if (r["種別"] === "Visitor") r["種別"] = "Guest";
+      else if (r["種別"] === "Guest") r["種別"] = "Visitor";
+      else return;
+      renumber();
+      renderTable();
     }
 
     function rowDragStart(e) { dragSrcRow = this; e.dataTransfer.effectAllowed = 'move'; this.style.opacity = '0.4'; }

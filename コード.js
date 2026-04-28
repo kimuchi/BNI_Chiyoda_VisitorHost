@@ -296,6 +296,21 @@ function createFinalSheet(meetingDateVal, meetingDisplay, finalRows, originalHea
   return "<h3>処理が完了しました🎉</h3><p>PDFを作成し、全員が閲覧できるよう権限を付与しました。</p><br><a href='" + pdfUrl + "' target='_blank' style='background:#0055ff; color:#fff; padding:10px 20px; text-decoration:none; border-radius:5px; font-weight:bold;'>📄 作成されたPDFを開く</a>";
 }
 
+function regeneratePdfOnly(dataSheetName) {
+  if (!dataSheetName) throw new Error("対象シートを選択してください");
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var printSheetName = dataSheetName + "_印刷用";
+  var printSheet = ss.getSheetByName(printSheetName);
+  if (!printSheet) throw new Error("印刷用シート '" + printSheetName + "' が見つかりません。先に「再編集」で印刷用シートを作成してください。");
+  var meetingDisplay = printSheet.getRange("A3").getValue();
+  if (!meetingDisplay) meetingDisplay = dataSheetName;
+  SpreadsheetApp.flush();
+  var pdfFileIdKey = 'VISITOR_PDF_ID_' + dataSheetName;
+  var pdfUrl = exportSheetToPdf(printSheet, meetingDisplay + " ビジター様リスト.pdf", pdfFileIdKey);
+  PropertiesService.getScriptProperties().setProperty('LATEST_VISITOR_LIST_URL', pdfUrl);
+  return "<h3>PDFを再作成しました🎉</h3><p>「" + printSheetName + "」の現在の内容でPDFを上書きしました。</p><br><a href='" + pdfUrl + "' target='_blank' style='background:#0055ff; color:#fff; padding:10px 20px; text-decoration:none; border-radius:5px; font-weight:bold;'>📄 PDFを開く</a>";
+}
+
 function exportSheetToPdf(sheet, fileName, fileIdPropKey) {
   var ss = SpreadsheetApp.getActiveSpreadsheet(), spreadsheetId = ss.getId(), sheetId = sheet.getSheetId(), lastRow = sheet.getLastRow();
   var url = "https://docs.google.com/spreadsheets/d/" + spreadsheetId + "/export?exportFormat=pdf&format=pdf&size=A4&portrait=true&fitw=true&sheetnames=false&printtitle=false&pagenumbers=false&gridlines=false&fzr=false&gid=" + sheetId + "&r1=0&c1=0&r2=" + lastRow + "&c2=7";
@@ -344,8 +359,30 @@ function processPdfForm(formObject) {
 }
 
 // === メール関連処理 ===
-var WEB_APP_URL = ""; 
-var SECRET_TOKEN = "ActiveChapterSecret2026"; 
+var WEB_APP_URL = "";
+var SECRET_TOKEN = "ActiveChapterSecret2026";
+
+function getMailWebAppSettings() {
+  var props = PropertiesService.getScriptProperties();
+  return {
+    webAppUrl: props.getProperty('MAIL_WEB_APP_URL') || "",
+    webAppToken: props.getProperty('MAIL_WEB_APP_TOKEN') || ""
+  };
+}
+function saveMailWebAppSettings(data) {
+  var props = PropertiesService.getScriptProperties();
+  props.setProperty('MAIL_WEB_APP_URL', (data.webAppUrl || "").trim());
+  props.setProperty('MAIL_WEB_APP_TOKEN', (data.webAppToken || "").trim());
+  return "メール送信用のWeb App設定を保存しました。";
+}
+function getActiveMailWebApp_() {
+  var props = PropertiesService.getScriptProperties();
+  var url = props.getProperty('MAIL_WEB_APP_URL');
+  if (url === null || url === "") url = WEB_APP_URL;
+  var token = props.getProperty('MAIL_WEB_APP_TOKEN');
+  if (token === null || token === "") token = SECRET_TOKEN;
+  return { url: url || "", token: token };
+}
 
 function getTemplates() {
   var props = PropertiesService.getScriptProperties();
@@ -408,13 +445,14 @@ function sendSingleEmail(e, cc, bcc) {
     if (bcc && bcc.trim() !== "") options.bcc = bcc.trim();
     var toEmail = e.email ? e.email.toString().trim() : "";
     if (!toEmail || toEmail.indexOf('@') === -1) return { success: false, error: "無効なメールアドレス形式 (" + toEmail + ")" };
-    
-    if (WEB_APP_URL === "") {
+
+    var cfg = getActiveMailWebApp_();
+    if (!cfg.url) {
       GmailApp.sendEmail(toEmail, e.subject, e.body, options);
       return { success: true };
     } else {
-      var payload = { token: SECRET_TOKEN, to: toEmail, subject: e.subject, body: e.body, options: options };
-      var res = UrlFetchApp.fetch(WEB_APP_URL, { method: "post", contentType: "application/json", payload: JSON.stringify(payload), muteHttpExceptions: true });
+      var payload = { token: cfg.token, to: toEmail, subject: e.subject, body: e.body, options: options };
+      var res = UrlFetchApp.fetch(cfg.url, { method: "post", contentType: "application/json", payload: JSON.stringify(payload), muteHttpExceptions: true, followRedirects: true });
       var resData = JSON.parse(res.getContentText());
       if (!resData.success) throw new Error(resData.error);
       return { success: true };
@@ -425,7 +463,8 @@ function sendSingleEmail(e, cc, bcc) {
 function doPost(e) {
   try {
     var params = JSON.parse(e.postData.contents);
-    if (params.token !== SECRET_TOKEN) throw new Error("アクセス権限がありません");
+    var cfg = getActiveMailWebApp_();
+    if (params.token !== cfg.token) throw new Error("アクセス権限がありません");
     GmailApp.sendEmail(params.to, params.subject, params.body, params.options);
     return ContentService.createTextOutput(JSON.stringify({success: true})).setMimeType(ContentService.MimeType.JSON);
   } catch (err) {

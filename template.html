@@ -28,6 +28,19 @@
   <div class="label" style="color:#d35400; border-bottom: 1px solid #f9cdb3;">共通 Bcc (任意・カンマ区切りで複数可)</div>
   <input type="text" class="input-subj" id="tplBcc" placeholder="例: admin@example.com" style="margin-bottom:25px; font-weight:normal;">
 
+  <div class="label" style="color:#0044cc;">代理送信 Web App URL (任意)</div>
+  <div class="hint">
+    管理者のGmailアカウントから一括送信するための、別途デプロイした Web App の URL を貼り付けます（デプロイ時に「実行ユーザー: 自分」「アクセス権: 全員」で公開してください）。<br>
+    空欄の場合は、メニューを開いた人自身のGmailから送信されます。
+  </div>
+  <input type="text" class="input-subj" id="tplWebAppUrl" placeholder="例: https://script.google.com/macros/s/XXXXX/exec" style="margin-bottom:15px; font-weight:normal;">
+
+  <div class="label" style="color:#0044cc;">代理送信用 シークレットトークン</div>
+  <div class="hint">
+    上記Web Appとこのスプレッドシートの両方に同じ文字列を設定してください（推測されにくい任意の文字列で構いません）。
+  </div>
+  <input type="text" class="input-subj" id="tplWebAppToken" placeholder="例: ActiveChapterSecret2026" style="margin-bottom:25px; font-weight:normal;">
+
   <div class="label">Visitor用</div>
   <input type="text" class="input-subj" id="tplVisitorSubj" placeholder="件名を入力">
   <textarea id="tplVisitorBody" placeholder="本文を入力"></textarea>
@@ -54,6 +67,10 @@
         document.getElementById('tplSubstituteSubj').value = data.substituteSubj;
         document.getElementById('tplSubstituteBody').value = data.substituteBody;
       }).getTemplates();
+      google.script.run.withSuccessHandler(function(data){
+        document.getElementById('tplWebAppUrl').value = data.webAppUrl || "";
+        document.getElementById('tplWebAppToken').value = data.webAppToken || "";
+      }).getMailWebAppSettings();
     };
 
     function save() {
@@ -67,9 +84,15 @@
         substituteSubj: document.getElementById('tplSubstituteSubj').value,
         substituteBody: document.getElementById('tplSubstituteBody').value
       };
+      var webApp = {
+        webAppUrl: document.getElementById('tplWebAppUrl').value,
+        webAppToken: document.getElementById('tplWebAppToken').value
+      };
       document.body.innerHTML = "<h3 style='color:#0055ff; text-align:center; margin-top:50px;'>保存中...</h3>";
       google.script.run.withSuccessHandler(function(res){
-        document.body.innerHTML = "<h3 style='color:green; text-align:center; margin-top:50px;'>" + res + "</h3><p style='text-align:center;'>画面を閉じてください。</p>";
+        google.script.run.withSuccessHandler(function(res2){
+          document.body.innerHTML = "<h3 style='color:green; text-align:center; margin-top:50px;'>" + res + "<br>" + res2 + "</h3><p style='text-align:center;'>画面を閉じてください。</p>";
+        }).saveMailWebAppSettings(webApp);
       }).saveTemplates(data);
     }
   </script>
