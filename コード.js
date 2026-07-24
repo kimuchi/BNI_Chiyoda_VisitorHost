@@ -341,21 +341,45 @@ function uploadMemberBook(formObject) {
 }
 
 function processPdfForm(formObject) {
-  var blob = formObject.pdfFile, file = Drive.Files.create({ name: blob.getName(), mimeType: 'application/vnd.google-apps.document' }, blob);
-  var text = DocumentApp.openById(file.id).getBody().getText();
-  Drive.Files.remove(file.id);
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("メンバーリスト");
-  if(!sheet) sheet = SpreadsheetApp.getActiveSpreadsheet().insertSheet("メンバーリスト");
-  sheet.clear(); sheet.appendRow(["No", "氏名"]);
-  var lines = text.split('\n'), members = [], no = null;
-  for (var i = 0; i < lines.length; i++) {
-    var line = lines[i].trim();
-    if (!line) continue;
-    if (/^\d{1,3}$/.test(line)) { no = line; }
-    else if (no && line.length > 0) { var name = line.split('(')[0].split('（')[0].trim(); if(name) members.push([no, normalizeSpace(name)]); no = null; }
+  if (!formObject || !formObject.pdfFile) throw new Error("PDFファイルが選択されていません。");
+  var blob = formObject.pdfFile;
+  var docId = null;
+  try {
+    // PDFをGoogleドキュメントに変換する（この変換の過程でOCRが実行される）
+    var file = Drive.Files.create({ name: blob.getName(), mimeType: 'application/vnd.google-apps.document' }, blob);
+    docId = file.id;
+    // 変換後のドキュメントからテキストを取り出す。
+    // ここで DocumentApp を使うと documents スコープの追加認可が必要になるが、
+    // モーダルダイアログ内の google.script.run は認可ダイアログを表示できないため、
+    // 未認可の場合に「サーバーエラー」となってしまう。
+    // そこで、既に他機能で許可済みの Drive スコープ（OAuthトークン経由のエクスポート）だけで
+    // テキストを取得し、追加認可を不要にする。
+    var exportUrl = "https://docs.google.com/document/d/" + docId + "/export?format=txt";
+    var token = ScriptApp.getOAuthToken();
+    var response = UrlFetchApp.fetch(exportUrl, { headers: { 'Authorization': 'Bearer ' + token }, muteHttpExceptions: true });
+    if (response.getResponseCode() !== 200) {
+      throw new Error("OCR結果の取得に失敗しました (HTTP " + response.getResponseCode() + ")。");
+    }
+    var text = response.getContentText("UTF-8").replace(/^\uFEFF/, "");
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("メンバーリスト");
+    if(!sheet) sheet = SpreadsheetApp.getActiveSpreadsheet().insertSheet("メンバーリスト");
+    sheet.clear(); sheet.appendRow(["No", "氏名"]);
+    var lines = text.split('\n'), members = [], no = null;
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i].trim();
+      if (!line) continue;
+      if (/^\d{1,3}$/.test(line)) { no = line; }
+      else if (no && line.length > 0) { var name = line.split('(')[0].split('（')[0].trim(); if(name) members.push([no, normalizeSpace(name)]); no = null; }
+    }
+    if (members.length > 0) sheet.getRange(2, 1, members.length, 2).setValues(members);
+    if (members.length === 0) return "番号・氏名を抽出できませんでした。\nPDFの内容や画質をご確認のうえ、もう一度お試しください。";
+    return "抽出件数: " + members.length + "件。\nシートを確認してください。";
+  } catch (e) {
+    throw new Error("メンバーリスト(OCR)の取り込みに失敗しました: " + (e && e.message ? e.message : e));
+  } finally {
+    // 変換用に作成した一時ドキュメントは、成功・失敗にかかわらず必ず削除する
+    if (docId) { try { Drive.Files.remove(docId); } catch (cleanupErr) {} }
   }
-  if (members.length > 0) sheet.getRange(2, 1, members.length, 2).setValues(members);
-  return "抽出件数: " + members.length + "件。\nシートを確認してください。";
 }
 
 // === メール関連処理 ===
