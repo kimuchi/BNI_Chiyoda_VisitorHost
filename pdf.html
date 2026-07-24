@@ -1,52 +1,72 @@
 <!DOCTYPE html>
 <html>
 <head><base target="_top"></head>
-<body style="font-family: sans-serif; padding: 20px;">
-  <p>添付PDFから番号と氏名を抽出し、「メンバーリスト」シートに保存します（Geminiで解析）。</p>
-  <form id="pdfForm" onsubmit="event.preventDefault(); uploadPdf();">
-    <input type="file" name="pdfFile" id="pdfFile" accept=".pdf" required onchange="showSize()"><br>
-    <div id="sizeInfo" style="font-size:12px; color:#666; margin:6px 0;"></div>
-    <button type="submit" id="btn" style="padding: 8px 16px;">アップロードして解析</button>
-  </form>
+<body style="font-family: sans-serif; padding: 20px; font-size:14px;">
+  <p>PDFから番号と氏名を抽出し、「メンバーリスト」シートに保存します（Geminiで解析）。</p>
+
+  <div style="border:1px solid #ddd; border-radius:6px; padding:12px; margin-bottom:14px;">
+    <b>方式A：ファイルを選んで解析</b>
+    <div style="margin-top:8px;">
+      <input type="file" id="pdfFile" accept=".pdf" required onchange="showSize()"><br>
+      <div id="sizeInfo" style="font-size:12px; color:#666; margin:6px 0;"></div>
+      <button id="btn" onclick="uploadPdf()" style="padding: 6px 14px;">この ファイルを解析</button>
+    </div>
+  </div>
+
+  <div style="border:1px solid #ddd; border-radius:6px; padding:12px;">
+    <b>方式B：ドライブのPDFを指定</b>（方式Aが失敗する場合／大きいPDF向け）
+    <p style="font-size:12px; color:#555; margin:6px 0;">
+      PDFをGoogleドライブに置き、その共有リンクまたはファイルIDを貼り付けてください。
+    </p>
+    <input type="text" id="driveLink" placeholder="https://drive.google.com/file/d/xxxx/view または ファイルID" style="width:96%; padding:4px;"><br><br>
+    <button id="btn2" onclick="fromDrive()" style="padding: 6px 14px;">ドライブから解析</button>
+  </div>
+
   <div id="msg" style="margin-top:15px; white-space:pre-wrap; font-weight:bold; color:#0066cc;"></div>
 
   <script>
     function showSize() {
       var f = document.getElementById('pdfFile').files[0];
       var el = document.getElementById('sizeInfo');
-      if (!f) { el.innerText = ''; return; }
-      var mb = f.size / 1048576;
-      el.innerText = 'ファイルサイズ: ' + mb.toFixed(2) + ' MB';
-      el.style.color = (mb > 15) ? '#d00' : '#666';
-      if (mb > 15) el.innerText += '（大きすぎます。約15MB以下にしてください）';
+      el.innerText = f ? ('ファイルサイズ: ' + (f.size / 1048576).toFixed(2) + ' MB') : '';
     }
+    function busy(on, msg) {
+      document.getElementById('btn').disabled = on;
+      document.getElementById('btn2').disabled = on;
+      if (msg) { document.getElementById('msg').style.color = '#0066cc'; document.getElementById('msg').innerText = msg; }
+    }
+    function onOk(res) {
+      var ok = res && res.ok;
+      document.getElementById('msg').innerText = (res && res.message) ? res.message : String(res);
+      document.getElementById('msg').style.color = ok ? 'green' : '#d00';
+      busy(false);
+    }
+    function onFail(err) {
+      var detail = (err && err.message) ? err.message : String(err);
+      document.getElementById('msg').innerText =
+        'サーバーエラー: ' + detail + '\n\n' +
+        '※方式Aで出る場合は方式B（ドライブのPDFを指定）をお試しください。';
+      document.getElementById('msg').style.color = '#d00';
+      busy(false);
+    }
+    // 方式A：フォーム送信ではなく base64 文字列で送る（フォーム＋ファイル送信の不具合を回避）
     function uploadPdf() {
       var f = document.getElementById('pdfFile').files[0];
-      if (f && (f.size / 1048576) > 15) {
-        alert('PDFが大きすぎます（約15MB以下にしてください）。');
-        return;
-      }
-      document.getElementById('btn').disabled = true;
-      document.getElementById('msg').style.color = '#0066cc';
-      document.getElementById('msg').innerText = 'Geminiで解析中です。数秒〜十数秒かかります...';
-      var form = document.getElementById('pdfForm');
-      google.script.run.withSuccessHandler(function(res){
-        var ok = res && res.ok;
-        document.getElementById('msg').innerText = (res && res.message) ? res.message : String(res);
-        document.getElementById('msg').style.color = ok ? 'green' : '#d00';
-        document.getElementById('btn').disabled = false;
-      }).withFailureHandler(function(err){
-        var detail = (err && err.message) ? err.message : String(err);
-        document.getElementById('msg').innerText =
-          'サーバーエラー: ' + detail + '\n\n' +
-          '▼ 原因の確認方法\n' +
-          '1) 上のファイルサイズが大きすぎないか（15MB以下推奨）\n' +
-          '2) メニュー「⚙️ Gemini接続テスト」を実行し、Geminiとの通信を確認\n' +
-          '3) Apps Scriptエディタ →左メニュー「実行数」で最新の processPdfForm の\n' +
-          '   赤いエラー詳細（スタックトレース）を確認';
-        document.getElementById('msg').style.color = '#d00';
-        document.getElementById('btn').disabled = false;
-      }).processPdfForm(form);
+      if (!f) { alert('ファイルを選択してください。'); return; }
+      busy(true, 'ファイルを読み込み、Geminiで解析中です。数秒〜十数秒かかります...');
+      var reader = new FileReader();
+      reader.onload = function() {
+        var base64 = String(reader.result).split(',')[1];
+        google.script.run.withSuccessHandler(onOk).withFailureHandler(onFail).processMemberListBase64(base64, f.name);
+      };
+      reader.onerror = function() { onFail({ message: 'ブラウザでのファイル読み込みに失敗しました。' }); };
+      reader.readAsDataURL(f);
+    }
+    function fromDrive() {
+      var link = document.getElementById('driveLink').value;
+      if (!link) { alert('共有リンクまたはファイルIDを入力してください。'); return; }
+      busy(true, 'ドライブから読み込み、Geminiで解析中です...');
+      google.script.run.withSuccessHandler(onOk).withFailureHandler(onFail).processMemberListFromDrive(link);
     }
   </script>
 </body>

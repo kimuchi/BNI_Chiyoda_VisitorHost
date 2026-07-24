@@ -22,7 +22,7 @@ function onOpen() {
 
 function openCsvDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createTemplateFromFile('dialog').evaluate().setWidth(1000).setHeight(700), 'データの確認・PDF作成'); }
 function openHolidayDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('holiday').setWidth(450).setHeight(400), '休会日の管理'); }
-function openPdfDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('pdf').setWidth(450).setHeight(250), 'メンバーリスト(OCR)登録'); }
+function openPdfDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('pdf').setWidth(480).setHeight(540), 'メンバーリスト(OCR)登録'); }
 function openMemberBookDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('memberbook').setWidth(450).setHeight(250), 'メンバーブックの登録・更新'); }
 function openTemplateDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('template').setWidth(600).setHeight(750), 'メールテンプレート設定'); }
 function openAllocationNoteDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('allocation_note').setWidth(500).setHeight(400), '割り振り表の特記事項設定'); }
@@ -364,80 +364,122 @@ function uploadMemberBook(formObject) {
   }
 }
 
+// PDF/画像 blob から Gemini でメンバー(No/氏名)を抽出し「メンバーリスト」へ保存（共通処理）
+function extractMembersFromPdfBlob_(blob) {
+  console.log("[OCR] extract start");
+  if (!blob) return { ok: false, message: "ファイルを取得できませんでした。" };
+  var bytes = blob.getBytes();
+  var sizeMB = bytes.length / 1048576;
+  var mime = blob.getContentType() || "application/pdf";
+  console.log("[OCR] size=" + sizeMB.toFixed(2) + "MB type=" + mime);
+
+  var props = PropertiesService.getScriptProperties();
+  var apiKey = props.getProperty('GEMINI_API_KEY');
+  var modelName = props.getProperty('GEMINI_MODEL_NAME') || "gemini-2.5-flash";
+  if (!apiKey) return { ok: false, message: "Gemini APIキーが設定されていません。メニュー「⚙️ Gemini API・モデル設定」から設定してください。" };
+  if (sizeMB > 15) return { ok: false, message: "PDFが大きすぎます（" + sizeMB.toFixed(1) + "MB）。Geminiに送れるのは約15MBまでです。ページ数を減らす／画質を下げてください。" };
+
+  var promptText =
+    "添付のファイルはBNIチャプターの「メンバーリスト」です。\n" +
+    "記載されている全メンバーの『番号(No)』と『氏名』を漏れなく抽出してください。\n" +
+    "・氏名は人名のみとし、括弧書き（会社名・業種・肩書など）は除いてください。\n" +
+    "・番号は表記どおりの文字列（例: 1, 05, 12）で出力してください。\n" +
+    "・出力は必ず次のJSONのみ（前後に説明文やコードブロック記号を付けない）:\n" +
+    "{ \"members\": [ { \"no\": \"1\", \"name\": \"山田 太郎\" } ] }";
+
+  var payload = {
+    "contents": [{ "parts": [
+      { "text": promptText },
+      { "inlineData": { "mimeType": mime, "data": Utilities.base64Encode(bytes) } }
+    ]}],
+    "generationConfig": { "responseMimeType": "application/json" }
+  };
+
+  console.log("[OCR] calling Gemini model=" + modelName);
+  var response = UrlFetchApp.fetch("https://generativelanguage.googleapis.com/v1beta/models/" + modelName + ":generateContent?key=" + apiKey, {
+    method: "post", contentType: "application/json", payload: JSON.stringify(payload), muteHttpExceptions: true
+  });
+  var httpCode = response.getResponseCode();
+  var respText = response.getContentText();
+  console.log("[OCR] http=" + httpCode + " body(head)=" + respText.slice(0, 300));
+  if (httpCode !== 200) return { ok: false, message: "Gemini APIがエラーを返しました (HTTP " + httpCode + ")。\n" + respText.slice(0, 500) };
+
+  var resData = JSON.parse(respText);
+  if (resData.error) return { ok: false, message: "Gemini APIエラー: " + resData.error.message };
+  if (!resData.candidates || !resData.candidates[0] || !resData.candidates[0].content) {
+    return { ok: false, message: "Geminiから有効な応答が得られませんでした（安全性ブロック等の可能性）。\n" + respText.slice(0, 500) };
+  }
+  var text = resData.candidates[0].content.parts[0].text;
+  var mm = text.match(/\{[\s\S]*\}/);
+  if (!mm) return { ok: false, message: "解析結果(JSON)を取得できませんでした。応答: " + String(text).slice(0, 300) };
+  var parsed = JSON.parse(mm[0]);
+  var rawMembers = parsed.members || [];
+
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("メンバーリスト");
+  if (!sheet) sheet = SpreadsheetApp.getActiveSpreadsheet().insertSheet("メンバーリスト");
+  sheet.clear(); sheet.appendRow(["No", "氏名"]);
+  var members = [];
+  for (var k = 0; k < rawMembers.length; k++) {
+    var item = rawMembers[k] || {};
+    var no = item.no != null ? String(item.no).trim() : "";
+    var name = item.name != null ? normalizeSpace(String(item.name)) : "";
+    if (no === "" && name === "") continue;
+    members.push([no, name]);
+  }
+  if (members.length > 0) sheet.getRange(2, 1, members.length, 2).setValues(members);
+  console.log("[OCR] extracted=" + members.length);
+  if (members.length === 0) return { ok: false, message: "番号・氏名を抽出できませんでした。PDF内容やモデル設定をご確認ください。" };
+  return { ok: true, message: "抽出件数: " + members.length + "件。\nシートを確認してください。" };
+}
+
+// 方式1: ダイアログから直接アップロード（小さめPDF向け）
 function processPdfForm(formObject) {
-  // 失敗時も例外を投げず必ず { ok, message } を返す。
-  // （モーダルダイアログの google.script.run は throw を汎用「サーバーエラー」に
-  //   変えてしまい原因が見えなくなるため、原因文字列を戻り値で確実に返す）
   try {
     console.log("[OCR] processPdfForm start");
     if (!formObject || !formObject.pdfFile) return { ok: false, message: "PDFファイルが選択されていません。" };
-    var blob = formObject.pdfFile;
-    var bytes = blob.getBytes();
-    var sizeMB = bytes.length / 1048576;
-    console.log("[OCR] file=" + blob.getName() + " size=" + sizeMB.toFixed(2) + "MB type=" + blob.getContentType());
-
-    var props = PropertiesService.getScriptProperties();
-    var apiKey = props.getProperty('GEMINI_API_KEY');
-    var modelName = props.getProperty('GEMINI_MODEL_NAME') || "gemini-2.5-flash";
-    if (!apiKey) return { ok: false, message: "Gemini APIキーが設定されていません。メニュー「⚙️ Gemini API・モデル設定」から設定してください。" };
-    if (sizeMB > 15) return { ok: false, message: "PDFが大きすぎます（" + sizeMB.toFixed(1) + "MB）。Geminiに直接送れるのは約15MBまでです。ページ数を減らす／画質を下げるなどして小さくしてください。" };
-
-    var promptText =
-      "添付のPDFはBNIチャプターの「メンバーリスト」です。\n" +
-      "記載されている全メンバーの『番号(No)』と『氏名』を漏れなく抽出してください。\n" +
-      "・氏名は人名のみとし、括弧書き（会社名・業種・肩書など）は除いてください。\n" +
-      "・番号はPDFの表記どおりの文字列（例: 1, 05, 12）で出力してください。\n" +
-      "・出力は必ず次のJSONのみ（前後に説明文やコードブロック記号を付けない）:\n" +
-      "{ \"members\": [ { \"no\": \"1\", \"name\": \"山田 太郎\" } ] }";
-
-    var payload = {
-      "contents": [{ "parts": [
-        { "text": promptText },
-        { "inlineData": { "mimeType": "application/pdf", "data": Utilities.base64Encode(bytes) } }
-      ]}],
-      "generationConfig": { "responseMimeType": "application/json" }
-    };
-
-    console.log("[OCR] calling Gemini model=" + modelName);
-    var response = UrlFetchApp.fetch("https://generativelanguage.googleapis.com/v1beta/models/" + modelName + ":generateContent?key=" + apiKey, {
-      method: "post", contentType: "application/json", payload: JSON.stringify(payload), muteHttpExceptions: true
-    });
-    var httpCode = response.getResponseCode();
-    var respText = response.getContentText();
-    console.log("[OCR] http=" + httpCode + " body(head)=" + respText.slice(0, 300));
-    if (httpCode !== 200) return { ok: false, message: "Gemini APIがエラーを返しました (HTTP " + httpCode + ")。\n" + respText.slice(0, 500) };
-
-    var resData = JSON.parse(respText);
-    if (resData.error) return { ok: false, message: "Gemini APIエラー: " + resData.error.message };
-    if (!resData.candidates || !resData.candidates[0] || !resData.candidates[0].content) {
-      return { ok: false, message: "Geminiから有効な応答が得られませんでした（安全性ブロック等の可能性）。\n" + respText.slice(0, 500) };
-    }
-    var text = resData.candidates[0].content.parts[0].text;
-    var m = text.match(/\{[\s\S]*\}/);
-    if (!m) return { ok: false, message: "解析結果(JSON)を取得できませんでした。応答: " + String(text).slice(0, 300) };
-    var parsed = JSON.parse(m[0]);
-    var rawMembers = parsed.members || [];
-
-    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("メンバーリスト");
-    if (!sheet) sheet = SpreadsheetApp.getActiveSpreadsheet().insertSheet("メンバーリスト");
-    sheet.clear(); sheet.appendRow(["No", "氏名"]);
-    var members = [];
-    for (var k = 0; k < rawMembers.length; k++) {
-      var item = rawMembers[k] || {};
-      var no = item.no != null ? String(item.no).trim() : "";
-      var name = item.name != null ? normalizeSpace(String(item.name)) : "";
-      if (no === "" && name === "") continue;
-      members.push([no, name]);
-    }
-    if (members.length > 0) sheet.getRange(2, 1, members.length, 2).setValues(members);
-    console.log("[OCR] extracted=" + members.length);
-    if (members.length === 0) return { ok: false, message: "番号・氏名を抽出できませんでした。PDF内容やモデル設定をご確認ください。" };
-    return { ok: true, message: "抽出件数: " + members.length + "件。\nシートを確認してください。" };
+    return extractMembersFromPdfBlob_(formObject.pdfFile);
   } catch (e) {
-    console.error("[OCR] exception: " + (e && e.stack ? e.stack : e));
+    console.error("[OCR] processPdfForm exception: " + (e && e.stack ? e.stack : e));
     return { ok: false, message: "取り込み中に例外が発生しました: " + (e && e.message ? e.message : e) };
   }
 }
+
+// 方式2: Googleドライブに置いたPDFをリンク/IDで指定（大きいPDFでも送信上限を回避）
+function processMemberListFromDrive(linkOrId) {
+  try {
+    console.log("[OCR] processMemberListFromDrive input=" + linkOrId);
+    if (!linkOrId) return { ok: false, message: "ドライブの共有リンクまたはファイルIDを入力してください。" };
+    var s = String(linkOrId).trim();
+    var m = s.match(/\/d\/([-\w]{25,})/) || s.match(/[?&]id=([-\w]{25,})/);
+    var id = m ? m[1] : (/^[-\w]{25,}$/.test(s) ? s : "");
+    if (!id) return { ok: false, message: "ファイルIDを認識できませんでした。共有リンク（.../d/xxxx/...）またはIDをご確認ください。" };
+    var file;
+    try { file = DriveApp.getFileById(id); } catch (e) {
+      return { ok: false, message: "ドライブのファイルを開けませんでした（ID: " + id + "）。ファイルの存在や権限をご確認ください。" };
+    }
+    console.log("[OCR] drive file=" + file.getName());
+    return extractMembersFromPdfBlob_(file.getBlob());
+  } catch (e) {
+    console.error("[OCR] processMemberListFromDrive exception: " + (e && e.stack ? e.stack : e));
+    return { ok: false, message: "取り込み中に例外が発生しました: " + (e && e.message ? e.message : e) };
+  }
+}
+
+// 方式A: ダイアログで選んだファイルをbase64文字列として送る
+// （フォーム＋ファイル入力の google.script.run 送信が失敗する環境を回避する）
+function processMemberListBase64(base64, name) {
+  try {
+    console.log("[OCR] processMemberListBase64 start name=" + name + " b64len=" + (base64 ? base64.length : 0));
+    if (!base64) return { ok: false, message: "ファイルデータが空です。もう一度お試しください。" };
+    var bytes = Utilities.base64Decode(base64);
+    var blob = Utilities.newBlob(bytes, "application/pdf", name || "memberlist.pdf");
+    return extractMembersFromPdfBlob_(blob);
+  } catch (e) {
+    console.error("[OCR] processMemberListBase64 exception: " + (e && e.stack ? e.stack : e));
+    return { ok: false, message: "取り込み中に例外が発生しました: " + (e && e.message ? e.message : e) };
+  }
+}
+
 
 function testGeminiConnection() {
   var ui = SpreadsheetApp.getUi();
