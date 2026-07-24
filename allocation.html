@@ -113,7 +113,7 @@
     </div>
 
     <div class="pool-area">
-      <h3>メンバー待機リスト（招待者以外） <span style="font-size:11px; font-weight:normal; color:#f39c12;">※左端にオレンジ色の線がある人は「ビジターホスト」です</span></h3>
+      <h3>メンバー待機リスト（招待者以外） <span style="font-size:11px; font-weight:normal; color:#f39c12;">※左端にオレンジ色の線がある人は「ビジターホスト」です。数字は優先順位です。</span></h3>
       <div class="pool-grid" id="memberPool"></div>
     </div>
 
@@ -121,7 +121,7 @@
   </div>
 
   <script>
-    var state = { visitors: [], pool: [], facilAlloc: {}, orienAlloc: {}, roomAlloc: {}, connectReq: {}, hosts: [], mergedWith: {} };
+    var state = { visitors: [], pool: [], facilAlloc: {}, orienAlloc: {}, roomAlloc: {}, connectReq: {}, hosts: [], mergedWith: {}, priorities: {} };
 
     window.onload = function() {
       google.script.run.withSuccessHandler(function(candidates) {
@@ -149,6 +149,7 @@
         if(!state.connectReq) state.connectReq = {};
         if(!state.mergedWith) state.mergedWith = {};
         if(!state.hosts) state.hosts = [];
+        if(!state.priorities) state.priorities = {};
         render();
         document.getElementById('workspace').style.display = 'flex';
       }).withFailureHandler(function(err){
@@ -207,15 +208,38 @@
       var roomCount = activeRooms.size;
       document.getElementById('statRooms').innerText = roomCount;
       
+      // 招待者名を正規化（サーバー側で既にメンバー名に正規化済みだが、念のためスペースを除去して比較）
+      function normalizeInv(name) {
+        return name ? String(name).replace(/[\s\u3000\u00A0]+/g, '').trim() : '';
+      }
+
+      // 招待者ごとの招待数を集計（同じ招待者が複数人招待→どれか1ルームに行くので 1/N で按分）
+      var inviterCounts = {};
+      state.visitors.forEach(v => {
+        var inv = normalizeInv(v.inviter);
+        if (inv !== '') inviterCounts[inv] = (inviterCounts[inv] || 0) + 1;
+      });
+
       var totalPeopleInRooms = 0;
       activeRooms.forEach(vNo => {
-        if(state.facilAlloc[vNo]) totalPeopleInRooms++;
-        if(state.roomAlloc[vNo]) totalPeopleInRooms += state.roomAlloc[vNo].length;
-      });
-      
-      state.visitors.forEach(v => {
-        totalPeopleInRooms += 1; 
-        if (v.inviter) totalPeopleInRooms += 1;
+        var v = state.visitors.find(x => x.no === vNo);
+        // メンバーはSetで一意カウント（ファシリとルームの重複防止）
+        var uniqueMembers = new Set();
+        if(state.facilAlloc[vNo]) uniqueMembers.add(String(state.facilAlloc[vNo]));
+        if(state.roomAlloc[vNo]) state.roomAlloc[vNo].forEach(id => uniqueMembers.add(String(id)));
+        totalPeopleInRooms += uniqueMembers.size;
+        totalPeopleInRooms += 1; // ビジター本人
+        // 招待者は招待数で按分（複数招待→どれか1ルームへ行くため）
+        var invName = normalizeInv(v ? v.inviter : '');
+        if (invName !== '') totalPeopleInRooms += 1 / (inviterCounts[invName] || 1);
+        // 合同で入ってきた子ビジター分も加算
+        state.visitors.forEach(cv => {
+          if (state.mergedWith[cv.no] === vNo) {
+            totalPeopleInRooms += 1;
+            var childInv = normalizeInv(cv.inviter);
+            if (childInv !== '') totalPeopleInRooms += 1 / (inviterCounts[childInv] || 1);
+          }
+        });
       });
       
       document.getElementById('statAvg').innerText = roomCount > 0 ? (totalPeopleInRooms / roomCount).toFixed(1) : "0.0";
@@ -395,8 +419,9 @@
         var isHost = state.hosts.map(String).includes(mNoStr); 
         
         var div = document.createElement('div');
+        var hasPriority = state.priorities[mNoStr] !== undefined;
         div.className = 'chip ' + (isUsed ? 'used-room' : '') + (isHost ? ' is-host' : '');
-        div.innerText = m.name;
+        div.innerText = m.name + (hasPriority ? ' [' + state.priorities[mNoStr] + ']' : '');
         div.setAttribute('draggable', 'true');
         div.setAttribute('ondragstart', `dragStart(event, '${mNoStr}')`);
         if (isUsed) {
