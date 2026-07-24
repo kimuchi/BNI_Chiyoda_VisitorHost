@@ -12,14 +12,14 @@
   <script>
     function uploadPdf() {
       document.getElementById('btn').disabled = true;
-      document.getElementById('msg').innerText = 'Google Docsを用いたOCR解析中です。数秒〜十数秒かかります...';
+      document.getElementById('msg').innerText = 'Geminiで解析中です。数秒〜十数秒かかります...';
       var form = document.getElementById('pdfForm');
       google.script.run.withSuccessHandler(function(res){
         document.getElementById('msg').innerText = res;
         document.getElementById('msg').style.color = 'green';
         document.getElementById('btn').disabled = false;
       }).withFailureHandler(function(err){
-        document.getElementById('msg').innerText = 'エラー: ' + err.message + '\n※事前に「拡張機能 > Apps Script」の左側「サービス」から「Drive API」が追加されているか確認してください。';
+        document.getElementById('msg').innerText = 'エラー: ' + err.message + '\n※事前にメニュー「⚙️ Gemini API・モデル設定」でAPIキーが設定されているかご確認ください。';
         document.getElementById('msg').style.color = 'red';
         document.getElementById('btn').disabled = false;
       }).processPdfForm(form);
