@@ -16,6 +16,7 @@ function onOpen() {
     .addItem('⚙️ 割り振り表の特記事項設定', 'openAllocationNoteDialog')
     .addItem('⚙️ ビジターホストの設定', 'openVisitorHostDialog')
     .addItem('⚙️ Gemini API・モデル設定', 'openApiSettingsDialog')
+    .addItem('⚙️ Gemini接続テスト', 'testGeminiConnection')
     .addToUi();
 }
 
@@ -364,17 +365,23 @@ function uploadMemberBook(formObject) {
 }
 
 function processPdfForm(formObject) {
-  if (!formObject || !formObject.pdfFile) throw new Error("PDFファイルが選択されていません。");
-  var blob = formObject.pdfFile;
-  var props = PropertiesService.getScriptProperties();
-  var apiKey = props.getProperty('GEMINI_API_KEY');
-  var modelName = props.getProperty('GEMINI_MODEL_NAME') || "gemini-2.5-flash";
-  if (!apiKey) throw new Error("Gemini APIキーが設定されていません。メニュー「⚙️ Gemini API・モデル設定」から設定してください。");
-
+  // 失敗時も例外を投げず必ず { ok, message } を返す。
+  // （モーダルダイアログの google.script.run は throw を汎用「サーバーエラー」に
+  //   変えてしまい原因が見えなくなるため、原因文字列を戻り値で確実に返す）
   try {
-    // Google Docs のOCR変換（Drive/DocumentApp）は追加スコープの認可がモーダル内で
-    // 表示できず「サーバーエラー」の原因になっていた。ここでは既に他機能で使用している
-    // Gemini（UrlFetchApp のみ）でPDFを直接解析し、番号と氏名を構造化して取り出す。
+    console.log("[OCR] processPdfForm start");
+    if (!formObject || !formObject.pdfFile) return { ok: false, message: "PDFファイルが選択されていません。" };
+    var blob = formObject.pdfFile;
+    var bytes = blob.getBytes();
+    var sizeMB = bytes.length / 1048576;
+    console.log("[OCR] file=" + blob.getName() + " size=" + sizeMB.toFixed(2) + "MB type=" + blob.getContentType());
+
+    var props = PropertiesService.getScriptProperties();
+    var apiKey = props.getProperty('GEMINI_API_KEY');
+    var modelName = props.getProperty('GEMINI_MODEL_NAME') || "gemini-2.5-flash";
+    if (!apiKey) return { ok: false, message: "Gemini APIキーが設定されていません。メニュー「⚙️ Gemini API・モデル設定」から設定してください。" };
+    if (sizeMB > 15) return { ok: false, message: "PDFが大きすぎます（" + sizeMB.toFixed(1) + "MB）。Geminiに直接送れるのは約15MBまでです。ページ数を減らす／画質を下げるなどして小さくしてください。" };
+
     var promptText =
       "添付のPDFはBNIチャプターの「メンバーリスト」です。\n" +
       "記載されている全メンバーの『番号(No)』と『氏名』を漏れなく抽出してください。\n" +
@@ -386,43 +393,79 @@ function processPdfForm(formObject) {
     var payload = {
       "contents": [{ "parts": [
         { "text": promptText },
-        { "inlineData": { "mimeType": "application/pdf", "data": Utilities.base64Encode(blob.getBytes()) } }
+        { "inlineData": { "mimeType": "application/pdf", "data": Utilities.base64Encode(bytes) } }
       ]}],
       "generationConfig": { "responseMimeType": "application/json" }
     };
 
+    console.log("[OCR] calling Gemini model=" + modelName);
     var response = UrlFetchApp.fetch("https://generativelanguage.googleapis.com/v1beta/models/" + modelName + ":generateContent?key=" + apiKey, {
       method: "post", contentType: "application/json", payload: JSON.stringify(payload), muteHttpExceptions: true
     });
-    var resData = JSON.parse(response.getContentText());
-    if (resData.error) throw new Error("Gemini APIエラー: " + resData.error.message);
+    var httpCode = response.getResponseCode();
+    var respText = response.getContentText();
+    console.log("[OCR] http=" + httpCode + " body(head)=" + respText.slice(0, 300));
+    if (httpCode !== 200) return { ok: false, message: "Gemini APIがエラーを返しました (HTTP " + httpCode + ")。\n" + respText.slice(0, 500) };
+
+    var resData = JSON.parse(respText);
+    if (resData.error) return { ok: false, message: "Gemini APIエラー: " + resData.error.message };
     if (!resData.candidates || !resData.candidates[0] || !resData.candidates[0].content) {
-      throw new Error("Geminiから有効な応答が得られませんでした。モデル設定やPDF内容をご確認ください。");
+      return { ok: false, message: "Geminiから有効な応答が得られませんでした（安全性ブロック等の可能性）。\n" + respText.slice(0, 500) };
     }
     var text = resData.candidates[0].content.parts[0].text;
     var m = text.match(/\{[\s\S]*\}/);
-    if (!m) throw new Error("解析結果(JSON)を取得できませんでした。");
+    if (!m) return { ok: false, message: "解析結果(JSON)を取得できませんでした。応答: " + String(text).slice(0, 300) };
     var parsed = JSON.parse(m[0]);
     var rawMembers = parsed.members || [];
 
     var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("メンバーリスト");
-    if(!sheet) sheet = SpreadsheetApp.getActiveSpreadsheet().insertSheet("メンバーリスト");
+    if (!sheet) sheet = SpreadsheetApp.getActiveSpreadsheet().insertSheet("メンバーリスト");
     sheet.clear(); sheet.appendRow(["No", "氏名"]);
     var members = [];
-    for (var i = 0; i < rawMembers.length; i++) {
-      var item = rawMembers[i] || {};
+    for (var k = 0; k < rawMembers.length; k++) {
+      var item = rawMembers[k] || {};
       var no = item.no != null ? String(item.no).trim() : "";
       var name = item.name != null ? normalizeSpace(String(item.name)) : "";
       if (no === "" && name === "") continue;
       members.push([no, name]);
     }
     if (members.length > 0) sheet.getRange(2, 1, members.length, 2).setValues(members);
-    if (members.length === 0) return "番号・氏名を抽出できませんでした。\nPDFの内容やGeminiモデル設定をご確認のうえ、もう一度お試しください。";
-    return "抽出件数: " + members.length + "件。\nシートを確認してください。";
+    console.log("[OCR] extracted=" + members.length);
+    if (members.length === 0) return { ok: false, message: "番号・氏名を抽出できませんでした。PDF内容やモデル設定をご確認ください。" };
+    return { ok: true, message: "抽出件数: " + members.length + "件。\nシートを確認してください。" };
   } catch (e) {
-    throw new Error("メンバーリスト(OCR)の取り込みに失敗しました: " + (e && e.message ? e.message : e));
+    console.error("[OCR] exception: " + (e && e.stack ? e.stack : e));
+    return { ok: false, message: "取り込み中に例外が発生しました: " + (e && e.message ? e.message : e) };
   }
 }
+
+function testGeminiConnection() {
+  var ui = SpreadsheetApp.getUi();
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var apiKey = props.getProperty('GEMINI_API_KEY');
+    var modelName = props.getProperty('GEMINI_MODEL_NAME') || "gemini-2.5-flash";
+    if (!apiKey) { ui.alert("Gemini接続テスト", "APIキーが未設定です。メニュー「⚙️ Gemini API・モデル設定」から設定してください。", ui.ButtonSet.OK); return; }
+    var payload = { "contents": [{ "parts": [{ "text": "「OK」とだけ返答してください。" }] }] };
+    var response = UrlFetchApp.fetch("https://generativelanguage.googleapis.com/v1beta/models/" + modelName + ":generateContent?key=" + apiKey, {
+      method: "post", contentType: "application/json", payload: JSON.stringify(payload), muteHttpExceptions: true
+    });
+    var httpCode = response.getResponseCode();
+    var body = response.getContentText();
+    var msg;
+    if (httpCode === 200) {
+      var d = JSON.parse(body);
+      var t = (d.candidates && d.candidates[0] && d.candidates[0].content) ? d.candidates[0].content.parts[0].text : "(応答本文なし)";
+      msg = "✅ 成功 (HTTP 200)\nモデル: " + modelName + "\n応答: " + String(t).slice(0, 100) + "\n\nGeminiとの通信は正常です。OCRが失敗する場合はPDFのサイズ・内容が原因の可能性があります。";
+    } else {
+      msg = "❌ 失敗 (HTTP " + httpCode + ")\nモデル: " + modelName + "\n\n" + body.slice(0, 500);
+    }
+    ui.alert("Gemini接続テスト", msg, ui.ButtonSet.OK);
+  } catch (e) {
+    ui.alert("Gemini接続テスト", "例外が発生しました:\n" + (e && e.message ? e.message : e), ui.ButtonSet.OK);
+  }
+}
+
 // === メール関連処理 ===
 var WEB_APP_URL = "";
 var SECRET_TOKEN = "ActiveChapterSecret2026";
