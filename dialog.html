@@ -20,6 +20,16 @@
     /* レビュー必要な箇所の強調 */
     .needs-review input { background-color: #ffe6e6; border: 1px solid #ff4d4d; font-weight: bold;}
     .inviter-review { background-color: #fff3cd; }
+    tr.drag-over-row td { border-top: 3px solid #0055ff !important; }
+    .drag-handle { cursor: grab; user-select: none; text-align: center; color: #999; font-size: 16px; }
+    .drag-handle:active { cursor: grabbing; }
+    .btn-sort { background: #ff9800; color: #fff; margin-bottom: 10px; }
+    .row-actions { white-space: nowrap; text-align: center; }
+    .row-actions button { padding: 4px 8px; font-size: 11px; margin: 1px; border-radius: 3px; cursor: pointer; border: 1px solid #ccc; background: #fff; font-weight: normal; }
+    .row-actions .btn-del { color: #c0392b; border-color: #e6b0aa; }
+    .row-actions .btn-del:hover { background: #fdf2f0; }
+    .row-actions .btn-toggle { color: #0044cc; border-color: #cce0ff; }
+    .row-actions .btn-toggle:hover { background: #eaf2ff; }
   </style>
 </head>
 <body>
@@ -30,12 +40,22 @@
     <h3>2. CSVファイルを選択またはドロップ</h3>
     <div id="drop_zone">ここにCSVファイルをドロップ<br><br>または<br><br><input type="file" id="csvFile" accept=".csv"></div>
     <button class="btn-success" onclick="processFile()">全データを解析して編集画面へ</button>
+
+    <div id="existingSheets" class="hidden" style="margin-top:20px; padding-top:15px; border-top:1px solid #ddd;">
+      <h3>または、作成済みデータを再編集</h3>
+      <select id="sheetSelect" style="padding:8px; margin-bottom:10px; width:100%;"></select>
+      <button class="btn-primary" onclick="loadExisting()">このシートを読み込んで再編集</button>
+      <button class="btn-sort" onclick="regeneratePdfOnly()" style="margin-left:8px;">PDFのみ再作成</button>
+      <p style="font-size:11px; color:#666; margin-top:6px;">※「PDFのみ再作成」は、選択した日付の「〇〇参加者_印刷用」シートを直接PDF化します。スプレッドシートを手で修正した場合に使用してください。</p>
+    </div>
   </div>
 
   <div id="step2" class="hidden">
     <h3>データの全件確認・編集</h3>
-    <p style="font-size:12px; color:#555;">※スペースが無かった氏名（赤色）や、招待者が不明な箇所（黄色）は自動推測されています。修正してください。</p>
-    
+    <p style="font-size:12px; color:#555;">※スペースが無かった氏名（赤色）や、招待者が不明な箇所（黄色）は自動推測されています。修正してください。<br>※ 操作列の「🗑」で行を削除、「→Guest／→Visitor」で種別を切り替えられます（自動で番号が振り直されます）。</p>
+
+    <button class="btn-sort" onclick="sortByFurigana()">ふりがなでソート</button>
+
     <div class="table-container">
       <table id="dataTable">
         <thead id="dataHead"></thead>
@@ -49,7 +69,8 @@
   <div id="loading" class="hidden" style="margin-top:20px; font-weight:bold; color:#0055ff;">処理中です。しばらくお待ちください...</div>
 
   <script>
-    var parsedData = null, parsedHeader = null, membersList = [];
+    var parsedData = null, parsedHeader = null, membersList = [], displayKeys = [];
+    var dragSrcRow = null;
 
     window.onload = function() {
       google.script.run.withSuccessHandler(function(candidates) {
@@ -61,6 +82,16 @@
           sel.appendChild(opt);
         }
       }).getMeetingCandidates();
+      google.script.run.withSuccessHandler(function(sheets) {
+        if (sheets.length === 0) return;
+        var sel = document.getElementById('sheetSelect');
+        for(var i=0; i<sheets.length; i++) {
+          var opt = document.createElement('option');
+          opt.value = sheets[i]; opt.text = sheets[i];
+          sel.appendChild(opt);
+        }
+        document.getElementById('existingSheets').classList.remove('hidden');
+      }).getExistingVisitorSheets();
     };
 
     var dropZone = document.getElementById('drop_zone');
@@ -70,6 +101,28 @@
       e.preventDefault(); dropZone.style.background = '#f9f9f9';
       if (e.dataTransfer.files.length > 0) document.getElementById('csvFile').files = e.dataTransfer.files;
     });
+
+    function loadExisting() {
+      var sheetName = document.getElementById('sheetSelect').value;
+      if (!sheetName) return alert('シートを選択してください');
+      var sel = document.getElementById('meetingSelect');
+      if (!sel.value) return alert('定例会を選択してください');
+      document.getElementById('step1').classList.add('hidden');
+      document.getElementById('loading').classList.remove('hidden');
+      google.script.run.withSuccessHandler(showEditor).withFailureHandler(showError).loadSheetData(sheetName);
+    }
+
+    function regeneratePdfOnly() {
+      var sheetName = document.getElementById('sheetSelect').value;
+      if (!sheetName) return alert('シートを選択してください');
+      if (!confirm("「" + sheetName + "_印刷用」の現在の内容でPDFを再作成します。よろしいですか？")) return;
+      document.getElementById('step1').classList.add('hidden');
+      document.getElementById('loading').classList.remove('hidden');
+      document.getElementById('loading').innerText = 'PDFを再作成しています...';
+      google.script.run.withSuccessHandler(function(htmlMsg){
+        document.getElementById('loading').innerHTML = htmlMsg;
+      }).withFailureHandler(showError).regeneratePdfOnly(sheetName);
+    }
 
     function processFile() {
       var sel = document.getElementById('meetingSelect');
@@ -91,51 +144,147 @@
       document.getElementById('loading').classList.add('hidden');
       parsedData = result.rows; parsedHeader = result.header; membersList = result.membersList;
 
-      // ヘッダー生成
+      displayKeys = ["_No"];
+      for(var i=0; i<parsedHeader.length; i++) displayKeys.push(parsedHeader[i]);
+      renderTable();
+      document.getElementById('step2').classList.remove('hidden');
+    }
+
+    function collectEdits() {
+      var tbody = document.getElementById('dataBody');
+      var rows = tbody.querySelectorAll('tr');
+      for (var r = 0; r < rows.length; r++) {
+        var inputs = rows[r].querySelectorAll('input[type="text"]');
+        var idx = 0;
+        for (var c = 0; c < displayKeys.length; c++) {
+          if (displayKeys[c] !== "_No") { parsedData[r][displayKeys[c]] = inputs[idx].value; idx++; }
+        }
+      }
+    }
+
+    function renumber() {
+      var vCount = 1, gCount = 1;
+      for (var i = 0; i < parsedData.length; i++) {
+        var r = parsedData[i];
+        if (r["種別"] === "Visitor") { r._No = "V" + ("0" + vCount).slice(-2); vCount++; }
+        else if (r["種別"] === "Guest") { r._No = "G" + ("0" + gCount).slice(-2); gCount++; }
+      }
+    }
+
+    function renderTable() {
       var thead = document.getElementById('dataHead');
+      var tbody = document.getElementById('dataBody');
+      thead.innerHTML = ''; tbody.innerHTML = '';
+
       var hr = document.createElement('tr');
-      var keys = ["_No"]; // 表示する列
-      for(var i=0; i<parsedHeader.length; i++) keys.push(parsedHeader[i]);
-      
-      for(var i=0; i<keys.length; i++) {
+      var thDrag = document.createElement('th'); thDrag.innerText = '↕'; hr.appendChild(thDrag);
+      var thAct = document.createElement('th'); thAct.innerText = '操作'; hr.appendChild(thAct);
+      for(var i=0; i<displayKeys.length; i++) {
         var th = document.createElement('th');
-        th.innerText = keys[i] === "_No" ? "自動No." : keys[i];
+        th.innerText = displayKeys[i] === "_No" ? "自動No." : displayKeys[i];
         hr.appendChild(th);
       }
       thead.appendChild(hr);
 
-      // データ行生成
-      var tbody = document.getElementById('dataBody');
       for (var r = 0; r < parsedData.length; r++) {
         var row = parsedData[r];
         var tr = document.createElement('tr');
-        
-        for (var c = 0; c < keys.length; c++) {
-          var key = keys[c];
+        tr.draggable = true;
+        tr.dataset.index = r;
+        tr.addEventListener('dragstart', rowDragStart);
+        tr.addEventListener('dragover', rowDragOver);
+        tr.addEventListener('dragleave', rowDragLeave);
+        tr.addEventListener('drop', rowDrop);
+        tr.addEventListener('dragend', rowDragEnd);
+
+        var tdHandle = document.createElement('td');
+        tdHandle.className = 'drag-handle';
+        tdHandle.innerText = '☰';
+        tr.appendChild(tdHandle);
+
+        var tdAct = document.createElement('td');
+        tdAct.className = 'row-actions';
+        var delBtn = document.createElement('button');
+        delBtn.className = 'btn-del';
+        delBtn.innerHTML = '🗑';
+        delBtn.title = 'この行を削除';
+        (function(idx){ delBtn.addEventListener('click', function(){ deleteRow(idx); }); })(r);
+        tdAct.appendChild(delBtn);
+        if (row["種別"] === "Visitor" || row["種別"] === "Guest") {
+          var togBtn = document.createElement('button');
+          togBtn.className = 'btn-toggle';
+          togBtn.innerText = row["種別"] === "Visitor" ? "→Guest" : "→Visitor";
+          togBtn.title = 'Visitor/Guest を切り替え';
+          (function(idx){ togBtn.addEventListener('click', function(){ toggleType(idx); }); })(r);
+          tdAct.appendChild(togBtn);
+        }
+        tr.appendChild(tdAct);
+
+        for (var c = 0; c < displayKeys.length; c++) {
+          var key = displayKeys[c];
           var td = document.createElement('td');
-          
           if(key === "_No") {
             td.innerText = row[key] || "";
           } else {
             var input = document.createElement('input');
             input.type = 'text';
             input.value = row[key] || "";
-            input.id = "cell_" + r + "_" + c;
-            
-            // 色付けロジック
-            if (row._needsNameReview && (key === "参加者氏名" || key === "ふりがな")) {
-              td.className = "needs-review";
-            }
-            if (row._needsInviterReview && key === "招待者") {
-              td.className = "inviter-review";
-            }
+            if (row._needsNameReview && (key === "参加者氏名" || key === "ふりがな")) td.className = "needs-review";
+            if (row._needsInviterReview && key === "招待者") td.className = "inviter-review";
             td.appendChild(input);
           }
           tr.appendChild(td);
         }
         tbody.appendChild(tr);
       }
-      document.getElementById('step2').classList.remove('hidden');
+    }
+
+    function deleteRow(index) {
+      collectEdits();
+      var r = parsedData[index];
+      var label = (r && (r["参加者氏名"] || r["_No"])) || "この行";
+      if (!confirm("「" + label + "」を一覧から削除します。よろしいですか？")) return;
+      parsedData.splice(index, 1);
+      renumber();
+      renderTable();
+    }
+
+    function toggleType(index) {
+      collectEdits();
+      var r = parsedData[index];
+      if (!r) return;
+      if (r["種別"] === "Visitor") r["種別"] = "Guest";
+      else if (r["種別"] === "Guest") r["種別"] = "Visitor";
+      else return;
+      renumber();
+      renderTable();
+    }
+
+    function rowDragStart(e) { dragSrcRow = this; e.dataTransfer.effectAllowed = 'move'; this.style.opacity = '0.4'; }
+    function rowDragOver(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; this.classList.add('drag-over-row'); }
+    function rowDragLeave(e) { this.classList.remove('drag-over-row'); }
+    function rowDragEnd(e) { this.style.opacity = '1'; var rows = document.querySelectorAll('#dataBody tr'); for(var i=0;i<rows.length;i++) rows[i].classList.remove('drag-over-row'); }
+    function rowDrop(e) {
+      e.preventDefault(); this.classList.remove('drag-over-row');
+      if (dragSrcRow === this) return;
+      collectEdits();
+      var fromIdx = parseInt(dragSrcRow.dataset.index), toIdx = parseInt(this.dataset.index);
+      var item = parsedData.splice(fromIdx, 1)[0];
+      parsedData.splice(toIdx, 0, item);
+      renumber();
+      renderTable();
+    }
+
+    function sortByFurigana() {
+      collectEdits();
+      var typeOrder = { "Visitor": 1, "Guest": 2, "Substitute": 3 };
+      parsedData.sort(function(a, b) {
+        var tA = typeOrder[a["種別"]] || 99, tB = typeOrder[b["種別"]] || 99;
+        if (tA !== tB) return tA - tB;
+        return (a["ふりがな"] || "").localeCompare((b["ふりがな"] || ""), 'ja');
+      });
+      renumber();
+      renderTable();
     }
 
     function submitFinal() {
@@ -143,18 +292,7 @@
       document.getElementById('loading').classList.remove('hidden');
       document.getElementById('loading').innerText = 'シートとPDFを作成しています... 少し時間がかかります。';
 
-      var keys = ["_No"];
-      for(var i=0; i<parsedHeader.length; i++) keys.push(parsedHeader[i]);
-
-      // 編集結果を回収
-      for (var r = 0; r < parsedData.length; r++) {
-        for (var c = 0; c < keys.length; c++) {
-          if (keys[c] !== "_No") {
-            var input = document.getElementById("cell_" + r + "_" + c);
-            if(input) parsedData[r][keys[c]] = input.value;
-          }
-        }
-      }
+      collectEdits();
 
       var sel = document.getElementById('meetingSelect');
       var dateVal = sel.value, displayVal = sel.options[sel.selectedIndex].dataset.display;

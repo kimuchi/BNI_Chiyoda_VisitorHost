@@ -9,6 +9,7 @@ function onOpen() {
     .addItem('4. 作成済みPDFの確認', 'openPdfLinksDialog')
     .addSeparator()
     .addItem('⚙️ メンバーブック(PDF)の更新', 'openMemberBookDialog')
+    .addItem('⚙️ AI参考資料の管理', 'openAiDocsDialog')
     .addItem('⚙️ メンバーリスト(OCR)の更新', 'openPdfDialog')
     .addItem('⚙️ 休会日の管理', 'openHolidayDialog')
     .addItem('⚙️ メールテンプレート設定', 'openTemplateDialog')
@@ -29,6 +30,39 @@ function openAllocationDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlSer
 function openVisitorHostDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('visitor_host').setWidth(400).setHeight(500), 'ビジターホストの設定'); }
 function openApiSettingsDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('api_settings').setWidth(450).setHeight(350), 'Gemini API・モデル設定'); }
 function openPdfLinksDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('pdf_links').setWidth(450).setHeight(400), '作成済みPDFの確認'); }
+function openAiDocsDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('ai_documents').setWidth(550).setHeight(500), 'AI参考資料の管理'); }
+
+function getAiDocuments() {
+  var json = PropertiesService.getScriptProperties().getProperty('AI_REF_DOCS');
+  if (!json) return [];
+  var docs = JSON.parse(json), result = [];
+  for (var i = 0; i < docs.length; i++) {
+    try { DriveApp.getFileById(docs[i].id); result.push(docs[i]); } catch(e) {}
+  }
+  if (result.length !== docs.length) PropertiesService.getScriptProperties().setProperty('AI_REF_DOCS', JSON.stringify(result));
+  return result;
+}
+
+function uploadAiDocument(formObject) {
+  var blob = formObject.docFile;
+  var ss = SpreadsheetApp.getActiveSpreadsheet(), file = DriveApp.getFileById(ss.getId());
+  var folder = file.getParents().hasNext() ? file.getParents().next() : DriveApp.getRootFolder();
+  var uploaded = folder.createFile(blob);
+  var docs = getAiDocuments();
+  docs.push({ id: uploaded.getId(), name: uploaded.getName(), uploadedAt: new Date().toISOString().slice(0, 10) });
+  PropertiesService.getScriptProperties().setProperty('AI_REF_DOCS', JSON.stringify(docs));
+  return { msg: "「" + uploaded.getName() + "」を登録しました。", docs: docs };
+}
+
+function deleteAiDocument(fileId) {
+  var docs = getAiDocuments(), newDocs = [];
+  for (var i = 0; i < docs.length; i++) {
+    if (docs[i].id === fileId) { try { DriveApp.getFileById(fileId).setTrashed(true); } catch(e) {} }
+    else newDocs.push(docs[i]);
+  }
+  PropertiesService.getScriptProperties().setProperty('AI_REF_DOCS', JSON.stringify(newDocs));
+  return newDocs;
+}
 
 function getPdfLinks() {
   var props = PropertiesService.getScriptProperties();
@@ -120,6 +154,21 @@ function analyzeCsvData(csvText) {
   if (data.length < 2) throw new Error("データがありません");
   var header = data[0];
   for(var h = 0; h < header.length; h++) header[h] = zenkakuToHankaku(header[h]).trim();
+  var enToJa = {
+    "Name": "参加者氏名", "Furigana": "ふりがな", "Company Name": "会社名", "Job Title": "役職",
+    "Website": "ウェブサイト", "Inviter": "招待者", "Relationship With Inviter": "招待者との関係",
+    "Business Category": "カテゴリー", "Description Of Category": "カテゴリー詳細",
+    "Email": "メール", "Tel": "電話番号",
+    "Invitee Want To Orientation": "オリエンテーション希望",
+    "Participant Has Right Of Settlement": "決裁権",
+    "Speed Of Decision Making": "決裁スピード",
+    "Prospect Of Becoming A Member": "入会見込み",
+    "Memo For Printing": "メモ（ビジターリストに表示）", "Memo For Member": "メモ（メンバー向け）",
+    "Status": "ステータス", "Support Status": "サポートステータス",
+    "Payment Status": "支払いステータス", "Fee": "費用", "Paid Fee": "支払い済み",
+    "Type": "種別", "Supporters": "サポーター", "Support History": "サポート履歴"
+  };
+  for(var h = 0; h < header.length; h++) { if (enToJa[header[h]]) header[h] = enToJa[header[h]]; }
   var rows = [];
   for (var i = 1; i < data.length; i++) {
     if (data[i].join('').trim() === '') continue;
@@ -154,6 +203,52 @@ function analyzeCsvData(csvText) {
     results.push(r);
   }
   return { rows: results, header: header, membersList: membersList };
+}
+
+function getExistingVisitorSheets() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet(), sheets = ss.getSheets(), result = [];
+  for (var i = 0; i < sheets.length; i++) {
+    var name = sheets[i].getName();
+    if (/^\d{4}参加者$/.test(name)) result.push(name);
+  }
+  result.sort(); result.reverse();
+  return result;
+}
+
+function loadSheetData(sheetName) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet(), sheet = ss.getSheetByName(sheetName);
+  if (!sheet) throw new Error("シート '" + sheetName + "' が見つかりません");
+  var data = sheet.getDataRange().getValues();
+  if (data.length < 2) throw new Error("データがありません");
+  var sheetHeaders = data[0];
+  var reverseMap = { "No.": "_No", "備考": "メモ（ビジターリストに表示）" };
+  var header = [], internalKeys = [];
+  for (var h = 0; h < sheetHeaders.length; h++) {
+    var raw = sheetHeaders[h].toString().trim();
+    var key = reverseMap[raw] || raw;
+    internalKeys.push(key);
+    if (key !== "_No") header.push(key);
+  }
+  var membersList = getMembersList(), rows = [], vCount = 1, gCount = 1;
+  for (var i = 1; i < data.length; i++) {
+    if (data[i].join('').trim() === '') continue;
+    var obj = {};
+    for (var j = 0; j < internalKeys.length; j++) obj[internalKeys[j]] = data[i][j] != null ? data[i][j].toString() : "";
+    obj._needsNameReview = false;
+    obj._needsInviterReview = false;
+    if (obj["種別"] === "Visitor") { obj._No = "V" + ("0" + vCount).slice(-2); vCount++; }
+    else if (obj["種別"] === "Guest") { obj._No = "G" + ("0" + gCount).slice(-2); gCount++; }
+    else if (obj["種別"] === "Substitute") {
+      var searchInv = (obj["招待者"] || "").replace(/[\s]/g, ""), matched = null;
+      for (var k = 0; k < membersList.length; k++) {
+        var mName = membersList[k].name.replace(/[\s]/g, "");
+        if (searchInv.indexOf(mName) !== -1 || mName.indexOf(searchInv) !== -1) { matched = membersList[k]; break; }
+      }
+      obj._No = matched ? "代理" + matched.no : (obj._No || "代理??");
+    }
+    rows.push(obj);
+  }
+  return { rows: rows, header: header, membersList: membersList };
 }
 
 function createFinalSheet(meetingDateVal, meetingDisplay, finalRows, originalHeader) {
@@ -191,21 +286,44 @@ function createFinalSheet(meetingDateVal, meetingDisplay, finalRows, originalHea
   }
   var widths = [40, 100, 110, 160, 160, 100, 180];
   for(var w=0; w<widths.length; w++) printSheet.setColumnWidth(w+1, widths[w]);
+  for(var row = 6; row <= lastPrintRow; row++) printSheet.setRowHeight(row, 30);
   SpreadsheetApp.flush();
-  var pdfUrl = exportSheetToPdf(printSheet, meetingDisplay + " ビジター様リスト.pdf");
+  var pdfFileIdKey = 'VISITOR_PDF_ID_' + baseSheetName;
+  var pdfUrl = exportSheetToPdf(printSheet, meetingDisplay + " ビジター様リスト.pdf", pdfFileIdKey);
   PropertiesService.getScriptProperties().setProperty('LATEST_VISITOR_LIST_URL', pdfUrl);
   PropertiesService.getScriptProperties().setProperty('LATEST_MEETING_DATE', meetingDateVal); 
   ss.setActiveSheet(dataSheet);
   return "<h3>処理が完了しました🎉</h3><p>PDFを作成し、全員が閲覧できるよう権限を付与しました。</p><br><a href='" + pdfUrl + "' target='_blank' style='background:#0055ff; color:#fff; padding:10px 20px; text-decoration:none; border-radius:5px; font-weight:bold;'>📄 作成されたPDFを開く</a>";
 }
 
-function exportSheetToPdf(sheet, fileName) {
+function regeneratePdfOnly(dataSheetName) {
+  if (!dataSheetName) throw new Error("対象シートを選択してください");
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var printSheetName = dataSheetName + "_印刷用";
+  var printSheet = ss.getSheetByName(printSheetName);
+  if (!printSheet) throw new Error("印刷用シート '" + printSheetName + "' が見つかりません。先に「再編集」で印刷用シートを作成してください。");
+  var meetingDisplay = printSheet.getRange("A3").getValue();
+  if (!meetingDisplay) meetingDisplay = dataSheetName;
+  SpreadsheetApp.flush();
+  var pdfFileIdKey = 'VISITOR_PDF_ID_' + dataSheetName;
+  var pdfUrl = exportSheetToPdf(printSheet, meetingDisplay + " ビジター様リスト.pdf", pdfFileIdKey);
+  PropertiesService.getScriptProperties().setProperty('LATEST_VISITOR_LIST_URL', pdfUrl);
+  return "<h3>PDFを再作成しました🎉</h3><p>「" + printSheetName + "」の現在の内容でPDFを上書きしました。</p><br><a href='" + pdfUrl + "' target='_blank' style='background:#0055ff; color:#fff; padding:10px 20px; text-decoration:none; border-radius:5px; font-weight:bold;'>📄 PDFを開く</a>";
+}
+
+function exportSheetToPdf(sheet, fileName, fileIdPropKey) {
   var ss = SpreadsheetApp.getActiveSpreadsheet(), spreadsheetId = ss.getId(), sheetId = sheet.getSheetId(), lastRow = sheet.getLastRow();
   var url = "https://docs.google.com/spreadsheets/d/" + spreadsheetId + "/export?exportFormat=pdf&format=pdf&size=A4&portrait=true&fitw=true&sheetnames=false&printtitle=false&pagenumbers=false&gridlines=false&fzr=false&gid=" + sheetId + "&r1=0&c1=0&r2=" + lastRow + "&c2=7";
   var token = ScriptApp.getOAuthToken(), response = UrlFetchApp.fetch(url, { headers: { 'Authorization': 'Bearer ' + token }, muteHttpExceptions: true });
+  var blob = response.getBlob().setName(fileName), props = PropertiesService.getScriptProperties();
+  var existingId = fileIdPropKey ? props.getProperty(fileIdPropKey) : null;
+  if (existingId) {
+    try { Drive.Files.update({name: fileName}, existingId, blob); return DriveApp.getFileById(existingId).getUrl(); } catch(e) { existingId = null; }
+  }
   var file = DriveApp.getFileById(spreadsheetId), folder = file.getParents().hasNext() ? file.getParents().next() : DriveApp.getRootFolder();
-  var pdfFile = folder.createFile(response.getBlob().setName(fileName));
+  var pdfFile = folder.createFile(blob);
   pdfFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  if (fileIdPropKey) props.setProperty(fileIdPropKey, pdfFile.getId());
   return pdfFile.getUrl();
 }
 
@@ -241,8 +359,30 @@ function processPdfForm(formObject) {
 }
 
 // === メール関連処理 ===
-var WEB_APP_URL = ""; 
-var SECRET_TOKEN = "ActiveChapterSecret2026"; 
+var WEB_APP_URL = "";
+var SECRET_TOKEN = "ActiveChapterSecret2026";
+
+function getMailWebAppSettings() {
+  var props = PropertiesService.getScriptProperties();
+  return {
+    webAppUrl: props.getProperty('MAIL_WEB_APP_URL') || "",
+    webAppToken: props.getProperty('MAIL_WEB_APP_TOKEN') || ""
+  };
+}
+function saveMailWebAppSettings(data) {
+  var props = PropertiesService.getScriptProperties();
+  props.setProperty('MAIL_WEB_APP_URL', (data.webAppUrl || "").trim());
+  props.setProperty('MAIL_WEB_APP_TOKEN', (data.webAppToken || "").trim());
+  return "メール送信用のWeb App設定を保存しました。";
+}
+function getActiveMailWebApp_() {
+  var props = PropertiesService.getScriptProperties();
+  var url = props.getProperty('MAIL_WEB_APP_URL');
+  if (url === null || url === "") url = WEB_APP_URL;
+  var token = props.getProperty('MAIL_WEB_APP_TOKEN');
+  if (token === null || token === "") token = SECRET_TOKEN;
+  return { url: url || "", token: token };
+}
 
 function getTemplates() {
   var props = PropertiesService.getScriptProperties();
@@ -305,13 +445,14 @@ function sendSingleEmail(e, cc, bcc) {
     if (bcc && bcc.trim() !== "") options.bcc = bcc.trim();
     var toEmail = e.email ? e.email.toString().trim() : "";
     if (!toEmail || toEmail.indexOf('@') === -1) return { success: false, error: "無効なメールアドレス形式 (" + toEmail + ")" };
-    
-    if (WEB_APP_URL === "") {
+
+    var cfg = getActiveMailWebApp_();
+    if (!cfg.url) {
       GmailApp.sendEmail(toEmail, e.subject, e.body, options);
       return { success: true };
     } else {
-      var payload = { token: SECRET_TOKEN, to: toEmail, subject: e.subject, body: e.body, options: options };
-      var res = UrlFetchApp.fetch(WEB_APP_URL, { method: "post", contentType: "application/json", payload: JSON.stringify(payload), muteHttpExceptions: true });
+      var payload = { token: cfg.token, to: toEmail, subject: e.subject, body: e.body, options: options };
+      var res = UrlFetchApp.fetch(cfg.url, { method: "post", contentType: "application/json", payload: JSON.stringify(payload), muteHttpExceptions: true, followRedirects: true });
       var resData = JSON.parse(res.getContentText());
       if (!resData.success) throw new Error(resData.error);
       return { success: true };
@@ -322,7 +463,8 @@ function sendSingleEmail(e, cc, bcc) {
 function doPost(e) {
   try {
     var params = JSON.parse(e.postData.contents);
-    if (params.token !== SECRET_TOKEN) throw new Error("アクセス権限がありません");
+    var cfg = getActiveMailWebApp_();
+    if (params.token !== cfg.token) throw new Error("アクセス権限がありません");
     GmailApp.sendEmail(params.to, params.subject, params.body, params.options);
     return ContentService.createTextOutput(JSON.stringify({success: true})).setMimeType(ContentService.MimeType.JSON);
   } catch (err) {
@@ -556,18 +698,25 @@ function saveAllocationSheet(meetingDateVal, displayVal, visitors, pool, facilAl
   for(var w=0; w<widths.length; w++) sheet.setColumnWidth(w+1, widths[w]);
   SpreadsheetApp.flush();
   
-  var pdfUrl = exportAllocationSheetToPdf(sheet, displayVal + " 割り振り表.pdf");
+  var allocPdfIdKey = 'ALLOC_PDF_ID_' + mmdd + '割り振り';
+  var pdfUrl = exportAllocationSheetToPdf(sheet, displayVal + " 割り振り表.pdf", allocPdfIdKey);
   PropertiesService.getScriptProperties().setProperty('LATEST_ALLOCATION_URL', pdfUrl); 
   return "<h3>作成完了しました🎉</h3><p>割り振り表を作成しました。</p><br><a href='" + pdfUrl + "' target='_blank' style='background:#0055ff; color:#fff; padding:10px 20px; text-decoration:none; border-radius:5px; font-weight:bold;'>📄 作成されたPDFを開く</a>";
 }
 
-function exportAllocationSheetToPdf(sheet, fileName) {
+function exportAllocationSheetToPdf(sheet, fileName, fileIdPropKey) {
   var ss = SpreadsheetApp.getActiveSpreadsheet(), spreadsheetId = ss.getId(), sheetId = sheet.getSheetId(), lastRow = sheet.getLastRow();
   var url = "https://docs.google.com/spreadsheets/d/" + spreadsheetId + "/export?exportFormat=pdf&format=pdf&size=A4&portrait=false&fitw=true&sheetnames=false&printtitle=false&pagenumbers=false&gridlines=false&fzr=false&gid=" + sheetId + "&r1=0&c1=0&r2=" + lastRow + "&c2=8";
   var token = ScriptApp.getOAuthToken(), response = UrlFetchApp.fetch(url, { headers: { 'Authorization': 'Bearer ' + token }, muteHttpExceptions: true });
+  var blob = response.getBlob().setName(fileName), props = PropertiesService.getScriptProperties();
+  var existingId = fileIdPropKey ? props.getProperty(fileIdPropKey) : null;
+  if (existingId) {
+    try { Drive.Files.update({name: fileName}, existingId, blob); return DriveApp.getFileById(existingId).getUrl(); } catch(e) { existingId = null; }
+  }
   var file = DriveApp.getFileById(spreadsheetId), folder = file.getParents().hasNext() ? file.getParents().next() : DriveApp.getRootFolder();
-  var pdfFile = folder.createFile(response.getBlob().setName(fileName));
+  var pdfFile = folder.createFile(blob);
   pdfFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  if (fileIdPropKey) props.setProperty(fileIdPropKey, pdfFile.getId());
   return pdfFile.getUrl();
 }
 
@@ -609,13 +758,20 @@ function callGeminiAutoAllocation(currentState, maxRoomSize) {
 
   currentState.roomAlloc = {};
 
-  var fileId = props.getProperty('MEMBER_BOOK_ID');
-  var pdfPart = null;
-  if(fileId) {
+  var docParts = [];
+  var memberBookId = props.getProperty('MEMBER_BOOK_ID');
+  if(memberBookId) {
     try {
-      var pdfBlob = DriveApp.getFileById(fileId).getBlob();
-      var base64Pdf = Utilities.base64Encode(pdfBlob.getBytes());
-      pdfPart = { "inlineData": { "mimeType": "application/pdf", "data": base64Pdf } };
+      var mbBlob = DriveApp.getFileById(memberBookId).getBlob();
+      docParts.push({ "inlineData": { "mimeType": "application/pdf", "data": Utilities.base64Encode(mbBlob.getBytes()) } });
+    } catch(e) {}
+  }
+  var aiDocs = getAiDocuments();
+  for (var d = 0; d < aiDocs.length; d++) {
+    try {
+      var docBlob = DriveApp.getFileById(aiDocs[d].id).getBlob();
+      var mime = docBlob.getContentType() || "application/pdf";
+      docParts.push({ "inlineData": { "mimeType": mime, "data": Utilities.base64Encode(docBlob.getBytes()) } });
     } catch(e) {}
   }
 
@@ -629,7 +785,7 @@ function callGeminiAutoAllocation(currentState, maxRoomSize) {
   });
 
   var promptText = "あなたはプロのビジネス交流会コーディネーターです。\n" +
-    "以下のビジター情報、利用可能な待機メンバー、および提供されたメンバーブックPDFの内容を参考に、最適な「ルームメンバー」を決定してください。\n\n" +
+    "以下のビジター情報、利用可能な待機メンバー、および添付されたメンバーブックPDFや参考資料の内容を総合的に参考にして、最適な「ルームメンバー」を決定してください。\n\n" +
     "【制約条件（厳格に守ること）】\n" +
     "1. 「ファシリテーター」と「オリエンテーション」はシステムで決定済みです。出力には「room」の配列のみを含めてください。\n" +
     "2. 各ルームの総人数がなるべく同じになるよう、各ルームの人数を【厳格に平均化】して「ルームメンバー(room)」を割り振ってください。\n" +
@@ -650,7 +806,7 @@ function callGeminiAutoAllocation(currentState, maxRoomSize) {
     "}";
 
   var parts = [{ "text": promptText }];
-  if (pdfPart) parts.push(pdfPart); 
+  for (var p = 0; p < docParts.length; p++) parts.push(docParts[p]);
 
   var payload = { "contents": [{ "parts": parts }] };
   
