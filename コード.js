@@ -44,8 +44,7 @@ function getAiDocuments() {
   return result;
 }
 
-function uploadAiDocument(formObject) {
-  var blob = formObject.docFile;
+function uploadAiDocumentBlob_(blob) {
   var ss = SpreadsheetApp.getActiveSpreadsheet(), file = DriveApp.getFileById(ss.getId());
   var folder = file.getParents().hasNext() ? file.getParents().next() : DriveApp.getRootFolder();
   var uploaded = folder.createFile(blob);
@@ -53,6 +52,25 @@ function uploadAiDocument(formObject) {
   docs.push({ id: uploaded.getId(), name: uploaded.getName(), uploadedAt: new Date().toISOString().slice(0, 10) });
   PropertiesService.getScriptProperties().setProperty('AI_REF_DOCS', JSON.stringify(docs));
   return { msg: "「" + uploaded.getName() + "」を登録しました。", docs: docs };
+}
+
+// ダイアログからは base64 文字列で受け取る（フォーム＋ファイル送信は環境により
+// サーバー関数に到達せず「サーバーエラー」になるため使用しない）
+function uploadAiDocumentBase64(base64, name, mimeType) {
+  try {
+    console.log("[AIDOC] upload start name=" + name + " mime=" + mimeType + " b64len=" + (base64 ? base64.length : 0));
+    if (!base64) return { error: "ファイルデータが空です。もう一度お試しください。" };
+    var blob = Utilities.newBlob(Utilities.base64Decode(base64), mimeType || "application/octet-stream", name || "document");
+    return uploadAiDocumentBlob_(blob);
+  } catch (e) {
+    console.error("[AIDOC] exception: " + (e && e.stack ? e.stack : e));
+    return { error: "登録中にエラーが発生しました: " + (e && e.message ? e.message : e) };
+  }
+}
+
+// 旧方式（フォーム送信）互換用
+function uploadAiDocument(formObject) {
+  return uploadAiDocumentBlob_(formObject.docFile);
 }
 
 function deleteAiDocument(fileId) {
@@ -351,8 +369,8 @@ function exportSheetToPdf(sheet, fileName, fileIdPropKey) {
   return pdfFile.getUrl();
 }
 
-function uploadMemberBook(formObject) {
-  var blob = formObject.pdfFile, props = PropertiesService.getScriptProperties(), fileId = props.getProperty('MEMBER_BOOK_ID');
+function uploadMemberBookBlob_(blob) {
+  var props = PropertiesService.getScriptProperties(), fileId = props.getProperty('MEMBER_BOOK_ID');
   if (fileId) { try { Drive.Files.update({}, fileId, blob); return { msg: "更新しました。", url: props.getProperty('MEMBER_BOOK_URL') }; } catch(e) { fileId = null; } }
   if (!fileId) {
     var file = Drive.Files.create({name: 'MemberBook.pdf', mimeType: 'application/pdf'}, blob);
@@ -362,6 +380,25 @@ function uploadMemberBook(formObject) {
     props.setProperty('MEMBER_BOOK_URL', url);
     return { msg: "新規登録しました。", url: url };
   }
+}
+
+// ダイアログからは base64 文字列で受け取る（フォーム＋ファイル送信は環境により
+// サーバー関数に到達せず「サーバーエラー」になるため使用しない）
+function uploadMemberBookBase64(base64, name) {
+  try {
+    console.log("[MEMBERBOOK] upload start name=" + name + " b64len=" + (base64 ? base64.length : 0));
+    if (!base64) return { error: "ファイルデータが空です。もう一度お試しください。" };
+    var blob = Utilities.newBlob(Utilities.base64Decode(base64), "application/pdf", name || "MemberBook.pdf");
+    return uploadMemberBookBlob_(blob);
+  } catch (e) {
+    console.error("[MEMBERBOOK] exception: " + (e && e.stack ? e.stack : e));
+    return { error: "登録中にエラーが発生しました: " + (e && e.message ? e.message : e) };
+  }
+}
+
+// 旧方式（フォーム送信）互換用
+function uploadMemberBook(formObject) {
+  return uploadMemberBookBlob_(formObject.pdfFile);
 }
 
 // PDF/画像 blob から Gemini でメンバー(No/氏名)を抽出し「メンバーリスト」へ保存（共通処理）

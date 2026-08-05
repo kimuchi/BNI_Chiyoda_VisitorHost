@@ -28,10 +28,8 @@
   <div class="doc-list" id="docList"></div>
 
   <div class="upload-area">
-    <form id="uploadForm" onsubmit="event.preventDefault(); uploadDoc();">
-      <input type="file" name="docFile" required style="margin-bottom: 10px;"><br>
-      <button type="submit" class="btn-upload" id="btnUpload">資料を追加する</button>
-    </form>
+    <input type="file" id="docFile" required style="margin-bottom: 10px;"><br>
+    <button class="btn-upload" id="btnUpload" onclick="uploadDoc()">資料を追加する</button>
     <div id="msg"></div>
   </div>
 
@@ -61,22 +59,42 @@
       google.script.run.withSuccessHandler(renderList).getAiDocuments();
     };
 
+    // フォーム送信ではなく base64 文字列で送る
+    // （フォーム＋ファイル送信はサーバー関数に到達せず「サーバーエラー」になるため）
     function uploadDoc() {
+      var input = document.getElementById('docFile');
+      var f = input.files[0];
+      if (!f) { alert('ファイルを選択してください。'); return; }
       document.getElementById('btnUpload').disabled = true;
       document.getElementById('msg').innerText = 'アップロード中...';
       document.getElementById('msg').style.color = '#0055ff';
-      var form = document.getElementById('uploadForm');
-      google.script.run.withSuccessHandler(function(res) {
-        renderList(res.docs);
-        document.getElementById('msg').innerText = res.msg;
-        document.getElementById('msg').style.color = 'green';
-        document.getElementById('btnUpload').disabled = false;
-        form.reset();
-      }).withFailureHandler(function(err) {
-        document.getElementById('msg').innerText = 'エラー: ' + err.message;
+
+      var reader = new FileReader();
+      reader.onload = function() {
+        var base64 = String(reader.result).split(',')[1];
+        google.script.run.withSuccessHandler(function(res) {
+          if (res && res.error) {
+            document.getElementById('msg').innerText = res.error;
+            document.getElementById('msg').style.color = 'red';
+          } else {
+            renderList(res.docs);
+            document.getElementById('msg').innerText = res.msg;
+            document.getElementById('msg').style.color = 'green';
+            input.value = '';
+          }
+          document.getElementById('btnUpload').disabled = false;
+        }).withFailureHandler(function(err) {
+          document.getElementById('msg').innerText = 'エラー: ' + ((err && err.message) ? err.message : err);
+          document.getElementById('msg').style.color = 'red';
+          document.getElementById('btnUpload').disabled = false;
+        }).uploadAiDocumentBase64(base64, f.name, f.type);
+      };
+      reader.onerror = function() {
+        document.getElementById('msg').innerText = 'ブラウザでのファイル読み込みに失敗しました。';
         document.getElementById('msg').style.color = 'red';
         document.getElementById('btnUpload').disabled = false;
-      }).uploadAiDocument(form);
+      };
+      reader.readAsDataURL(f);
     }
 
     function deletDoc(fileId) {
