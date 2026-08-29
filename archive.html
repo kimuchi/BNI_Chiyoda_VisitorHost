@@ -37,6 +37,16 @@
 
   <div class="summary" id="summary">読み込み中...</div>
 
+  <div class="quick" style="background:#f3f9ff;">
+    <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+      <input type="checkbox" id="autoArchive" onchange="toggleAuto()">
+      <span><b>新しい開催日を作成したら、前の開催日を自動でアーカイブする</b></span>
+    </label>
+    <div style="font-size:11px; color:#666; margin-top:4px;">
+      「1. CSVから名簿・PDF作成」「3. ルーム・オリエン割り振り表」の実行時に、他の開催日のシートを自動で非表示にします。
+    </div>
+  </div>
+
   <div class="quick">
     最近の <select id="keepCount">
       <option value="1">1</option><option value="2">2</option>
@@ -50,6 +60,7 @@
   <div class="actions">
     <button class="btn-arc" id="btnArc" onclick="doArchive()">選択をアーカイブ</button>
     <button class="btn-un" id="btnUn" onclick="doUnarchive()">選択を表示に戻す</button>
+    <button class="btn-un" id="btnAll" onclick="doUnarchiveAll()">全て表示に戻す</button>
   </div>
   <div id="msg"></div>
 
@@ -60,6 +71,21 @@
 
     function load() {
       google.script.run.withSuccessHandler(render).withFailureHandler(fail).getSheetArchiveStatus();
+      google.script.run.withSuccessHandler(function(on){
+        document.getElementById('autoArchive').checked = !!on;
+      }).isAutoArchiveEnabled();
+    }
+
+    function toggleAuto() {
+      var on = document.getElementById('autoArchive').checked;
+      busy(true, '設定を保存中...');
+      google.script.run.withSuccessHandler(done).withFailureHandler(fail).setAutoArchiveEnabled(on);
+    }
+
+    function doUnarchiveAll() {
+      if (!confirm('アーカイブ済みのシートを全て表示に戻します。よろしいですか？')) return;
+      busy(true, '再表示中...');
+      google.script.run.withSuccessHandler(done).withFailureHandler(fail).unarchiveAllSheets();
     }
 
     function render(status) {
@@ -97,6 +123,7 @@
       document.getElementById('btnArc').disabled = on;
       document.getElementById('btnUn').disabled = on;
       document.getElementById('btnQuick').disabled = on;
+      document.getElementById('btnAll').disabled = on;
       if (text) { document.getElementById('msg').style.color = '#0055ff'; document.getElementById('msg').innerText = text; }
     }
 

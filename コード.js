@@ -8,6 +8,7 @@ function onOpen() {
     .addItem('3. ルーム・オリエン割り振り表', 'openAllocationDialog')
     .addItem('4. 作成済みPDFの確認', 'openPdfLinksDialog')
     .addItem('5. シートの整理（アーカイブ）', 'openArchiveDialog')
+    .addItem('　└ アーカイブを全て表示に戻す', 'menuUnarchiveAll')
     .addSeparator()
     .addItem('⚙️ メンバーブック(PDF)の更新', 'openMemberBookDialog')
     .addItem('⚙️ AI参考資料の管理', 'openAiDocsDialog')
@@ -349,6 +350,52 @@ function unarchiveSheetGroups(keys) {
   }
 }
 
+// 自動アーカイブ設定（既定: 有効）。新しい開催日のシートを作ったとき、
+// それ以外の開催日のシートを自動で非表示にする。
+function isAutoArchiveEnabled() {
+  var v = PropertiesService.getScriptProperties().getProperty('AUTO_ARCHIVE_ENABLED');
+  return (v === null || v === "") ? true : (v === 'true');
+}
+function setAutoArchiveEnabled(enabled) {
+  PropertiesService.getScriptProperties().setProperty('AUTO_ARCHIVE_ENABLED', enabled ? 'true' : 'false');
+  return { ok: true, message: enabled ? "自動アーカイブを有効にしました。新しい開催日を作成すると、前の開催日は自動で非表示になります。" : "自動アーカイブを無効にしました。", status: getSheetArchiveStatus() };
+}
+
+// currentKey（"0318"など）以外の開催日シートを自動で非表示にする。
+// シート作成の本処理を妨げないよう、失敗しても例外は投げない。
+function autoArchiveOtherDates_(currentKey) {
+  try {
+    if (!isAutoArchiveEnabled()) return;
+    var status = getSheetArchiveStatus(), keys = [];
+    for (var i = 0; i < status.groups.length; i++) {
+      var g = status.groups[i];
+      if (g.key !== String(currentKey) && !g.archived) keys.push(g.key);
+    }
+    if (!keys.length) return;
+    var res = archiveSheetGroups(keys);
+    console.log("[ARCHIVE] auto-archive for " + currentKey + " -> " + (res && res.message));
+  } catch (e) {
+    console.error("[ARCHIVE] auto-archive failed: " + (e && e.stack ? e.stack : e));
+  }
+}
+
+// アーカイブ済みの開催日シートを全て再表示する
+function unarchiveAllSheets() {
+  var status = getSheetArchiveStatus(), keys = [];
+  for (var i = 0; i < status.groups.length; i++) {
+    if (status.groups[i].archived) keys.push(status.groups[i].key);
+  }
+  if (!keys.length) return { ok: false, message: "アーカイブされているシートはありません。", status: status };
+  return unarchiveSheetGroups(keys);
+}
+
+// メニューから直接実行する用
+function menuUnarchiveAll() {
+  var ui = SpreadsheetApp.getUi();
+  var res = unarchiveAllSheets();
+  ui.alert("アーカイブの復元", res.message, ui.ButtonSet.OK);
+}
+
 // 新しい順に keepCount 件だけ残して、それより古い開催日をまとめてアーカイブ
 function archiveAllButLatest(keepCount) {
   var status = getSheetArchiveStatus(), keys = [];
@@ -438,6 +485,7 @@ function createFinalSheet(meetingDateVal, meetingDisplay, finalRows, originalHea
   PropertiesService.getScriptProperties().setProperty('LATEST_VISITOR_LIST_URL', pdfUrl);
   PropertiesService.getScriptProperties().setProperty('LATEST_MEETING_DATE', meetingDateVal); 
   ss.setActiveSheet(dataSheet);
+  autoArchiveOtherDates_(baseSheetName.slice(0, 4));
   return "<h3>処理が完了しました🎉</h3><p>PDFを作成し、全員が閲覧できるよう権限を付与しました。</p><br><a href='" + pdfUrl + "' target='_blank' style='background:#0055ff; color:#fff; padding:10px 20px; text-decoration:none; border-radius:5px; font-weight:bold;'>📄 作成されたPDFを開く</a>";
 }
 
@@ -1010,6 +1058,7 @@ function saveAllocationSheet(meetingDateVal, displayVal, visitors, pool, facilAl
   var allocPdfIdKey = 'ALLOC_PDF_ID_' + mmdd + '割り振り';
   var pdfUrl = exportAllocationSheetToPdf(sheet, displayVal + " 割り振り表.pdf", allocPdfIdKey);
   PropertiesService.getScriptProperties().setProperty('LATEST_ALLOCATION_URL', pdfUrl); 
+  autoArchiveOtherDates_(mmdd);
   return "<h3>作成完了しました🎉</h3><p>割り振り表を作成しました。</p><br><a href='" + pdfUrl + "' target='_blank' style='background:#0055ff; color:#fff; padding:10px 20px; text-decoration:none; border-radius:5px; font-weight:bold;'>📄 作成されたPDFを開く</a>";
 }
 
