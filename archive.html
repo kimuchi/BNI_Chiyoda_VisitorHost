@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    body { font-family: sans-serif; padding: 18px; margin: 0; font-size: 14px; }
+    h3 { margin: 0 0 6px; color: #0055ff; }
+    .hint { font-size: 12px; color: #666; line-height: 1.6; margin-bottom: 12px; }
+    .summary { background: #f5f7fa; border: 1px solid #dde3ea; border-radius: 6px; padding: 8px 12px; margin-bottom: 12px; font-size: 13px; }
+    .summary b { color: #0055ff; font-size: 16px; }
+    .quick { border: 1px solid #ddd; border-radius: 6px; padding: 10px 12px; margin-bottom: 14px; background: #fffdf6; }
+    .row { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; border: 1px solid #e2e2e2; border-radius: 5px; margin-bottom: 5px; background: #fff; }
+    .row.archived { background: #f4f4f4; color: #888; }
+    .row label { display: flex; align-items: center; gap: 8px; cursor: pointer; flex: 1; }
+    .date { font-weight: bold; min-width: 60px; }
+    .files { font-size: 11px; color: #888; }
+    .badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; white-space: nowrap; }
+    .badge.on { background: #e3f2fd; color: #0055ff; }
+    .badge.off { background: #e0e0e0; color: #666; }
+    button { border: none; padding: 9px 16px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 13px; }
+    .btn-arc { background: #0055ff; color: #fff; }
+    .btn-un { background: #fff; color: #0055ff; border: 1px solid #0055ff; }
+    .btn-mini { background: #ff9800; color: #fff; padding: 6px 12px; font-size: 12px; }
+    button:disabled { opacity: .5; cursor: default; }
+    .actions { margin-top: 14px; display: flex; gap: 8px; }
+    #msg { margin-top: 12px; font-weight: bold; white-space: pre-wrap; font-size: 13px; }
+    .empty { color: #999; text-align: center; padding: 22px; border: 1px dashed #ccc; border-radius: 5px; }
+    .list { max-height: 300px; overflow-y: auto; }
+  </style>
+</head>
+<body>
+  <h3>シートの整理（アーカイブ）</h3>
+  <div class="hint">
+    開催日ごとに「参加者・印刷用・割り振り表」シートをまとめて<b>非表示</b>にして、タブを減らします。<br>
+    データは消えません。再編集・PDF再作成・割り振りはアーカイブ後もそのまま使えます。いつでも元に戻せます。
+  </div>
+
+  <div class="summary" id="summary">読み込み中...</div>
+
+  <div class="quick">
+    最近の <select id="keepCount">
+      <option value="1">1</option><option value="2">2</option>
+      <option value="3" selected>3</option><option value="5">5</option><option value="10">10</option>
+    </select> 開催日だけ残して、古いものを一括アーカイブ
+    <button class="btn-mini" id="btnQuick" onclick="quickArchive()">実行</button>
+  </div>
+
+  <div class="list" id="list"></div>
+
+  <div class="actions">
+    <button class="btn-arc" id="btnArc" onclick="doArchive()">選択をアーカイブ</button>
+    <button class="btn-un" id="btnUn" onclick="doUnarchive()">選択を表示に戻す</button>
+  </div>
+  <div id="msg"></div>
+
+  <script>
+    var groups = [];
+
+    window.onload = load;
+
+    function load() {
+      google.script.run.withSuccessHandler(render).withFailureHandler(fail).getSheetArchiveStatus();
+    }
+
+    function render(status) {
+      groups = status.groups || [];
+      document.getElementById('summary').innerHTML =
+        'シート合計 <b>' + status.totalCount + '</b> 枚 ／ 表示中 <b>' + status.visibleCount + '</b> 枚' +
+        '（うち開催日以外のシート ' + status.otherVisibleCount + ' 枚）';
+
+      var el = document.getElementById('list');
+      if (!groups.length) { el.innerHTML = '<div class="empty">対象のシートがありません</div>'; return; }
+      var html = '';
+      for (var i = 0; i < groups.length; i++) {
+        var g = groups[i];
+        var names = g.sheets.map(function(s){ return s.name; }).join('、');
+        html += '<div class="row ' + (g.archived ? 'archived' : '') + '">' +
+          '<label><input type="checkbox" value="' + g.key + '">' +
+            '<span class="date">' + g.label + '</span>' +
+            '<span class="files">' + g.sheets.length + '枚: ' + escHtml(names) + '</span>' +
+          '</label>' +
+          '<span class="badge ' + (g.archived ? 'off' : 'on') + '">' + (g.archived ? 'アーカイブ済み' : '表示中') + '</span>' +
+        '</div>';
+      }
+      el.innerHTML = html;
+    }
+
+    function escHtml(s) { var d = document.createElement('span'); d.textContent = s; return d.innerHTML; }
+
+    function selected() {
+      var boxes = document.querySelectorAll('#list input[type=checkbox]'), keys = [];
+      for (var i = 0; i < boxes.length; i++) if (boxes[i].checked) keys.push(boxes[i].value);
+      return keys;
+    }
+
+    function busy(on, text) {
+      document.getElementById('btnArc').disabled = on;
+      document.getElementById('btnUn').disabled = on;
+      document.getElementById('btnQuick').disabled = on;
+      if (text) { document.getElementById('msg').style.color = '#0055ff'; document.getElementById('msg').innerText = text; }
+    }
+
+    function done(res) {
+      document.getElementById('msg').innerText = res.message;
+      document.getElementById('msg').style.color = res.ok ? 'green' : '#d00';
+      busy(false);
+      if (res.status) render(res.status); else load();
+    }
+
+    function fail(err) {
+      document.getElementById('msg').innerText = 'エラー: ' + ((err && err.message) ? err.message : err);
+      document.getElementById('msg').style.color = '#d00';
+      busy(false);
+    }
+
+    function doArchive() {
+      var keys = selected();
+      if (!keys.length) { alert('アーカイブする開催日にチェックを入れてください。'); return; }
+      busy(true, 'アーカイブ中...');
+      google.script.run.withSuccessHandler(done).withFailureHandler(fail).archiveSheetGroups(keys);
+    }
+
+    function doUnarchive() {
+      var keys = selected();
+      if (!keys.length) { alert('表示に戻す開催日にチェックを入れてください。'); return; }
+      busy(true, '再表示中...');
+      google.script.run.withSuccessHandler(done).withFailureHandler(fail).unarchiveSheetGroups(keys);
+    }
+
+    function quickArchive() {
+      var n = document.getElementById('keepCount').value;
+      if (!confirm('最近の ' + n + ' 開催日を残して、それより古いシートをアーカイブします。よろしいですか？')) return;
+      busy(true, 'アーカイブ中...');
+      google.script.run.withSuccessHandler(done).withFailureHandler(fail).archiveAllButLatest(n);
+    }
+  </script>
+</body>
+</html>

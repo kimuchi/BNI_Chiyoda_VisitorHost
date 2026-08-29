@@ -7,6 +7,7 @@ function onOpen() {
     .addItem('2. メールの確認・一括送信', 'openEmailDialog')
     .addItem('3. ルーム・オリエン割り振り表', 'openAllocationDialog')
     .addItem('4. 作成済みPDFの確認', 'openPdfLinksDialog')
+    .addItem('5. シートの整理（アーカイブ）', 'openArchiveDialog')
     .addSeparator()
     .addItem('⚙️ メンバーブック(PDF)の更新', 'openMemberBookDialog')
     .addItem('⚙️ AI参考資料の管理', 'openAiDocsDialog')
@@ -31,6 +32,7 @@ function openAllocationDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlSer
 function openVisitorHostDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('visitor_host').setWidth(400).setHeight(500), 'ビジターホストの設定'); }
 function openApiSettingsDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('api_settings').setWidth(450).setHeight(350), 'Gemini API・モデル設定'); }
 function openPdfLinksDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('pdf_links').setWidth(450).setHeight(400), '作成済みPDFの確認'); }
+function openArchiveDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('archive').setWidth(560).setHeight(620), 'シートの整理（アーカイブ）'); }
 function openAiDocsDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('ai_documents').setWidth(550).setHeight(500), 'AI参考資料の管理'); }
 
 function getAiDocuments() {
@@ -255,6 +257,107 @@ function getExistingVisitorSheets() {
   }
   result.sort(); result.reverse();
   return result;
+}
+
+// === シートの整理（アーカイブ）===
+// アーカイブ＝シートを非表示にする方式。データは消えず、再編集・PDF再作成・
+// 割り振りは getSheetByName で引き続き動作する（タブ表示だけ減る）。
+var ARCHIVE_SHEET_PATTERN_ = /^(\d{4})(参加者_印刷用|参加者|割り振り表)$/;
+
+function getSheetArchiveStatus() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet(), sheets = ss.getSheets();
+  var groups = {}, totalCount = 0, visibleCount = 0, otherVisible = 0;
+  for (var i = 0; i < sheets.length; i++) {
+    var sh = sheets[i], name = sh.getName(), hidden = sh.isSheetHidden();
+    totalCount++;
+    if (!hidden) visibleCount++;
+    var m = name.match(ARCHIVE_SHEET_PATTERN_);
+    if (!m) { if (!hidden) otherVisible++; continue; }
+    var key = m[1];
+    if (!groups[key]) groups[key] = { key: key, label: key.slice(0,2) + "/" + key.slice(2), sheets: [], visibleCount: 0 };
+    groups[key].sheets.push({ name: name, hidden: hidden, kind: m[2] });
+    if (!hidden) groups[key].visibleCount++;
+  }
+  var list = [];
+  for (var k in groups) {
+    var g = groups[k];
+    g.archived = (g.visibleCount === 0);
+    list.push(g);
+  }
+  list.sort(function(a, b) { return a.key < b.key ? 1 : (a.key > b.key ? -1 : 0); }); // 新しい日付が上
+  return { totalCount: totalCount, visibleCount: visibleCount, otherVisibleCount: otherVisible, groups: list };
+}
+
+// 対象シートを集める（keys は "0318" などの配列）
+function collectSheetsForKeys_(ss, keys) {
+  var want = {}, i;
+  for (i = 0; i < keys.length; i++) want[String(keys[i])] = true;
+  var sheets = ss.getSheets(), targets = [];
+  for (i = 0; i < sheets.length; i++) {
+    var name = sheets[i].getName(), m = name.match(ARCHIVE_SHEET_PATTERN_);
+    if (m && want[m[1]]) targets.push(sheets[i]);
+  }
+  return targets;
+}
+
+function archiveSheetGroups(keys) {
+  try {
+    if (!keys || !keys.length) return { ok: false, message: "対象の開催日が選択されていません。" };
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var targets = collectSheetsForKeys_(ss, keys);
+    if (!targets.length) return { ok: false, message: "対象のシートが見つかりませんでした。" };
+
+    // 非表示にするシートを除いた「表示され続けるシート」を把握する
+    var hideNames = {}, i;
+    for (i = 0; i < targets.length; i++) hideNames[targets[i].getName()] = true;
+    var all = ss.getSheets(), remainVisible = [];
+    for (i = 0; i < all.length; i++) {
+      if (!all[i].isSheetHidden() && !hideNames[all[i].getName()]) remainVisible.push(all[i]);
+    }
+    if (remainVisible.length === 0) {
+      return { ok: false, message: "全てのシートを非表示にはできません。1枚以上は表示されている必要があります（メンバーリスト等を残すか、選択を減らしてください）。" };
+    }
+    // アクティブシートを非表示にはできないため、残るシートへ移動しておく
+    var active = ss.getActiveSheet();
+    if (active && hideNames[active.getName()]) remainVisible[0].activate();
+
+    var done = 0;
+    for (i = 0; i < targets.length; i++) {
+      if (!targets[i].isSheetHidden()) { targets[i].hideSheet(); done++; }
+    }
+    console.log("[ARCHIVE] hidden=" + done);
+    return { ok: true, message: done + "枚のシートをアーカイブ（非表示）しました。", status: getSheetArchiveStatus() };
+  } catch (e) {
+    console.error("[ARCHIVE] " + (e && e.stack ? e.stack : e));
+    return { ok: false, message: "アーカイブ中にエラーが発生しました: " + (e && e.message ? e.message : e) };
+  }
+}
+
+function unarchiveSheetGroups(keys) {
+  try {
+    if (!keys || !keys.length) return { ok: false, message: "対象の開催日が選択されていません。" };
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var targets = collectSheetsForKeys_(ss, keys), done = 0;
+    for (var i = 0; i < targets.length; i++) {
+      if (targets[i].isSheetHidden()) { targets[i].showSheet(); done++; }
+    }
+    console.log("[ARCHIVE] shown=" + done);
+    return { ok: true, message: done + "枚のシートを再表示しました。", status: getSheetArchiveStatus() };
+  } catch (e) {
+    console.error("[ARCHIVE] " + (e && e.stack ? e.stack : e));
+    return { ok: false, message: "再表示中にエラーが発生しました: " + (e && e.message ? e.message : e) };
+  }
+}
+
+// 新しい順に keepCount 件だけ残して、それより古い開催日をまとめてアーカイブ
+function archiveAllButLatest(keepCount) {
+  var status = getSheetArchiveStatus(), keys = [];
+  var keep = parseInt(keepCount, 10); if (isNaN(keep) || keep < 0) keep = 3;
+  for (var i = keep; i < status.groups.length; i++) {
+    if (!status.groups[i].archived) keys.push(status.groups[i].key);
+  }
+  if (!keys.length) return { ok: false, message: "アーカイブ対象がありませんでした（すでに整理済みです）。", status: status };
+  return archiveSheetGroups(keys);
 }
 
 function loadSheetData(sheetName) {
