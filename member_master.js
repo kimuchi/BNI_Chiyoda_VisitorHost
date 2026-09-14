@@ -204,3 +204,76 @@ function saveCoverInfo_(cover) {
   props.setProperty('BNI_MB_PTEXT', String(cover.ptext || ''));
   if (cover.photoFile !== undefined) props.setProperty('BNI_MB_COVER_PHOTO', String(cover.photoFile || ''));
 }
+
+// === メンバーブックHTML / TSV からの一括取り込み ===
+
+// 現行のメンバーブックHTML（DATA_STORE に JSON が埋まっている）から取り込む
+function importMemberBookHtml(base64) {
+  try {
+    if (!base64) return { ok: false, message: 'ファイルデータが空です。' };
+    var html = Utilities.newBlob(Utilities.base64Decode(base64), 'text/html', 'mb.html').getDataAsString('UTF-8');
+    var m = html.match(/<script[^>]*id=["']DATA_STORE["'][^>]*>([\s\S]*?)<\/script>/i);
+    if (!m) return { ok: false, message: 'このHTMLに DATA_STORE が見つかりません。メンバーブック管理ツールで保存したHTMLをお選びください。' };
+    var json = m[1].trim();
+    if (!json) return { ok: false, message: 'DATA_STORE が空でした。メンバーを登録した状態で保存したHTMLをお使いください。' };
+    var data = JSON.parse(json);
+    var src = data.members || [], members = [];
+    for (var i = 0; i < src.length; i++) {
+      var s = src[i] || {};
+      members.push({
+        cat: s.cat || '', company: s.company || '', title: s.title || '', name: s.name || '',
+        photoFile: '', comment: s.comment || '', refer: s.refer || '', collab: s.collab || '',
+        joinDate: '', renewDate: '', expireDate: ''
+      });
+    }
+    if (!members.length) return { ok: false, message: 'メンバーが0件でした。' };
+    var cover = data.cover ? { term: data.cover.term || '', pname: data.cover.pname || '', ptext: data.cover.ptext || '' } : null;
+    var res = saveMemberMaster(members, cover);
+    if (!res.ok) return res;
+    console.log('[MEMBER] imported from html: ' + members.length);
+    return { ok: true, message: 'メンバーブックHTMLから ' + members.length + '名を取り込みました。写真は「⚙️ メンバー写真の管理」で紐付けてください。' };
+  } catch (e) {
+    console.error('[MEMBER] ' + (e && e.stack ? e.stack : e));
+    return { ok: false, message: '取り込みに失敗しました: ' + (e && e.message ? e.message : e) };
+  }
+}
+
+// タブ区切りテキストから取り込む（見出し行は任意）
+// 列: 業種区分 / 会社名 / カテゴリー / 氏名 / 写真ファイル名 / 一言 / 紹介してほしい人 / 協業したい人
+function importMemberTsv(text, replaceAll) {
+  try {
+    if (!text || !String(text).trim()) return { ok: false, message: '貼り付けられたデータが空です。' };
+    var lines = String(text).replace(/\r/g, '').split('\n'), members = [];
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+      if (!line.trim()) continue;
+      var c = line.split('\t');
+      var name = (c[3] || '').trim();
+      if (!name || name === '氏名') continue;       // 見出し行・空行を飛ばす
+      members.push({
+        cat: (c[0] || '').trim(), company: (c[1] || '').trim(), title: (c[2] || '').trim(),
+        name: name, photoFile: (c[4] || '').trim(), comment: (c[5] || '').trim(),
+        refer: (c[6] || '').trim(), collab: (c[7] || '').trim(),
+        joinDate: (c[8] || '').trim(), renewDate: (c[9] || '').trim(), expireDate: (c[10] || '').trim()
+      });
+    }
+    if (!members.length) return { ok: false, message: '取り込める行がありませんでした。タブ区切りで、4列目が氏名になっているかご確認ください。' };
+    var out = members;
+    if (!replaceAll) {
+      var cur = getMemberMaster().members || [], have = {};
+      for (var k = 0; k < cur.length; k++) have[normName_(cur[k].name)] = k;
+      for (var j = 0; j < members.length; j++) {
+        var key = normName_(members[j].name);
+        if (have[key] !== undefined) cur[have[key]] = members[j];   // 同じ氏名は上書き
+        else cur.push(members[j]);
+      }
+      out = cur;
+    }
+    var res = saveMemberMaster(out, null);
+    if (!res.ok) return res;
+    return { ok: true, message: members.length + '行を取り込みました（名簿は合計 ' + out.length + '名）。', imported: members.length, total: out.length };
+  } catch (e) {
+    console.error('[MEMBER] ' + (e && e.stack ? e.stack : e));
+    return { ok: false, message: '取り込みに失敗しました: ' + (e && e.message ? e.message : e) };
+  }
+}
