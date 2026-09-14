@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html><head><base target="_top">
+<style>
+ body{font-family:sans-serif;padding:18px;font-size:14px;margin:0;}
+ h3{margin:0 0 6px;color:#0055ff;}
+ .hint{font-size:12px;color:#666;line-height:1.7;margin-bottom:12px;}
+ .why{background:#eef5ff;border-left:4px solid #0055ff;padding:10px 12px;border-radius:0 4px 4px 0;font-size:12px;line-height:1.7;margin-bottom:14px;}
+ .tpl{border:1px solid #ddd;border-radius:6px;padding:12px;margin-bottom:12px;}
+ input[type=text]{width:100%;padding:6px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;}
+ button{border:none;padding:7px 13px;border-radius:4px;cursor:pointer;font-weight:bold;font-size:12px;background:#0055ff;color:#fff;margin-top:8px;}
+ button.sub{background:#fff;color:#0055ff;border:1px solid #0055ff;}
+ button:disabled{opacity:.5;cursor:default;}
+ .state{font-size:12px;margin-top:8px;}
+ .ok{color:#188038;font-weight:bold;} .ng{color:#c00;}
+ .warn{background:#fffbe8;border-left:4px solid #ffc107;padding:9px 12px;font-size:12px;border-radius:0 4px 4px 0;margin-bottom:12px;}
+ #msg{margin-top:12px;font-weight:bold;white-space:pre-wrap;}
+ a{color:#0f3d91;} code{background:#f1f3f6;padding:1px 5px;border-radius:3px;font-size:11px;}
+</style></head>
+<body>
+ <h3>大きなスライドの登録</h3>
+ <div class="why">
+   <b>なぜアップロードではなくリンク指定なのか</b><br>
+   定例会スライドのような数十MBのファイルは、ブラウザから送ると時間がかかり失敗しやすくなります。
+   <b>Driveに置いたファイルを指定すれば、ファイルの中身はやり取りされず</b>、複製も書き換えも
+   すべてGoogle側で行われるため、サイズに関係なく一瞬で終わります。
+ </div>
+ <div class="warn">
+   初めて使うときは、先にメニュー「<b>⚙️ スライド機能の権限確認</b>」を1回実行してください。
+   権限が未取得のままだと、この画面の操作が「サーバーエラー」になります。
+ </div>
+
+ <div id="list">読み込み中...</div>
+ <div id="msg"></div>
+
+<script>
+ window.onload=load;
+ function esc(x){var d=document.createElement('span');d.textContent=x==null?'':x;return d.innerHTML;}
+ function load(){ google.script.run.withSuccessHandler(render).withFailureHandler(fail).getBigTemplateStatus(); }
+ function setBusy(b,t){ var bs=document.querySelectorAll('button'); for(var i=0;i<bs.length;i++) bs[i].disabled=b;
+   if(t){document.getElementById('msg').style.color='#0055ff';document.getElementById('msg').innerText=t;} }
+ function fail(e){ var d=(e&&e.message)?e.message:String(e);
+   document.getElementById('msg').innerHTML='<span style="color:#d00;">エラー: '+esc(d)+'</span>'
+   +'<br><span style="font-size:12px;color:#666;">「サーバーエラー」と出る場合は、メニュー「⚙️ スライド機能の権限確認」を1回実行してから再度お試しください。</span>';
+   setBusy(false); }
+
+ function render(st){
+   var h='';
+   st.templates.forEach(function(t){
+     h+='<div class="tpl"><b>'+esc(t.label)+'</b>'
+      +'<div style="font-size:11px;color:#888;margin:4px 0 6px;">Driveの共有リンク、またはファイルIDを貼り付けてください</div>'
+      +'<input type="text" id="i_'+t.kind+'" placeholder="https://drive.google.com/file/d/xxxx/view" value="">'
+      +'<button onclick="reg(\''+t.kind+'\')">登録する</button> '
+      +'<button class="sub" onclick="prev(\''+t.kind+'\')">変換して表示を確認</button> '
+      +'<button class="sub" onclick="insp(\''+t.kind+'\')">差し込み口を調べる</button>'
+      +'<div class="state" id="s_'+t.kind+'">'
+      +(t.registered
+        ? '<span class="ok">✓ 登録済み</span> <a href="'+t.url+'" target="_blank">'+esc(t.fileName)+'</a>'
+          +' <span style="color:#888;">'+(t.sizeMB?t.sizeMB+'MB・':'')
+          +(t.isSlides?'Googleスライド':'PowerPoint（使用時にGoogleスライドへ変換）')+'</span>'
+        : '<span class="ng">未登録</span>')
+      +'</div></div>';
+   });
+   document.getElementById('list').innerHTML=h;
+ }
+ function reg(kind){
+   var v=document.getElementById('i_'+kind).value;
+   if(!v){ alert('共有リンクまたはファイルIDを入力してください。'); return; }
+   setBusy(true,'確認中...');
+   google.script.run.withSuccessHandler(function(r){
+     document.getElementById('msg').innerText=r.message;
+     document.getElementById('msg').style.color=r.ok?'green':'#d00';
+     setBusy(false); if(r.status) render(r.status);
+   }).withFailureHandler(fail).registerBigTemplate(kind,v);
+ }
+ function prev(kind){
+   setBusy(true,'Googleスライドに変換しています（ファイルの中身は送受信しないため、サイズに関係なく短時間で終わります）...');
+   google.script.run.withSuccessHandler(function(r){
+     setBusy(false);
+     if(!r.ok){ document.getElementById('msg').innerText=r.message; document.getElementById('msg').style.color='#d00'; return; }
+     document.getElementById('msg').innerHTML='<span style="color:green;">'+esc(r.message)+'</span><br>'
+       +'<a href="'+r.url+'" target="_blank">▶ 変換結果をGoogleスライドで開く</a>　'
+       +'<a href="'+r.pptxUrl+'" target="_blank">▶ PowerPointとして取得</a>';
+   }).withFailureHandler(fail).previewTemplateConversion(kind);
+ }
+ function insp(kind){
+   setBusy(true,'テンプレートを調べています...');
+   google.script.run.withSuccessHandler(function(r){
+     setBusy(false);
+     if(!r.ok){ document.getElementById('msg').innerText=r.message; document.getElementById('msg').style.color='#d00'; return; }
+     var h='<span style="color:green;">'+esc(r.message)+'</span>';
+     if(r.tokens.length){ h+='<br><b>{{トークン}}:</b> '+r.tokens.map(function(t){return esc(t.name)+'('+t.count+')';}).join('、'); }
+     if(r.altTexts.length){ h+='<br><b>代替テキスト:</b> '+r.altTexts.slice(0,40).map(function(t){return esc(t.name)+'('+t.count+')';}).join('、'); }
+     if(!r.tokens.length && !r.altTexts.length){
+       h+='<br><span style="color:#666;font-size:12px;">差し込み口がまだありません。テンプレート側で、差し替えたい文字を <code>{{開催回}}</code> のように書くか、図形の「代替テキスト」に名前を付けてください。</span>';
+     }
+     document.getElementById('msg').innerHTML=h;
+   }).withFailureHandler(fail).inspectTemplatePlaceholders(kind);
+ }
+</script>
+</body></html>
