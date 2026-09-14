@@ -492,7 +492,10 @@ function createFinalSheet(meetingDateVal, meetingDisplay, finalRows, originalHea
     printSheet.getRange(6, 1, lastPrintRow - 5, 3).setHorizontalAlignment("center");
     printSheet.getRange(6, 6, lastPrintRow - 5, 1).setHorizontalAlignment("center");
   }
-  var widths = [40, 100, 110, 160, 160, 100, 180];
+  // 列幅(px)。No./氏名/ふりがな/カテゴリー/会社名/招待者/備考
+  // ふりがなは全角10文字が1行に収まる幅(150px)を確保し、その分を備考から回している。
+  // 合計850pxは変えていないため、PDF全体の見え方は従来どおり。
+  var widths = [40, 100, 150, 160, 160, 100, 140];
   for(var w=0; w<widths.length; w++) printSheet.setColumnWidth(w+1, widths[w]);
   for(var row = 6; row <= lastPrintRow; row++) printSheet.setRowHeight(row, 30);
   SpreadsheetApp.flush();
