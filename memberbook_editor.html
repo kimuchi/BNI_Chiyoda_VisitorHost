@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html><head><base target="_top">
+<style>
+ body{font-family:sans-serif;margin:0;font-size:13px;display:flex;height:100vh;}
+ .side{width:300px;border-right:1px solid #ddd;padding:14px;overflow-y:auto;background:#fafbfd;}
+ .main{flex:1;padding:14px;overflow-y:auto;background:#eef1f5;}
+ h3{margin:0 0 8px;color:#c0392b;font-size:15px;}
+ .hint{font-size:11px;color:#666;line-height:1.6;margin-bottom:10px;}
+ button{border:none;padding:8px 13px;border-radius:4px;cursor:pointer;font-weight:bold;font-size:12px;background:#c0392b;color:#fff;}
+ button.sub{background:#fff;color:#c0392b;border:1px solid #c0392b;}
+ button.mini{padding:2px 6px;font-size:11px;background:#eef2f8;color:#333;border:1px solid #ccd4e0;font-weight:normal;}
+ button:disabled{opacity:.5;cursor:default;}
+ .bar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;}
+ .mlist{border:1px solid #e2e2e2;border-radius:4px;background:#fff;max-height:300px;overflow-y:auto;}
+ .mrow{display:flex;align-items:center;gap:6px;padding:5px 7px;border-bottom:1px solid #f0f0f0;font-size:12px;}
+ .mrow:hover{background:#f6f9ff;}
+ .mrow .n{color:#999;width:22px;text-align:right;}
+ .mrow .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;}
+ .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;background:#fff;padding:10px;border-radius:5px;}
+ .card{border:1px solid #ddd;border-radius:4px;padding:7px;font-size:11px;position:relative;min-height:112px;}
+ .card .cn{position:absolute;top:4px;left:5px;color:#bbb;font-size:10px;}
+ .card .ph{width:44px;height:44px;border-radius:3px;background:#eee;float:left;margin:0 7px 3px 0;object-fit:cover;}
+ .card .cname{font-weight:bold;font-size:12.5px;}
+ .card .cco{color:#555;}
+ .card .cti{color:#c0392b;font-size:10px;}
+ .card .ccm{color:#666;font-size:10px;margin-top:3px;clear:both;}
+ .cat{display:inline-block;color:#fff;font-size:9px;padding:1px 6px;border-radius:8px;margin-bottom:3px;}
+ #msg{margin-top:10px;font-weight:bold;white-space:pre-wrap;font-size:12px;}
+ .modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:10;}
+ .modal .inner{background:#fff;padding:18px;border-radius:7px;width:430px;max-height:86vh;overflow-y:auto;}
+ .modal label{display:block;font-size:11px;color:#555;margin-top:8px;}
+ .modal input,.modal textarea,.modal select{width:100%;padding:5px;border:1px solid #ccc;border-radius:3px;font-size:12px;box-sizing:border-box;}
+</style></head>
+<body>
+<div class="side">
+  <h3>メンバーブック</h3>
+  <div class="hint">データは「メンバー名簿」シートです。写真はDriveから氏名で自動照合されます。</div>
+  <div class="bar">
+    <button onclick="save()">名簿に保存</button>
+    <button class="sub" onclick="addM()">＋ 追加</button>
+  </div>
+  <div class="bar">
+    <button class="sub" onclick="printBook()">🖨 冊子を印刷（PDF）</button>
+    <button class="sub" onclick="exportHtml()">配布用HTMLを保存</button>
+  </div>
+  <div style="font-size:11px;color:#666;margin:8px 0 4px;">メンバー一覧（この順が掲載順）</div>
+  <div class="mlist" id="mlist"></div>
+  <div id="msg"></div>
+</div>
+<div class="main">
+  <div style="font-size:12px;color:#666;margin-bottom:6px;">プレビュー（3列・本番と同じ並び）</div>
+  <div class="grid" id="grid"></div>
+</div>
+
+<div class="modal" id="modal"><div class="inner">
+  <b id="mTitle">メンバーの編集</b>
+  <label>業種区分</label><select id="e_cat"></select>
+  <label>会社名</label><input id="e_company">
+  <label>カテゴリー（肩書・業務内容）</label><input id="e_title">
+  <label>氏名</label><input id="e_name">
+  <label>一言コメント</label><textarea id="e_comment" rows="2"></textarea>
+  <label>紹介してほしい人</label><input id="e_refer">
+  <label>協業したい人</label><input id="e_collab">
+  <label>掲載順を変更（番号を入れて移動）</label>
+  <div style="display:flex;gap:6px;"><input id="e_num" type="number" min="1" style="width:80px;">
+    <button class="mini" onclick="moveTo()">移動する</button></div>
+  <div style="margin-top:14px;display:flex;gap:6px;justify-content:flex-end;">
+    <button class="sub" onclick="closeM()">閉じる</button>
+    <button onclick="applyM()">反映</button>
+  </div>
+</div></div>
+
+<script>
+ var members=[], cats=[], photos={}, editing=-1;
+ window.onload=load;
+ function esc(x){var d=document.createElement('span');d.textContent=x==null?'':x;return d.innerHTML;}
+ function show(t,ok){var m=document.getElementById('msg');m.innerText=t;m.style.color=ok===true?'green':(ok===false?'#d00':'#0055ff');}
+ function fail(e){ show('エラー: '+((e&&e.message)?e.message:e), false); busy(false); }
+ function busy(b){ var bs=document.querySelectorAll('.side button'); for(var i=0;i<bs.length;i++) bs[i].disabled=b; }
+
+ function load(){
+   busy(true); show('読み込み中...');
+   google.script.run.withSuccessHandler(function(r){
+     busy(false);
+     if(!r.ok){ show(r.message,false); return; }
+     members=r.members||[]; cats=r.categories||[];
+     render(); show(members.length+'名を読み込みました。',true);
+     fetchPhotos(members.map(function(m){return m.name;}));
+   }).withFailureHandler(fail).getMemberBookData();
+ }
+ // 写真は重いので20件ずつ取得する
+ function fetchPhotos(names){
+   if(!names.length) return;
+   var batch=names.slice(0,20), rest=names.slice(20);
+   google.script.run.withSuccessHandler(function(r){
+     if(r&&r.ok){ for(var k in r.map) photos[k]=r.map[k]; render(); }
+     fetchPhotos(rest);
+   }).withFailureHandler(function(){ fetchPhotos(rest); }).getMemberPhotosBase64(batch);
+ }
+ function catOf(key){ for(var i=0;i<cats.length;i++) if(cats[i].key===key) return cats[i]; return null; }
+
+ function render(){
+   document.getElementById('mlist').innerHTML = members.map(function(m,i){
+     return '<div class="mrow"><span class="n">'+(i+1)+'</span>'
+      +'<span class="nm" onclick="openM('+i+')">'+esc(m.name||'(未入力)')+'</span>'
+      +'<button class="mini" onclick="mv('+i+',-1)">↑</button>'
+      +'<button class="mini" onclick="mv('+i+',1)">↓</button>'
+      +'<button class="mini" onclick="del('+i+')">✕</button></div>';
+   }).join('');
+   document.getElementById('grid').innerHTML = members.map(function(m,i){
+     var c=catOf(m.cat), ph=photos[m.name];
+     return '<div class="card" onclick="openM('+i+')"><span class="cn">'+(i+1)+'</span>'
+      + (c?'<div class="cat" style="background:'+esc(c.bg||'#888')+'">'+esc(c.label||c.key)+'</div>':'')
+      + (ph?'<img class="ph" src="'+ph+'">':'<div class="ph"></div>')
+      + '<div class="cti">'+esc(m.title)+'</div>'
+      + '<div class="cname">'+esc(m.name)+'</div>'
+      + '<div class="cco">'+esc(m.company)+'</div>'
+      + '<div class="ccm">'+esc(m.comment)+'</div></div>';
+   }).join('');
+ }
+ function addM(){ members.push({cat:'',company:'',title:'',name:'',photoFile:'',comment:'',refer:'',collab:'',joinDate:'',renewDate:'',expireDate:''}); render(); openM(members.length-1); }
+ function del(i){ if(!confirm((members[i].name||'この行')+' を削除しますか？')) return; members.splice(i,1); render(); }
+ function mv(i,d){ var j=i+d; if(j<0||j>=members.length) return; var t=members[i]; members[i]=members[j]; members[j]=t; render(); }
+
+ function openM(i){
+   editing=i; var m=members[i];
+   document.getElementById('e_cat').innerHTML='<option value=""></option>'+cats.map(function(c){
+     return '<option value="'+esc(c.key)+'"'+(c.key===m.cat?' selected':'')+'>'+esc(c.label||c.key)+'</option>';}).join('');
+   ['company','title','name','comment','refer','collab'].forEach(function(k){ document.getElementById('e_'+k).value=m[k]||''; });
+   document.getElementById('e_num').value=i+1;
+   document.getElementById('modal').style.display='flex';
+ }
+ function closeM(){ document.getElementById('modal').style.display='none'; editing=-1; }
+ function applyM(){
+   if(editing<0) return;
+   var m=members[editing];
+   m.cat=document.getElementById('e_cat').value;
+   ['company','title','name','comment','refer','collab'].forEach(function(k){ m[k]=document.getElementById('e_'+k).value; });
+   closeM(); render();
+ }
+ // 現行版の挙動をそのまま再現：先に抜いてから挿入する
+ function moveTo(){
+   if(editing<0) return;
+   var n=parseInt(document.getElementById('e_num').value,10);
+   if(isNaN(n)||n<1||n>members.length){ alert('1〜'+members.length+' の番号を入れてください。'); return; }
+   var m=members[editing];
+   members.splice(editing,1);
+   members.splice(n-1,0,m);
+   editing=n-1; render(); document.getElementById('e_num').value=n;
+ }
+
+ function save(){
+   busy(true); show('保存中...');
+   google.script.run.withSuccessHandler(function(r){ busy(false); show(r.message, !!r.ok); })
+     .withFailureHandler(fail).saveMemberBookData(members, null);
+ }
+
+ function bookHtml(){
+   var css='@page{size:A4;margin:8mm;}*{box-sizing:border-box;margin:0;padding:0;}'
+    +'body{font-family:"Hiragino Sans","Meiryo",sans-serif;}'
+    +'.pg{display:grid;grid-template-columns:repeat(3,1fr);gap:3mm;}'
+    +'.c{border:0.4mm solid #ddd;border-radius:1.5mm;padding:2mm;min-height:34mm;page-break-inside:avoid;position:relative;}'
+    +'.cn{position:absolute;top:1mm;right:1.6mm;color:#bbb;font-size:6pt;}'
+    +'.ph{width:22mm;height:22mm;object-fit:cover;border-radius:1mm;float:left;margin:0 2mm 1mm 0;background:#eee;}'
+    +'.cat{display:inline-block;color:#fff;font-size:6.5pt;padding:0.3mm 1.6mm;border-radius:2mm;margin-bottom:1mm;}'
+    +'.ti{color:#c0392b;font-size:7pt;}.nm{font-weight:bold;font-size:10.5pt;}'
+    +'.co{font-size:7.5pt;color:#444;}.cm{font-size:7pt;color:#666;margin-top:1mm;clear:both;}'
+    +'.rf{font-size:6.5pt;color:#555;margin-top:1mm;}';
+   var body=members.map(function(m,i){
+     var c=catOf(m.cat), ph=photos[m.name];
+     return '<div class="c"><span class="cn">'+(i+1)+'</span>'
+      +(c?'<div class="cat" style="background:'+esc(c.bg||'#888')+'">'+esc(c.label||c.key)+'</div>':'')
+      +(ph?'<img class="ph" src="'+ph+'">':'<div class="ph"></div>')
+      +'<div class="ti">'+esc(m.title)+'</div><div class="nm">'+esc(m.name)+'</div>'
+      +'<div class="co">'+esc(m.company)+'</div><div class="cm">'+esc(m.comment)+'</div>'
+      +'<div class="rf">紹介してほしい人: '+esc(m.refer)+'<br>協業したい人: '+esc(m.collab)+'</div></div>';
+   }).join('');
+   return '<!DOCTYPE html><html><head><meta charset="utf-8"><title>BNI メンバーブック</title>'
+    +'<style>'+css+'</style></head><body><div class="pg">'+body+'</div></body></html>';
+ }
+ function printBook(){
+   var w=window.open('','_blank');
+   if(!w){ show('ポップアップがブロックされました。ブラウザで許可してください。',false); return; }
+   w.document.open(); w.document.write(bookHtml()); w.document.close();
+   setTimeout(function(){ try{ w.focus(); w.print(); }catch(e){} }, 700);
+   show('印刷画面を開きました。送信先で「PDFに保存」を選んでください。',true);
+ }
+ function exportHtml(){
+   busy(true); show('保存中...');
+   google.script.run.withSuccessHandler(function(r){
+     busy(false);
+     if(!r.ok){ show(r.message,false); return; }
+     document.getElementById('msg').innerHTML='<span style="color:green;">'+esc(r.message)+'</span><br><a href="'+r.url+'" target="_blank">保存先を開く</a>';
+   }).withFailureHandler(fail).exportMemberBookHtml(bookHtml(),'BNI_memberbook');
+ }
+</script>
+</body></html>

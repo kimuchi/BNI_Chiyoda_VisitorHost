@@ -11,6 +11,8 @@ function onOpen() {
     .addItem('　└ アーカイブを全て表示に戻す', 'menuUnarchiveAll')
     .addItem('6. ビジター・代理スライド作成', 'openVisitorSlideDialog')
     .addItem('7. 定例会スライドの自動更新', 'openMeetingSlideDialog')
+    .addItem('8. メンバーブックの編集・PDF出力', 'openMemberBookEditorDialog')
+    .addItem('9. Zoom入室案内の作成', 'openZoomGuideDialog')
     .addSeparator()
     .addItem('⚙️ BNI 素材フォルダの設定', 'openAssetSettingsDialog')
     .addItem('⚙️ PowerPointテンプレートの登録', 'openTemplateFileDialog')
