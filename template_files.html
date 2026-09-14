@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+<head><base target="_top">
+<style>
+ body{font-family:sans-serif;padding:20px;font-size:14px;margin:0;}
+ h3{margin:0 0 6px;color:#0055ff;}
+ .hint{font-size:12px;color:#666;line-height:1.7;margin-bottom:14px;}
+ .tpl{border:1px solid #ddd;border-radius:6px;padding:12px;margin-bottom:12px;}
+ .tpl b{font-size:14px;}
+ .ids{font-size:11px;color:#888;margin:4px 0 8px;}
+ .state{font-size:12px;margin-top:6px;}
+ .ok{color:#188038;font-weight:bold;} .ng{color:#c00;}
+ button{border:none;padding:7px 14px;border-radius:4px;cursor:pointer;font-weight:bold;font-size:12px;background:#0055ff;color:#fff;}
+ button:disabled{opacity:.5;cursor:default;}
+ #msg{margin-top:12px;font-weight:bold;white-space:pre-wrap;}
+ .warn{background:#fffbe8;border-left:4px solid #ffc107;padding:10px 12px;border-radius:0 4px 4px 0;margin-bottom:14px;font-size:13px;}
+ a{color:#0f3d91;}
+</style></head>
+<body>
+  <h3>PowerPointテンプレートの登録</h3>
+  <div class="hint">
+    スライド生成に使うテンプレート(.pptx)を<b>共有フォルダに常設</b>します。一度登録すれば、以後は毎回選ぶ必要はありません。<br>
+    登録時にレイアウト（必要なシェイプID）が自動で検証されます。
+  </div>
+  <div class="warn" id="assetWarn" style="display:none;"></div>
+  <div id="list">読み込み中...</div>
+  <div id="msg"></div>
+
+<script>
+  var busy=false;
+  window.onload=load;
+  function load(){ google.script.run.withSuccessHandler(render).withFailureHandler(fail).getTemplateStatus(); }
+  function esc(x){ var d=document.createElement('span'); d.textContent=x==null?'':x; return d.innerHTML; }
+
+  function render(st){
+    var w=document.getElementById('assetWarn');
+    if(st.assets && !st.assets.folderId){
+      w.style.display='block';
+      w.innerHTML='素材フォルダが未設定です。先にメニュー「⚙️ BNI 素材フォルダの設定」で共有フォルダを指定すると、テンプレートがそこに保存されます。（未設定でもスプレッドシートと同じフォルダに保存されます）';
+    } else w.style.display='none';
+
+    var h='';
+    st.templates.forEach(function(t){
+      h += '<div class="tpl"><b>'+esc(t.label)+'</b>'
+         + '<div class="ids">必要なシェイプID: '+esc(t.requiredIds)+'</div>'
+         + '<input type="file" accept=".pptx" id="f_'+t.kind+'"> '
+         + '<button onclick="up(\''+t.kind+'\')" id="b_'+t.kind+'">登録する</button>'
+         + '<div class="state" id="s_'+t.kind+'">'
+         + (t.registered ? '<span class="ok">✓ 登録済み</span>　<a href="'+t.url+'" target="_blank">'+esc(t.fileName)+'</a>'
+                         : '<span class="ng">未登録</span>')
+         + '</div></div>';
+    });
+    document.getElementById('list').innerHTML=h;
+  }
+  function fail(e){ document.getElementById('msg').innerText='エラー: '+((e&&e.message)?e.message:e); document.getElementById('msg').style.color='#d00'; setBusy(false); }
+  function setBusy(b){ busy=b; var bs=document.querySelectorAll('button'); for(var i=0;i<bs.length;i++) bs[i].disabled=b; }
+
+  // フォーム送信ではなく base64 文字列で送る（この環境ではフォーム＋ファイル送信が失敗するため）
+  function up(kind){
+    var f=document.getElementById('f_'+kind).files[0];
+    if(!f){ alert('.pptx ファイルを選択してください。'); return; }
+    setBusy(true);
+    document.getElementById('msg').style.color='#0055ff';
+    document.getElementById('msg').innerText='検証してアップロードしています...';
+    var r=new FileReader();
+    r.onload=function(){
+      var b64=String(r.result).split(',')[1];
+      google.script.run.withSuccessHandler(function(res){
+        document.getElementById('msg').innerText=res.message;
+        document.getElementById('msg').style.color=res.ok?'green':'#d00';
+        setBusy(false);
+        if(res.status) render(res.status);
+      }).withFailureHandler(fail).saveTemplateBase64(kind, b64, f.name);
+    };
+    r.onerror=function(){ fail({message:'ブラウザでのファイル読み込みに失敗しました。'}); };
+    r.readAsDataURL(f);
+  }
+</script>
+</body></html>

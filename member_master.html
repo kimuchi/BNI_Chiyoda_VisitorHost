@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html><head><base target="_top">
+<style>
+ body{font-family:sans-serif;padding:16px;font-size:13px;margin:0;}
+ h3{margin:0 0 4px;color:#0055ff;}
+ .hint{font-size:12px;color:#666;line-height:1.6;margin-bottom:10px;}
+ .bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center;}
+ button{border:none;padding:7px 13px;border-radius:4px;cursor:pointer;font-weight:bold;font-size:12px;background:#0055ff;color:#fff;}
+ button.sub{background:#fff;color:#0055ff;border:1px solid #0055ff;}
+ button.mini{padding:2px 7px;font-size:11px;background:#eef2f8;color:#333;border:1px solid #ccd4e0;}
+ button:disabled{opacity:.5;cursor:default;}
+ table{border-collapse:collapse;width:100%;font-size:12px;}
+ th{background:#f2f6ff;border:1px solid #dde2e8;padding:5px;position:sticky;top:0;z-index:1;}
+ td{border:1px solid #e8ebef;padding:2px;}
+ td input,td select{width:100%;border:none;padding:4px;font-size:12px;box-sizing:border-box;background:transparent;}
+ td input:focus,td select:focus{background:#fffbe8;outline:1px solid #ffc107;}
+ .wrap{max-height:420px;overflow:auto;border:1px solid #e2e2e2;border-radius:5px;}
+ .num{width:34px;text-align:center;color:#888;}
+ #msg{margin-top:10px;font-weight:bold;white-space:pre-wrap;}
+ .warn{background:#fffbe8;border-left:4px solid #ffc107;padding:8px 11px;font-size:12px;border-radius:0 4px 4px 0;margin-bottom:10px;}
+</style></head>
+<body>
+ <h3>メンバー名簿の管理</h3>
+ <div class="hint">
+   メンバーブック・メンバープレゼン・Zoom案内が共通で使う名簿です。
+   <b>この並び順が、メンバーブックの掲載順・発表順になります。</b>
+   （割り振り表などで使う「メンバーリスト」シートとは別で、氏名で紐付きます）
+ </div>
+ <div class="warn">写真は直接ここに貼りません。メニュー「⚙️ メンバー写真の管理」でアップロードすると、氏名で自動照合されます。</div>
+
+ <div class="bar">
+   <button onclick="addRow()">＋ 行を追加</button>
+   <button class="sub" onclick="seed()">メンバーリストから氏名を取り込む</button>
+   <button class="sub" onclick="autoPhoto()">写真を自動照合</button>
+   <button id="btnSave" onclick="save()">名簿を保存</button>
+   <span id="count" style="color:#666;"></span>
+ </div>
+
+ <div class="wrap"><table id="tbl"><thead><tr>
+   <th style="width:34px;">#</th><th style="width:96px;">業種区分</th><th>会社名</th><th>カテゴリー</th>
+   <th style="width:90px;">氏名</th><th>一言コメント</th><th>紹介してほしい人</th><th>協業したい人</th>
+   <th style="width:78px;">入会日</th><th style="width:78px;">更新期限日</th><th style="width:74px;">操作</th>
+ </tr></thead><tbody id="body"></tbody></table></div>
+ <div id="msg"></div>
+
+<script>
+ var members=[], cats=[];
+ window.onload=load;
+ function esc(x){var d=document.createElement('span');d.textContent=x==null?'':x;return d.innerHTML;}
+ function load(){ busy(true,'読み込み中...'); google.script.run.withSuccessHandler(function(r){
+     busy(false);
+     if(!r.ok){ show(r.message,false); return; }
+     members=r.members||[]; cats=r.categories||[]; render();
+   }).withFailureHandler(fail).getMemberMaster(); }
+
+ function render(){
+   var opt='<option value=""></option>';
+   cats.forEach(function(c){ opt+='<option value="'+esc(c.key)+'">'+esc(c.label||c.key)+'</option>'; });
+   var h='';
+   members.forEach(function(m,i){
+     h+='<tr>'
+      +'<td class="num">'+(i+1)+'</td>'
+      +'<td><select data-i="'+i+'" data-k="cat">'+opt+'</select></td>'
+      +f(i,'company',m.company)+f(i,'title',m.title)+f(i,'name',m.name)
+      +f(i,'comment',m.comment)+f(i,'refer',m.refer)+f(i,'collab',m.collab)
+      +f(i,'joinDate',m.joinDate)+f(i,'expireDate',m.expireDate)
+      +'<td style="white-space:nowrap;text-align:center;">'
+        +'<button class="mini" onclick="mv('+i+',-1)">↑</button> '
+        +'<button class="mini" onclick="mv('+i+',1)">↓</button> '
+        +'<button class="mini" onclick="del('+i+')">✕</button></td>'
+      +'</tr>';
+   });
+   document.getElementById('body').innerHTML=h;
+   // select の現在値を反映（HTML文字列だと選択状態が付けにくいため後から設定）
+   members.forEach(function(m,i){
+     var s=document.querySelector('select[data-i="'+i+'"]'); if(s) s.value=m.cat||'';
+   });
+   bind();
+   document.getElementById('count').textContent=members.length+'名';
+ }
+ function f(i,k,v){ return '<td><input data-i="'+i+'" data-k="'+k+'" value="'+esc(v)+'"></td>'; }
+ function bind(){
+   var els=document.querySelectorAll('#body input,#body select');
+   for(var i=0;i<els.length;i++){
+     els[i].addEventListener('change',function(){
+       members[+this.getAttribute('data-i')][this.getAttribute('data-k')]=this.value;
+     });
+   }
+ }
+ function addRow(){ members.push({cat:'',company:'',title:'',name:'',photoFile:'',comment:'',refer:'',collab:'',joinDate:'',renewDate:'',expireDate:''}); render(); }
+ function del(i){ if(!confirm((members[i].name||'この行')+' を削除しますか？')) return; members.splice(i,1); render(); }
+ function mv(i,d){ var j=i+d; if(j<0||j>=members.length) return; var t=members[i]; members[i]=members[j]; members[j]=t; render(); }
+
+ function busy(b,t){ var bs=document.querySelectorAll('button'); for(var i=0;i<bs.length;i++) bs[i].disabled=b; if(t) show(t,null); }
+ function show(t,ok){ var m=document.getElementById('msg'); m.innerText=t; m.style.color= ok===true?'green':(ok===false?'#d00':'#0055ff'); }
+ function fail(e){ show('エラー: '+((e&&e.message)?e.message:e),false); busy(false); }
+ function done(r){ show(r.message, !!r.ok); busy(false); if(r.ok) load(); }
+
+ function save(){ busy(true,'保存中...'); google.script.run.withSuccessHandler(function(r){ show(r.message,!!r.ok); busy(false); }).withFailureHandler(fail).saveMemberMaster(members,null); }
+ function seed(){ if(!confirm('「メンバーリスト」シートの氏名を取り込みます（既にある氏名は重複しません）。よろしいですか？')) return; busy(true,'取り込み中...'); google.script.run.withSuccessHandler(done).withFailureHandler(fail).seedMemberMaster(); }
+ function autoPhoto(){ busy(true,'照合中...'); google.script.run.withSuccessHandler(done).withFailureHandler(fail).autoFillMemberPhotos(); }
+</script>
+</body></html>

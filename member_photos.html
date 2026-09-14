@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html><head><base target="_top">
+<style>
+ body{font-family:sans-serif;padding:20px;font-size:14px;margin:0;}
+ h3{margin:0 0 6px;color:#0055ff;}
+ .hint{font-size:12px;color:#666;line-height:1.7;margin-bottom:14px;}
+ .box{border:1px solid #ddd;border-radius:6px;padding:12px;margin-bottom:12px;}
+ button{border:none;padding:8px 14px;border-radius:4px;cursor:pointer;font-weight:bold;font-size:13px;background:#0055ff;color:#fff;}
+ button.sub{background:#fff;color:#0055ff;border:1px solid #0055ff;}
+ button:disabled{opacity:.5;cursor:default;}
+ .stat{background:#f7f9fc;border:1px solid #dde3ea;border-radius:6px;padding:10px 12px;font-size:13px;margin-bottom:12px;}
+ .miss{max-height:150px;overflow-y:auto;font-size:12px;color:#c00;margin-top:6px;line-height:1.8;}
+ #msg{margin-top:12px;font-weight:bold;white-space:pre-wrap;}
+</style></head>
+<body>
+ <h3>メンバー写真の管理</h3>
+ <div class="hint">
+   写真は共有フォルダの <b>02_メンバー写真</b> に保存され、<b>氏名で自動照合</b>されます。<br>
+   ファイル名は「氏名.jpg」または「氏名__識別子.jpg」の形式にしてください（空白は無視されます）。
+ </div>
+ <div class="stat" id="stat">読み込み中...</div>
+
+ <div class="box">
+   <b>写真をアップロード</b>（複数選択できます）
+   <div style="margin-top:8px;"><input type="file" id="files" accept="image/*" multiple></div>
+   <div style="margin-top:10px;"><button id="btnUp" onclick="up()">アップロード</button></div>
+   <div style="font-size:11px;color:#888;margin-top:6px;">枚数が多いときは自動で分割送信します。</div>
+ </div>
+
+ <div class="box">
+   <b>写真索引の再作成</b>
+   <div style="font-size:12px;color:#666;margin:6px 0;">フォルダ内の写真を走査して、氏名との対応表を作り直します。写真を直接ドライブに置いた後に実行してください。</div>
+   <button class="sub" id="btnIdx" onclick="rebuild()">索引を作り直す</button>
+   <button class="sub" id="btnFill" onclick="fill()">メンバー名簿の写真列を自動で埋める</button>
+ </div>
+ <div id="msg"></div>
+
+<script>
+ var queue=[], done=0;
+ window.onload=load;
+ function load(){ google.script.run.withSuccessHandler(render).withFailureHandler(fail).getPhotoOverview(); }
+ function esc(x){var d=document.createElement('span');d.textContent=x==null?'':x;return d.innerHTML;}
+ function render(s){
+   var h='索引済みの写真: <b>'+s.indexed+'</b> 枚 ／ メンバー名簿: <b>'+s.memberCount+'</b> 名';
+   if(s.unmatched && s.unmatched.length){
+     h+='<div class="miss"><b>写真が見つからないメンバー ('+s.unmatched.length+'名):</b><br>'+s.unmatched.map(esc).join('、')+'</div>';
+   } else if(s.memberCount) h+='<div style="color:#188038;margin-top:6px;">全員の写真が見つかりました。</div>';
+   document.getElementById('stat').innerHTML=h;
+ }
+ function busy(b,t){ ['btnUp','btnIdx','btnFill'].forEach(function(i){document.getElementById(i).disabled=b;});
+   if(t){document.getElementById('msg').style.color='#0055ff';document.getElementById('msg').innerText=t;} }
+ function fail(e){ document.getElementById('msg').innerText='エラー: '+((e&&e.message)?e.message:e); document.getElementById('msg').style.color='#d00'; busy(false); }
+ function finish(r){ document.getElementById('msg').innerText=r.message; document.getElementById('msg').style.color=r.ok?'green':'#d00'; busy(false); load(); }
+
+ function up(){
+   var fs=document.getElementById('files').files;
+   if(!fs.length){ alert('写真を選択してください。'); return; }
+   queue=[]; done=0;
+   busy(true,'読み込み中...');
+   var pend=fs.length;
+   for(var i=0;i<fs.length;i++){ (function(f){
+     var r=new FileReader();
+     r.onload=function(){ queue.push({name:f.name, mimeType:f.type||'image/jpeg', base64:String(r.result).split(',')[1]});
+       if(--pend===0) sendNext(); };
+     r.onerror=function(){ if(--pend===0) sendNext(); };
+     r.readAsDataURL(f);
+   })(fs[i]); }
+ }
+ // 20枚ずつ再帰送信（1回のリクエストを軽く保つ）
+ function sendNext(){
+   if(!queue.length){ finish({ok:true,message:done+'枚の写真を保存しました。'}); return; }
+   var batch=queue.splice(0,20);
+   busy(true,'アップロード中... ('+done+'枚完了 / 残り'+(queue.length+batch.length)+'枚)');
+   google.script.run.withSuccessHandler(function(r){
+     if(!r.ok){ finish(r); return; }
+     done+=r.saved; sendNext();
+   }).withFailureHandler(fail).uploadMemberPhotosBase64(batch);
+ }
+ function rebuild(){ busy(true,'索引を作成中...'); google.script.run.withSuccessHandler(finish).withFailureHandler(fail).rebuildPhotoIndex(); }
+ function fill(){ busy(true,'照合中...'); google.script.run.withSuccessHandler(finish).withFailureHandler(fail).autoFillMemberPhotos(); }
+</script>
+</body></html>
