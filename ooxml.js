@@ -17,8 +17,9 @@ function unzipToMap_(zipBlob) {
 function zipFromMap_(map, fileName) {
   var blobs = [];
   for (var path in map) {
-    var b = map[path];
-    blobs.push(b.copyBlob ? b.copyBlob().setName(path) : b.setName(path));
+    // copyBlob() はメモリを倍使うため、大きなpptxでは行わない。
+    // map はこの後破棄するので、元のBlobに名前を付け直すだけでよい。
+    blobs.push(map[path].setName(path));
   }
   return Utilities.zip(blobs, fileName)
     .setContentType('application/vnd.openxmlformats-officedocument.presentationml.presentation');

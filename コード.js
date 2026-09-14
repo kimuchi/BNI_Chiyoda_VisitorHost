@@ -16,7 +16,7 @@ function onOpen() {
     .addItem('⚙️ メンバー写真の管理', 'openMemberPhotoDialog')
     .addItem('⚙️ メンバー名簿の管理', 'openMemberMasterDialog')
     .addItem('⚙️ 大きなスライドの登録', 'openBigTemplateDialog')
-    .addItem('⚙️ スライド機能の権限確認', 'authorizeSlidesAccess')
+    .addItem('⚙️ 大きなファイル機能の権限確認', 'authorizeDriveForBigFiles')
     .addItem('⚙️ メンバーブック(PDF)の更新', 'openMemberBookDialog')
     .addItem('⚙️ AI参考資料の管理', 'openAiDocsDialog')
     .addItem('⚙️ メンバーリスト(OCR)の更新', 'openPdfDialog')
