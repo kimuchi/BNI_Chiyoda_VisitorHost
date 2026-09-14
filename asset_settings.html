@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head><base target="_top">
+<style>
+ body{font-family:sans-serif;padding:20px;font-size:14px;margin:0;}
+ h3{margin:0 0 6px;color:#0055ff;}
+ .hint{font-size:12px;color:#666;line-height:1.7;margin-bottom:14px;}
+ input[type=text]{width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;}
+ button{border:none;padding:9px 16px;border-radius:4px;cursor:pointer;font-weight:bold;font-size:13px;background:#0055ff;color:#fff;}
+ button:disabled{opacity:.5;cursor:default;}
+ .box{border:1px solid #ddd;border-radius:6px;padding:12px;margin-bottom:14px;}
+ .status{background:#f7f9fc;border:1px solid #dde3ea;border-radius:6px;padding:10px 12px;font-size:13px;}
+ .ok{color:#188038;font-weight:bold;} .ng{color:#d00;font-weight:bold;}
+ table{border-collapse:collapse;width:100%;font-size:13px;margin-top:8px;}
+ th,td{border:1px solid #e3e3e3;padding:6px 8px;text-align:left;}
+ th{background:#f2f6ff;}
+ #msg{margin-top:12px;font-weight:bold;white-space:pre-wrap;}
+ a{color:#0f3d91;}
+</style></head>
+<body>
+  <h3>BNI 素材フォルダの設定</h3>
+  <div class="hint">
+    メンバーの写真・PowerPointテンプレート・生成したファイルの保存先になる<b>共有フォルダ</b>を指定します。<br>
+    Googleドライブでフォルダを開いたときのURL、またはフォルダIDを貼り付けてください。<br>
+    保存すると、そのフォルダの直下に <b>01_テンプレート / 02_メンバー写真 / 03_生成物</b> を自動で作成します。
+  </div>
+
+  <div class="box">
+    <label><b>共有フォルダのURL または フォルダID</b></label>
+    <input type="text" id="folder" placeholder="https://drive.google.com/drive/folders/xxxxxxxx または フォルダID">
+    <div style="margin-top:10px;"><button id="btnSave" onclick="save()">保存して確認する</button></div>
+  </div>
+
+  <div class="status" id="status">読み込み中...</div>
+  <div id="msg"></div>
+
+<script>
+  window.onload = load;
+  function load(){ google.script.run.withSuccessHandler(render).withFailureHandler(fail).getAssetSettings(); }
+
+  function render(s){
+    document.getElementById('folder').value = s.folderId || '';
+    var h = '';
+    if(!s.folderId){ h = '<span class="ng">未設定</span>　— 設定しない場合はスプレッドシートと同じフォルダに保存されます。'; }
+    else if(!s.reachable){ h = '<span class="ng">開けません</span>　' + esc(s.message||''); }
+    else {
+      h = '<span class="ok">設定済み</span>　フォルダ: <a href="'+s.folderUrl+'" target="_blank">'+esc(s.folderName)+'</a>';
+      h += '<table><tr><th>用途</th><th>フォルダ名</th><th>状態</th></tr>';
+      var jp = {template:'PowerPointテンプレート', photo:'メンバー写真', output:'生成物（スライド・PDF）'};
+      s.subFolders.forEach(function(f){
+        h += '<tr><td>'+jp[f.kind]+'</td><td>'+esc(f.name)+'</td><td>'+
+             (f.exists ? '<a href="'+f.url+'" target="_blank">開く</a>' : '<span class="ng">未作成</span>')+'</td></tr>';
+      });
+      h += '</table>';
+    }
+    document.getElementById('status').innerHTML = h;
+  }
+  function esc(x){ var d=document.createElement('span'); d.textContent=x==null?'':x; return d.innerHTML; }
+  function fail(e){ document.getElementById('msg').innerText='エラー: '+((e&&e.message)?e.message:e); document.getElementById('msg').style.color='#d00'; document.getElementById('btnSave').disabled=false; }
+
+  function save(){
+    var v = document.getElementById('folder').value;
+    if(!v){ alert('フォルダのURLまたはIDを入力してください。'); return; }
+    document.getElementById('btnSave').disabled = true;
+    document.getElementById('msg').style.color = '#0055ff';
+    document.getElementById('msg').innerText = '確認中...';
+    google.script.run.withSuccessHandler(function(r){
+      document.getElementById('msg').innerText = r.message;
+      document.getElementById('msg').style.color = r.ok ? 'green' : '#d00';
+      document.getElementById('btnSave').disabled = false;
+      if(r.status) render(r.status);
+    }).withFailureHandler(fail).saveAssetSettings(v);
+  }
+</script>
+</body></html>

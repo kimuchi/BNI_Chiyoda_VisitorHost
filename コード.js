@@ -9,7 +9,12 @@ function onOpen() {
     .addItem('4. 作成済みPDFの確認', 'openPdfLinksDialog')
     .addItem('5. シートの整理（アーカイブ）', 'openArchiveDialog')
     .addItem('　└ アーカイブを全て表示に戻す', 'menuUnarchiveAll')
+    .addItem('6. ビジター・代理スライド作成', 'openVisitorSlideDialog')
     .addSeparator()
+    .addItem('⚙️ BNI 素材フォルダの設定', 'openAssetSettingsDialog')
+    .addItem('⚙️ PowerPointテンプレートの登録', 'openTemplateFileDialog')
+    .addItem('⚙️ メンバー写真の管理', 'openMemberPhotoDialog')
+    .addItem('⚙️ メンバー名簿の管理', 'openMemberMasterDialog')
     .addItem('⚙️ メンバーブック(PDF)の更新', 'openMemberBookDialog')
     .addItem('⚙️ AI参考資料の管理', 'openAiDocsDialog')
     .addItem('⚙️ メンバーリスト(OCR)の更新', 'openPdfDialog')
@@ -36,6 +41,9 @@ function openVisitorHostDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlSe
 function openApiSettingsDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('api_settings').setWidth(450).setHeight(350), 'Gemini API・モデル設定'); }
 function openPdfLinksDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('pdf_links').setWidth(450).setHeight(400), '作成済みPDFの確認'); }
 function openManualDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('manual').setWidth(900).setHeight(720), '名簿システム 使い方ガイド'); }
+function openAssetSettingsDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('asset_settings').setWidth(620).setHeight(560), 'BNI 素材フォルダの設定'); }
+function openTemplateFileDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('template_files').setWidth(620).setHeight(640), 'PowerPointテンプレートの登録'); }
+function openMemberPhotoDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('member_photos').setWidth(620).setHeight(620), 'メンバー写真の管理'); }
 function openArchiveDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('archive').setWidth(560).setHeight(620), 'シートの整理（アーカイブ）'); }
 function openAiDocsDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('ai_documents').setWidth(550).setHeight(500), 'AI参考資料の管理'); }
 
