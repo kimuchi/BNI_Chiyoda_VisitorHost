@@ -19,6 +19,8 @@ function onOpen() {
     .addItem('⚙️ ビジターホストの設定', 'openVisitorHostDialog')
     .addItem('⚙️ Gemini API・モデル設定', 'openApiSettingsDialog')
     .addItem('⚙️ Gemini接続テスト', 'testGeminiConnection')
+    .addSeparator()
+    .addItem('❓ 使い方（ヘルプ）', 'openManualDialog')
     .addToUi();
 }
 
@@ -33,6 +35,7 @@ function openAllocationDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlSer
 function openVisitorHostDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('visitor_host').setWidth(400).setHeight(500), 'ビジターホストの設定'); }
 function openApiSettingsDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('api_settings').setWidth(450).setHeight(350), 'Gemini API・モデル設定'); }
 function openPdfLinksDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('pdf_links').setWidth(450).setHeight(400), '作成済みPDFの確認'); }
+function openManualDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('manual').setWidth(900).setHeight(720), '名簿システム 使い方ガイド'); }
 function openArchiveDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('archive').setWidth(560).setHeight(620), 'シートの整理（アーカイブ）'); }
 function openAiDocsDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('ai_documents').setWidth(550).setHeight(500), 'AI参考資料の管理'); }
 
