@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html><head><base target="_top">
+<style>
+ body{font-family:sans-serif;padding:18px;font-size:14px;margin:0;}
+ h3{margin:0 0 6px;color:#16233f;}
+ .hint{font-size:12px;color:#666;line-height:1.7;margin-bottom:14px;}
+ .box{border:1px solid #ddd;border-radius:6px;padding:12px;margin-bottom:12px;}
+ label{font-size:13px;} input{padding:5px;border:1px solid #ccc;border-radius:4px;font-size:13px;}
+ button{border:none;padding:10px 18px;border-radius:5px;cursor:pointer;font-weight:bold;font-size:13px;background:#16233f;color:#fff;}
+ button.sub{background:#fff;color:#16233f;border:1px solid #16233f;padding:7px 13px;font-size:12px;}
+ button:disabled{opacity:.5;cursor:default;}
+ #msg{margin-top:12px;font-weight:bold;white-space:pre-wrap;}
+ .warn{background:#fffbe8;border-left:4px solid #ffc107;padding:9px 12px;font-size:12px;border-radius:0 4px 4px 0;margin-bottom:12px;}
+</style></head>
+<body>
+ <h3>Zoom入室案内の作成</h3>
+ <div class="hint">
+   メンバー名簿の氏名を<b>6列・縦読み</b>で並べたA4横の案内を作ります。<br>
+   ボタンを押すと印刷画面が開くので、送信先で「PDFに保存」を選んでください。
+ </div>
+ <div class="warn" id="warn" style="display:none;"></div>
+
+ <div class="box">
+   <div style="margin-bottom:8px;">
+     <label>例に出すメンバー番号：<input type="number" id="ex" min="1" style="width:70px;"></label>
+   </div>
+   <div>
+     <label>人数の表記：<input type="text" id="title" style="width:150px;" placeholder="51名"></label>
+   </div>
+   <div style="font-size:11px;color:#888;margin-top:6px;">現在の登録：<span id="cnt">-</span></div>
+ </div>
+
+ <button id="btn" onclick="makePdf()">📥 Zoom入室案内を作成（印刷）</button>
+ <button class="sub" onclick="saveSet()">この設定を保存</button>
+ <div id="msg"></div>
+
+<script>
+ var names=[];
+ window.onload=function(){ google.script.run.withSuccessHandler(init).withFailureHandler(fail).getZoomGuideContext(); };
+ function esc(x){var d=document.createElement('span');d.textContent=x==null?'':x;return d.innerHTML;}
+ function fail(e){ document.getElementById('msg').innerText='エラー: '+((e&&e.message)?e.message:e);
+   document.getElementById('msg').style.color='#d00'; document.getElementById('btn').disabled=false; }
+ function init(c){
+   if(!c.ok){ fail({message:c.message}); return; }
+   names=c.names||[];
+   document.getElementById('ex').value=c.exampleNum||4;
+   document.getElementById('title').value=c.title||(names.length+'名');
+   document.getElementById('cnt').textContent=names.length+'名';
+   if(!names.length){
+     var w=document.getElementById('warn'); w.style.display='block';
+     w.innerHTML='メンバー名簿が空です。「⚙️ メンバー名簿の管理」で取り込んでから作成してください。';
+     document.getElementById('btn').disabled=true;
+   }
+ }
+ function saveSet(){
+   google.script.run.withSuccessHandler(function(r){
+     document.getElementById('msg').innerText=r.message; document.getElementById('msg').style.color=r.ok?'green':'#d00';
+   }).withFailureHandler(fail).saveZoomGuideSettings({
+     exampleNum:document.getElementById('ex').value, title:document.getElementById('title').value});
+ }
+
+ function makePdf(){
+   if(!names.length){ alert('メンバー名簿が空です。'); return; }
+   var exNum=parseInt(document.getElementById('ex').value,10)||4;
+   var title=document.getElementById('title').value||(names.length+'名');
+   var perCol=Math.ceil(names.length/6), cols=[];
+   for(var c=0;c<6;c++){
+     var items=[];
+     for(var j=0;j<perCol;j++){
+       var idx=c*perCol+j;
+       if(idx>=names.length) break;
+       items.push({no:String(idx+1).padStart(2,'0'), name:names[idx]});
+     }
+     cols.push(items);
+   }
+   var exName = names[exNum-1] || names[0];
+   var exNo = String(exNum).padStart(2,'0');
+
+   var html='<!DOCTYPE html><html><head><meta charset="utf-8"><title>Zoom入室案内</title><style>'
+    +'@page{size:A4 landscape;margin:0;}'
+    +'*{box-sizing:border-box;margin:0;padding:0;}'
+    +'body{font-family:"Hiragino Sans","Meiryo",sans-serif;background:#16233f;color:#fff;'
+    +'width:297mm;height:210mm;padding:10mm 12mm;}'
+    +'h1{font-size:22pt;text-align:center;margin-bottom:2mm;letter-spacing:1px;}'
+    +'.lead{text-align:center;font-size:10.5pt;line-height:1.7;margin-bottom:4mm;}'
+    +'.ex{text-align:center;font-size:13pt;font-weight:bold;background:#fff;color:#16233f;'
+    +'padding:2.5mm 4mm;border-radius:2mm;display:inline-block;margin-bottom:4mm;}'
+    +'.exwrap{text-align:center;}'
+    +'.grid{display:flex;gap:3mm;}'
+    +'.col{flex:1;}'
+    +'.item{font-size:9pt;padding:0.9mm 1.5mm;border-bottom:1px solid rgba(255,255,255,.22);white-space:nowrap;overflow:hidden;}'
+    +'.no{display:inline-block;width:7mm;color:#ffd966;font-weight:bold;}'
+    +'</style></head><body>'
+    +'<h1>Zoom 入室時のお名前設定のお願い</h1>'
+    +'<div class="lead">スムーズな進行のため、Zoom入室時のお名前を<br>'
+    +'<b>「番号＋お名前」</b>に変更してください（'+esc(title)+'）</div>'
+    +'<div class="exwrap"><span class="ex">例： '+esc(exNo)+' '+esc(exName)+'</span></div>'
+    +'<div class="grid">'
+    + cols.map(function(col){
+        return '<div class="col">'+col.map(function(it){
+          return '<div class="item"><span class="no">'+esc(it.no)+'</span>'+esc(it.name)+'</div>';
+        }).join('')+'</div>';
+      }).join('')
+    +'</div></body></html>';
+
+   // サンドボックス内から直接 print() すると親画面が対象になり得るため、別ウィンドウで開く
+   var w=window.open('','_blank');
+   if(!w){ document.getElementById('msg').innerText='ポップアップがブロックされました。ブラウザで許可してから再度お試しください。';
+     document.getElementById('msg').style.color='#d00'; return; }
+   w.document.open(); w.document.write(html); w.document.close();
+   setTimeout(function(){ try{ w.focus(); w.print(); }catch(e){} }, 600);
+   document.getElementById('msg').innerText='印刷画面を開きました。送信先で「PDFに保存」を選んでください。';
+   document.getElementById('msg').style.color='green';
+ }
+</script>
+</body></html>
