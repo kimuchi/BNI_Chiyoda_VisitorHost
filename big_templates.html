@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html><head><base target="_top">
+<style>
+ body{font-family:sans-serif;padding:18px;font-size:14px;margin:0;}
+ h3{margin:0 0 6px;color:#0055ff;}
+ .why{background:#eef5ff;border-left:4px solid #0055ff;padding:10px 12px;border-radius:0 4px 4px 0;font-size:12px;line-height:1.7;margin-bottom:12px;}
+ .warn{background:#fffbe8;border-left:4px solid #ffc107;padding:9px 12px;font-size:12px;border-radius:0 4px 4px 0;margin-bottom:12px;}
+ .tpl{border:1px solid #ddd;border-radius:6px;padding:12px;margin-bottom:12px;}
+ input[type=text]{width:100%;padding:6px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;}
+ button{border:none;padding:7px 13px;border-radius:4px;cursor:pointer;font-weight:bold;font-size:12px;background:#0055ff;color:#fff;margin-top:8px;}
+ button.sub{background:#fff;color:#0055ff;border:1px solid #0055ff;}
+ button:disabled{opacity:.5;cursor:default;}
+ .state{font-size:12px;margin-top:8px;}
+ .ok{color:#188038;font-weight:bold;} .ng{color:#c00;}
+ #msg{margin-top:12px;font-weight:bold;white-space:pre-wrap;}
+ table{border-collapse:collapse;width:100%;font-size:12px;margin-top:8px;}
+ th,td{border:1px solid #e3e3e3;padding:5px 7px;text-align:left;} th{background:#f2f6ff;}
+ a{color:#0f3d91;}
+</style></head>
+<body>
+ <h3>大きなスライドの登録</h3>
+ <div class="why">
+   <b>PowerPointのまま扱います</b>（Googleスライドへは変換しません）。<br>
+   テンプレートは<b>Driveに置いたファイルをリンクで指定</b>してください。加工時はサーバーが
+   Driveから直接読むので、ブラウザとの間で数十MBのやり取りが発生せず、分割送信も不要です。
+   デザイン・フォント・座標には触れず、必要な文字だけを差し替えます。
+ </div>
+ <div class="warn">
+   初めて使うときは、先にメニュー「<b>⚙️ 大きなファイル機能の権限確認</b>」を1回実行してください。
+   権限が未取得のままだと、この画面の操作が「サーバーエラー」になります。
+ </div>
+
+ <div id="list">読み込み中...</div>
+ <div id="msg"></div>
+
+<script>
+ window.onload=load;
+ function esc(x){var d=document.createElement('span');d.textContent=x==null?'':x;return d.innerHTML;}
+ function load(){ google.script.run.withSuccessHandler(render).withFailureHandler(fail).getBigTemplateStatus(); }
+ function setBusy(b,t){ var bs=document.querySelectorAll('button'); for(var i=0;i<bs.length;i++) bs[i].disabled=b;
+   if(t){document.getElementById('msg').style.color='#0055ff';document.getElementById('msg').innerText=t;} }
+ function fail(e){ var d=(e&&e.message)?e.message:String(e);
+   document.getElementById('msg').innerHTML='<span style="color:#d00;">エラー: '+esc(d)+'</span>'
+    +'<br><span style="font-size:12px;color:#666;">「サーバーエラー」と出る場合は、メニュー「⚙️ 大きなファイル機能の権限確認」を1回実行してから再度お試しください。</span>';
+   setBusy(false); }
+
+ function render(st){
+   var h='';
+   st.templates.forEach(function(t){
+     h+='<div class="tpl"><b>'+esc(t.label)+'</b>'
+      +'<div style="font-size:11px;color:#888;margin:4px 0 6px;">Driveの共有リンク、またはファイルIDを貼り付けてください</div>'
+      +'<input type="text" id="i_'+t.kind+'" placeholder="https://drive.google.com/file/d/xxxx/view">'
+      +'<button onclick="reg(\''+t.kind+'\')">登録する</button> '
+      +'<button class="sub" onclick="bench(\''+t.kind+'\')">動作確認（所要時間を実測）</button> '
+      +'<button class="sub" onclick="ana(\''+t.kind+'\')">中身の内訳を見る</button> '
+      +'<button class="sub" onclick="tok(\''+t.kind+'\')">差し込み口を調べる</button>'
+      +'<div class="state" id="s_'+t.kind+'">'
+      +(t.registered
+        ? '<span class="ok">✓ 登録済み</span> <a href="'+t.url+'" target="_blank">'+esc(t.fileName)+'</a>'
+          +' <span style="color:#888;">'+(t.sizeMB?t.sizeMB+'MB':'')+'</span>'
+        : '<span class="ng">未登録</span>')
+      +'</div></div>';
+   });
+   document.getElementById('list').innerHTML=h;
+ }
+ function reg(kind){
+   var v=document.getElementById('i_'+kind).value;
+   if(!v){ alert('共有リンクまたはファイルIDを入力してください。'); return; }
+   setBusy(true,'確認中...');
+   google.script.run.withSuccessHandler(function(r){
+     document.getElementById('msg').innerText=r.message;
+     document.getElementById('msg').style.color=r.ok?'green':'#d00';
+     setBusy(false); if(r.status) render(r.status);
+   }).withFailureHandler(fail).registerBigTemplate(kind,v);
+ }
+ function bench(kind){
+   setBusy(true,'テンプレートを展開して再梱包しています。サイズによっては1〜2分かかります...');
+   google.script.run.withSuccessHandler(function(r){
+     setBusy(false);
+     if(!r.ok){ document.getElementById('msg').innerText=r.message; document.getElementById('msg').style.color='#d00'; return; }
+     document.getElementById('msg').innerHTML='<span style="color:green;">'+esc(r.message).replace(/\n/g,'<br>')+'</span>'
+       +'<br><a href="'+r.url+'" target="_blank">▶ 出力されたPowerPointを開いて、崩れていないか確認する</a>';
+   }).withFailureHandler(fail).benchmarkPptxRoundTrip(kind);
+ }
+ function tok(kind){
+   setBusy(true,'テンプレート内の差し込み口を探しています...');
+   google.script.run.withSuccessHandler(function(r){
+     setBusy(false);
+     if(!r.ok){ document.getElementById('msg').innerText=r.message; document.getElementById('msg').style.color='#d00'; return; }
+     var h='<span style="color:'+(r.tokens.length?'green':'#d00')+';">'+esc(r.message)+'</span>';
+     if(r.tokens.length){
+       h+='<table><tr><th>差し込み口</th><th>出現回数</th></tr>'
+        + r.tokens.map(function(t){return '<tr><td>{{'+esc(t.name)+'}}</td><td>'+t.count+'</td></tr>';}).join('')
+        + '</table>';
+     }
+     document.getElementById('msg').innerHTML=h;
+   }).withFailureHandler(fail).inspectPptxTokens(kind);
+ }
+ function ana(kind){
+   setBusy(true,'中身を調べています...');
+   google.script.run.withSuccessHandler(function(r){
+     setBusy(false);
+     if(!r.ok){ document.getElementById('msg').innerText=r.message; document.getElementById('msg').style.color='#d00'; return; }
+     var h='<span style="color:green;">'+esc(r.message)+'</span><table><tr><th>種別</th><th>容量</th><th>割合</th></tr>';
+     r.groups.forEach(function(g){ h+='<tr><td>'+esc(g.group)+'</td><td>'+g.mb+' MB</td><td>'+g.pct+'%</td></tr>'; });
+     h+='</table>';
+     if(r.bigFiles.length){
+       h+='<div style="font-size:12px;margin-top:8px;"><b>大きいファイル上位:</b><br>'
+         + r.bigFiles.map(function(f){return esc(f.name)+' … '+f.mb+'MB';}).join('<br>')+'</div>';
+     }
+     document.getElementById('msg').innerHTML=h;
+   }).withFailureHandler(fail).analyzePptxContents(kind);
+ }
+</script>
+</body></html>

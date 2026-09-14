@@ -5,6 +5,9 @@ MANUAL.md
 # Build scripts (not part of the Apps Script project)
 tools/**
 
+# Seed data (not part of the Apps Script project)
+*.tsv
+
 # Git
 .git/**
 .gitignore

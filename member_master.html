@@ -33,7 +33,27 @@
    <button class="sub" onclick="seed()">メンバーリストから氏名を取り込む</button>
    <button class="sub" onclick="autoPhoto()">写真を自動照合</button>
    <button id="btnSave" onclick="save()">名簿を保存</button>
+   <button class="sub" onclick="toggleImport()">一括取り込み ▾</button>
    <span id="count" style="color:#666;"></span>
+ </div>
+
+ <div id="imp" style="display:none;border:1px solid #ddd;border-radius:6px;padding:12px;margin-bottom:10px;background:#fafbfd;">
+   <b>方法1：現行のメンバーブックHTMLから取り込む</b>
+   <div style="font-size:12px;color:#666;margin:4px 0 6px;">メンバーブック管理ツールで保存したHTMLを選ぶと、全メンバーの情報をそのまま取り込みます（最も確実）。</div>
+   <input type="file" id="mbFile" accept=".html,.htm">
+   <button onclick="impHtml()">HTMLから取り込む</button>
+   <hr style="margin:12px 0;border:none;border-top:1px solid #e5e5e5;">
+   <b>方法2：表計算から貼り付けて取り込む</b>
+   <div style="font-size:12px;color:#666;margin:4px 0 6px;">
+     タブ区切りで貼り付けます。列の順番は
+     <code>業種区分／会社名／カテゴリー／氏名／写真ファイル名／一言／紹介してほしい人／協業したい人／入会日／更新日／更新期限日</code>。
+     見出し行は入れても構いません。
+   </div>
+   <textarea id="tsv" rows="6" style="width:100%;box-sizing:border-box;font-family:monospace;font-size:11px;" placeholder="ここにタブ区切りデータを貼り付け"></textarea>
+   <div style="margin-top:6px;">
+     <label style="font-size:12px;"><input type="checkbox" id="repl"> 既存の名簿を全て置き換える（チェックしないと氏名が一致する行だけ更新し、残りは追加）</label>
+   </div>
+   <div style="margin-top:6px;"><button onclick="impTsv()">貼り付けたデータを取り込む</button></div>
  </div>
 
  <div class="wrap"><table id="tbl"><thead><tr>
@@ -99,5 +119,24 @@
  function save(){ busy(true,'保存中...'); google.script.run.withSuccessHandler(function(r){ show(r.message,!!r.ok); busy(false); }).withFailureHandler(fail).saveMemberMaster(members,null); }
  function seed(){ if(!confirm('「メンバーリスト」シートの氏名を取り込みます（既にある氏名は重複しません）。よろしいですか？')) return; busy(true,'取り込み中...'); google.script.run.withSuccessHandler(done).withFailureHandler(fail).seedMemberMaster(); }
  function autoPhoto(){ busy(true,'照合中...'); google.script.run.withSuccessHandler(done).withFailureHandler(fail).autoFillMemberPhotos(); }
+ function toggleImport(){ var e=document.getElementById('imp'); e.style.display = (e.style.display==='none'?'block':'none'); }
+ function impHtml(){
+   var f=document.getElementById('mbFile').files[0];
+   if(!f){ alert('メンバーブックのHTMLファイルを選択してください。'); return; }
+   busy(true,'取り込み中...');
+   var r=new FileReader();
+   r.onload=function(){ google.script.run.withSuccessHandler(done).withFailureHandler(fail)
+       .importMemberBookHtml(String(r.result).split(',')[1]); };
+   r.onerror=function(){ fail({message:'ファイルの読み込みに失敗しました。'}); };
+   r.readAsDataURL(f);
+ }
+ function impTsv(){
+   var t=document.getElementById('tsv').value;
+   if(!t.trim()){ alert('データを貼り付けてください。'); return; }
+   var repl=document.getElementById('repl').checked;
+   if(repl && !confirm('既存の名簿を全て置き換えます。よろしいですか？')) return;
+   busy(true,'取り込み中...');
+   google.script.run.withSuccessHandler(done).withFailureHandler(fail).importMemberTsv(t, repl);
+ }
 </script>
 </body></html>

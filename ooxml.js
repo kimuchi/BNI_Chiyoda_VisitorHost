@@ -17,8 +17,9 @@ function unzipToMap_(zipBlob) {
 function zipFromMap_(map, fileName) {
   var blobs = [];
   for (var path in map) {
-    var b = map[path];
-    blobs.push(b.copyBlob ? b.copyBlob().setName(path) : b.setName(path));
+    // copyBlob() はメモリを倍使うため、大きなpptxでは行わない。
+    // map はこの後破棄するので、元のBlobに名前を付け直すだけでよい。
+    blobs.push(map[path].setName(path));
   }
   return Utilities.zip(blobs, fileName)
     .setContentType('application/vnd.openxmlformats-officedocument.presentationml.presentation');
@@ -167,4 +168,91 @@ function buildPptxFromTemplate_(templateBlob, dataList, builderFn, fileName) {
   for (var i = 1; i < dataList.length; i++) rest.push(builderFn(slide1, dataList[i]));
   addSlidesToMap_(map, rest);
   return zipFromMap_(map, fileName);
+}
+
+// --- {{トークン}} の置換 -------------------------------------------------
+// PowerPointは1つの文字列を複数の <a:t> に分割して保持することがあるため
+// （例: 「{{開催」「回}}」）、段落 <a:p> 単位で全 <a:t> を連結してから探す。
+// 置換後は、最初のランに文字を入れ、またがった残りのランを空にする。
+function replaceTokensInXml_(xml, map) {
+  var paras = findTagRanges_(xml, 'a:p');
+  // 後ろの段落から処理して位置ずれを防ぐ
+  for (var p = paras.length - 1; p >= 0; p--) {
+    var seg = xml.substring(paras[p].start, paras[p].end);
+    var updated = replaceTokensInParagraph_(seg, map);
+    if (updated !== seg) xml = xml.substring(0, paras[p].start) + updated + xml.substring(paras[p].end);
+  }
+  return xml;
+}
+
+function replaceTokensInParagraph_(seg, map) {
+  var ts = findTagRanges_(seg, 'a:t');
+  if (!ts.length) return seg;
+  var texts = [], spans = [], joined = '';
+  for (var i = 0; i < ts.length; i++) {
+    var inner = seg.substring(ts[i].start, ts[i].end);
+    var m = inner.match(/<a:t[^>]*>([\s\S]*?)<\/a:t>/);
+    var t = m ? unescapeXml_(m[1]) : '';
+    texts.push(t);
+    spans.push({ from: joined.length, to: joined.length + t.length });
+    joined += t;
+  }
+  if (joined.indexOf('{{') === -1) return seg;
+
+  var hits = [], re = /\{\{([^{}]{1,60})\}\}/g, mm;
+  while ((mm = re.exec(joined)) !== null) {
+    if (Object.prototype.hasOwnProperty.call(map, mm[1])) {
+      hits.push({ start: mm.index, end: mm.index + mm[0].length, value: map[mm[1]] == null ? '' : String(map[mm[1]]) });
+    }
+  }
+  if (!hits.length) return seg;
+
+  // 連結文字列の上で後ろから置換し、各ランの新しい文字を決める
+  for (var h = hits.length - 1; h >= 0; h--) {
+    var hit = hits[h];
+    var a = runIndexAt_(spans, hit.start), b = runIndexAt_(spans, hit.end - 1);
+    if (a < 0 || b < 0) continue;
+    var head = texts[a].substring(0, hit.start - spans[a].from);
+    var tail = texts[b].substring(hit.end - spans[b].from);
+    texts[a] = head + hit.value + (a === b ? tail : '');
+    for (var k = a + 1; k <= b; k++) texts[k] = (k === b && a !== b) ? tail : '';
+  }
+
+  // 各 <a:t> を書き戻す（後ろから）
+  var out = seg;
+  for (var j = ts.length - 1; j >= 0; j--) {
+    var innerOld = seg.substring(ts[j].start, ts[j].end);
+    var innerNew = innerOld.replace(/(<a:t[^>]*>)[\s\S]*?(<\/a:t>)/, '$1' + escapeXml_(texts[j]) + '$2');
+    if (/<a:t[^>]*\/>/.test(innerOld)) innerNew = innerOld.replace(/<a:t[^>]*\/>/, '<a:t>' + escapeXml_(texts[j]) + '</a:t>');
+    out = out.substring(0, ts[j].start) + innerNew + out.substring(ts[j].end);
+  }
+  return out;
+}
+
+function runIndexAt_(spans, pos) {
+  for (var i = 0; i < spans.length; i++) if (pos >= spans[i].from && pos < spans[i].to) return i;
+  return -1;
+}
+
+function unescapeXml_(s) {
+  return String(s == null ? '' : s)
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&');
+}
+
+// テンプレートに含まれる {{トークン}} を一覧する（差し込み口の把握用）
+function listTokensInXml_(xml) {
+  var found = {}, paras = findTagRanges_(xml, 'a:p');
+  for (var p = 0; p < paras.length; p++) {
+    var seg = xml.substring(paras[p].start, paras[p].end);
+    var ts = findTagRanges_(seg, 'a:t'), joined = '';
+    for (var i = 0; i < ts.length; i++) {
+      var m = seg.substring(ts[i].start, ts[i].end).match(/<a:t[^>]*>([\s\S]*?)<\/a:t>/);
+      joined += m ? unescapeXml_(m[1]) : '';
+    }
+    var re = /\{\{([^{}]{1,60})\}\}/g, mm;
+    while ((mm = re.exec(joined)) !== null) found[mm[1]] = (found[mm[1]] || 0) + 1;
+  }
+  return found;
 }
