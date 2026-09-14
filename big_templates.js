@@ -218,3 +218,31 @@ function authorizeDriveForBigFiles() {
       '\n\n権限の許可を求める画面が出た場合は「許可」を選んでから、もう一度実行してください。', ui.ButtonSet.OK);
   }
 }
+
+// テンプレートに用意されている {{トークン}} を一覧する（Googleスライドに変換せず調べる）
+function inspectPptxTokens(kind) {
+  try {
+    var def = BIG_TEMPLATE_KINDS_[kind];
+    if (!def) return { ok: false, message: 'テンプレートの種類が不正です。' };
+    var file = getBigTemplateFile_(kind);
+    var parts = Utilities.unzip(file.getBlob().setContentType('application/zip'));
+    var found = {}, slideCount = 0;
+    for (var i = 0; i < parts.length; i++) {
+      var nm = parts[i].getName();
+      if (!/^ppt\/slides\/slide\d+\.xml$/.test(nm)) continue;
+      slideCount++;
+      var tk = listTokensInXml_(parts[i].getDataAsString('UTF-8'));
+      for (var k in tk) found[k] = (found[k] || 0) + tk[k];
+    }
+    var list = [];
+    for (var k2 in found) list.push({ name: k2, count: found[k2] });
+    list.sort(function (a, b) { return b.count - a.count; });
+    return { ok: true, slideCount: slideCount, tokens: list,
+      message: list.length
+        ? 'スライド' + slideCount + '枚から ' + list.length + '種類の差し込み口を見つけました。'
+        : 'スライド' + slideCount + '枚を調べましたが、差し込み口が見つかりませんでした。テンプレート側で、差し替えたい文字を {{開催回}} のように書き換えてください。' };
+  } catch (e) {
+    console.error('[BIGTPL] tokens ' + (e && e.stack ? e.stack : e));
+    return { ok: false, message: '解析に失敗しました: ' + (e && e.message ? e.message : e) };
+  }
+}

@@ -52,7 +52,8 @@
       +'<input type="text" id="i_'+t.kind+'" placeholder="https://drive.google.com/file/d/xxxx/view">'
       +'<button onclick="reg(\''+t.kind+'\')">登録する</button> '
       +'<button class="sub" onclick="bench(\''+t.kind+'\')">動作確認（所要時間を実測）</button> '
-      +'<button class="sub" onclick="ana(\''+t.kind+'\')">中身の内訳を見る</button>'
+      +'<button class="sub" onclick="ana(\''+t.kind+'\')">中身の内訳を見る</button> '
+      +'<button class="sub" onclick="tok(\''+t.kind+'\')">差し込み口を調べる</button>'
       +'<div class="state" id="s_'+t.kind+'">'
       +(t.registered
         ? '<span class="ok">✓ 登録済み</span> <a href="'+t.url+'" target="_blank">'+esc(t.fileName)+'</a>'
@@ -80,6 +81,20 @@
      document.getElementById('msg').innerHTML='<span style="color:green;">'+esc(r.message).replace(/\n/g,'<br>')+'</span>'
        +'<br><a href="'+r.url+'" target="_blank">▶ 出力されたPowerPointを開いて、崩れていないか確認する</a>';
    }).withFailureHandler(fail).benchmarkPptxRoundTrip(kind);
+ }
+ function tok(kind){
+   setBusy(true,'テンプレート内の差し込み口を探しています...');
+   google.script.run.withSuccessHandler(function(r){
+     setBusy(false);
+     if(!r.ok){ document.getElementById('msg').innerText=r.message; document.getElementById('msg').style.color='#d00'; return; }
+     var h='<span style="color:'+(r.tokens.length?'green':'#d00')+';">'+esc(r.message)+'</span>';
+     if(r.tokens.length){
+       h+='<table><tr><th>差し込み口</th><th>出現回数</th></tr>'
+        + r.tokens.map(function(t){return '<tr><td>{{'+esc(t.name)+'}}</td><td>'+t.count+'</td></tr>';}).join('')
+        + '</table>';
+     }
+     document.getElementById('msg').innerHTML=h;
+   }).withFailureHandler(fail).inspectPptxTokens(kind);
  }
  function ana(kind){
    setBusy(true,'中身を調べています...');
