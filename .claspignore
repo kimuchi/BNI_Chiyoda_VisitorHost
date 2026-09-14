@@ -2,6 +2,9 @@
 README.md
 MANUAL.md
 
+# Build scripts (not part of the Apps Script project)
+tools/**
+
 # Git
 .git/**
 .gitignore
