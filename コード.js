@@ -190,11 +190,25 @@ function formatNameSuggest(str) {
 }
 function normalizeSpace(str) { return str ? str.toString().replace(/[\s]+/g, ' ').trim() : ""; }
 
+// 割り振り表・ビジターホスト設定などが使う「番号と氏名」の一覧。
+// 正本は「メンバー名簿」。旧「メンバーリスト」シートしか無い環境ではそちらを読む。
 function getMembersList() {
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("メンバーリスト");
-  if (!sheet) return [];
-  var data = sheet.getDataRange().getValues(), list = [];
-  for (var i = 1; i < data.length; i++) { if (data[i][0]) list.push({ no: data[i][0].toString(), name: normalizeSpace(data[i][1].toString()) }); }
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName('メンバー名簿');
+  if (sh && sh.getLastRow() > 1) {
+    var d = sh.getDataRange().getValues(), out = [];
+    for (var i = 1; i < d.length; i++) {
+      var no = String(d[i][0] == null ? '' : d[i][0]).trim();
+      var nm = String(d[i][2] == null ? '' : d[i][2]).trim();
+      if (!no || !nm) continue;
+      out.push({ no: no, name: normalizeSpace(nm) });
+    }
+    if (out.length) return out;
+  }
+  var old = ss.getSheetByName('メンバーリスト');
+  if (!old) return [];
+  var data = old.getDataRange().getValues(), list = [];
+  for (var j = 1; j < data.length; j++) { if (data[j][0]) list.push({ no: data[j][0].toString(), name: normalizeSpace(data[j][1].toString()) }); }
   return list;
 }
 
@@ -598,12 +612,24 @@ function extractMembersFromPdfBlob_(blob) {
   if (sizeMB > 15) return { ok: false, message: "PDFが大きすぎます（" + sizeMB.toFixed(1) + "MB）。Geminiに送れるのは約15MBまでです。ページ数を減らす／画質を下げてください。" };
 
   var promptText =
-    "添付のファイルはBNIチャプターの「メンバーリスト」です。\n" +
-    "記載されている全メンバーの『番号(No)』と『氏名』を漏れなく抽出してください。\n" +
-    "・氏名は人名のみとし、括弧書き（会社名・業種・肩書など）は除いてください。\n" +
-    "・番号は表記どおりの文字列（例: 1, 05, 12）で出力してください。\n" +
+    "添付のファイルはBNIチャプターの「メンバーリスト」です。表形式で、列は\n" +
+    "「No / 氏名(ふりがな) / カテゴリー / 会社名（屋号） / 役職 / メモ」です。\n" +
+    "また、表の途中に『企業サポート』『研修・教育』『不動産関連』のような\n" +
+    "業種区分の見出し行があり、それ以降のメンバーはその区分に属します。\n\n" +
+    "全メンバーを漏れなく、次の項目で抽出してください。\n" +
+    "・no      … 番号。表記どおりの文字列（例: 1, 12）\n" +
+    "・name    … 氏名のみ。ふりがなの括弧書きは含めない\n" +
+    "・kana    … 氏名の括弧内のふりがな。無ければ空文字\n" +
+    "・block   … そのメンバーが属する業種区分の見出し（例: 企業サポート）\n" +
+    "・title   … カテゴリー列の内容（例: 生命保険(法人)）\n" +
+    "・company … 会社名（屋号）。ふりがなが併記されていれば除き、社名のみ\n" +
+    "・role    … 役職列の内容。無ければ空文字\n" +
+    "・memo    … メモ列の内容（例: ビジターホスト、メンター、〇〇委員）。無ければ空文字\n" +
+    "・改行で折り返されている項目は1つにつなげてください。\n" +
     "・出力は必ず次のJSONのみ（前後に説明文やコードブロック記号を付けない）:\n" +
-    "{ \"members\": [ { \"no\": \"1\", \"name\": \"山田 太郎\" } ] }";
+    "{ \"members\": [ { \"no\": \"1\", \"name\": \"山田 太郎\", \"kana\": \"やまだ たろう\"," +
+    " \"block\": \"企業サポート\", \"title\": \"生命保険(法人)\", \"company\": \"○○株式会社\"," +
+    " \"role\": \"\", \"memo\": \"ビジターホスト\" } ] }";
 
   var payload = {
     "contents": [{ "parts": [
@@ -633,21 +659,27 @@ function extractMembersFromPdfBlob_(blob) {
   var parsed = JSON.parse(mm[0]);
   var rawMembers = parsed.members || [];
 
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("メンバーリスト");
-  if (!sheet) sheet = SpreadsheetApp.getActiveSpreadsheet().insertSheet("メンバーリスト");
-  sheet.clear(); sheet.appendRow(["No", "氏名"]);
-  var members = [];
+  // 読み取った内容は「メンバー名簿」へ統合する。写真・一言コメント・日付など
+  // PDFに無い項目は既存の値を残す（毎回の取り込みで消えてしまわないようにする）。
+  var extracted = [];
   for (var k = 0; k < rawMembers.length; k++) {
     var item = rawMembers[k] || {};
     var no = item.no != null ? String(item.no).trim() : "";
     var name = item.name != null ? normalizeSpace(String(item.name)) : "";
     if (no === "" && name === "") continue;
-    members.push([no, name]);
+    extracted.push({
+      no: no, name: name,
+      kana: item.kana != null ? normalizeSpace(String(item.kana)) : "",
+      cat: item.block != null ? String(item.block).trim() : "",
+      title: item.title != null ? String(item.title).trim() : "",
+      company: item.company != null ? String(item.company).trim() : "",
+      role: item.role != null ? String(item.role).trim() : "",
+      memo: item.memo != null ? String(item.memo).trim() : ""
+    });
   }
-  if (members.length > 0) sheet.getRange(2, 1, members.length, 2).setValues(members);
-  console.log("[OCR] extracted=" + members.length);
-  if (members.length === 0) return { ok: false, message: "番号・氏名を抽出できませんでした。PDF内容やモデル設定をご確認ください。" };
-  return { ok: true, message: "抽出件数: " + members.length + "件。\nシートを確認してください。" };
+  console.log("[OCR] extracted=" + extracted.length);
+  if (extracted.length === 0) return { ok: false, message: "メンバー情報を抽出できませんでした。PDF内容やモデル設定をご確認ください。" };
+  return mergeMembersFromOcr_(extracted);
 }
 
 // 方式1: ダイアログから直接アップロード（小さめPDF向け）
