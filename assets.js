@@ -177,44 +177,79 @@ function normName_(x) {
 function uploadMemberPhotosBase64(items) {
   try {
     if (!items || !items.length) return { ok: false, message: '写真が選択されていません。' };
-    var folder = getAssetFolder_('photo'), saved = 0, names = [];
+    var folder = getAssetFolder_('photo'), saved = 0, names = [], rejected = [];
     for (var i = 0; i < items.length; i++) {
       var it = items[i];
       if (!it || !it.base64) continue;
-      var blob = Utilities.newBlob(Utilities.base64Decode(it.base64), it.mimeType || 'image/jpeg', it.name || ('photo' + i + '.jpg'));
+      var fname = it.name || ('photo' + i + '.jpg');
+      // HEIC等、ブラウザで表示できない形式は受け付けない（保存しても表示されないため）
+      if (!PHOTO_EXT_.test(fname)) { rejected.push(fname); continue; }
+      var blob = Utilities.newBlob(Utilities.base64Decode(it.base64), it.mimeType || 'image/jpeg', fname);
       var ex = folder.getFilesByName(blob.getName());
       if (ex.hasNext()) { var f = ex.next(); try { Drive.Files.update({}, f.getId(), blob); } catch (e) { f.setTrashed(true); folder.createFile(blob); } }
       else folder.createFile(blob);
       saved++; names.push(blob.getName());
     }
-    console.log('[PHOTO] saved=' + saved);
-    return { ok: true, message: saved + '枚の写真を保存しました。', saved: saved, names: names };
+    console.log('[PHOTO] saved=' + saved + ' rejected=' + rejected.length);
+    var m = saved + '枚の写真を保存しました。';
+    if (rejected.length) m += '\n⚠ 表示できない形式のため保存しませんでした（' + rejected.length + '件: ' + rejected.slice(0, 5).join('、') + '）。JPEG・PNG・GIF・WebP のいずれかに変換してください。';
+    return { ok: true, message: m, saved: saved, names: names, rejected: rejected };
   } catch (e) {
     console.error('[PHOTO] ' + (e && e.stack ? e.stack : e));
     return { ok: false, message: '写真の保存中にエラーが発生しました: ' + (e && e.message ? e.message : e) };
   }
 }
 
-// 写真フォルダを走査して「写真索引」シートを作り直す
+// ブラウザで表示できる画像形式（JPEG・PNG・GIF・WebP）
+var PHOTO_EXT_ = /\.(jpe?g|png|gif|webp)$/i;
+// 画像ではあるがブラウザで表示できない形式。iPhoneのHEICが代表例
+var NON_DISPLAY_IMAGE_EXT_ = /\.(heic|heif|bmp|tiff?|avif|raw|cr2|nef|arw|psd)$/i;
+
+// 写真フォルダを走査して「写真索引」シートを作り直す。
+// 同じ人に複数の写真がある場合は、更新日時が新しいものを採用する（毎回同じ結果になるように）。
 function rebuildPhotoIndex() {
   try {
-    var folder = getAssetFolder_('photo'), it = folder.getFiles(), rows = [];
+    var folder = getAssetFolder_('photo'), it = folder.getFiles();
+    var cand = [], unsupported = [];
     while (it.hasNext()) {
       var f = it.next(), fn = f.getName();
-      if (!/\.(jpe?g|png|gif|webp)$/i.test(fn)) continue;
-      // 「氏名__ハッシュ.jpg」「氏名.jpg」どちらにも対応。__ 以降とスペースを落として氏名とする
+      if (!PHOTO_EXT_.test(fn)) {
+        // 画像として置かれたのに表示できない形式（HEIC等）だけを知らせる。
+        // 説明書などの画像以外のファイルが混ざっていても警告は出さない。
+        if (NON_DISPLAY_IMAGE_EXT_.test(fn) || /^image\//i.test(f.getMimeType() || '')) unsupported.push(fn);
+        continue;
+      }
+      // 「氏名__ハッシュ.png」「氏名.jpg」どちらにも対応。__ 以降とスペースを落として氏名とする
       var base = fn.replace(/\.[^.]+$/, '');
-      var nm = base.split('__')[0];
-      rows.push([fn, normName_(nm), f.getId()]);
+      var nm = normName_(base.split('__')[0]);
+      if (!nm) continue;
+      cand.push({ name: fn, key: nm, id: f.getId(), updated: f.getLastUpdated().getTime() });
     }
-    rows.sort(function (a, b) { return a[0] < b[0] ? -1 : (a[0] > b[0] ? 1 : 0); });
+
+    // 同一人物の重複は「更新日時が新しい順」に並べ、先頭を採用する
+    cand.sort(function (a, b) {
+      if (a.key !== b.key) return a.key < b.key ? -1 : 1;
+      return b.updated - a.updated;
+    });
+    var rows = [], dups = [], seen = {};
+    for (var i = 0; i < cand.length; i++) {
+      var c = cand[i];
+      if (seen[c.key]) { dups.push(c.name); continue; }   // 2枚目以降は索引に入れない
+      seen[c.key] = true;
+      rows.push([c.name, c.key, c.id]);
+    }
+
     var ss = SpreadsheetApp.getActiveSpreadsheet(), sh = ss.getSheetByName('写真索引');
     if (!sh) { sh = ss.insertSheet('写真索引'); sh.hideSheet(); }
     sh.clear();
     sh.appendRow(['ファイル名', '氏名(正規化)', 'ファイルID']);
     if (rows.length) sh.getRange(2, 1, rows.length, 3).setValues(rows);
-    console.log('[PHOTO] index rebuilt: ' + rows.length);
-    return { ok: true, message: '写真索引を作り直しました（' + rows.length + '件）。', total: rows.length };
+
+    var msg = '写真索引を作り直しました（' + rows.length + '件）。';
+    if (dups.length) msg += '\n同じ人に複数の写真がありました。新しい方を採用しています（未使用 ' + dups.length + '件: ' + dups.slice(0, 5).join('、') + '）。';
+    if (unsupported.length) msg += '\n⚠ 表示できない形式のため除外しました（' + unsupported.length + '件: ' + unsupported.slice(0, 5).join('、') + '）。JPEG・PNG・GIF・WebP のいずれかに変換してください。';
+    console.log('[PHOTO] index rebuilt: ' + rows.length + ' dup=' + dups.length + ' unsupported=' + unsupported.length);
+    return { ok: true, message: msg, total: rows.length, duplicated: dups, unsupported: unsupported };
   } catch (e) {
     console.error('[PHOTO] ' + (e && e.stack ? e.stack : e));
     return { ok: false, message: '索引の作成中にエラーが発生しました: ' + (e && e.message ? e.message : e) };
