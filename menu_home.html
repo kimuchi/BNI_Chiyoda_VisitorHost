@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html><head><base target="_top">
+<style>
+ *{box-sizing:border-box;}
+ body{font-family:sans-serif;margin:0;padding:18px;font-size:13px;background:#f4f6f9;color:#222;}
+ h2{margin:0 0 3px;font-size:18px;color:#0055ff;}
+ .sub{font-size:12px;color:#666;margin-bottom:14px;}
+ .wrap{display:flex;gap:16px;align-items:flex-start;}
+ .left{flex:1;min-width:0;}
+ .right{width:290px;flex-shrink:0;}
+ .grp{background:#fff;border:1px solid #e2e6ec;border-radius:8px;padding:13px;margin-bottom:13px;}
+ .grp h3{margin:0 0 3px;font-size:14px;color:#0055ff;}
+ .grp .d{font-size:11px;color:#888;margin-bottom:9px;}
+ .btns{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+ .btn{display:block;width:100%;text-align:left;border:1px solid #d5dce6;background:#fff;border-radius:6px;
+      padding:9px 11px;cursor:pointer;font-family:inherit;font-size:12.5px;line-height:1.45;}
+ .btn:hover{border-color:#0055ff;background:#f5f9ff;}
+ .btn b{display:block;font-size:13px;margin-bottom:1px;}
+ .btn span{color:#888;font-size:11px;}
+ .btn.primary{background:#0055ff;color:#fff;border-color:#0055ff;}
+ .btn.primary span{color:#dbe8ff;}
+ .btn.primary:hover{background:#0047d6;}
+ .card{background:#fff;border:1px solid #e2e6ec;border-radius:8px;padding:13px;margin-bottom:13px;}
+ .card h3{margin:0 0 9px;font-size:13px;color:#333;}
+ .chk{display:flex;align-items:flex-start;gap:7px;padding:6px 0;border-bottom:1px solid #f0f2f5;font-size:12px;}
+ .chk:last-child{border-bottom:none;}
+ .mark{flex-shrink:0;width:16px;text-align:center;font-weight:bold;}
+ .mark.y{color:#188038;} .mark.n{color:#e8a200;}
+ .chk .t{flex:1;min-width:0;}
+ .chk .t b{display:block;font-weight:600;}
+ .chk .t i{font-style:normal;color:#888;font-size:11px;}
+ .chk a{font-size:11px;color:#0055ff;cursor:pointer;text-decoration:underline;flex-shrink:0;}
+ .lk{display:block;font-size:12px;color:#0f3d91;padding:4px 0;}
+ .note{background:#fffbe8;border-left:4px solid #ffc107;padding:9px 11px;font-size:11.5px;border-radius:0 5px 5px 0;line-height:1.6;}
+ #msg{margin-top:8px;font-size:12px;font-weight:bold;}
+</style></head>
+<body>
+ <h2>BNI 名簿システム</h2>
+ <div class="sub">やりたいことを選んでください。メニューバーの「名簿システム」からも同じ操作ができます。</div>
+
+ <div class="wrap">
+  <div class="left">
+   <div class="grp">
+     <h3>毎週の作業</h3>
+     <div class="d">定例会の準備は、この順番で進めます。</div>
+     <div class="btns">
+       <button class="btn primary" onclick="go('openCsvDialog')"><b>1. CSVから名簿・PDF作成</b><span>Spreadingのデータから参加者名簿を作る</span></button>
+       <button class="btn primary" onclick="go('openAllocationDialog')"><b>2. ルーム・オリエン割り振り表</b><span>ビジターごとの担当を決めてPDFにする</span></button>
+       <button class="btn primary" onclick="go('openEmailDialog')"><b>3. メールの確認・一括送信</b><span>案内メールをまとめて送る</span></button>
+       <button class="btn" onclick="go('openPdfLinksDialog')"><b>作成済みPDFの確認</b><span>直近で作ったPDFを開く</span></button>
+     </div>
+   </div>
+
+   <div class="grp">
+     <h3>スライド・冊子をつくる</h3>
+     <div class="d">テンプレートとメンバー名簿から作成します。</div>
+     <div class="btns">
+       <button class="btn" onclick="go('openVisitorSlideDialog')"><b>ビジター・代理スライド</b><span>参加者シートから直接作成</span></button>
+       <button class="btn" onclick="go('openMeetingSlideDialog')"><b>定例会スライドの自動更新</b><span>日付から新メンバー・更新状況を自動算出</span></button>
+       <button class="btn" onclick="go('openMemberBookEditorDialog')"><b>メンバーブックの編集・PDF</b><span>カードを編集して冊子を印刷</span></button>
+       <button class="btn" onclick="go('openZoomGuideDialog')"><b>Zoom入室案内</b><span>6列の名簿をA4横で印刷</span></button>
+     </div>
+   </div>
+
+   <div class="grp">
+     <h3>整理・ヘルプ</h3>
+     <div class="btns">
+       <button class="btn" onclick="go('openArchiveDialog')"><b>シートの整理</b><span>増えたタブをまとめて非表示にする</span></button>
+       <button class="btn" onclick="go('openManualDialog')"><b>使い方（ヘルプ）</b><span>マニュアルを開く</span></button>
+     </div>
+   </div>
+
+   <div class="grp">
+     <h3>設定</h3>
+     <div class="d">ふだんの作業では触りません。初回や、内容が変わったときだけ。</div>
+     <div class="btns">
+       <button class="btn" onclick="go('openAssetSettingsDialog')"><b>BNI 素材フォルダ</b><span>写真・テンプレ・生成物の保存先</span></button>
+       <button class="btn" onclick="go('openMemberMasterDialog')"><b>メンバー名簿</b><span>冊子・スライド用のメンバー情報</span></button>
+       <button class="btn" onclick="go('openMemberPhotoDialog')"><b>メンバー写真</b><span>氏名で自動照合されます</span></button>
+       <button class="btn" onclick="go('openPdfDialog')"><b>メンバーリスト(OCR)</b><span>割り振りで使う番号と氏名</span></button>
+       <button class="btn" onclick="go('openTemplateFileDialog')"><b>PowerPointテンプレート</b><span>ビジター用の3種類</span></button>
+       <button class="btn" onclick="go('openBigTemplateDialog')"><b>大きなスライド</b><span>定例会などDriveリンクで登録</span></button>
+       <button class="btn" onclick="go('openVisitorHostDialog')"><b>ビジターホスト・優先順位</b><span>割り振りの優先度</span></button>
+       <button class="btn" onclick="go('openApiSettingsDialog')"><b>Gemini API・モデル</b><span>OCRとAI割り振りで使用</span></button>
+       <button class="btn" onclick="go('openHolidayDialog')"><b>休会日</b><span>開催日の候補から除外</span></button>
+       <button class="btn" onclick="go('openTemplateDialog')"><b>メールテンプレート</b><span>案内メールの文面</span></button>
+       <button class="btn" onclick="go('openAllocationNoteDialog')"><b>割り振り表の特記事項</b><span>PDF下部の注意書き</span></button>
+       <button class="btn" onclick="go('openAiDocsDialog')"><b>AI参考資料</b><span>AI割り振りに渡す資料</span></button>
+     </div>
+   </div>
+  </div>
+
+  <div class="right">
+   <div class="card">
+     <h3>準備の状況</h3>
+     <div id="checks" style="font-size:12px;color:#888;">確認中...</div>
+   </div>
+   <div class="card">
+     <h3>直近で作ったPDF</h3>
+     <div id="latest" style="font-size:12px;color:#888;">確認中...</div>
+   </div>
+   <div class="note">
+     うまく動かないときは、メニュー「🔧 動作確認」の
+     <b>Gemini接続テスト</b> と <b>大きなファイル機能の権限確認</b> をお試しください。
+   </div>
+   <div id="msg"></div>
+  </div>
+ </div>
+
+<script>
+ window.onload=load;
+ function esc(x){var d=document.createElement('span');d.textContent=x==null?'':x;return d.innerHTML;}
+ function load(){ google.script.run.withSuccessHandler(render).withFailureHandler(fail).getHomeStatus(); }
+ function fail(e){ document.getElementById('checks').innerHTML='<span style="color:#d00;">確認できませんでした: '+esc((e&&e.message)?e.message:e)+'</span>'; }
+
+ function render(st){
+   document.getElementById('checks').innerHTML = st.checks.map(function(c){
+     return '<div class="chk"><span class="mark '+(c.ready?'y':'n')+'">'+(c.ready?'✓':'!')+'</span>'
+       +'<span class="t"><b>'+esc(c.label)+'</b><i>'+esc(c.detail)+'</i></span>'
+       +(c.ready?'':'<a onclick="go(\''+c.fixFn+'\')">'+esc(c.fixLabel)+'</a>')+'</div>';
+   }).join('');
+
+   var L=st.latest||{}, rows=[];
+   if(L.visitorList) rows.push('<a class="lk" href="'+L.visitorList+'" target="_blank">📄 ビジター様リスト</a>');
+   if(L.allocation)  rows.push('<a class="lk" href="'+L.allocation+'" target="_blank">📄 ルーム割り振り表</a>');
+   if(L.memberBook)  rows.push('<a class="lk" href="'+L.memberBook+'" target="_blank">📄 メンバーブック</a>');
+   if(L.date && L.date!=='未設定') rows.push('<div style="font-size:11px;color:#888;margin-top:5px;">開催日: '+esc(L.date)+'</div>');
+   document.getElementById('latest').innerHTML = rows.length?rows.join(''):'<span style="color:#888;">まだありません</span>';
+ }
+
+ // ダイアログは1つしか開けないため、この画面を閉じてから目的の画面を開く
+ function go(fn){
+   if(!fn) return;
+   document.getElementById('msg').innerHTML='<span style="color:#0055ff;">ひらいています...</span>';
+   google.script.run.withSuccessHandler(function(){ google.script.host.close(); })
+     .withFailureHandler(fail)[fn]();
+ }
+</script>
+</body></html>
