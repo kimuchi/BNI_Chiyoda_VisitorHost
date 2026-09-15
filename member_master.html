@@ -30,7 +30,8 @@
 
  <div class="bar">
    <button onclick="addRow()">＋ 行を追加</button>
-   <button class="sub" onclick="seed()">メンバーリストから氏名を取り込む</button>
+   <button class="sub" onclick="migrate()">旧メンバーリストから移行</button>
+   <button class="sub" onclick="hosts()">メモからビジターホストを設定</button>
    <button class="sub" onclick="autoPhoto()">写真を自動照合</button>
    <button id="btnSave" onclick="save()">名簿を保存</button>
    <button class="sub" onclick="toggleImport()">一括取り込み ▾</button>
@@ -43,10 +44,20 @@
    <input type="file" id="mbFile" accept=".html,.htm">
    <button onclick="impHtml()">HTMLから取り込む</button>
    <hr style="margin:12px 0;border:none;border-top:1px solid #e5e5e5;">
-   <b>方法2：表計算から貼り付けて取り込む</b>
+   <b>方法2：BNI公式レポート（.xls）から日付を取り込む</b>
+   <div style="font-size:12px;color:#666;margin:4px 0 6px;">
+     BNI公式サイトから出力した2つのレポートを選ぶと、氏名で照合して日付を埋めます。<br>
+     ・<b>メンバーシップ期間レポート</b> → 入会日（Recent Start date＝最新の入会日）<br>
+     ・<b>会費レポート</b> → 更新期限日（会費がいつまでか）<br>
+     2つ同時に選べます。日付以外の項目には触れません。
+   </div>
+   <input type="file" id="repFiles" accept=".xls,.xml" multiple>
+   <button onclick="impReports()">レポートから取り込む</button>
+   <hr style="margin:12px 0;border:none;border-top:1px solid #e5e5e5;">
+   <b>方法3：表計算から貼り付けて取り込む</b>
    <div style="font-size:12px;color:#666;margin:4px 0 6px;">
      タブ区切りで貼り付けます。列の順番は
-     <code>業種区分／会社名／カテゴリー／氏名／写真ファイル名／一言／紹介してほしい人／協業したい人／入会日／更新日／更新期限日</code>。
+     <code>No／業種区分／氏名／ふりがな／カテゴリー／会社名／役職／メモ／写真ファイル名／一言／紹介／協業／入会日／更新日／更新期限日</code>。
      見出し行は入れても構いません。
    </div>
    <textarea id="tsv" rows="6" style="width:100%;box-sizing:border-box;font-family:monospace;font-size:11px;" placeholder="ここにタブ区切りデータを貼り付け"></textarea>
@@ -57,9 +68,11 @@
  </div>
 
  <div class="wrap"><table id="tbl"><thead><tr>
-   <th style="width:34px;">#</th><th style="width:96px;">業種区分</th><th>会社名</th><th>カテゴリー</th>
-   <th style="width:90px;">氏名</th><th>一言コメント</th><th>紹介してほしい人</th><th>協業したい人</th>
-   <th style="width:78px;">入会日</th><th style="width:78px;">更新期限日</th><th style="width:74px;">操作</th>
+   <th style="width:42px;">No</th><th style="width:92px;">業種区分</th><th style="width:86px;">氏名</th>
+   <th style="width:96px;">ふりがな</th><th>カテゴリー</th><th>会社名</th>
+   <th style="width:76px;">役職</th><th style="width:88px;">メモ</th>
+   <th>一言コメント</th><th>紹介してほしい人</th><th>協業したい人</th>
+   <th style="width:76px;">入会日</th><th style="width:76px;">更新期限日</th><th style="width:70px;">操作</th>
  </tr></thead><tbody id="body"></tbody></table></div>
  <div id="msg"></div>
 
@@ -79,9 +92,10 @@
    var h='';
    members.forEach(function(m,i){
      h+='<tr>'
-      +'<td class="num">'+(i+1)+'</td>'
+      +f(i,'no',m.no)
       +'<td><select data-i="'+i+'" data-k="cat">'+opt+'</select></td>'
-      +f(i,'company',m.company)+f(i,'title',m.title)+f(i,'name',m.name)
+      +f(i,'name',m.name)+f(i,'kana',m.kana)+f(i,'title',m.title)+f(i,'company',m.company)
+      +f(i,'role',m.role)+f(i,'memo',m.memo)
       +f(i,'comment',m.comment)+f(i,'refer',m.refer)+f(i,'collab',m.collab)
       +f(i,'joinDate',m.joinDate)+f(i,'expireDate',m.expireDate)
       +'<td style="white-space:nowrap;text-align:center;">'
@@ -107,7 +121,7 @@
      });
    }
  }
- function addRow(){ members.push({cat:'',company:'',title:'',name:'',photoFile:'',comment:'',refer:'',collab:'',joinDate:'',renewDate:'',expireDate:''}); render(); }
+ function addRow(){ members.push({no:'',cat:'',name:'',kana:'',title:'',company:'',role:'',memo:'',photoFile:'',comment:'',refer:'',collab:'',joinDate:'',renewDate:'',expireDate:''}); render(); }
  function del(i){ if(!confirm((members[i].name||'この行')+' を削除しますか？')) return; members.splice(i,1); render(); }
  function mv(i,d){ var j=i+d; if(j<0||j>=members.length) return; var t=members[i]; members[i]=members[j]; members[j]=t; render(); }
 
@@ -117,7 +131,8 @@
  function done(r){ show(r.message, !!r.ok); busy(false); if(r.ok) load(); }
 
  function save(){ busy(true,'保存中...'); google.script.run.withSuccessHandler(function(r){ show(r.message,!!r.ok); busy(false); }).withFailureHandler(fail).saveMemberMaster(members,null); }
- function seed(){ if(!confirm('「メンバーリスト」シートの氏名を取り込みます（既にある氏名は重複しません）。よろしいですか？')) return; busy(true,'取り込み中...'); google.script.run.withSuccessHandler(done).withFailureHandler(fail).seedMemberMaster(); }
+ function migrate(){ if(!confirm('旧「メンバーリスト」シートの内容をこの名簿へ移し、旧シートを非表示にします。よろしいですか？')) return; busy(true,'移行中...'); google.script.run.withSuccessHandler(done).withFailureHandler(fail).migrateMemberListSheet(); }
+ function hosts(){ if(!confirm('メモ欄に「ビジターホスト」と書かれているメンバーを、ビジターホスト設定に反映します。よろしいですか？')) return; busy(true,'反映中...'); google.script.run.withSuccessHandler(done).withFailureHandler(fail).applyVisitorHostsFromMemo(); }
  function autoPhoto(){ busy(true,'照合中...'); google.script.run.withSuccessHandler(done).withFailureHandler(fail).autoFillMemberPhotos(); }
  function toggleImport(){ var e=document.getElementById('imp'); e.style.display = (e.style.display==='none'?'block':'none'); }
  function impHtml(){
@@ -129,6 +144,19 @@
        .importMemberBookHtml(String(r.result).split(',')[1]); };
    r.onerror=function(){ fail({message:'ファイルの読み込みに失敗しました。'}); };
    r.readAsDataURL(f);
+ }
+ function impReports(){
+   var fs=document.getElementById('repFiles').files;
+   if(!fs.length){ alert('レポートの .xls ファイルを選択してください。'); return; }
+   busy(true,'レポートを読み込んでいます...');
+   var items=[], pend=fs.length;
+   for(var i=0;i<fs.length;i++){ (function(f){
+     var r=new FileReader();
+     r.onload=function(){ items.push({name:f.name, base64:String(r.result).split(',')[1]});
+       if(--pend===0) google.script.run.withSuccessHandler(done).withFailureHandler(fail).importMembershipReports(items); };
+     r.onerror=function(){ if(--pend===0) google.script.run.withSuccessHandler(done).withFailureHandler(fail).importMembershipReports(items); };
+     r.readAsDataURL(f);
+   })(fs[i]); }
  }
  function impTsv(){
    var t=document.getElementById('tsv').value;

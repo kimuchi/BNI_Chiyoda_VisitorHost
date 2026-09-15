@@ -4,8 +4,11 @@
 // 行順＝メンバーブックの掲載順＝メンバープレゼンの発表順。
 
 var MEMBER_SHEET_ = 'メンバー名簿';
-var MEMBER_HEADERS_ = ['業種区分', '会社名', 'カテゴリー', '氏名', '写真ファイル名',
-                       '一言コメント', '紹介してほしい人', '協業したい人', '入会日', '更新日', '更新期限日'];
+// メンバーリスト(OCR)で読むPDFの列（No/氏名/ふりがな/カテゴリー/会社名/役職/メモ）と、
+// メンバーブックで使う項目を1枚に統合した。これが全機能の正本になる。
+var MEMBER_HEADERS_ = ['No', '業種区分', '氏名', 'ふりがな', 'カテゴリー', '会社名', '役職', 'メモ',
+                       '写真ファイル名', '一言コメント', '紹介してほしい人', '協業したい人',
+                       '入会日', '更新日', '更新期限日'];
 var COVER_SHEET_ = 'メンバーブック表紙';
 var CAT_SHEET_ = '業種区分マスタ';
 
@@ -62,21 +65,26 @@ function toDateStr_(v) {
 function getMemberMaster() {
   try {
     var sh = ensureMemberSheet_(), data = sh.getDataRange().getValues(), members = [];
+    var col = function (r, i) { return String(r[i] == null ? '' : r[i]).trim(); };
     for (var i = 1; i < data.length; i++) {
       var r = data[i];
-      if (!String(r[3] == null ? '' : r[3]).trim()) continue;   // 氏名が無い行は飛ばす
+      if (!col(r, 2)) continue;                       // 氏名が無い行は飛ばす
       members.push({
-        cat:       String(r[0] == null ? '' : r[0]).trim(),
-        company:   String(r[1] == null ? '' : r[1]).trim(),
-        title:     String(r[2] == null ? '' : r[2]).trim(),
-        name:      String(r[3] == null ? '' : r[3]).trim(),
-        photoFile: String(r[4] == null ? '' : r[4]).trim(),
-        comment:   String(r[5] == null ? '' : r[5]).trim(),
-        refer:     String(r[6] == null ? '' : r[6]).trim(),
-        collab:    String(r[7] == null ? '' : r[7]).trim(),
-        joinDate:   toDateStr_(r[8]),
-        renewDate:  toDateStr_(r[9]),
-        expireDate: toDateStr_(r[10])
+        no:        col(r, 0),
+        cat:       col(r, 1),
+        name:      col(r, 2),
+        kana:      col(r, 3),
+        title:     col(r, 4),     // カテゴリー（業務内容）
+        company:   col(r, 5),
+        role:      col(r, 6),     // 役職
+        memo:      col(r, 7),
+        photoFile: col(r, 8),
+        comment:   col(r, 9),
+        refer:     col(r, 10),
+        collab:    col(r, 11),
+        joinDate:   toDateStr_(r[12]),
+        renewDate:  toDateStr_(r[13]),
+        expireDate: toDateStr_(r[14])
       });
     }
     return { ok: true, members: members, cover: getCoverInfo_(), categories: getCategoryMaster() };
@@ -97,7 +105,8 @@ function saveMemberMaster(members, cover) {
     var rows = [];
     for (var i = 0; i < members.length; i++) {
       var m = members[i] || {};
-      rows.push([m.cat || '', m.company || '', m.title || '', m.name || '', m.photoFile || '',
+      rows.push([m.no || '', m.cat || '', m.name || '', m.kana || '', m.title || '',
+                 m.company || '', m.role || '', m.memo || '', m.photoFile || '',
                  m.comment || '', m.refer || '', m.collab || '',
                  m.joinDate || '', m.renewDate || '', m.expireDate || '']);
     }
@@ -111,28 +120,6 @@ function saveMemberMaster(members, cover) {
   }
 }
 
-// 既存「メンバーリスト」から氏名をシードする（重複は作らない）
-function seedMemberMaster() {
-  try {
-    var src = getMembersList();            // 既存関数 [{no,name}]
-    if (!src.length) return { ok: false, message: '「メンバーリスト」シートにデータがありません。先にメンバーリスト(OCR)の更新を行ってください。' };
-    var cur = getMemberMaster().members || [], have = {};
-    for (var i = 0; i < cur.length; i++) have[normName_(cur[i].name)] = true;
-    var added = 0;
-    for (var j = 0; j < src.length; j++) {
-      var nm = src[j].name;
-      if (!nm || have[normName_(nm)]) continue;
-      cur.push({ cat: '', company: '', title: '', name: nm, photoFile: '', comment: '', refer: '', collab: '', joinDate: '', renewDate: '', expireDate: '' });
-      have[normName_(nm)] = true; added++;
-    }
-    var res = saveMemberMaster(cur, null);
-    if (!res.ok) return res;
-    return { ok: true, message: added + '名を追加しました（既存 ' + (cur.length - added) + '名はそのまま）。', added: added, total: cur.length };
-  } catch (e) {
-    console.error('[MEMBER] ' + (e && e.stack ? e.stack : e));
-    return { ok: false, message: 'シードに失敗しました: ' + (e && e.message ? e.message : e) };
-  }
-}
 
 // 氏名から写真ファイル名を自動解決して写真列を埋める
 function autoFillMemberPhotos() {
@@ -221,8 +208,9 @@ function importMemberBookHtml(base64) {
     for (var i = 0; i < src.length; i++) {
       var s = src[i] || {};
       members.push({
-        cat: s.cat || '', company: s.company || '', title: s.title || '', name: s.name || '',
-        photoFile: '', comment: s.comment || '', refer: s.refer || '', collab: s.collab || '',
+        no: '', cat: s.cat || '', name: s.name || '', kana: '', title: s.title || '',
+        company: s.company || '', role: '', memo: '', photoFile: '',
+        comment: s.comment || '', refer: s.refer || '', collab: s.collab || '',
         joinDate: '', renewDate: '', expireDate: ''
       });
     }
@@ -239,7 +227,7 @@ function importMemberBookHtml(base64) {
 }
 
 // タブ区切りテキストから取り込む（見出し行は任意）
-// 列: 業種区分 / 会社名 / カテゴリー / 氏名 / 写真ファイル名 / 一言 / 紹介してほしい人 / 協業したい人
+// 列: No / 業種区分 / 氏名 / ふりがな / カテゴリー / 会社名 / 役職 / メモ / 写真 / 一言 / 紹介 / 協業 / 入会日 / 更新日 / 更新期限日
 function importMemberTsv(text, replaceAll) {
   try {
     if (!text || !String(text).trim()) return { ok: false, message: '貼り付けられたデータが空です。' };
@@ -248,13 +236,14 @@ function importMemberTsv(text, replaceAll) {
       var line = lines[i];
       if (!line.trim()) continue;
       var c = line.split('\t');
-      var name = (c[3] || '').trim();
+      var name = (c[2] || '').trim();
       if (!name || name === '氏名') continue;       // 見出し行・空行を飛ばす
       members.push({
-        cat: (c[0] || '').trim(), company: (c[1] || '').trim(), title: (c[2] || '').trim(),
-        name: name, photoFile: (c[4] || '').trim(), comment: (c[5] || '').trim(),
-        refer: (c[6] || '').trim(), collab: (c[7] || '').trim(),
-        joinDate: (c[8] || '').trim(), renewDate: (c[9] || '').trim(), expireDate: (c[10] || '').trim()
+        no: (c[0] || '').trim(), cat: (c[1] || '').trim(), name: name, kana: (c[3] || '').trim(),
+        title: (c[4] || '').trim(), company: (c[5] || '').trim(), role: (c[6] || '').trim(),
+        memo: (c[7] || '').trim(), photoFile: (c[8] || '').trim(), comment: (c[9] || '').trim(),
+        refer: (c[10] || '').trim(), collab: (c[11] || '').trim(),
+        joinDate: (c[12] || '').trim(), renewDate: (c[13] || '').trim(), expireDate: (c[14] || '').trim()
       });
     }
     if (!members.length) return { ok: false, message: '取り込める行がありませんでした。タブ区切りで、4列目が氏名になっているかご確認ください。' };
@@ -274,6 +263,223 @@ function importMemberTsv(text, replaceAll) {
     return { ok: true, message: members.length + '行を取り込みました（名簿は合計 ' + out.length + '名）。', imported: members.length, total: out.length };
   } catch (e) {
     console.error('[MEMBER] ' + (e && e.stack ? e.stack : e));
+    return { ok: false, message: '取り込みに失敗しました: ' + (e && e.message ? e.message : e) };
+  }
+}
+
+// === メンバーリスト(OCR)の読み取り結果をメンバー名簿へ統合する ===
+// PDFに載っている項目（No・氏名・ふりがな・業種区分・カテゴリー・会社名・役職・メモ）だけを
+// 上書きし、写真・一言コメント・紹介/協業・日付など、PDFに無い項目は既存の値を残す。
+function mergeMembersFromOcr_(extracted) {
+  try {
+    var cur = getMemberMaster().members || [];
+    // 既存行を No と氏名の両方から引けるようにする
+    var byNo = {}, byName = {};
+    for (var i = 0; i < cur.length; i++) {
+      if (cur[i].no) byNo[String(cur[i].no)] = i;
+      byName[normName_(cur[i].name)] = i;
+    }
+    var updated = 0, added = 0, used = {};
+    for (var k = 0; k < extracted.length; k++) {
+      var e = extracted[k];
+      var idx = (e.no && byNo[String(e.no)] !== undefined) ? byNo[String(e.no)]
+              : (byName[normName_(e.name)] !== undefined ? byName[normName_(e.name)] : -1);
+      if (idx >= 0) {
+        var m = cur[idx];
+        m.no = e.no || m.no;
+        m.name = e.name || m.name;
+        if (e.kana) m.kana = e.kana;
+        if (e.cat) m.cat = e.cat;
+        if (e.title) m.title = e.title;
+        if (e.company) m.company = e.company;
+        if (e.role) m.role = e.role;
+        if (e.memo) m.memo = e.memo;
+        used[idx] = true; updated++;
+      } else {
+        cur.push({ no: e.no, cat: e.cat, name: e.name, kana: e.kana, title: e.title,
+                   company: e.company, role: e.role, memo: e.memo,
+                   photoFile: '', comment: '', refer: '', collab: '',
+                   joinDate: '', renewDate: '', expireDate: '' });
+        added++;
+      }
+    }
+    // PDFに載っていた順（No順）に並べ替える。掲載順＝発表順の意味を持つため
+    cur.sort(function (a, b) {
+      var na = parseInt(a.no, 10), nb = parseInt(b.no, 10);
+      if (isNaN(na) && isNaN(nb)) return 0;
+      if (isNaN(na)) return 1;
+      if (isNaN(nb)) return -1;
+      return na - nb;
+    });
+    var res = saveMemberMaster(cur, null);
+    if (!res.ok) return res;
+    var msg = '読み取り ' + extracted.length + '件を「メンバー名簿」に反映しました。'
+            + '（更新 ' + updated + '名 / 新規 ' + added + '名 / 名簿は計 ' + cur.length + '名）\n'
+            + '写真・一言コメント・日付など、PDFに無い項目は残しています。';
+    console.log('[OCR] merged updated=' + updated + ' added=' + added);
+    return { ok: true, message: msg, updated: updated, added: added, total: cur.length };
+  } catch (e) {
+    console.error('[OCR] merge ' + (e && e.stack ? e.stack : e));
+    return { ok: false, message: '名簿への反映に失敗しました: ' + (e && e.message ? e.message : e) };
+  }
+}
+
+// メモ欄に「ビジターホスト」等が入っているメンバーを、ビジターホスト設定に反映する
+function applyVisitorHostsFromMemo() {
+  try {
+    var members = getMemberMaster().members || [], hosts = [], names = [];
+    for (var i = 0; i < members.length; i++) {
+      var memo = members[i].memo || '';
+      // 「ビジターホスト」「ビジホス」などの表記ゆれを拾う
+      if (!/ビジ(ター)?ホス(ト)?/.test(memo)) continue;
+      if (!members[i].no) continue;
+      hosts.push(String(members[i].no)); names.push(members[i].name);
+    }
+    if (!hosts.length) return { ok: false, message: 'メモ欄に「ビジターホスト」の記載があるメンバーが見つかりませんでした。' };
+    saveVisitorHosts(hosts);
+    return { ok: true, message: hosts.length + '名をビジターホストに設定しました。\n' + names.join('、'),
+             count: hosts.length, names: names };
+  } catch (e) {
+    return { ok: false, message: '反映に失敗しました: ' + (e && e.message ? e.message : e) };
+  }
+}
+
+// 旧「メンバーリスト」シートの内容をメンバー名簿へ移し、旧シートを隠す
+function migrateMemberListSheet() {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet(), old = ss.getSheetByName('メンバーリスト');
+    if (!old) return { ok: false, message: '「メンバーリスト」シートはありません。移行は不要です。' };
+    var data = old.getDataRange().getValues(), src = [];
+    for (var i = 1; i < data.length; i++) {
+      var no = String(data[i][0] == null ? '' : data[i][0]).trim();
+      var nm = String(data[i][1] == null ? '' : data[i][1]).trim();
+      if (no && nm) src.push({ no: no, name: normalizeSpace(nm), kana: '', cat: '', title: '', company: '', role: '', memo: '' });
+    }
+    if (!src.length) {
+      old.hideSheet();
+      return { ok: true, message: '「メンバーリスト」は空だったため、非表示にしました。' };
+    }
+    var res = mergeMembersFromOcr_(src);
+    if (!res.ok) return res;
+    old.hideSheet();
+    return { ok: true, message: res.message + '\n旧「メンバーリスト」シートは非表示にしました（データは残っています）。' };
+  } catch (e) {
+    console.error('[MEMBER] migrate ' + (e && e.stack ? e.stack : e));
+    return { ok: false, message: '移行に失敗しました: ' + (e && e.message ? e.message : e) };
+  }
+}
+
+// === BNI公式レポート（Excel）の取り込み ===
+// 「メンバーシップ期間レポート」から入会日、「会費レポート」から更新期限日を読む。
+// どちらも拡張子は .xls だが中身は SpreadsheetML（XML）なので、そのまま解析できる。
+
+// SpreadsheetML → 行の二次元配列
+function parseSpreadsheetMlRows_(xml) {
+  var rows = [], rowRe = /<Row[^>]*>([\s\S]*?)<\/Row>/g, m;
+  while ((m = rowRe.exec(xml)) !== null) {
+    var cells = [], cellRe = /<Cell[^>]*>([\s\S]*?)<\/Cell>|<Cell[^>]*\/>/g, c;
+    while ((c = cellRe.exec(m[1])) !== null) {
+      var inner = c[1] || '';
+      var d = inner.match(/<Data[^>]*>([\s\S]*?)<\/Data>/);
+      cells.push(d ? unescapeXml_(d[1].replace(/<[^>]+>/g, '')).trim() : '');
+    }
+    rows.push(cells);
+  }
+  return rows;
+}
+
+// 'YYYY-MM-DDT00:00:00.000' → 'YYYY/MM/DD'
+function isoToDateStr_(v) {
+  var m = String(v || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? (m[1] + '/' + m[2] + '/' + m[3]) : '';
+}
+
+function rowHas_(row, text) {
+  for (var i = 0; i < row.length; i++) if (String(row[i]).indexOf(text) !== -1) return true;
+  return false;
+}
+
+// files = [{name, base64}] を1つ以上。レポートの種類は中身の見出しから自動判別する
+function importMembershipReports(files) {
+  try {
+    if (!files || !files.length) return { ok: false, message: 'ファイルが選択されていません。' };
+    var join = {}, expire = {}, states = {}, kinds = [];
+
+    for (var f = 0; f < files.length; f++) {
+      var xml = Utilities.newBlob(Utilities.base64Decode(files[f].base64), 'text/xml', files[f].name || 'r.xls')
+                         .getDataAsString('UTF-8');
+      var rows = parseSpreadsheetMlRows_(xml);
+      if (!rows.length) continue;
+
+      // --- メンバーシップ期間レポート（姓・名・Recent Start date）---
+      var hi = -1;
+      for (var i = 0; i < rows.length; i++) if (rowHas_(rows[i], 'Recent Start date')) { hi = i; break; }
+      if (hi >= 0) {
+        var n1 = 0;
+        for (var r = hi + 1; r < rows.length; r++) {
+          var row = rows[r];
+          if (row.length < 7 || !row[1]) continue;
+          var nm = (row[1] + ' ' + row[2]).trim();
+          var d = isoToDateStr_(row[6]);          // Recent Start date = 最新の入会日
+          if (!nm || !d) continue;
+          join[normName_(nm)] = d; n1++;
+        }
+        kinds.push('メンバーシップ期間レポート（' + n1 + '名）');
+        continue;
+      }
+
+      // --- 会費レポート（メンバー名・更新日）---
+      var hj = -1;
+      for (var j = 0; j < rows.length; j++) if (rowHas_(rows[j], 'AutoRenewal')) { hj = j; break; }
+      if (hj >= 0) {
+        var n2 = 0;
+        for (var k = hj + 1; k < rows.length; k++) {
+          var rw = rows[k];
+          if (rw.length < 6) continue;
+          var name2 = String(rw[1] || '').trim();
+          var d2 = isoToDateStr_(rw[5]);          // 更新日 = 会費がいつまでか
+          if (!name2 || name2 === 'メンバー名' || !d2) continue;
+          expire[normName_(name2)] = d2;
+          states[normName_(name2)] = String(rw[4] || '').trim();
+          n2++;
+        }
+        kinds.push('会費レポート（' + n2 + '名）');
+        continue;
+      }
+      kinds.push('「' + (files[f].name || '不明') + '」は種類を判別できませんでした');
+    }
+
+    if (!Object.keys(join).length && !Object.keys(expire).length) {
+      return { ok: false, message: 'レポートの内容を読み取れませんでした。BNI公式サイトから出力した .xls をそのままお選びください。\n' + kinds.join('\n') };
+    }
+
+    // 名簿へ反映（氏名で照合。日付以外は触らない）
+    var members = getMemberMaster().members || [];
+    var setJoin = 0, setExp = 0, pending = [], unmatched = {};
+    for (var q in join) unmatched[q] = true;
+    for (var q2 in expire) unmatched[q2] = true;
+
+    for (var mi = 0; mi < members.length; mi++) {
+      var key = normName_(members[mi].name);
+      if (join[key]) { members[mi].joinDate = join[key]; setJoin++; delete unmatched[key]; }
+      if (expire[key]) {
+        members[mi].expireDate = expire[key]; setExp++; delete unmatched[key];
+        if (states[key] && states[key].indexOf('Active') === -1) pending.push(members[mi].name + '（' + states[key] + '）');
+      }
+    }
+    var res = saveMemberMaster(members, null);
+    if (!res.ok) return res;
+
+    var left = [];
+    for (var u in unmatched) left.push(u);
+    var msg = kinds.join(' / ') + ' を読み込みました。\n'
+            + '入会日 ' + setJoin + '名 / 更新期限日 ' + setExp + '名 を更新しました。';
+    if (left.length) msg += '\n※ 名簿に見つからなかった氏名 ' + left.length + '件: ' + left.slice(0, 10).join('、');
+    if (pending.length) msg += '\n※ 更新手続き中の方 ' + pending.length + '名: ' + pending.slice(0, 10).join('、');
+    console.log('[REPORT] join=' + setJoin + ' expire=' + setExp + ' unmatched=' + left.length);
+    return { ok: true, message: msg, joinSet: setJoin, expireSet: setExp, unmatched: left, pending: pending };
+  } catch (e) {
+    console.error('[REPORT] ' + (e && e.stack ? e.stack : e));
     return { ok: false, message: '取り込みに失敗しました: ' + (e && e.message ? e.message : e) };
   }
 }
