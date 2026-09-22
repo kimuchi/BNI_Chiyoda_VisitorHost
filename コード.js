@@ -28,6 +28,7 @@ function onOpen() {
       .addItem('PowerPointテンプレート（ビジター用）', 'openTemplateFileDialog')
       .addItem('大きなスライド（定例会など）', 'openBigTemplateDialog')
       .addSeparator()
+      .addItem('Spreadingから名簿を更新', 'openSpreadingDialog')
       .addItem('メンバーリスト(OCR)の更新', 'openPdfDialog')
       .addItem('メンバーブック(PDF)の更新', 'openMemberBookDialog')
       .addItem('AI参考資料', 'openAiDocsDialog')
