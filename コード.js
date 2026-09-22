@@ -1104,6 +1104,9 @@ function saveAllocationSheet(meetingDateVal, displayVal, visitors, pool, facilAl
       // 以前は「※」で始まる行だけ太字＋オレンジで、改行すると2行目から
       // 見た目が変わってしまっていた。全行を同じ書式（太字＋オレンジ）にそろえる。
       cell.setFontColor("#d35400").setFontWeight("bold");
+      // 結合したセルは折り返しても行の高さが自動で広がらないため、
+      // 折り返し後の行数から高さを見積もって明示する（下の行が切れるのを防ぐ）。
+      sheet.setRowHeight(noteStartRow + n, estimateRowHeight_(noteLines[n], 42, 19));
     }
   }
   
@@ -1112,6 +1115,10 @@ function saveAllocationSheet(meetingDateVal, displayVal, visitors, pool, facilAl
     sheet.getRange(reverseTableStart + 1, 1, allMemberRoles.length, 8).setBorder(true, true, true, true, true, true).setWrap(true).setVerticalAlignment("middle");
     for (var i = 0; i <= allMemberRoles.length; i++) {
        sheet.getRange(reverseTableStart + i, 3, 1, 6).mergeAcross();
+    }
+    // C〜H列を結合しているため自動調整が効かない。役割の行数から高さを明示する。
+    for (var i = 0; i < allMemberRoles.length; i++) {
+       sheet.setRowHeight(reverseTableStart + 1 + i, estimateRowHeight_(allMemberRoles[i][2], 40, 17));
     }
   }
 
@@ -1128,12 +1135,32 @@ function saveAllocationSheet(meetingDateVal, displayVal, visitors, pool, facilAl
   return "<h3>作成完了しました🎉</h3><p>割り振り表を作成しました。</p><br><a href='" + pdfUrl + "' target='_blank' style='background:#0055ff; color:#fff; padding:10px 20px; text-decoration:none; border-radius:5px; font-weight:bold;'>📄 作成されたPDFを開く</a>";
 }
 
+// 折り返しを考慮した行の高さ(px)の見積もり。
+// 結合セルは折り返しても高さが自動調整されないため、明示指定して文字切れを防ぐ。
+// charsPerLine=全角換算で1行に入る文字数、lineHeight=1行あたりの高さ(px)。
+// 実際の収容文字数より少なめに見積もり、高さに余裕を持たせている。
+function estimateRowHeight_(text, charsPerLine, lineHeight) {
+  var lines = String(text == null ? "" : text).split("\n");
+  var totalLines = 0;
+  for (var i = 0; i < lines.length; i++) {
+    var width = 0;
+    for (var j = 0; j < lines[i].length; j++) {
+      // 半角(ASCII)は0.5文字分、全角(日本語など)は1文字分として数える
+      width += lines[i].charCodeAt(j) < 128 ? 0.5 : 1;
+    }
+    totalLines += Math.max(1, Math.ceil(width / charsPerLine));
+  }
+  return Math.max(21, totalLines * lineHeight + 6);
+}
+
 function exportAllocationSheetToPdf(sheet, fileName, fileIdPropKey) {
   var ss = SpreadsheetApp.getActiveSpreadsheet(), spreadsheetId = ss.getId(), sheetId = sheet.getSheetId(), lastRow = sheet.getLastRow();
-  // A4縦。文字を縮小したくないため「1ページに収める」指定はしない（scale=1＝原寸）。
-  // 余白を詰めて印字幅を広げ、列幅の合計がそこに収まるようにしてあるので横方向は原寸で入る。
-  // 縦に入りきらない分は2ページ目以降へ流す。
-  var url = "https://docs.google.com/spreadsheets/d/" + spreadsheetId + "/export?exportFormat=pdf&format=pdf&size=A4&portrait=true&scale=1"
+  // A4縦。fitw=true（幅を1ページに合わせる）は必須。
+  // これを外すと、幅が印字領域をわずかでも超えたときに表が左右に分断され、
+  // 「A〜G列のページ」と「H列だけのページ」に分かれてしまう。
+  // 縮小率を小さく保つため、余白を詰めて印字幅を広げ、列幅の合計も抑えてある。
+  // 縦に入りきらない分は2ページ目以降へ流す（1ページに詰め込む指定はしない）。
+  var url = "https://docs.google.com/spreadsheets/d/" + spreadsheetId + "/export?exportFormat=pdf&format=pdf&size=A4&portrait=true&fitw=true"
           + "&top_margin=0.30&bottom_margin=0.30&left_margin=0.25&right_margin=0.25"
           + "&sheetnames=false&printtitle=false&pagenumbers=false&gridlines=false&fzr=false&gid=" + sheetId
           + "&r1=0&c1=0&r2=" + lastRow + "&c2=8";
