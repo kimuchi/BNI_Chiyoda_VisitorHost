@@ -1073,15 +1073,9 @@ function saveAllocationSheet(meetingDateVal, displayVal, visitors, pool, facilAl
   });
 
   outputData.push(["【メンバー別 ルーム・オリエン担当表】", "", "", "", "", "", "", ""]);
-  // 横長のA4を活かして2段組みにする。縦の行数が半分になり1ページに収まりやすくなる
-  outputData.push(["No.", "メンバー名", "担当ビジター・役割", "", "No.", "メンバー名", "担当ビジター・役割", ""]);
+  outputData.push(["No.", "メンバー名", "担当ビジター・役割", "", "", "", "", ""]);
   var reverseTableStart = outputData.length;
-  var halfCount = Math.ceil(allMemberRoles.length / 2);
-  for (var rr = 0; rr < halfCount; rr++) {
-    var lRow = allMemberRoles[rr], rRow = allMemberRoles[rr + halfCount];
-    outputData.push([lRow[0], lRow[1], lRow[2], "",
-                     rRow ? rRow[0] : "", rRow ? rRow[1] : "", rRow ? rRow[2] : "", ""]);
-  }
+  allMemberRoles.forEach(function(row) { outputData.push(row); });
 
   sheet.getRange(1, 1, outputData.length, 8).setValues(outputData);
   sheet.getRange("A1").setFontSize(14).setFontWeight("bold");
@@ -1107,28 +1101,23 @@ function saveAllocationSheet(meetingDateVal, displayVal, visitors, pool, facilAl
       row.mergeAcross();
       var cell = sheet.getRange(noteStartRow + n, 1);
       cell.setWrap(true).setVerticalAlignment("top").setFontSize(11);
-      // 色は全行そろえる。以前は「※」で始まる行だけ色が違い、改行すると
-      // 2行目から色が変わって見えてしまっていた
-      cell.setFontColor("#333");
-      cell.setFontWeight(noteLines[n].trim().indexOf("※") === 0 ? "bold" : "normal");
+      // 以前は「※」で始まる行だけ太字＋オレンジで、改行すると2行目から
+      // 見た目が変わってしまっていた。全行を同じ書式（太字＋オレンジ）にそろえる。
+      cell.setFontColor("#d35400").setFontWeight("bold");
     }
   }
   
   if (allMemberRoles.length > 0) {
-    sheet.getRange(reverseTableStart, 1, 1, 8).setBackground("#f3f3f3").setFontWeight("bold").setHorizontalAlignment("center");
-    sheet.getRange(reverseTableStart + 1, 1, halfCount, 8).setBorder(true, true, true, true, true, true).setWrap(true).setVerticalAlignment("middle");
-    // 見出しと各行で、左右それぞれの「担当ビジター・役割」欄を結合する
-    for (var i = 0; i <= halfCount; i++) {
-      sheet.getRange(reverseTableStart + i, 3, 1, 2).mergeAcross();   // C:D（左段）
-      sheet.getRange(reverseTableStart + i, 7, 1, 2).mergeAcross();   // G:H（右段）
+    sheet.getRange(reverseTableStart, 1, 1, 8).setBackground("#f3f3f3").setFontWeight("bold");
+    sheet.getRange(reverseTableStart + 1, 1, allMemberRoles.length, 8).setBorder(true, true, true, true, true, true).setWrap(true).setVerticalAlignment("middle");
+    for (var i = 0; i <= allMemberRoles.length; i++) {
+       sheet.getRange(reverseTableStart + i, 3, 1, 6).mergeAcross();
     }
-    sheet.getRange(reverseTableStart + 1, 1, halfCount, 1).setHorizontalAlignment("center");
-    sheet.getRange(reverseTableStart + 1, 5, halfCount, 1).setHorizontalAlignment("center");
   }
 
-  // 列幅(px)。上のビジター表と下の2段組み担当表の両方で使うため、
-  // 担当表の左段(A,B,C+D)と右段(E,F,G+H)が同じ幅になるようにそろえている。
-  var widths = [40, 105, 130, 140, 40, 105, 130, 140];
+  // 列幅(px)。A4縦・余白0.25インチの印字幅(約197mm=746px)に収まるようにしてある。
+  // 幅が収まっていれば文字を縮小せずに出力できる（収まらないと全体が縮小されて読みにくくなる）。
+  var widths = [36, 89, 107, 80, 107, 98, 107, 116];
   for(var w=0; w<widths.length; w++) sheet.setColumnWidth(w+1, widths[w]);
   SpreadsheetApp.flush();
   
@@ -1141,9 +1130,13 @@ function saveAllocationSheet(meetingDateVal, displayVal, visitors, pool, facilAl
 
 function exportAllocationSheetToPdf(sheet, fileName, fileIdPropKey) {
   var ss = SpreadsheetApp.getActiveSpreadsheet(), spreadsheetId = ss.getId(), sheetId = sheet.getSheetId(), lastRow = sheet.getLastRow();
-  // scale=4 は「用紙1ページに収める」指定。担当表を2段組みにして行数を半分にしてあるため、
-  // 極端に小さくならずに1ページへ収まる。
-  var url = "https://docs.google.com/spreadsheets/d/" + spreadsheetId + "/export?exportFormat=pdf&format=pdf&size=A4&portrait=false&scale=4&sheetnames=false&printtitle=false&pagenumbers=false&gridlines=false&fzr=false&gid=" + sheetId + "&r1=0&c1=0&r2=" + lastRow + "&c2=8";
+  // A4縦。文字を縮小したくないため「1ページに収める」指定はしない（scale=1＝原寸）。
+  // 余白を詰めて印字幅を広げ、列幅の合計がそこに収まるようにしてあるので横方向は原寸で入る。
+  // 縦に入りきらない分は2ページ目以降へ流す。
+  var url = "https://docs.google.com/spreadsheets/d/" + spreadsheetId + "/export?exportFormat=pdf&format=pdf&size=A4&portrait=true&scale=1"
+          + "&top_margin=0.30&bottom_margin=0.30&left_margin=0.25&right_margin=0.25"
+          + "&sheetnames=false&printtitle=false&pagenumbers=false&gridlines=false&fzr=false&gid=" + sheetId
+          + "&r1=0&c1=0&r2=" + lastRow + "&c2=8";
   var token = ScriptApp.getOAuthToken(), response = UrlFetchApp.fetch(url, { headers: { 'Authorization': 'Bearer ' + token }, muteHttpExceptions: true });
   var blob = response.getBlob().setName(fileName), props = PropertiesService.getScriptProperties();
   var existingId = fileIdPropKey ? props.getProperty(fileIdPropKey) : null;
