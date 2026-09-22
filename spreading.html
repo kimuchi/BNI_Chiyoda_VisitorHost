@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    body { font-family: sans-serif; padding: 18px; margin: 0; font-size: 14px; color: #333; }
+    h3 { margin: 0 0 10px; color: #0055ff; }
+    .hint { font-size: 12px; color: #666; line-height: 1.7; background: #f7f9ff;
+            border: 1px solid #dde6ff; border-radius: 6px; padding: 10px 12px; margin-bottom: 14px; }
+    .hint code { background: #fff; border: 1px solid #ccd; border-radius: 3px; padding: 1px 5px; font-size: 12px; }
+    textarea { width: 100%; height: 150px; box-sizing: border-box; font-family: monospace;
+               font-size: 11px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
+    .row { margin: 10px 0; }
+    label.chk { font-size: 13px; cursor: pointer; }
+    label.chk span { color: #666; font-size: 12px; }
+    button { padding: 8px 18px; border: none; border-radius: 4px; cursor: pointer;
+             font-weight: bold; font-size: 13px; margin-right: 8px; }
+    .btn-preview { background: #eee; color: #333; border: 1px solid #bbb; }
+    .btn-apply { background: #0055ff; color: #fff; }
+    button:disabled { opacity: .5; cursor: default; }
+    #msg { margin-top: 12px; font-weight: bold; white-space: pre-wrap; font-size: 13px; }
+    .result { margin-top: 14px; }
+    .block { border: 1px solid #ddd; border-radius: 6px; margin-bottom: 10px; }
+    .block > b { display: block; padding: 7px 10px; background: #f3f3f3; font-size: 13px; }
+    .block .body { padding: 8px 10px; max-height: 190px; overflow-y: auto; font-size: 12px; line-height: 1.7; }
+    .chg { color: #0a7; }
+    .from { color: #999; text-decoration: line-through; }
+    .warn > b { background: #fff3e0; color: #b35c00; }
+  </style>
+</head>
+<body>
+  <h3>Spreadingからメンバー名簿を更新</h3>
+
+  <div class="hint">
+    Claudeなど、SpreadingのMCP連携を許可したAIに <code>member_list</code> を実行してもらい、<br>
+    返ってきた結果をそのまま下の欄に貼り付けてください（説明文が混ざっていても大丈夫です）。<br>
+    <b>反映されるのは</b> ふりがな・カテゴリー・会社名・役職・業種区分・入会日 の6項目です。<br>
+    <b>写真・一言コメント・紹介してほしい人・協業したい人・更新期限日は上書きしません。</b>
+  </div>
+
+  <textarea id="json" placeholder='{"ok":true,"data":{"items":[{"id":4,"name":"…"}]}}'></textarea>
+
+  <div class="row">
+    <label class="chk">
+      <input type="checkbox" id="renumber">
+      Noを業種区分の並び順で振り直す
+      <span>（紙のメンバーリストと同じ並びになります。まず「変更内容を確認」で番号がずれないかご確認ください）</span>
+    </label>
+  </div>
+
+  <div class="row">
+    <button class="btn-preview" id="btnPreview" onclick="run(true)">変更内容を確認</button>
+    <button class="btn-apply" id="btnApply" onclick="run(false)">名簿に取り込む</button>
+  </div>
+
+  <div id="msg"></div>
+  <div class="result" id="result"></div>
+
+  <script>
+    function esc(s) { var d = document.createElement('span'); d.textContent = (s == null ? '' : s); return d.innerHTML; }
+
+    function busy(on, text) {
+      document.getElementById('btnPreview').disabled = on;
+      document.getElementById('btnApply').disabled = on;
+      var m = document.getElementById('msg');
+      m.style.color = '#0055ff';
+      m.innerText = text || '';
+    }
+
+    function run(preview) {
+      var json = document.getElementById('json').value;
+      if (!json.trim()) { alert('member_list の結果を貼り付けてください。'); return; }
+      var renumber = document.getElementById('renumber').checked;
+      if (!preview && !confirm('メンバー名簿に反映します。よろしいですか？')) return;
+      busy(true, preview ? '内容を確認しています...' : '名簿に反映しています...');
+      document.getElementById('result').innerHTML = '';
+      google.script.run
+        .withSuccessHandler(onDone)
+        .withFailureHandler(function (err) {
+          var m = document.getElementById('msg');
+          m.style.color = '#d00';
+          m.innerText = 'エラー: ' + ((err && err.message) ? err.message : err);
+          busy(false);
+        })[preview ? 'previewSpreadingMembers' : 'importSpreadingMembers'](json, renumber);
+    }
+
+    function block(title, html, warn) {
+      if (!html) return '';
+      return '<div class="block' + (warn ? ' warn' : '') + '"><b>' + esc(title) + '</b><div class="body">' + html + '</div></div>';
+    }
+
+    function onDone(res) {
+      busy(false);
+      var m = document.getElementById('msg');
+      if (!res || !res.ok) {
+        m.style.color = '#d00';
+        m.innerText = (res && res.message) ? res.message : '失敗しました。';
+        return;
+      }
+      if (!res.preview) {
+        m.style.color = 'green';
+        m.innerText = res.message;
+        return;
+      }
+
+      m.style.color = '#333';
+      m.innerText = 'Spreadingの有効メンバー ' + res.total + '名を読み取りました。'
+                  + '変更なし ' + res.unchanged + '名。まだ名簿は変更していません。';
+
+      var html = '';
+      if (res.updates && res.updates.length) {
+        var u = res.updates.map(function (r) {
+          var c = r.changes.map(function (x) {
+            return esc(x.field) + ': ' + (x.from ? '<span class="from">' + esc(x.from) + '</span> → ' : '')
+                 + '<span class="chg">' + esc(x.to) + '</span>';
+          }).join(' ／ ');
+          return '<div>' + esc((r.no ? r.no + '. ' : '') + r.name) + ' — ' + c + '</div>';
+        }).join('');
+        html += block('更新される ' + res.updates.length + '名', u);
+      }
+      if (res.adds && res.adds.length) {
+        html += block('新しく追加される ' + res.adds.length + '名',
+          res.adds.map(function (r) { return '<div>' + esc((r.no ? r.no + '. ' : '') + r.name + '（' + r.cat + '）') + '</div>'; }).join(''));
+      }
+      if (res.missing && res.missing.length) {
+        html += block('名簿にあるがSpreadingの有効メンバーに居ない ' + res.missing.length + '名（自動では消しません）',
+          res.missing.map(function (r) { return '<div>' + esc((r.no ? r.no + '. ' : '') + r.name) + '</div>'; }).join(''), true);
+      }
+      if (!html) html = '<div class="block"><div class="body">変更点はありませんでした。</div></div>';
+      document.getElementById('result').innerHTML = html;
+    }
+  </script>
+</body>
+</html>

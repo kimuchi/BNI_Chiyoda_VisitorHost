@@ -329,7 +329,8 @@ function applyVisitorHostsFromMemo() {
   try {
     var members = getMemberMaster().members || [], hosts = [], names = [];
     for (var i = 0; i < members.length; i++) {
-      var memo = members[i].memo || '';
+      // メモ欄と役職欄の両方を見る。OCR取込はメモ欄に、Spreading取込は役職欄に入るため。
+      var memo = (members[i].memo || '') + ' ' + (members[i].role || '');
       // 「ビジターホスト」「ビジホス」などの表記ゆれを拾う
       if (!/ビジ(ター)?ホス(ト)?/.test(memo)) continue;
       if (!members[i].no) continue;
