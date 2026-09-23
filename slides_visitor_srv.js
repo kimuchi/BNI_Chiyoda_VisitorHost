@@ -87,7 +87,9 @@ function buildPresenXml_(xml, v) {
   xml = setTextInShape_(xml, 27, v.company);
   xml = setCategoryInShape_(xml, 29, v.category);
   xml = fitFontToShape_(xml, 25, nm, FIT_MIN_.presenName);
-  xml = fitFontToShape_(xml, 27, v.company, FIT_MIN_.presenCompany);
+  // 会社名が長いときは、1行に縮めるより2行にした方が大きく出せる。
+  // 2行になったぶんは【カテゴリー】を下にずらして重なりを避ける。
+  xml = fitTextAndPush_(xml, 27, 29, v.company, FIT_MIN_.presenCompany);
   xml = fitFontToShape_(xml, 29, cat, FIT_MIN_.presenCategory);
   return xml;
 }
