@@ -9,6 +9,7 @@ var ASSET_SUB_ = { template: '01_テンプレート', photo: '02_メンバー写
 var TEMPLATE_KINDS_ = {
   presen: { prop: 'BNI_TPL_PRESEN_ID', label: 'ビジタープレゼン（1人1枚）', ids: ['25', '27', '29'] },
   intro:  { prop: 'BNI_TPL_INTRO_ID',  label: 'ビジター紹介（3人1枚）',   ids: ['19','20','21','25','26','28','31','32','33'] },
+  guest:  { prop: 'BNI_TPL_GUEST_ID',  label: 'ゲスト紹介（3人1枚）',     ids: ['19','20','21','25','26','28','31','32','33'] },
   dairi:  { prop: 'BNI_TPL_DAIRI_ID',  label: '代理紹介（3人1枚）',       ids: ['19','20','21','25','26','28','31','32','33'] }
 };
 
