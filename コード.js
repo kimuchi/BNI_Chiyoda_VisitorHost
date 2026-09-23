@@ -305,7 +305,7 @@ function getExistingVisitorSheets() {
 // === シートの整理（アーカイブ）===
 // アーカイブ＝シートを非表示にする方式。データは消えず、再編集・PDF再作成・
 // 割り振りは getSheetByName で引き続き動作する（タブ表示だけ減る）。
-var ARCHIVE_SHEET_PATTERN_ = /^(\d{4})(参加者_印刷用|参加者|割り振り表)$/;
+var ARCHIVE_SHEET_PATTERN_ = /^(\d{4})(参加者_印刷用|参加者|割り振り表|オリエン|オープンネット)$/;
 
 function getSheetArchiveStatus() {
   var ss = SpreadsheetApp.getActiveSpreadsheet(), sheets = ss.getSheets();
@@ -1026,6 +1026,7 @@ function saveAllocationSheet(meetingDateVal, displayVal, visitors, pool, facilAl
     ["No.", "お名前", "カテゴリー", "招待者", "つなげたいメンバー", "ファシリテーター", "ルームメンバー", "オリエンテーション"]
   ];
   
+  var borRows = [];   // ブレイクアウトルーム表(BOR)の元データ
   for (var i = 0; i < visitors.length; i++) {
     var v = visitors[i], fName = "", rNames = [], oNames = [];
     
@@ -1041,6 +1042,10 @@ function saveAllocationSheet(meetingDateVal, displayVal, visitors, pool, facilAl
     
     if(orienAlloc[v.no]) { for(var j=0; j<orienAlloc[v.no].length; j++) { var om = pool.filter(function(m){ return String(m.no) === String(orienAlloc[v.no][j]); })[0]; if(om) oNames.push(om.name); } }
     
+    // BOR表はルーム単位。割り振り表と同じ割り当てを、ルーム名を軸に並べ直して使う
+    borRows.push({ room: v.no + v.name + "(" + v.cat + ")様ルーム",
+                   inviter: v.inviter || "", facil: fName,
+                   members: rNames.join("\n"), orien: oNames.join("\n") });
     outputData.push([ v.no, v.name, v.cat, v.inviter, connectReq[v.no] || "", fName, rNames.join("\n"), oNames.join("\n") ]);
   }
   var lastDataRow = outputData.length;
@@ -1132,8 +1137,43 @@ function saveAllocationSheet(meetingDateVal, displayVal, visitors, pool, facilAl
   var allocPdfIdKey = 'ALLOC_PDF_ID_' + mmdd + '割り振り';
   var pdfUrl = exportAllocationSheetToPdf(sheet, displayVal + " 割り振り表.pdf", allocPdfIdKey);
   PropertiesService.getScriptProperties().setProperty('LATEST_ALLOCATION_URL', pdfUrl); 
+  var borSheets = saveBreakoutRoomSheets_(ss, mmdd, borRows);
   autoArchiveOtherDates_(mmdd);
-  return "<h3>作成完了しました🎉</h3><p>割り振り表を作成しました。</p><br><a href='" + pdfUrl + "' target='_blank' style='background:#0055ff; color:#fff; padding:10px 20px; text-decoration:none; border-radius:5px; font-weight:bold;'>📄 作成されたPDFを開く</a>";
+  return "<h3>作成完了しました🎉</h3><p>割り振り表と、ブレイクアウトルームの表（" + borSheets.join("／") + "）を作成しました。</p><br><a href='" + pdfUrl + "' target='_blank' style='background:#0055ff; color:#fff; padding:10px 20px; text-decoration:none; border-radius:5px; font-weight:bold;'>📄 作成されたPDFを開く</a>";
+}
+
+// === ブレイクアウトルーム(BOR)の表 ===
+// 定例会ごとに「MMDDオリエン」「MMDDオープンネット」の2枚を作る。
+// 列の位置は現行の運用ファイルに合わせてある（A列は空けて、B列がルーム名）。
+// 貼り付け先の列位置が変わると困るため、空のA列もそのまま残している。
+function saveBreakoutRoomSheets_(ss, mmdd, borRows) {
+  var orien = writeBorSheet_(ss, mmdd + "オリエン",
+    ["", "ルーム", "オリエンテーション"],
+    borRows.map(function (r) { return ["", r.room, r.orien]; }),
+    [24, 492, 157]);
+  var openNet = writeBorSheet_(ss, mmdd + "オープンネット",
+    ["", "ルーム", "招待者", "ファシリテーター", "ルームメンバー"],
+    borRows.map(function (r) { return ["", r.room, r.inviter, r.facil, r.members]; }),
+    [24, 492, 135, 140, 125]);
+  return [orien, openNet];
+}
+
+function writeBorSheet_(ss, sheetName, header, rows, widths) {
+  var sheet = ss.getSheetByName(sheetName);
+  if (!sheet) sheet = ss.insertSheet(sheetName); else sheet.clear();
+  var cols = header.length;
+  var data = [header].concat(rows);
+  sheet.getRange(1, 1, data.length, cols).setValues(data);
+  sheet.getRange(1, 1, 1, cols).setFontWeight("bold").setBackground("#f3f3f3");
+  sheet.setFrozenRows(1);
+  if (rows.length) {
+    // 結合していないセルなので、折り返せば行の高さは自動で広がる
+    sheet.getRange(2, 1, rows.length, cols)
+         .setWrap(true).setVerticalAlignment("middle")
+         .setBorder(true, true, true, true, true, true);
+  }
+  for (var w = 0; w < widths.length; w++) sheet.setColumnWidth(w + 1, widths[w]);
+  return sheetName;
 }
 
 // 折り返しを考慮した行の高さ(px)の見積もり。
