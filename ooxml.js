@@ -125,12 +125,120 @@ function setFontSizeInShape_(xml, shapeId, sizePt) {
 function fitFontToShape_(xml, shapeId, text, minPt) {
   var box = readShapeTextBox_(xml, shapeId);
   if (!box || !box.basePt || box.widthPt <= 0) return xml;
-  var s = String(text == null ? '' : text), w = 0;
-  for (var i = 0; i < s.length; i++) w += s.charCodeAt(i) < 128 ? 0.5 : 1;
+  var w = textWidthUnits_(text);
   if (w <= 0) return xml;
   var size = Math.floor(box.widthPt / w);
   if (size >= box.basePt) return xml;
   return setFontSizeInShape_(xml, shapeId, Math.max(size, minPt || 10));
+}
+
+// スライド上の全シェイプの位置と大きさ（pt）を集める。
+// p:sp のほか、画像(p:pic)・表など(p:graphicFrame)・グループ(p:grpSp)も見る。
+function collectShapeBoxes_(xml) {
+  var tags = ['p:sp', 'p:pic', 'p:graphicFrame', 'p:grpSp'], boxes = [];
+  for (var t = 0; t < tags.length; t++) {
+    var ranges = findTagRanges_(xml, tags[t]);
+    for (var i = 0; i < ranges.length; i++) {
+      var seg = xml.substring(ranges[i].start, ranges[i].end);
+      var off = seg.match(/<a:off\s+x="(-?\d+)"\s+y="(-?\d+)"\s*\/>/);
+      var ext = seg.match(/<a:ext\s+cx="(\d+)"\s+cy="(\d+)"\s*\/>/);
+      if (!off || !ext) continue;
+      var id = seg.match(/<p:cNvPr[^>]*\sid="(\d+)"/);
+      boxes.push({ id: id ? id[1] : '',
+                   x: parseInt(off[1], 10) / 12700, y: parseInt(off[2], 10) / 12700,
+                   w: parseInt(ext[1], 10) / 12700, h: parseInt(ext[2], 10) / 12700 });
+    }
+  }
+  return boxes;
+}
+
+// 指定シェイプの下にどれだけ余裕があるか（pt）。
+// 横方向に重なっていて、下にある一番近いシェイプまでの距離を返す。
+// 下に何も無ければ fallbackPt を返す（スライドの高さは slide XML からは分からないため）。
+function roomBelowShape_(xml, shapeId, fallbackPt) {
+  var boxes = collectShapeBoxes_(xml), me = null, i;
+  for (i = 0; i < boxes.length; i++) if (boxes[i].id === String(shapeId)) { me = boxes[i]; break; }
+  if (!me) return 0;
+  var myBottom = me.y + me.h, nearest = -1;
+  for (i = 0; i < boxes.length; i++) {
+    var b = boxes[i];
+    if (b.id === String(shapeId)) continue;
+    if (b.y < myBottom) continue;                              // 下にない
+    if (b.x + b.w <= me.x || b.x >= me.x + me.w) continue;     // 横に重なっていない
+    if (nearest < 0 || b.y < nearest) nearest = b.y;
+  }
+  return nearest < 0 ? (fallbackPt || 72) : Math.max(0, nearest - myBottom);
+}
+
+// シェイプを下へずらす（pt）
+function moveShapeDown_(xml, shapeId, deltaPt) {
+  if (!deltaPt || deltaPt <= 0) return xml;
+  var spRanges = findSpRanges_(xml), delta = Math.round(deltaPt * 12700);
+  for (var i = 0; i < spRanges.length; i++) {
+    var sp = xml.substring(spRanges[i].start, spRanges[i].end);
+    var m = sp.match(/<p:cNvPr[^>]*\sid="(\d+)"/);
+    if (!m || m[1] !== String(shapeId)) continue;
+    var replaced = false;
+    var out = sp.replace(/<a:off\s+x="(-?\d+)"\s+y="(-?\d+)"\s*\/>/, function (all, x, y) {
+      if (replaced) return all;
+      replaced = true;
+      return '<a:off x="' + x + '" y="' + (parseInt(y, 10) + delta) + '"/>';
+    });
+    return xml.substring(0, spRanges[i].start) + out + xml.substring(spRanges[i].end);
+  }
+  return xml;
+}
+
+// 文字の幅を「全角何文字ぶん」で数える
+function textWidthUnits_(text) {
+  var s = String(text == null ? '' : text), w = 0;
+  for (var i = 0; i < s.length; i++) w += s.charCodeAt(i) < 128 ? 0.5 : 1;
+  return w;
+}
+
+// 長い文字を、1行に縮めるか2行にするかを決める。
+// 2行にした方が大きく出せるなら2行にし、そのぶん下のシェイプをずらす。
+// 日本語は行送りが大きいので、1行の高さは文字サイズの1.4倍で見積もる。
+//
+//   shapeId   … 縮める対象（会社名など）
+//   belowId   … 2行になったときに下へずらすシェイプ（【カテゴリー】など）
+//   minPt     … これ以上は小さくしない
+//
+// 戻り値は差し替え後のXML。
+var LINE_HEIGHT_ = 1.4;
+// 2行にするのは、1行のときより文字がこれだけ大きくできる場合だけ。
+// わずかな差のために下のシェイプまで動かすと、かえってレイアウトが崩れて見える。
+var TWO_LINE_GAIN_ = 1.4;
+
+function fitTextAndPush_(xml, shapeId, belowId, text, minPt) {
+  var box = readShapeTextBox_(xml, shapeId);
+  if (!box || !box.basePt || box.widthPt <= 0) return xml;
+  var w = textWidthUnits_(text);
+  if (w <= 0) return xml;
+
+  var one = Math.floor(box.widthPt / w);
+  if (one >= box.basePt) return xml;            // 元の大きさで1行に収まる
+
+  var keepOneLine = function () {
+    return setFontSizeInShape_(xml, shapeId, Math.max(one, minPt || 10));
+  };
+  if (!belowId) return keepOneLine();
+
+  // 2行にしたときに使える大きさ
+  var two = Math.min(box.basePt, Math.floor(2 * box.widthPt / w));
+  if (two < one * TWO_LINE_GAIN_) return keepOneLine();
+
+  // 2行にすると、元の1行ぶんよりどれだけ縦に伸びるか
+  var room = roomBelowShape_(xml, belowId, 72);
+  var growOf = function (sz) { return Math.ceil((2 * sz - box.basePt) * LINE_HEIGHT_); };
+  if (growOf(two) > room) {
+    // ずらせる範囲に収まる大きさまで落とす
+    two = Math.min(two, Math.floor((room / LINE_HEIGHT_ + box.basePt) / 2));
+    if (two < one * TWO_LINE_GAIN_) return keepOneLine();   // 落とした結果、割に合わなくなった
+  }
+
+  xml = setFontSizeInShape_(xml, shapeId, two);
+  return moveShapeDown_(xml, belowId, Math.max(0, growOf(two)));
 }
 
 function replaceFirstT_(runXml, text) {
