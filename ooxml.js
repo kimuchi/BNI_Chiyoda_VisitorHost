@@ -74,6 +74,65 @@ function setCategoryInShape_(xml, shapeId, category) {
   return xml;
 }
 
+// === 長い文字を枠に収める ===
+// 会社名やカテゴリーが長いと、枠からはみ出して下の行に重なってしまう。
+// テンプレートから枠の幅と元の文字サイズを読み取り、文字数に応じて小さくする。
+// 幅をハードコードせずテンプレートから読むので、デザインを差し替えても付いていける。
+
+// シェイプの内側の幅(pt)・高さ(pt)・元の文字サイズ(pt)を読み取る
+function readShapeTextBox_(xml, shapeId) {
+  var spRanges = findSpRanges_(xml);
+  for (var i = 0; i < spRanges.length; i++) {
+    var sp = xml.substring(spRanges[i].start, spRanges[i].end);
+    var m = sp.match(/<p:cNvPr[^>]*\sid="(\d+)"/);
+    if (!m || m[1] !== String(shapeId)) continue;
+    var ext = sp.match(/<a:ext\s+cx="(\d+)"\s+cy="(\d+)"/);
+    if (!ext) return null;
+    // 左右の余白。既定は 91440 EMU（0.1インチ）
+    var lIns = 91440, rIns = 91440, bp = sp.match(/<a:bodyPr[^>]*>/);
+    if (bp) {
+      var l = bp[0].match(/\slIns="(-?\d+)"/), r = bp[0].match(/\srIns="(-?\d+)"/);
+      if (l) lIns = parseInt(l[1], 10);
+      if (r) rIns = parseInt(r[1], 10);
+    }
+    var sz = sp.match(/<a:(?:rPr|defRPr)[^>]*\ssz="(\d+)"/);
+    return { widthPt: (parseInt(ext[1], 10) - lIns - rIns) / 12700,   // 12700 EMU = 1pt
+             heightPt: parseInt(ext[2], 10) / 12700,
+             basePt: sz ? parseInt(sz[1], 10) / 100 : 0 };
+  }
+  return null;
+}
+
+// シェイプ内の文字の大きさをまとめて変える
+function setFontSizeInShape_(xml, shapeId, sizePt) {
+  var spRanges = findSpRanges_(xml), v = Math.round(sizePt * 100);
+  for (var i = 0; i < spRanges.length; i++) {
+    var sp = xml.substring(spRanges[i].start, spRanges[i].end);
+    var m = sp.match(/<p:cNvPr[^>]*\sid="(\d+)"/);
+    if (!m || m[1] !== String(shapeId)) continue;
+    var out = sp.replace(/<a:(rPr|endParaRPr|defRPr)\b([^>]*?)(\/?)>/g, function (all, tag, attrs, selfClose) {
+      return '<a:' + tag + ' sz="' + v + '"' + attrs.replace(/\ssz="\d+"/g, '') + selfClose + '>';
+    });
+    return xml.substring(0, spRanges[i].start) + out + xml.substring(spRanges[i].end);
+  }
+  return xml;
+}
+
+// 文字数から、1行に収まる大きさを見積もって適用する。
+// 全角は1文字ぶん、半角は0.5文字ぶんとして幅を数える。
+// 元の大きさで収まるならそのまま。minPt より小さくはしない（読めなくなるため、
+// そこまで長い場合は折り返して2行になる）。
+function fitFontToShape_(xml, shapeId, text, minPt) {
+  var box = readShapeTextBox_(xml, shapeId);
+  if (!box || !box.basePt || box.widthPt <= 0) return xml;
+  var s = String(text == null ? '' : text), w = 0;
+  for (var i = 0; i < s.length; i++) w += s.charCodeAt(i) < 128 ? 0.5 : 1;
+  if (w <= 0) return xml;
+  var size = Math.floor(box.widthPt / w);
+  if (size >= box.basePt) return xml;
+  return setFontSizeInShape_(xml, shapeId, Math.max(size, minPt || 10));
+}
+
 function replaceFirstT_(runXml, text) {
   var esc = escapeXml_(text);
   // <a:t>…</a:t> / <a:t/>
