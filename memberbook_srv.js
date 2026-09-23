@@ -56,16 +56,21 @@ function saveMemberBookPdfBase64(base64, fileName) {
 }
 
 // Zoom入室案内。氏名を行順で6列に割る（現行と同じ配分）
+// 番号は名簿のNoをそのまま使う。並び順から振り直すと、退会などでNoが飛んでいるときに
+// 実際の番号とずれてしまい、「番号抜け／番号違いにご注意ください」と案内する紙自体が
+// 間違うことになるため。Noが空のメンバーだけ並び順から補う。
 function getZoomGuideContext() {
   try {
     var members = getMemberMaster().members || [];
     var props = PropertiesService.getScriptProperties();
     return { ok: true,
-      names: members.map(function (m) { return m.name; }),
+      members: members.map(function (m, i) {
+        return { no: String(m.no || (i + 1)), name: m.name, cat: m.title || '' };
+      }),
       exampleNum: props.getProperty('BNI_ZOOM_EXAMPLE_NUM') || '4',
       title: props.getProperty('BNI_ZOOM_TITLE') || (members.length + '名') };
   } catch (e) {
-    return { ok: false, message: '読み込みに失敗しました: ' + (e && e.message ? e.message : e), names: [] };
+    return { ok: false, message: '読み込みに失敗しました: ' + (e && e.message ? e.message : e), members: [] };
   }
 }
 function saveZoomGuideSettings(data) {
