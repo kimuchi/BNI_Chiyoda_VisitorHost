@@ -149,7 +149,7 @@ function benchmarkPptxRoundTrip(kind) {
                '内訳: 読込' + (t.読込/1000).toFixed(1) + '秒 / 展開' + (t.展開/1000).toFixed(1) + '秒 / ' +
                '再梱包' + (t.再梱包/1000).toFixed(1) + '秒 / 保存' + (t.保存/1000).toFixed(1) + '秒\n' +
                'この方式で毎週の生成ができます（実行上限は6分）。',
-      url: r.saved.url, sizeMB: sizeMB, partCount: r.partCount, timing: t, seconds: t.合計 / 1000 };
+      url: r.saved.url, downloadUrl: r.saved.downloadUrl, sizeMB: sizeMB, partCount: r.partCount, timing: t, seconds: t.合計 / 1000 };
   } catch (e) {
     console.error('[PPTX] benchmark ' + (e && e.stack ? e.stack : e));
     return { ok: false,

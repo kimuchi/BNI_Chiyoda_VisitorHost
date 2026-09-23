@@ -35,7 +35,7 @@ function exportMemberBookHtml(html, fileName) {
     var name = (fileName || 'BNI_memberbook') + '.html';
     var blob = Utilities.newBlob(html, 'text/html', name).setName(name);
     var saved = saveOutputFile_(blob, name);
-    return { ok: true, message: '配布用HTMLを保存しました。', url: saved.url, fileName: name };
+    return { ok: true, message: '配布用HTMLを保存しました。', url: saved.url, downloadUrl: saved.downloadUrl, fileName: name };
   } catch (e) {
     console.error('[MBOOK] ' + (e && e.stack ? e.stack : e));
     return { ok: false, message: '保存に失敗しました: ' + (e && e.message ? e.message : e) };

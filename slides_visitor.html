@@ -116,7 +116,7 @@
      setBusy(false);
      if(!r.ok){ show(r.message,false); return; }
      document.getElementById('msg').innerHTML='<span style="color:green;">'+esc(r.message)+'</span><br>'
-       +'<a class="dl" href="'+r.url+'" target="_blank">📄 作成されたPowerPointを開く</a>';
+       +'<a class="dl" href="'+(r.downloadUrl||r.url)+'" target="_blank">⬇ PowerPointをダウンロード</a> '+'<a href="'+r.url+'" target="_blank" style="font-size:12px;color:#666;">ドライブで見る</a>';
    }).withFailureHandler(fail).generateVisitorSlides(s,type);
  }
 
@@ -128,7 +128,7 @@
      setBusy(false);
      if(!r.ok){ show(r.message,false); return; }
      document.getElementById('msg').innerHTML='<span style="color:green;">'+esc(r.message)+'</span><br>'
-       +'<a class="dl" href="'+r.url+'" target="_blank">📄 作成されたPowerPointを開く</a>';
+       +'<a class="dl" href="'+(r.downloadUrl||r.url)+'" target="_blank">⬇ PowerPointをダウンロード</a> '+'<a href="'+r.url+'" target="_blank" style="font-size:12px;color:#666;">ドライブで見る</a>';
    }).withFailureHandler(fail).generateAllIntroSlides(s);
  }
 </script>

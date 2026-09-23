@@ -122,7 +122,10 @@ function saveOutputFile_(blob, fileName) {
     shared = false;
     console.warn('[DRIVE] リンク共有を設定できませんでした: ' + (e && e.message ? e.message : e));
   }
-  return { id: file.getId(), url: file.getUrl(), name: fileName, shared: shared };
+  // getUrl() はドライブのプレビュー画面。pptxだとGoogleスライドで開かれてしまうので、
+  // そのままダウンロードできるURLも返す。
+  return { id: file.getId(), url: file.getUrl(), name: fileName, shared: shared,
+           downloadUrl: 'https://drive.google.com/uc?export=download&id=' + file.getId() };
 }
 
 // === PowerPointテンプレートの登録 ===

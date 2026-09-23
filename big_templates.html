@@ -79,7 +79,7 @@
      setBusy(false);
      if(!r.ok){ document.getElementById('msg').innerText=r.message; document.getElementById('msg').style.color='#d00'; return; }
      document.getElementById('msg').innerHTML='<span style="color:green;">'+esc(r.message).replace(/\n/g,'<br>')+'</span>'
-       +'<br><a href="'+r.url+'" target="_blank">▶ 出力されたPowerPointを開いて、崩れていないか確認する</a>';
+       +'<br><a href="'+(r.downloadUrl||r.url)+'" target="_blank">⬇ 出力されたPowerPointをダウンロードして、崩れていないか確認する</a>';
    }).withFailureHandler(fail).benchmarkPptxRoundTrip(kind);
  }
  function tok(kind){

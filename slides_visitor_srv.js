@@ -3,10 +3,13 @@
 // テンプレートpptxは ⚙️PowerPointテンプレートの登録 で Drive に常設したものを使う。
 
 // 紹介／代理紹介スライド（3人1枚）のシェイプID。※2人目の氏名は 27 ではなく 28
+// labels は左側の見出し（「氏名」と「専門分野／招待者」）。
+// 人数が3の倍数でないとき、空き枠にこの見出しだけが残ってしまうため、
+// 値と一緒に空にする。運用で手作業で消していたのと同じ扱い。
 var SLIDE_BLOCKS_ = [
-  { category: 19, inviter: 20, name: 21 },
-  { category: 25, inviter: 26, name: 28 },
-  { category: 31, inviter: 32, name: 33 }
+  { category: 19, inviter: 20, name: 21, labels: [17, 18] },
+  { category: 25, inviter: 26, name: 28, labels: [23, 24] },
+  { category: 31, inviter: 32, name: 33, labels: [29, 30] }
 ];
 
 function openVisitorSlideDialog() {
@@ -83,6 +86,10 @@ function buildGroupXml_(xml, trio) {
     xml = setTextInShape_(xml, b.category, v ? v.category : '');
     xml = setTextInShape_(xml, b.inviter,  v ? v.inviter  : '');
     xml = setTextInShape_(xml, b.name,     v ? v.name + ' 様' : '');
+    // 空き枠は左の見出しも消す。値だけ空にすると「氏名」「専門分野」「招待者」が残る
+    if (!v && b.labels) {
+      for (var L = 0; L < b.labels.length; L++) xml = setTextInShape_(xml, b.labels[L], '');
+    }
   }
   return xml;
 }
@@ -134,7 +141,7 @@ function generateAllIntroSlides(sheetName) {
 
     var saved = saveOutputFile_(blob, outName);
     console.log('[VSLIDE] all-intro ' + outName + ' slides=' + slides.length);
-    return { ok: true, url: saved.url, fileName: outName, slideCount: slides.length,
+    return { ok: true, url: saved.url, downloadUrl: saved.downloadUrl, fileName: outName, slideCount: slides.length,
              message: '紹介スライドをまとめて作成しました（' + counts.join(' / ') + '　合計' + slides.length + '枚）。' };
   } catch (e) {
     console.error('[VSLIDE] ' + (e && e.stack ? e.stack : e));
@@ -187,7 +194,7 @@ function generateVisitorSlides(sheetName, type) {
     var blob = buildPptxFromTemplate_(tplBlob, dataList, builder, outName);
     var saved = saveOutputFile_(blob, outName);
     console.log('[VSLIDE] saved ' + outName + ' -> ' + saved.url);
-    return { ok: true, message: '「' + def.label + '」を作成しました（' + countLabel + '）。', url: saved.url, fileName: outName, slideCount: dataList.length };
+    return { ok: true, message: '「' + def.label + '」を作成しました（' + countLabel + '）。', url: saved.url, downloadUrl: saved.downloadUrl, fileName: outName, slideCount: dataList.length };
   } catch (e) {
     console.error('[VSLIDE] ' + (e && e.stack ? e.stack : e));
     return { ok: false, message: 'スライドの作成に失敗しました: ' + (e && e.message ? e.message : e) };

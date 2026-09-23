@@ -200,7 +200,7 @@ function generateMeetingSlides(kind, values, meetingDateVal) {
     } else {
       msg += '\n' + touched + '枚のスライドを書き換えました。';
     }
-    return { ok: true, message: msg, url: r.saved.url, fileName: outName, touched: touched, timing: r.timing };
+    return { ok: true, message: msg, url: r.saved.url, downloadUrl: r.saved.downloadUrl, fileName: outName, touched: touched, timing: r.timing };
   } catch (e) {
     console.error('[MEETING] ' + (e && e.stack ? e.stack : e));
     return { ok: false, message: 'スライドの作成に失敗しました: ' + (e && e.message ? e.message : e) };
