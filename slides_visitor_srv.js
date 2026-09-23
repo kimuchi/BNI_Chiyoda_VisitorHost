@@ -71,11 +71,24 @@ function previewVisitorSlideData(sheetName) {
   }
 }
 
+// 長い文字を枠に収めるときの下限（pt）。これ以上は小さくせず、折り返す。
+// 会社名の下限を低めにしてあるのは、折り返すと下の【カテゴリー】に重なるため。
+// プレゼンのレイアウトでは、会社名とカテゴリーの間隔が約47ptしかなく、
+// 2行にするとどのみち20pt以下にしか出来ない。それなら1行のまま少し小さくした方が大きく出る。
+var FIT_MIN_ = { presenName: 40, presenCompany: 16, presenCategory: 14,
+                 groupName: 16, groupValue: 10 };
+
 // プレゼンスライド1枚分（ID25=氏名+様 / ID27=会社名 / ID29=【カテゴリー】）
+// 会社名は長い会社があり、そのままだと枠からあふれて下の【カテゴリー】に重なるため、
+// 文字数に応じて自動で小さくする。枠の幅と元の大きさはテンプレートから読む。
 function buildPresenXml_(xml, v) {
-  xml = setTextInShape_(xml, 25, v.name + ' 様');
+  var nm = v.name + ' 様', cat = '【' + v.category + '】';
+  xml = setTextInShape_(xml, 25, nm);
   xml = setTextInShape_(xml, 27, v.company);
   xml = setCategoryInShape_(xml, 29, v.category);
+  xml = fitFontToShape_(xml, 25, nm, FIT_MIN_.presenName);
+  xml = fitFontToShape_(xml, 27, v.company, FIT_MIN_.presenCompany);
+  xml = fitFontToShape_(xml, 29, cat, FIT_MIN_.presenCategory);
   return xml;
 }
 
@@ -86,6 +99,12 @@ function buildGroupXml_(xml, trio) {
     xml = setTextInShape_(xml, b.category, v ? v.category : '');
     xml = setTextInShape_(xml, b.inviter,  v ? v.inviter  : '');
     xml = setTextInShape_(xml, b.name,     v ? v.name + ' 様' : '');
+    // 長い専門分野・会社名は枠からあふれるので、文字数に応じて小さくする
+    if (v) {
+      xml = fitFontToShape_(xml, b.category, v.category, FIT_MIN_.groupValue);
+      xml = fitFontToShape_(xml, b.inviter,  v.inviter,  FIT_MIN_.groupValue);
+      xml = fitFontToShape_(xml, b.name,     v.name + ' 様', FIT_MIN_.groupName);
+    }
     // 空き枠は左の見出しも消す。値だけ空にすると「氏名」「専門分野」「招待者」が残る
     if (!v && b.labels) {
       for (var L = 0; L < b.labels.length; L++) xml = setTextInShape_(xml, b.labels[L], '');
