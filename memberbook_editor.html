@@ -43,6 +43,9 @@
     <button class="sub" onclick="printBook()">🖨 冊子を印刷（PDF）</button>
     <button class="sub" onclick="exportHtml()">配布用HTMLを保存</button>
   </div>
+  <div class="bar">
+    <button class="sub" onclick="openCover()">📄 表紙・プレジデント設定</button>
+  </div>
   <div style="font-size:11px;color:#666;margin:8px 0 4px;">メンバー一覧（この順が掲載順）</div>
   <div class="mlist" id="mlist"></div>
   <div id="msg"></div>
@@ -57,6 +60,7 @@
   <label>業種区分</label><select id="e_cat"></select>
   <label>会社名</label><input id="e_company">
   <label>カテゴリー（肩書・業務内容）</label><input id="e_title">
+  <label>役職</label><input id="e_role">
   <label>氏名</label><input id="e_name">
   <label>一言コメント</label><textarea id="e_comment" rows="2"></textarea>
   <label>紹介してほしい人</label><input id="e_refer">
@@ -68,10 +72,50 @@
     <button class="sub" onclick="closeM()">閉じる</button>
     <button onclick="applyM()">反映</button>
   </div>
-</div></div>
+</div>
+
+<div class="modal" id="coverModal"><div class="inner" style="width:560px;">
+  <b>表紙・プレジデント設定</b>
+  <div style="font-size:11px;color:#666;margin:4px 0 8px;line-height:1.6;">
+    冊子の1ページ目に出る内容です。プレジデントの写真は、氏名から自動で照合されます。
+  </div>
+
+  <label>タイトル</label><input id="c_title">
+  <label>期（「23期 プレジデント挨拶」の見出しに使います）</label><input id="c_term">
+
+  <div style="border-top:1px solid #eee;margin-top:12px;padding-top:8px;"><b style="font-size:12px;">プレジデント</b></div>
+  <label>氏名</label><input id="c_pname">
+  <label>肩書（改行できます）</label><textarea id="c_prole" rows="2"></textarea>
+  <label>挨拶文</label><textarea id="c_ptext" rows="9"></textarea>
+
+  <div style="border-top:1px solid #eee;margin-top:12px;padding-top:8px;"><b style="font-size:12px;">定型文（毎期そのままで構いません）</b></div>
+  <label>理念の見出し</label><input id="c_philosophyTitle">
+  <label>理念の本文</label><textarea id="c_philosophy" rows="3"></textarea>
+  <label>チャプター紹介の見出し</label><input id="c_aboutTitle">
+  <label>チャプター紹介の本文</label><textarea id="c_about" rows="3"></textarea>
+  <label>メリットの見出し</label><input id="c_benefitsTitle">
+  <label>メリットの本文</label><textarea id="c_benefits" rows="3"></textarea>
+
+  <label>タイムスケジュール（開始／終了の時刻）</label>
+  <div style="display:flex;gap:6px;">
+    <input id="c_scheduleFrom" style="width:90px;"><input id="c_scheduleTo" style="width:90px;">
+  </div>
+  <label>タイムスケジュールの項目（1行に1つ。①②③…は自動で付きます）</label>
+  <textarea id="c_schedule" rows="9"></textarea>
+
+  <label>用語の説明の見出し</label><input id="c_termsTitle">
+  <label>用語の説明（「用語」の行と「説明」の行を交互に。①②③…は自動で付きます）</label>
+  <textarea id="c_terms" rows="8"></textarea>
+
+  <div style="margin-top:14px;display:flex;gap:6px;justify-content:flex-end;">
+    <button class="mini" onclick="resetCoverText()">定型文を初期値に戻す</button>
+    <button class="sub" onclick="closeCover()">閉じる</button>
+    <button onclick="saveCover()">保存</button>
+  </div>
+</div></div></div>
 
 <script>
- var members=[], cats=[], photos={}, photosB64={}, editing=-1;
+ var members=[], cats=[], cover={}, photos={}, photosB64={}, editing=-1;
  window.onload=load;
  function esc(x){var d=document.createElement('span');d.textContent=x==null?'':x;return d.innerHTML;}
  function show(t,ok){var m=document.getElementById('msg');m.innerText=t;m.style.color=ok===true?'green':(ok===false?'#d00':'#0055ff');}
@@ -83,9 +127,11 @@
    google.script.run.withSuccessHandler(function(r){
      busy(false);
      if(!r.ok){ show(r.message,false); return; }
-     members=r.members||[]; cats=r.categories||[];
+     members=r.members||[]; cats=r.categories||[]; cover=r.cover||{};
      render(); show(members.length+'名を読み込みました。',true);
-     fetchPhotos(members.map(function(m){return m.name;}));
+     var names=members.map(function(m){return m.name;});
+     if(cover.pname && names.indexOf(cover.pname)<0) names.push(cover.pname);  // プレジデントの写真も
+     fetchPhotos(names);
    }).withFailureHandler(fail).getMemberBookData();
  }
  // 写真はファイルIDだけをまとめて受け取り、画像はブラウザにサムネイルを読ませる。
@@ -136,16 +182,43 @@
    editing=i; var m=members[i];
    document.getElementById('e_cat').innerHTML='<option value=""></option>'+cats.map(function(c){
      return '<option value="'+esc(c.key)+'"'+(c.key===m.cat?' selected':'')+'>'+esc(c.label||c.key)+'</option>';}).join('');
-   ['company','title','name','comment','refer','collab'].forEach(function(k){ document.getElementById('e_'+k).value=m[k]||''; });
+   ['company','title','role','name','comment','refer','collab'].forEach(function(k){ document.getElementById('e_'+k).value=m[k]||''; });
    document.getElementById('e_num').value=i+1;
    document.getElementById('modal').style.display='flex';
  }
  function closeM(){ document.getElementById('modal').style.display='none'; editing=-1; }
+
+ // === 表紙・プレジデント設定 ===
+ var COVER_FIELDS=['title','term','pname','prole','ptext','philosophyTitle','philosophy',
+                   'aboutTitle','about','benefitsTitle','benefits','scheduleFrom','scheduleTo',
+                   'schedule','termsTitle','terms'];
+ function openCover(){
+   COVER_FIELDS.forEach(function(k){ var e=document.getElementById('c_'+k); if(e) e.value=cover[k]||''; });
+   document.getElementById('coverModal').style.display='flex';
+ }
+ function closeCover(){ document.getElementById('coverModal').style.display='none'; }
+ function saveCover(){
+   var next={};
+   COVER_FIELDS.forEach(function(k){ var e=document.getElementById('c_'+k); if(e) next[k]=e.value; });
+   google.script.run.withSuccessHandler(function(r){
+     if(!r.ok){ alert(r.message); return; }
+     cover=r.cover||next; closeCover(); show(r.message,true);
+     // プレジデントの写真がまだ無ければ読み込む
+     if(cover.pname && !photos[cover.pname]) fetchPhotos([cover.pname]);
+   }).withFailureHandler(fail).saveMemberBookCover(next);
+ }
+ function resetCoverText(){
+   if(!confirm('理念・チャプター紹介・メリット・タイムスケジュール・用語の説明を初期値に戻します。\nプレジデントの設定はそのまま残ります。よろしいですか？')) return;
+   google.script.run.withSuccessHandler(function(r){
+     if(!r.ok){ alert(r.message); return; }
+     cover=r.cover||{}; openCover(); show(r.message,true);
+   }).withFailureHandler(fail).resetMemberBookCoverText();
+ }
  function applyM(){
    if(editing<0) return;
    var m=members[editing];
    m.cat=document.getElementById('e_cat').value;
-   ['company','title','name','comment','refer','collab'].forEach(function(k){ m[k]=document.getElementById('e_'+k).value; });
+   ['company','title','role','name','comment','refer','collab'].forEach(function(k){ m[k]=document.getElementById('e_'+k).value; });
    closeM(); render();
  }
  // 現行版の挙動をそのまま再現：先に抜いてから挿入する
@@ -185,29 +258,6 @@
    })(need);
  }
 
- function bookHtml(){
-   var css='@page{size:A4;margin:8mm;}*{box-sizing:border-box;margin:0;padding:0;}'
-    +'body{font-family:"Hiragino Sans","Meiryo",sans-serif;}'
-    +'.pg{display:grid;grid-template-columns:repeat(3,1fr);gap:3mm;}'
-    +'.c{border:0.4mm solid #ddd;border-radius:1.5mm;padding:2mm;min-height:34mm;page-break-inside:avoid;position:relative;}'
-    +'.cn{position:absolute;top:1mm;right:1.6mm;color:#bbb;font-size:6pt;}'
-    +'.ph{width:22mm;height:22mm;object-fit:cover;border-radius:1mm;float:left;margin:0 2mm 1mm 0;background:#eee;}'
-    +'.cat{display:inline-block;color:#fff;font-size:6.5pt;padding:0.3mm 1.6mm;border-radius:2mm;margin-bottom:1mm;}'
-    +'.ti{color:#c0392b;font-size:7pt;}.nm{font-weight:bold;font-size:10.5pt;}'
-    +'.co{font-size:7.5pt;color:#444;}.cm{font-size:7pt;color:#666;margin-top:1mm;clear:both;}'
-    +'.rf{font-size:6.5pt;color:#555;margin-top:1mm;}';
-   var body=members.map(function(m,i){
-     var c=catOf(m.cat), ph=photosB64[m.name];
-     return '<div class="c"><span class="cn">'+(i+1)+'</span>'
-      +(c?'<div class="cat" style="background:'+esc(c.bg||'#888')+'">'+esc(c.label||c.key)+'</div>':'')
-      +(ph?'<img class="ph" src="'+ph+'">':'<div class="ph"></div>')
-      +'<div class="ti">'+esc(m.title)+'</div><div class="nm">'+esc(m.name)+'</div>'
-      +'<div class="co">'+esc(m.company)+'</div><div class="cm">'+esc(m.comment)+'</div>'
-      +'<div class="rf">紹介してほしい人: '+esc(m.refer)+'<br>協業したい人: '+esc(m.collab)+'</div></div>';
-   }).join('');
-   return '<!DOCTYPE html><html><head><meta charset="utf-8"><title>BNI メンバーブック</title>'
-    +'<style>'+css+'</style></head><body><div class="pg">'+body+'</div></body></html>';
- }
  function printBook(){
    withPhotoData(function(){
      var w=window.open('','_blank');
@@ -228,4 +278,5 @@
    });
  }
 </script>
+<?!= HtmlService.createHtmlOutputFromFile('memberbook_render').getContent(); ?>
 </body></html>

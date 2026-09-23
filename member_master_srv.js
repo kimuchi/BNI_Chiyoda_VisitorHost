@@ -12,16 +12,20 @@ var MEMBER_HEADERS_ = ['No', '業種区分', '氏名', 'ふりがな', 'カテ�
 var COVER_SHEET_ = 'メンバーブック表紙';
 var CAT_SHEET_ = '業種区分マスタ';
 
-// 現行ツールの8業種区分（キー・表示ラベル・色・ブロック表示名・巡回順）
+// 業種区分（キー・表示ラベル・色1・色2・ブロック表示名・巡回順）。
+// キーはSpreadingのカテゴリ設定のグループ名と同じにしてある。名簿の「業種区分」列と
+// この キー が一致したときに、メンバーブックのカードに色が付く。
+// 色1は冊子のカード帯の地色で、実際の配布版PDFから採取した値。
+// 巡回順は、Spreadingのグループの並び順に合わせてある。
 var DEFAULT_CATEGORIES_ = [
-  ['企業サポート', '企業サポート', '#1f4e79', '#2e75b6', '企業サポート', 1],
-  ['研修教育',     '研修・教育',   '#375623', '#548235', '研修・教育',   2],
-  ['建築住まい',   '建築・住まい', '#7f6000', '#bf9000', '建築＆住まい', 3],
-  ['プロモーション', 'プロモーション', '#833c00', '#c55a11', 'プロモーション', 4],
-  ['美容健康',     '美容・健康',   '#7b2d52', '#c0507f', '美容・健康',   5],
-  ['金融保険',     '金融・保険',   '#1f3864', '#2f5597', '金融・保険',   6],
-  ['不動産',       '不動産',       '#4d3b63', '#7030a0', '不動産',       7],
-  ['暮らしサービス', '暮らしサービス', '#255e5e', '#38859c', '暮らしサービス', 8]
+  ['企業サポート',   '企業サポート',   '#FFDE58', '#F5C400', '企業サポート',   1],
+  ['研修・教育',     '研修・教育',     '#C1FF72', '#8FD43A', '研修・教育',     2],
+  ['不動産関連',     '不動産関連',     '#37B5FF', '#0B8FE0', '不動産関連',     3],
+  ['建築・住まい',   '建築・住まい',   '#AAB5D9', '#7A88B8', '建築＆住まい',   4],
+  ['プロモーション', 'プロモーション', '#FF66C3', '#E0329B', 'プロモーション', 5],
+  ['暮らし・生活',   '暮らし・生活',   '#5CE1E6', '#1FBCC2', '暮らし・生活',   6],
+  ['美容と健康',     '美容と健康',     '#7DD957', '#4FAF2A', '美容と健康',     7],
+  ['飲食・エンタメ', '飲食・エンタメ', '#CB6BE6', '#A33BC2', '飲食・エンタメ', 8]
 ];
 
 function openMemberMasterDialog() {
@@ -50,8 +54,34 @@ function ensureCategorySheet_() {
     sh.getRange(1, 1, 1, 6).setFontWeight('bold').setBackground('#f2f6ff');
     sh.setFrozenRows(1);
     sh.hideSheet();
+    return sh;
+  }
+  // 区分が増えたとき（Spreadingのグループが変わったときなど）に足りない行を補う。
+  // 既にある行の色や並びは、手で直されている可能性があるのでそのまま残す。
+  var have = {}, data = sh.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) have[String(data[i][0]).trim()] = true;
+  var add = [];
+  for (var j = 0; j < DEFAULT_CATEGORIES_.length; j++) {
+    if (!have[DEFAULT_CATEGORIES_[j][0]]) add.push(DEFAULT_CATEGORIES_[j]);
+  }
+  if (add.length) {
+    sh.getRange(sh.getLastRow() + 1, 1, add.length, 6).setValues(add);
+    console.log('[CAT] 業種区分を' + add.length + '件追加しました');
   }
   return sh;
+}
+
+// 業種区分の色や並びを初期値に戻す（冊子の配色に合わせ直したいとき）
+function resetCategoryMaster() {
+  try {
+    var sh = ensureCategorySheet_();
+    if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, 6).clearContent();
+    sh.getRange(2, 1, DEFAULT_CATEGORIES_.length, 6).setValues(DEFAULT_CATEGORIES_);
+    return { ok: true, message: '業種区分を初期値に戻しました（' + DEFAULT_CATEGORIES_.length + '区分）。',
+             categories: getCategoryMaster() };
+  } catch (e) {
+    return { ok: false, message: '戻せませんでした: ' + (e && e.message ? e.message : e) };
+  }
 }
 
 function toDateStr_(v) {
@@ -175,21 +205,103 @@ function saveCategoryMaster(rows) {
 }
 
 // --- メンバーブック表紙情報 ---
+// === メンバーブックの表紙ページ ===
+// 期ごとに書き換わる文章（プレジデント挨拶など）と、めったに変わらない定型文
+// （理念・用語の説明など）をまとめて1件のJSONで持つ。
+// 項目が増えてもプロパティを増やさずに済む。
+var COVER_KEY_ = 'BNI_MB_COVER';
+
+var DEFAULT_COVER_ = {
+  title: 'BNI Active chapter Member Book',
+  term: '23期',
+  philosophyTitle: 'BNIの理念　Givers Gain®（ギバーズゲイン）',
+  philosophy: '他の人におしみなくビジネスを提供することで、自分も他の人からビジネスを提供してもらえる、「与えるものは与えられる」という考え方に基づいて運営されています。',
+  aboutTitle: 'BNI Activeチャプターとは？',
+  about: '2015年9月に発足し、23期を迎えました。\n個性豊かなメンバーが、様々な分野のプロフェッショナルとして、お互いのビジネス発展、売上UP、人脈の拡大のためにサポートし合うビジネスチームです。',
+  benefitsTitle: 'BNIに参加するメリット（BNIを活用する５つのベネフィット＋1）',
+  benefits: '１.大きなマーケティングチーム　２.競合のいないビジネス環境　３.継続的な新規顧客の紹介\n４.国内外に広がる人脈　５.長く続く有意義な信頼関係　＋１.生涯学習',
+  scheduleFrom: '7:15',
+  scheduleTo: '9:15',
+  schedule: [
+    'オープンネットワーキング',
+    'ビジターの歓迎と、リーダーシップチーム及びサポートチームの紹介',
+    'BNIのコアバリュー、目的と概要',
+    'ネットワーキングに関する学習コーナー',
+    'BNIネットワーキングリーダーの発表',
+    '新メンバー及び更新メンバーの歓迎',
+    '全メンバーによるウィークリープレゼンテーション',
+    'ビジターを再度歓迎/ビジターによるプレゼンテーション',
+    'ビジネスブレイクアウトルーム',
+    'バイスプレジデントによる報告',
+    'メンバーシップ委員会による報告',
+    '書記兼会計によるスピーカーローテーションの発表と、今週のスピーカーの紹介',
+    'スピーカーによるメインプレゼンテーション',
+    'リファーラルと推薦のことばの発表とビジターから良かった点のシェア',
+    'リファーラル真正度の確認',
+    '書記兼会計による報告',
+    'プレジデントからビジターへの感謝',
+    'BNIによる発表、お知らせ、特別レポート',
+    '商品抽選（ビジターを同伴、またはリファーラルを提供したメンバーが対象）',
+    '閉会'
+  ].join('\n'),
+  termsTitle: 'BNIの用語の説明',
+  terms: 'チャプター\n1つの専門分野に1名で構成されたビジネスチームのことです。\n'
+       + 'リファーラル\nメンバー間で交わされるビジネスや、信頼に基づく人脈の紹介です。\n'
+       + 'サンキュー\nそのリファーラルによって発生した売上金額のことで、感謝の意を込めて、サンキューと呼んでいます。\n'
+       + 'カテゴリー\n専門業種のことで、BNIでは1つの専門分野に対して加入できるのは1名のみであるという規定があります。',
+  pname: '',
+  prole: 'Activeチャプター\n第23期プレジデント',
+  ptext: '',
+  photoFile: ''
+};
+
 function getCoverInfo_() {
-  var props = PropertiesService.getScriptProperties();
-  return {
-    term:  props.getProperty('BNI_MB_TERM') || '',
-    pname: props.getProperty('BNI_MB_PNAME') || '',
-    ptext: props.getProperty('BNI_MB_PTEXT') || '',
-    photoFile: props.getProperty('BNI_MB_COVER_PHOTO') || ''
-  };
+  var props = PropertiesService.getScriptProperties(), cover = {};
+  for (var k in DEFAULT_COVER_) cover[k] = DEFAULT_COVER_[k];
+  try {
+    var raw = props.getProperty(COVER_KEY_);
+    if (raw) { var saved = JSON.parse(raw); for (var j in saved) cover[j] = saved[j]; }
+  } catch (e) {
+    console.warn('[MBOOK] 表紙設定の読み込みに失敗: ' + (e && e.message ? e.message : e));
+  }
+  // 旧版で個別のプロパティに保存していた分を引き継ぐ
+  var old = { term: 'BNI_MB_TERM', pname: 'BNI_MB_PNAME', ptext: 'BNI_MB_PTEXT', photoFile: 'BNI_MB_COVER_PHOTO' };
+  for (var o in old) {
+    var v = props.getProperty(old[o]);
+    if (v && !cover[o]) cover[o] = v;
+  }
+  return cover;
 }
+
 function saveCoverInfo_(cover) {
-  var props = PropertiesService.getScriptProperties();
-  props.setProperty('BNI_MB_TERM', String(cover.term || ''));
-  props.setProperty('BNI_MB_PNAME', String(cover.pname || ''));
-  props.setProperty('BNI_MB_PTEXT', String(cover.ptext || ''));
-  if (cover.photoFile !== undefined) props.setProperty('BNI_MB_COVER_PHOTO', String(cover.photoFile || ''));
+  if (!cover) return;
+  var cur = getCoverInfo_();
+  for (var k in cover) if (cover[k] !== undefined) cur[k] = cover[k];
+  PropertiesService.getScriptProperties().setProperty(COVER_KEY_, JSON.stringify(cur));
+}
+
+// 画面から呼ぶ用
+function saveMemberBookCover(cover) {
+  try {
+    saveCoverInfo_(cover);
+    return { ok: true, message: '表紙の設定を保存しました。', cover: getCoverInfo_() };
+  } catch (e) {
+    return { ok: false, message: '保存に失敗しました: ' + (e && e.message ? e.message : e) };
+  }
+}
+
+// 表紙の文章を初期値に戻す（プレジデント関連は消さない）
+function resetMemberBookCoverText() {
+  try {
+    var cur = getCoverInfo_(), keep = ['term', 'pname', 'prole', 'ptext', 'photoFile'];
+    var next = {};
+    for (var k in DEFAULT_COVER_) next[k] = DEFAULT_COVER_[k];
+    for (var i = 0; i < keep.length; i++) next[keep[i]] = cur[keep[i]];
+    PropertiesService.getScriptProperties().setProperty(COVER_KEY_, JSON.stringify(next));
+    return { ok: true, message: '定型文を初期値に戻しました（プレジデントの設定はそのままです）。', cover: next };
+  } catch (e) {
+    return { ok: false, message: '戻せませんでした: ' + (e && e.message ? e.message : e) };
+  }
 }
 
 // === メンバーブックHTML / TSV からの一括取り込み ===
