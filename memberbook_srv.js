@@ -3,7 +3,7 @@
 
 function openMemberBookEditorDialog() {
   SpreadsheetApp.getUi().showModalDialog(
-    HtmlService.createHtmlOutputFromFile('memberbook_editor').setWidth(1150).setHeight(780),
+    HtmlService.createTemplateFromFile('memberbook_editor').evaluate().setWidth(1150).setHeight(780),
     'メンバーブックの編集・PDF出力');
 }
 function openZoomGuideDialog() {

@@ -8,6 +8,16 @@
  .sec{border:1px solid #ddd;border-radius:6px;padding:12px;margin-bottom:12px;}
  .sec h4{margin:0 0 8px;font-size:13px;color:#0055ff;}
  .auto{background:#e8f5e9;color:#188038;font-size:11px;padding:1px 7px;border-radius:9px;margin-left:6px;}
+ .mk{margin-top:10px;border-top:1px dashed #ddd;padding-top:9px;}
+ .mk h5{margin:0 0 6px;font-size:12px;color:#555;font-weight:bold;}
+ .mkrow{display:flex;align-items:center;gap:6px;padding:3px 0;font-size:12px;}
+ .mkrow .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+ .mkrow .dt{color:#999;font-size:11px;white-space:nowrap;}
+ .mkbtn{border:1px solid #bbb;background:#fff;border-radius:3px;font-size:11px;padding:2px 8px;cursor:pointer;white-space:nowrap;}
+ .mkbtn:hover{background:#f2f2f2;}
+ .mkbtn.on{background:#188038;color:#fff;border-color:#188038;}
+ .mkbtn.off{background:#b0453a;color:#fff;border-color:#b0453a;}
+ .mkdone{color:#888;font-size:11px;line-height:1.8;}
  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:8px;}
  label{font-size:12px;color:#444;}
  input[type=text],select{padding:5px;border:1px solid #ccc;border-radius:4px;font-size:13px;}
@@ -54,6 +64,11 @@
      <tr><th>期限超過</th><td><input type="text" class="wide" id="t_更新超過"></td></tr>
    </table>
    <div id="noDate" style="font-size:11px;color:#c00;margin-top:6px;"></div>
+   <div class="mk">
+     <h5>更新の確認がとれた方にチェックを入れると、上の一覧から外れます</h5>
+     <div id="mkList"></div>
+     <div id="mkDone" class="mkdone"></div>
+   </div>
  </div>
 
  <div class="sec">
@@ -121,6 +136,40 @@
    document.getElementById('nmDetail').innerText=d.join(' ／ ');
    document.getElementById('noDate').innerText = (L.noDate&&L.noDate.length)
      ? '更新期限日が未入力のメンバー('+L.noDate.length+'名): '+L.noDate.join('、') : '';
+   renderMarks(L);
+ }
+
+ // 一覧に出ている人に「更新済み」「更新しない」のチェックを出す。
+ // 「更新済み」はその更新期限日に対する印なので、会費レポートで期限が伸びれば
+ // 自動的に外れ、次の期限でまた一覧に戻る。
+ var mkRows=[];   // onclick から番号で引くための控え（氏名を直接埋めると引用符で壊れるため）
+ function renderMarks(L){
+   mkRows=[].concat(L.overdue||[],L.d30||[],L.d60||[],L.d90||[],L.done||[],L.leaving||[]);
+   var target=[].concat(L.overdue||[],L.d30||[],L.d60||[],L.d90||[]);
+   document.getElementById('mkList').innerHTML = target.length
+     ? target.map(function(r,i){
+         return '<div class="mkrow"><span class="nm">'+esc(r.name)+'</span>'
+           +'<span class="dt">期限 '+esc(r.date)+'</span>'
+           +'<button class="mkbtn" onclick="mark('+i+',\'done\')">更新した</button>'
+           +'<button class="mkbtn" onclick="mark('+i+',\'leaving\')">更新しない</button></div>';
+       }).join('')
+     : '<div style="font-size:11px;color:#888;">対象の方はいません。</div>';
+
+   var base=target.length, d=[];
+   (L.done||[]).forEach(function(r,i){ d.push(chip(r,'更新した','on',base+i)); });
+   (L.leaving||[]).forEach(function(r,i){ d.push(chip(r,'更新しない','off',base+(L.done||[]).length+i)); });
+   document.getElementById('mkDone').innerHTML = d.length ? 'チェック済み: '+d.join(' ') : '';
+ }
+ function chip(r,label,cls,idx){
+   return '<span style="margin-right:8px;white-space:nowrap;">'+esc(r.name)
+     +'<span class="mkbtn '+cls+'" style="margin-left:3px;">'+label+'</span>'
+     +'<button class="mkbtn" style="margin-left:2px;" onclick="mark('+idx+',\'\')">戻す</button></span>';
+ }
+ function mark(idx,status){
+   var r=mkRows[idx]; if(!r) return;
+   google.script.run.withSuccessHandler(function(res){
+     if(res&&res.ok) reload(); else alert((res&&res.message)||'保存に失敗しました。');
+   }).withFailureHandler(fail).setRenewalMark(r.name,status,r.date);
  }
  function reload(){
    var d=get('meeting'); if(!d) return;
@@ -137,7 +186,7 @@
  function show(t,ok){ var m=document.getElementById('msg'); m.innerText=t; m.style.color= ok===true?'green':(ok===false?'#d00':'#0055ff'); }
  function fail(e){ var d=(e&&e.message)?e.message:String(e);
    document.getElementById('msg').innerHTML='<span style="color:#d00;">エラー: '+esc(d)+'</span>'
-    +'<br><span style="font-size:12px;color:#666;">「サーバーエラー」と出る場合は、メニュー「⚙️ 大きなファイル機能の権限確認」を1回実行してください。</span>';
+    +'<br><span style="font-size:12px;color:#666;">「サーバーエラー」と出る場合は、メニュー「🔧 Googleの権限を確認・許可する」を1回実行してください。</span>';
    setBusy(false); }
 
  function collect(){
