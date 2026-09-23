@@ -35,12 +35,44 @@ function joinNames_(names) {
 }
 
 // 開催日を基準に、新メンバー・更新メンバー・更新期限の一覧を算出する
+// === 更新状況のチェック ===
+// {氏名: {status:'done'|'leaving', exp:'2026/10/01'}}
+// 更新期限日とセットで覚えるのがポイント。「更新済み」の印は、その期限に対するもの。
+// 会費レポートを取り込んで期限が伸びれば印は自動で外れ、次の期限でまた案内に出る。
+// 「更新しない」は期限に関係なく出さない（退会される方なので案内の対象外）。
+var RENEWAL_MARK_KEY_ = 'BNI_RENEWAL_MARKS';
+
+function getRenewalMarks_() {
+  try {
+    var raw = PropertiesService.getScriptProperties().getProperty(RENEWAL_MARK_KEY_);
+    return raw ? JSON.parse(raw) : {};
+  } catch (e) {
+    console.warn('[RENEW] 印の読み込みに失敗: ' + (e && e.message ? e.message : e));
+    return {};
+  }
+}
+
+// status: 'done' | 'leaving' | '' （空で印を外す）
+function setRenewalMark(name, status, exp) {
+  try {
+    if (!name) return { ok: false, message: '氏名がありません。' };
+    var marks = getRenewalMarks_(), key = normName_(name);
+    if (status === 'done' || status === 'leaving') marks[key] = { status: status, exp: String(exp || '') };
+    else delete marks[key];
+    PropertiesService.getScriptProperties().setProperty(RENEWAL_MARK_KEY_, JSON.stringify(marks));
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, message: '保存に失敗しました: ' + (e && e.message ? e.message : e) };
+  }
+}
+
 function computeRenewalLists(meetingDateVal) {
   try {
     var base = parseDate_(meetingDateVal);
     if (!base) return { ok: false, message: '開催日を解釈できませんでした。' };
     var members = (getMemberMaster().members || []);
     var newMembers = [], renewMembers = [], d90 = [], d60 = [], d30 = [], overdue = [], noDate = [];
+    var marks = getRenewalMarks_(), done = [], leaving = [];
 
     for (var i = 0; i < members.length; i++) {
       var m = members[i];
@@ -63,8 +95,12 @@ function computeRenewalLists(meetingDateVal) {
       }
       // 更新状況: 更新期限日までの残り日数で区分
       if (!exp) { if (m.name) noDate.push(m.name); continue; }
-      var left = daysBetween_(base, exp);
-      var rec = { name: m.name, date: fmtDate_(exp), left: left };
+      var left = daysBetween_(base, exp), expStr = fmtDate_(exp);
+      // チェック済みの人は案内から外す
+      var mk = marks[normName_(m.name)];
+      if (mk && mk.status === 'leaving') { leaving.push({ name: m.name, date: expStr }); continue; }
+      if (mk && mk.status === 'done' && mk.exp === expStr) { done.push({ name: m.name, date: expStr }); continue; }
+      var rec = { name: m.name, date: expStr, left: left };
       if (left < 0) overdue.push(rec);
       else if (left <= 30) d30.push(rec);
       else if (left <= 60) d60.push(rec);
@@ -78,6 +114,7 @@ function computeRenewalLists(meetingDateVal) {
     return { ok: true, meetingDate: fmtDate_(base),
       newMembers: newMembers, renewMembers: renewMembers,
       d90: d90, d60: d60, d30: d30, overdue: overdue, noDate: noDate,
+      done: done, leaving: leaving,
       text: {
         d90: joinNames_(d90.map(nameOf)),
         d60: joinNames_(d60.map(nameOf)),
