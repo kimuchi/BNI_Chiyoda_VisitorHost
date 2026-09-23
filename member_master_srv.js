@@ -35,7 +35,7 @@ function openMemberMasterDialog() {
 }
 
 function ensureMemberSheet_() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet(), sh = ss.getSheetByName(MEMBER_SHEET_);
+  var ss = getSS_(), sh = ss.getSheetByName(MEMBER_SHEET_);
   if (!sh) {
     sh = ss.insertSheet(MEMBER_SHEET_);
     sh.appendRow(MEMBER_HEADERS_);
@@ -46,7 +46,7 @@ function ensureMemberSheet_() {
 }
 
 function ensureCategorySheet_() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet(), sh = ss.getSheetByName(CAT_SHEET_);
+  var ss = getSS_(), sh = ss.getSheetByName(CAT_SHEET_);
   if (!sh) {
     sh = ss.insertSheet(CAT_SHEET_);
     sh.appendRow(['キー', '表示ラベル', '色1', '色2', 'ブロック表示名', '巡回順']);
@@ -515,7 +515,7 @@ function applyVisitorHostsFromMemo() {
 // 旧「メンバーリスト」シートの内容をメンバー名簿へ移し、旧シートを隠す
 function migrateMemberListSheet() {
   try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet(), old = ss.getSheetByName('メンバーリスト');
+    var ss = getSS_(), old = ss.getSheetByName('メンバーリスト');
     if (!old) return { ok: false, message: '「メンバーリスト」シートはありません。移行は不要です。' };
     var data = old.getDataRange().getValues(), src = [];
     for (var i = 1; i < data.length; i++) {

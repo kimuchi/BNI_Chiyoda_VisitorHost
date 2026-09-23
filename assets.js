@@ -71,7 +71,7 @@ function ensureChildFolder_(parent, name) {
 function getAssetRootFolder_() {
   var id = PropertiesService.getScriptProperties().getProperty(ASSET_ROOT_KEY_);
   if (id) { try { return DriveApp.getFolderById(id); } catch (e) {} }
-  var file = DriveApp.getFileById(SpreadsheetApp.getActiveSpreadsheet().getId());
+  var file = DriveApp.getFileById(getSS_().getId());
   return file.getParents().hasNext() ? file.getParents().next() : DriveApp.getRootFolder();
 }
 // kind: 'template' | 'photo' | 'output'
@@ -273,7 +273,7 @@ function rebuildPhotoIndex() {
       rows.push([c.name, c.key, c.id]);
     }
 
-    var ss = SpreadsheetApp.getActiveSpreadsheet(), sh = ss.getSheetByName('写真索引');
+    var ss = getSS_(), sh = ss.getSheetByName('写真索引');
     if (!sh) { sh = ss.insertSheet('写真索引'); sh.hideSheet(); }
     sh.clear();
     sh.appendRow(['ファイル名', '氏名(正規化)', 'ファイルID']);
@@ -294,7 +294,7 @@ function rebuildPhotoIndex() {
 function findPhotoIdForName_(name) {
   var key = normName_(name);
   if (!key) return '';
-  var ss = SpreadsheetApp.getActiveSpreadsheet(), sh = ss.getSheetByName('写真索引');
+  var ss = getSS_(), sh = ss.getSheetByName('写真索引');
   if (sh) {
     var data = sh.getDataRange().getValues();
     for (var i = 1; i < data.length; i++) if (String(data[i][1]) === key) return String(data[i][2]);
@@ -358,7 +358,7 @@ function getMemberPhotosBase64(names) {
 function getPhotoOverview() {
   var idx = { total: 0 };
   try {
-    var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('写真索引');
+    var sh = getSS_().getSheetByName('写真索引');
     idx.total = sh ? Math.max(0, sh.getLastRow() - 1) : 0;
   } catch (e) {}
   var members = [], unmatched = [];
