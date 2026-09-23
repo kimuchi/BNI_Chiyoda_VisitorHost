@@ -43,7 +43,8 @@ function onOpen() {
       .addItem('Gemini API・モデル', 'openApiSettingsDialog'))
     .addSubMenu(ui.createMenu('🔧 動作確認')
       .addItem('Gemini接続テスト', 'testGeminiConnection')
-      .addItem('Googleの権限を確認・許可する', 'authorizeDriveAccess'))
+      .addItem('Googleの権限を確認・許可する', 'authorizeDriveAccess')
+      .addItem('ダイアログが真っ白なときの確認', 'diagnoseDialogFiles'))
     .addSeparator()
     .addItem('❓ 使い方（ヘルプ）', 'openManualDialog')
     .addToUi();
@@ -52,6 +53,46 @@ function onOpen() {
 function openCsvDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createTemplateFromFile('dialog').evaluate().setWidth(1000).setHeight(700), 'データの確認・PDF作成'); }
 function openHolidayDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('holiday').setWidth(450).setHeight(400), '休会日の管理'); }
 function openPdfDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('pdf').setWidth(480).setHeight(540), 'メンバーリスト(OCR)登録'); }
+
+// ダイアログが真っ白になるときの切り分け。
+// サーバー側（GAS）にHTMLの中身があるかどうかを実際に読み出して確かめる。
+// ここで「中身がある」なら原因はブラウザ側にある。
+// ダイアログの中身は googleusercontent.com という別ドメインから読み込まれるため、
+// ブラウザが第三者Cookieを止めていると、枠と題名だけが出て中身が真っ白になる。
+function diagnoseDialogFiles() {
+  var ui = SpreadsheetApp.getUi();
+  var files = ['pdf', 'dialog', 'allocation', 'email', 'pdf_links', 'member_master',
+               'memberbook_editor', 'memberbook_render', 'slides_visitor', 'slides_meeting',
+               'menu_home', 'manual', 'spreading', 'zoom_guide', 'archive'];
+  var lines = [], ng = 0;
+  for (var i = 0; i < files.length; i++) {
+    try {
+      var c = HtmlService.createHtmlOutputFromFile(files[i]).getContent();
+      var n = c ? c.length : 0;
+      if (n < 50) { ng++; lines.push('❌ ' + files[i] + ' … ' + n + '文字（空）'); }
+      else lines.push('✅ ' + files[i] + ' … ' + n + '文字');
+    } catch (e) {
+      ng++;
+      lines.push('❌ ' + files[i] + ' … 読めません: ' + (e && e.message ? e.message : e));
+    }
+  }
+  var head;
+  if (ng) {
+    head = '❌ ' + ng + '件のHTMLに中身がありません。\n'
+         + 'clasp push が正しく反映されていない可能性があります。\n'
+         + 'もう一度 clasp push を実行してから、この確認をやり直してください。\n\n';
+  } else {
+    head = '✅ サーバー側は正常です（全ファイルに中身があります）。\n\n'
+         + 'それでもダイアログが真っ白なら、原因はブラウザ側です。\n'
+         + 'ダイアログの中身は googleusercontent.com という別ドメインから\n'
+         + '読み込まれるため、ブラウザが「第三者Cookie」を止めていると\n'
+         + '枠と題名だけが出て中身が表示されません。\n\n'
+         + '・アドレスバーの目のアイコン（Cookieがブロックされた印）から許可する\n'
+         + '・またはブラウザの設定で googleusercontent.com のCookieを許可する\n'
+         + '・シークレットウィンドウや別のブラウザでも試してみてください\n\n';
+  }
+  ui.alert('ダイアログの中身の確認', head + lines.join('\n'), ui.ButtonSet.OK);
+}
 function openMemberBookDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('memberbook').setWidth(450).setHeight(250), 'メンバーブックの登録・更新'); }
 function openTemplateDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('template').setWidth(600).setHeight(750), 'メールテンプレート設定'); }
 function openAllocationNoteDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('allocation_note').setWidth(500).setHeight(400), '割り振り表の特記事項設定'); }

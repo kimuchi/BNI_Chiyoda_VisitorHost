@@ -621,6 +621,18 @@
 </ul>
 <hr>
 <h2 id="sec14">よくある質問</h2>
+<h3>Q: ダイアログ（小窓）が真っ白で何も出ません</h3>
+<p>枠と題名だけが出て中身が表示されない場合、まず <code>名簿システム</code> &gt; <code>🔧 動作確認</code> &gt; <strong><code>ダイアログが真っ白なときの確認</code></strong> を実行してください。</p>
+<p><strong>「サーバー側は正常です」と出た場合</strong> … 原因はブラウザ側です。 ダイアログの中身は <code>googleusercontent.com</code> という<strong>別のドメイン</strong>から読み込まれるため、 ブラウザが「サードパーティ Cookie」を止めていると、枠だけ出て中身が真っ白になります。</p>
+<ul>
+<li>アドレスバーの右にある<strong>目のアイコン</strong>（Cookieがブロックされた印）を押して許可する</li>
+<li>または Chromeの <code>設定</code> &gt; <code>プライバシーとセキュリティ</code> &gt; <code>サードパーティ Cookie</code> で、</li>
+</ul>
+<p><code>googleusercontent.com</code> を許可するサイトに追加する</p>
+<ul>
+<li>シークレットウィンドウや別のブラウザでも試してみる</li>
+</ul>
+<p><strong>「中身がありません」と出た場合</strong> … <code>clasp push</code> が反映されていません。 もう一度 <code>clasp push</code> を実行してから、確認をやり直してください。</p>
 <h3>Q: メニューに「名簿システム」が表示されません</h3>
 <p>→ スプレッドシートを <strong>一度閉じて、開き直して</strong> ください。開いたときにメニューが作られるので、それで表示されます。</p>
 <h3>Q: CSVをドラッグ＆ドロップしても反応しません</h3>
