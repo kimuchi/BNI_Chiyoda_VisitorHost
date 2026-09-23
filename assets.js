@@ -303,19 +303,37 @@ function findPhotoIdForName_(name) {
 }
 
 // 氏名配列 → {氏名: dataURI} のマップ（重いのでクライアントから20件ずつ呼ぶ）
-// 一覧表示用。写真の実体ではなくDriveのファイルIDだけを返す。
-// 実体をbase64で送ると1人あたり数MBになり、49名では数十MBがやり取りされて非常に遅い。
-// IDだけならごく小さく、画像はブラウザがサムネイルURLから並行して読み込む。
-function getMemberPhotoIds(names) {
+// 一覧表示用のサムネイル。Driveのサムネイル（220px程度）をbase64で返す。
+// 写真の実体は1人あたり数MBあり、49名分を送ると数十MBになって非常に遅い。
+// サムネイルなら1人あたり10〜20KB程度で済む。
+//
+// 画面から drive.google.com のサムネイルURLを直接読み込む方法も試したが、
+// ダイアログのiframeからの画像リクエストにはGoogleのログイン情報が付かず
+// （第三者Cookieが送られない）、写真が1枚も出なかった。
+// そのためサーバー側で取得して渡している。
+function getMemberPhotoThumbs(names) {
   try {
-    var map = {}, miss = [];
+    var cache = CacheService.getScriptCache(), map = {}, miss = [];
     for (var i = 0; i < (names || []).length; i++) {
-      var id = findPhotoIdForName_(names[i]);
-      if (id) map[names[i]] = id; else miss.push(names[i]);
+      var name = names[i], id = findPhotoIdForName_(name);
+      if (!id) { miss.push(name); continue; }
+      var key = 'thumb_' + id, hit = null;
+      try { hit = cache.get(key); } catch (e) {}
+      if (hit) { map[name] = hit; continue; }
+      try {
+        var f = DriveApp.getFileById(id), b = null;
+        try { b = f.getThumbnail(); } catch (e) {}   // 形式によっては作られない
+        if (!b) b = f.getBlob();
+        var data = 'data:' + (b.getContentType() || 'image/jpeg') + ';base64,'
+                 + Utilities.base64Encode(b.getBytes());
+        map[name] = data;
+        // CacheService は1件100KBまで。入らないものは諦めて毎回取りに行く
+        if (data.length < 99000) { try { cache.put(key, data, 21600); } catch (e) {} }
+      } catch (e) { miss.push(name); }
     }
     return { ok: true, map: map, missing: miss };
   } catch (e) {
-    return { ok: false, message: '写真の照合に失敗しました: ' + (e && e.message ? e.message : e), map: {} };
+    return { ok: false, message: '写真の取得に失敗しました: ' + (e && e.message ? e.message : e), map: {} };
   }
 }
 

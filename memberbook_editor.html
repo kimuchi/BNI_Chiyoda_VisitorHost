@@ -72,7 +72,7 @@
     <button class="sub" onclick="closeM()">閉じる</button>
     <button onclick="applyM()">反映</button>
   </div>
-</div>
+</div></div>
 
 <div class="modal" id="coverModal"><div class="inner" style="width:560px;">
   <b>表紙・プレジデント設定</b>
@@ -112,7 +112,7 @@
     <button class="sub" onclick="closeCover()">閉じる</button>
     <button onclick="saveCover()">保存</button>
   </div>
-</div></div></div>
+</div></div>
 
 <script>
  var members=[], cats=[], cover={}, photos={}, photosB64={}, editing=-1;
@@ -134,24 +134,23 @@
      fetchPhotos(names);
    }).withFailureHandler(fail).getMemberBookData();
  }
- // 写真はファイルIDだけをまとめて受け取り、画像はブラウザにサムネイルを読ませる。
- // 実体をbase64で送っていたころは1人あたり数MBが行き来して非常に遅かった。
- // IDなら全員分でも一瞬で、画像はブラウザが並行して読み込み・キャッシュしてくれる。
+ // 一覧はサムネイル（小さい画像）で表示する。実体は1人あたり数MBあり、
+ // 49名分を送ると数十MBになって非常に遅いため。サムネイルなら1人10〜20KB程度。
+ // 少しずつ受け取って、届いたぶんから表示していく。
  function fetchPhotos(names){
    if(!names.length) return;
-   google.script.run.withSuccessHandler(function(r){
-     if(r&&r.ok){ for(var k in r.map) photos[k]='https://drive.google.com/thumbnail?id='+r.map[k]+'&sz=w200'; render(); }
-   }).withFailureHandler(function(){}).getMemberPhotoIds(names);
- }
- // サムネイルが読めなかったときだけ、その1名分を実体で取り直す
- // （複数のGoogleアカウントにログインしていると、サムネイルURLが弾かれることがある）
- function photoFallback(img, name){
-   if(img.dataset.retried) { img.style.visibility='hidden'; return; }
-   img.dataset.retried='1';
-   google.script.run.withSuccessHandler(function(r){
-     if(r&&r.ok&&r.map[name]){ photos[name]=r.map[name]; img.src=r.map[name]; }
-     else img.style.visibility='hidden';
-   }).withFailureHandler(function(){ img.style.visibility='hidden'; }).getMemberPhotosBase64([name]);
+   var todo=names.slice(), total=todo.length, done=0;
+   (function step(){
+     if(!todo.length) return;
+     var batch=todo.splice(0,15);
+     google.script.run.withSuccessHandler(function(r){
+       if(r&&r.ok){ for(var k in r.map) photos[k]=r.map[k]; render(); }
+       done+=batch.length;
+       if(todo.length) show('写真を読み込んでいます...（'+done+'/'+total+'）');
+       else show(members.length+'名を読み込みました。',true);
+       step();
+     }).withFailureHandler(function(){ done+=batch.length; step(); }).getMemberPhotoThumbs(batch);
+   })();
  }
  function catOf(key){ for(var i=0;i<cats.length;i++) if(cats[i].key===key) return cats[i]; return null; }
 
@@ -167,7 +166,7 @@
      var c=catOf(m.cat), ph=photos[m.name];
      return '<div class="card" onclick="openM('+i+')"><span class="cn">'+(i+1)+'</span>'
       + (c?'<div class="cat" style="background:'+esc(c.bg||'#888')+'">'+esc(c.label||c.key)+'</div>':'')
-      + (ph?'<img class="ph" src="'+ph+'" onerror="photoFallback(this,\''+esc(m.name)+'\')">':'<div class="ph"></div>')
+      + (ph?'<img class="ph" src="'+ph+'">':'<div class="ph"></div>')
       + '<div class="cti">'+esc(m.title)+'</div>'
       + '<div class="cname">'+esc(m.name)+'</div>'
       + '<div class="cco">'+esc(m.company)+'</div>'
