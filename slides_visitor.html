@@ -20,6 +20,9 @@
  .bp{background:linear-gradient(135deg,#c00000,#e53935);}
  .bi{background:linear-gradient(135deg,#1565c0,#1976d2);}
  .bda{background:linear-gradient(135deg,#e65100,#f57c00);}
+ .bg2{background:linear-gradient(135deg,#2e7d32,#388e3c);}
+ .ball{background:linear-gradient(135deg,#4a148c,#6a1b9a);}
+ .badge.bg{background:#e8f5e9;color:#2e7d32;}
  .warn{background:#fffbe8;border-left:4px solid #ffc107;padding:9px 12px;font-size:12px;border-radius:0 4px 4px 0;margin-bottom:10px;}
  #msg{margin-top:12px;font-weight:bold;white-space:pre-wrap;}
  a.dl{display:inline-block;margin-top:8px;background:#0055ff;color:#fff;padding:8px 16px;border-radius:5px;text-decoration:none;font-weight:bold;font-size:13px;}
@@ -28,23 +31,26 @@
  <h3>🎯 ビジター・代理スライド作成</h3>
  <div class="hint">
    参加者シートから直接読み込みます（Excelのアップロードは不要）。<br>
-   🎤 プレゼン：ビジター1人1枚　／　👥 紹介：ビジター3人1枚　／　🟠 代理紹介：代理3人1枚
+   🎤 プレゼン：ビジター1人1枚　／　👥 紹介：3人1枚<br>
+   <b>「まとめて作成」</b>はビジター・ゲスト・代理の紹介を1つのファイルにまとめます。
  </div>
  <div class="warn" id="warn" style="display:none;"></div>
 
  <div>対象シート：<select id="sheet" onchange="preview()"></select></div>
- <div class="badges"><span class="badge bv" id="bv">ビジター 0名</span><span class="badge bd" id="bd">代理 0名</span></div>
+ <div class="badges"><span class="badge bv" id="bv">ビジター 0名</span><span class="badge bg" id="bg">ゲスト 0名</span><span class="badge bd" id="bd">代理 0名</span></div>
  <div id="prev"></div>
 
  <div class="btns">
+   <button class="btn ball" id="bAll" onclick="genAll()" disabled>📦 紹介スライドを<br>まとめて作成</button>
    <button class="btn bp"  id="bPresen" onclick="gen('presen')" disabled>🎤 プレゼン<br>スライド生成</button>
-   <button class="btn bi"  id="bIntro"  onclick="gen('intro')"  disabled>👥 紹介<br>スライド生成</button>
-   <button class="btn bda" id="bDairi"  onclick="gen('dairi')"  disabled>🟠 代理紹介<br>スライド生成</button>
+   <button class="btn bi"  id="bIntro"  onclick="gen('intro')"  disabled>👥 ビジター紹介<br>のみ</button>
+   <button class="btn bg2" id="bGuest"  onclick="gen('guest')"  disabled>🟢 ゲスト紹介<br>のみ</button>
+   <button class="btn bda" id="bDairi"  onclick="gen('dairi')"  disabled>🟠 代理紹介<br>のみ</button>
  </div>
  <div id="msg"></div>
 
 <script>
- var ctx={templates:{}}, data={visitors:[],dairi:[]}, working=false;
+ var ctx={templates:{}}, data={visitors:[],guests:[],dairi:[]}, working=false;
  window.onload=function(){ google.script.run.withSuccessHandler(init).withFailureHandler(fail).getVisitorSlideContext(); };
  function esc(x){var d=document.createElement('span');d.textContent=x==null?'':x;return d.innerHTML;}
 
@@ -73,9 +79,11 @@
      if(!r.ok){ show(r.message,false); return; }
      data=r;
      document.getElementById('bv').textContent='ビジター '+r.visitors.length+'名';
+     document.getElementById('bg').textContent='ゲスト '+(r.guests||[]).length+'名';
      document.getElementById('bd').textContent='代理 '+r.dairi.length+'名';
      var h='<table><tr><th>#</th><th>種別</th><th>氏名</th><th>ふりがな</th><th>カテゴリー</th><th>会社名</th><th>招待者</th></tr>';
      r.visitors.forEach(function(v,i){ h+=row(i+1,'ビジター',v,''); });
+     (r.guests||[]).forEach(function(v,i){ h+=row('ゲ'+(i+1),'ゲスト',v,'guest'); });
      r.dairi.forEach(function(v,i){ h+=row('代'+(i+1),'代理',v,'dairi'); });
      document.getElementById('prev').innerHTML=h+'</table>';
      document.getElementById('msg').innerText='';
@@ -90,7 +98,11 @@
  function refresh(){
    document.getElementById('bPresen').disabled = working || !ctx.templates.presen || !data.visitors.length;
    document.getElementById('bIntro').disabled  = working || !ctx.templates.intro  || !data.visitors.length;
+   document.getElementById('bGuest').disabled  = working || !ctx.templates.guest  || !(data.guests||[]).length;
    document.getElementById('bDairi').disabled  = working || !ctx.templates.dairi  || !data.dairi.length;
+   // まとめて作成はビジター紹介のテンプレート1つで動く（見出しだけ差し替えるため）
+   document.getElementById('bAll').disabled = working || !ctx.templates.intro
+     || !(data.visitors.length + (data.guests||[]).length + data.dairi.length);
  }
  function setBusy(b,t){ working=b; refresh(); if(t) show(t,null); }
  function show(t,ok){ var m=document.getElementById('msg'); m.innerText=t; m.style.color = ok===true?'green':(ok===false?'#d00':'#0055ff'); }
@@ -106,6 +118,18 @@
      document.getElementById('msg').innerHTML='<span style="color:green;">'+esc(r.message)+'</span><br>'
        +'<a class="dl" href="'+r.url+'" target="_blank">📄 作成されたPowerPointを開く</a>';
    }).withFailureHandler(fail).generateVisitorSlides(s,type);
+ }
+
+ function genAll(){
+   var s=document.getElementById('sheet').value;
+   if(!s){ alert('シートを選択してください。'); return; }
+   setBusy(true,'ビジター・ゲスト・代理の紹介スライドをまとめて作成中です...');
+   google.script.run.withSuccessHandler(function(r){
+     setBusy(false);
+     if(!r.ok){ show(r.message,false); return; }
+     document.getElementById('msg').innerHTML='<span style="color:green;">'+esc(r.message)+'</span><br>'
+       +'<a class="dl" href="'+r.url+'" target="_blank">📄 作成されたPowerPointを開く</a>';
+   }).withFailureHandler(fail).generateAllIntroSlides(s);
  }
 </script>
 </body></html>
