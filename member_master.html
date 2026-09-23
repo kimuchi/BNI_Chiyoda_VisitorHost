@@ -40,7 +40,8 @@
 
  <div id="imp" style="display:none;border:1px solid #ddd;border-radius:6px;padding:12px;margin-bottom:10px;background:#fafbfd;">
    <b>方法1：現行のメンバーブックHTMLから取り込む</b>
-   <div style="font-size:12px;color:#666;margin:4px 0 6px;">メンバーブック管理ツールで保存したHTMLを選ぶと、全メンバーの情報をそのまま取り込みます（最も確実）。</div>
+   <div style="font-size:12px;color:#666;margin:4px 0 6px;">メンバーブック管理ツールで保存したHTMLから、業種区分・カテゴリー・会社名・一言コメント・紹介／協業を取り込みます。<br>
+   <b>HTMLに無い項目（No・ふりがな・役職・メモ・写真ファイル名・入会日・更新日・更新期限日）は残ります。</b>名簿にしか居ない方も消えません。</div>
    <input type="file" id="mbFile" accept=".html,.htm">
    <button onclick="impHtml()">HTMLから取り込む</button>
    <hr style="margin:12px 0;border:none;border-top:1px solid #e5e5e5;">
@@ -62,7 +63,12 @@
    </div>
    <textarea id="tsv" rows="6" style="width:100%;box-sizing:border-box;font-family:monospace;font-size:11px;" placeholder="ここにタブ区切りデータを貼り付け"></textarea>
    <div style="margin-top:6px;">
-     <label style="font-size:12px;"><input type="checkbox" id="repl"> 既存の名簿を全て置き換える（チェックしないと氏名が一致する行だけ更新し、残りは追加）</label>
+     <label style="font-size:12px;"><input type="checkbox" id="repl"> 既存の名簿を全て置き換える</label>
+     <div style="font-size:11px;color:#888;margin-top:3px;line-height:1.6;">
+       チェックしない場合：氏名が一致する行を更新し、居ない方は追加します。<br>
+       <b>貼り付けた表で空欄だった列は、元の内容を残します。</b><br>
+       チェックした場合：<b>名簿が貼り付けた内容だけになります</b>（写真・日付なども消えます）。
+     </div>
    </div>
    <div style="margin-top:6px;"><button onclick="impTsv()">貼り付けたデータを取り込む</button></div>
  </div>

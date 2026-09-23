@@ -307,6 +307,44 @@ function resetMemberBookCoverText() {
 // === メンバーブックHTML / TSV からの一括取り込み ===
 
 // 現行のメンバーブックHTML（DATA_STORE に JSON が埋まっている）から取り込む
+// 取り込んだ内容を名簿へ反映する共通処理。
+// 氏名で照合し、**取り込み側に値がある項目だけ**を上書きする。
+// 空欄は「消したい」ではなく「その形式に無い／未入力」なので触らない。
+// 名簿にしか居ない人も消さない。
+// （以前は取り込みのたびに名簿を丸ごと書き換えており、
+//   ふりがな・No・写真・入会日など、取り込み元に無い項目が消えていた）
+var MEMBER_FIELDS_ = ['no', 'cat', 'kana', 'title', 'company', 'role', 'memo', 'photoFile',
+                      'comment', 'refer', 'collab', 'joinDate', 'renewDate', 'expireDate'];
+
+function mergeMembersInto_(incoming) {
+  var cur = getMemberMaster().members || [], byName = {}, i, f;
+  for (i = 0; i < cur.length; i++) byName[normName_(cur[i].name)] = i;
+  var updated = 0, added = 0, addedNames = [];
+
+  for (var k = 0; k < (incoming || []).length; k++) {
+    var e = incoming[k] || {};
+    if (!e.name) continue;
+    var key = normName_(e.name), idx = byName[key];
+    if (idx === undefined) {
+      var row = { no: '', cat: '', name: e.name, kana: '', title: '', company: '', role: '', memo: '',
+                  photoFile: '', comment: '', refer: '', collab: '',
+                  joinDate: '', renewDate: '', expireDate: '' };
+      for (f = 0; f < MEMBER_FIELDS_.length; f++) {
+        if (e[MEMBER_FIELDS_[f]]) row[MEMBER_FIELDS_[f]] = e[MEMBER_FIELDS_[f]];
+      }
+      cur.push(row); byName[key] = cur.length - 1; added++; addedNames.push(e.name);
+      continue;
+    }
+    var m = cur[idx], hit = 0;
+    for (f = 0; f < MEMBER_FIELDS_.length; f++) {
+      var fld = MEMBER_FIELDS_[f];
+      if (e[fld] && String(e[fld]) !== String(m[fld] || '')) { m[fld] = e[fld]; hit++; }
+    }
+    if (hit) updated++;
+  }
+  return { members: cur, updated: updated, added: added, addedNames: addedNames };
+}
+
 function importMemberBookHtml(base64) {
   try {
     if (!base64) return { ok: false, message: 'ファイルデータが空です。' };
@@ -327,11 +365,27 @@ function importMemberBookHtml(base64) {
       });
     }
     if (!members.length) return { ok: false, message: 'メンバーが0件でした。' };
-    var cover = data.cover ? { term: data.cover.term || '', pname: data.cover.pname || '', ptext: data.cover.ptext || '' } : null;
-    var res = saveMemberMaster(members, cover);
+
+    // 表紙は、HTML側に値が入っている項目だけ反映する（空で上書きしない）
+    var cover = null;
+    if (data.cover) {
+      cover = {};
+      if (data.cover.term)  cover.term  = data.cover.term;
+      if (data.cover.pname) cover.pname = data.cover.pname;
+      if (data.cover.ptext) cover.ptext = data.cover.ptext;
+      if (!Object.keys(cover).length) cover = null;
+    }
+
+    var merged = mergeMembersInto_(members);
+    var res = saveMemberMaster(merged.members, cover);
     if (!res.ok) return res;
-    console.log('[MEMBER] imported from html: ' + members.length);
-    return { ok: true, message: 'メンバーブックHTMLから ' + members.length + '名を取り込みました。写真は「⚙️ メンバー写真の管理」で紐付けてください。' };
+    console.log('[MEMBER] html merged updated=' + merged.updated + ' added=' + merged.added);
+    var msg = 'メンバーブックHTMLから ' + members.length + '名を読み取りました。'
+            + '（更新 ' + merged.updated + '名 / 新規 ' + merged.added + '名 / 名簿は計 ' + merged.members.length + '名）\n'
+            + 'HTMLに無い項目（No・ふりがな・役職・メモ・写真ファイル名・入会日・更新日・更新期限日）は'
+            + 'そのまま残しています。';
+    if (merged.addedNames.length) msg += '\n新しく追加: ' + merged.addedNames.join('、');
+    return { ok: true, message: msg, updated: merged.updated, added: merged.added };
   } catch (e) {
     console.error('[MEMBER] ' + (e && e.stack ? e.stack : e));
     return { ok: false, message: '取り込みに失敗しました: ' + (e && e.message ? e.message : e) };
@@ -358,21 +412,22 @@ function importMemberTsv(text, replaceAll) {
         joinDate: (c[12] || '').trim(), renewDate: (c[13] || '').trim(), expireDate: (c[14] || '').trim()
       });
     }
-    if (!members.length) return { ok: false, message: '取り込める行がありませんでした。タブ区切りで、4列目が氏名になっているかご確認ください。' };
-    var out = members;
-    if (!replaceAll) {
-      var cur = getMemberMaster().members || [], have = {};
-      for (var k = 0; k < cur.length; k++) have[normName_(cur[k].name)] = k;
-      for (var j = 0; j < members.length; j++) {
-        var key = normName_(members[j].name);
-        if (have[key] !== undefined) cur[have[key]] = members[j];   // 同じ氏名は上書き
-        else cur.push(members[j]);
-      }
-      out = cur;
+    if (!members.length) return { ok: false, message: '取り込める行がありませんでした。タブ区切りで、3列目が氏名になっているかご確認ください。' };
+    var out, note;
+    if (replaceAll) {
+      out = members;
+      note = '名簿を貼り付けた内容だけに置き換えました';
+    } else {
+      // 空欄で既存の内容を消さないよう、値のある列だけを反映する
+      var merged = mergeMembersInto_(members);
+      out = merged.members;
+      note = '更新 ' + merged.updated + '名 / 新規 ' + merged.added + '名。'
+           + '貼り付けた表で空欄だった列は、元の内容を残しています';
     }
     var res = saveMemberMaster(out, null);
     if (!res.ok) return res;
-    return { ok: true, message: members.length + '行を取り込みました（名簿は合計 ' + out.length + '名）。', imported: members.length, total: out.length };
+    return { ok: true, message: members.length + '行を取り込みました（' + note + ' / 名簿は計 ' + out.length + '名）。',
+             imported: members.length, total: out.length };
   } catch (e) {
     console.error('[MEMBER] ' + (e && e.stack ? e.stack : e));
     return { ok: false, message: '取り込みに失敗しました: ' + (e && e.message ? e.message : e) };
