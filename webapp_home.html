@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, "Hiragino Sans", "Meiryo", sans-serif; margin: 0;
+           background: #f4f6fa; color: #222; }
+    header { background: #16233f; color: #fff; padding: 18px 20px; }
+    header h1 { margin: 0; font-size: 19px; }
+    header p { margin: 5px 0 0; font-size: 12px; opacity: .8; line-height: 1.6; }
+    main { max-width: 1000px; margin: 0 auto; padding: 18px 16px 50px; }
+    h2 { font-size: 14px; color: #16233f; margin: 22px 0 9px; padding-left: 9px;
+         border-left: 4px solid #C00000; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+    a.card { display: block; background: #fff; border: 1px solid #dde2ec; border-radius: 7px;
+             padding: 12px 14px; text-decoration: none; color: inherit; transition: .12s; }
+    a.card:hover { border-color: #16233f; box-shadow: 0 2px 8px rgba(22,35,63,.12); }
+    a.card b { display: block; font-size: 14px; color: #16233f; margin-bottom: 3px; }
+    a.card span { font-size: 11.5px; color: #6b7280; line-height: 1.5; }
+    .note { background: #fff8e6; border: 1px solid #f0dca8; border-radius: 7px;
+            padding: 11px 14px; font-size: 12px; color: #6b5a22; line-height: 1.7; margin-bottom: 4px; }
+    footer { text-align: center; font-size: 11px; color: #9aa3b2; padding: 20px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Activeチャプター 名簿システム</h1>
+    <p>スプレッドシートのメニューと同じ機能が、このページからすべて使えます。<br>
+       作業内容はスプレッドシートに保存されるので、どちらから操作しても同じです。</p>
+  </header>
+  <main>
+    <div class="note">
+      このページは通常のタブで開いているため、ダイアログが真っ白になる環境でも使えます。<br>
+      ブックマークしておくと便利です。
+    </div>
+    <? for (var g = 0; g < groups.length; g++) { ?>
+      <h2><?= groups[g].group ?></h2>
+      <div class="grid">
+        <? var items = groups[g].items; for (var i = 0; i < items.length; i++) { ?>
+          <a class="card" href="?p=<?= items[i].key ?>">
+            <b><?= items[i].label ?></b>
+            <span><?= items[i].desc ?></span>
+          </a>
+        <? } ?>
+      </div>
+    <? } ?>
+  </main>
+  <footer>BNI Tokyo Chiyoda ｜ Active チャプター</footer>
+</body>
+</html>

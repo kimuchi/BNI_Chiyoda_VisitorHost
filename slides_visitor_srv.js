@@ -20,7 +20,7 @@ function openVisitorSlideDialog() {
 
 // 参加者シートを読み、ビジター／代理に振り分ける
 function parseParticipantSheet_(sheetName) {
-  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
+  var sh = getSS_().getSheetByName(sheetName);
   if (!sh) return null;
   var data = sh.getDataRange().getValues(), visitors = [], guests = [], dairi = [];
   for (var i = 0; i < data.length; i++) {

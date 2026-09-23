@@ -25,7 +25,7 @@ function rouletteKey_(name) {
 // 新しい開催日を作ると他の開催日は自動で非表示になるため、表示されているものを優先する。
 // 名前は MMDD なので年をまたぐと単純な並べ替えでは誤るが、表示中のものを先に見ることで避けている。
 function findCurrentVisitorSheet_() {
-  var sheets = SpreadsheetApp.getActiveSpreadsheet().getSheets(), visible = [], all = [];
+  var sheets = getSS_().getSheets(), visible = [], all = [];
   for (var i = 0; i < sheets.length; i++) {
     if (!/^\d{4}参加者$/.test(sheets[i].getName())) continue;
     all.push(sheets[i]);
@@ -62,7 +62,7 @@ function countVisitorsByInviter_(sheet) {
 
 // 「抽選ルーレット作成用」で始まるシートを全て返す（①②と分かれていても両方に入れる）
 function findRouletteSheets_() {
-  var sheets = SpreadsheetApp.getActiveSpreadsheet().getSheets(), out = [];
+  var sheets = getSS_().getSheets(), out = [];
   for (var i = 0; i < sheets.length; i++) {
     if (sheets[i].getName().indexOf(ROULETTE_PREFIX_) === 0) out.push(sheets[i]);
   }

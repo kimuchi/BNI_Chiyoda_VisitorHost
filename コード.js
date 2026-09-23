@@ -6,6 +6,7 @@ function onOpen() {
   // それ以外は用途ごとのサブメニューにまとめている。全機能は「メニュー画面」からも開ける。
   ui.createMenu('名簿システム')
     .addItem('🏠 メニュー画面をひらく', 'openHomeDialog')
+    .addItem('🌐 ウェブアプリで開く（URLを表示）', 'showWebAppUrl')
     .addSeparator()
     .addItem('1. CSVから名簿・PDF作成', 'openCsvDialog')
     .addItem('2. メールの確認・一括送信', 'openEmailDialog')
@@ -173,7 +174,7 @@ function getAiDocuments() {
 }
 
 function uploadAiDocumentBlob_(blob) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet(), file = DriveApp.getFileById(ss.getId());
+  var ss = getSS_(), file = DriveApp.getFileById(ss.getId());
   var folder = file.getParents().hasNext() ? file.getParents().next() : DriveApp.getRootFolder();
   var uploaded = folder.createFile(blob);
   var docs = getAiDocuments();
@@ -243,7 +244,7 @@ function saveAllocationNote(text) {
 }
 
 function getHolidays() {
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("休会日");
+  var sheet = getSS_().getSheetByName("休会日");
   if (!sheet) return [];
   var data = sheet.getDataRange().getValues(), holidays = [];
   for (var i = 0; i < data.length; i++) {
@@ -252,7 +253,7 @@ function getHolidays() {
   return holidays;
 }
 function saveHolidays(holidaysArray) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet(), sheet = ss.getSheetByName("休会日");
+  var ss = getSS_(), sheet = ss.getSheetByName("休会日");
   if (!sheet) { sheet = ss.insertSheet("休会日"); sheet.hideSheet(); } else { sheet.clear(); }
   var data = holidaysArray.map(function(h){ return [h]; });
   if(data.length > 0) sheet.getRange(1, 1, data.length, 1).setValues(data);
@@ -291,7 +292,7 @@ function normalizeSpace(str) { return str ? str.toString().replace(/[\s]+/g, ' '
 // 割り振り表・ビジターホスト設定などが使う「番号と氏名」の一覧。
 // 正本は「メンバー名簿」。旧「メンバーリスト」シートしか無い環境ではそちらを読む。
 function getMembersList() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getSS_();
   var sh = ss.getSheetByName('メンバー名簿');
   if (sh && sh.getLastRow() > 1) {
     var d = sh.getDataRange().getValues(), out = [];
@@ -390,7 +391,7 @@ function analyzeCsvData(csvText) {
 }
 
 function getExistingVisitorSheets() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet(), sheets = ss.getSheets(), result = [];
+  var ss = getSS_(), sheets = ss.getSheets(), result = [];
   for (var i = 0; i < sheets.length; i++) {
     var name = sheets[i].getName();
     if (/^\d{4}参加者$/.test(name)) result.push(name);
@@ -405,7 +406,7 @@ function getExistingVisitorSheets() {
 var ARCHIVE_SHEET_PATTERN_ = /^(\d{4})(参加者_印刷用|参加者|割り振り表|オリエン|オープンネット)$/;
 
 function getSheetArchiveStatus() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet(), sheets = ss.getSheets();
+  var ss = getSS_(), sheets = ss.getSheets();
   var groups = {}, totalCount = 0, visibleCount = 0, otherVisible = 0;
   for (var i = 0; i < sheets.length; i++) {
     var sh = sheets[i], name = sh.getName(), hidden = sh.isSheetHidden();
@@ -443,7 +444,7 @@ function collectSheetsForKeys_(ss, keys) {
 function archiveSheetGroups(keys) {
   try {
     if (!keys || !keys.length) return { ok: false, message: "対象の開催日が選択されていません。" };
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var ss = getSS_();
     var targets = collectSheetsForKeys_(ss, keys);
     if (!targets.length) return { ok: false, message: "対象のシートが見つかりませんでした。" };
 
@@ -476,7 +477,7 @@ function archiveSheetGroups(keys) {
 function unarchiveSheetGroups(keys) {
   try {
     if (!keys || !keys.length) return { ok: false, message: "対象の開催日が選択されていません。" };
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var ss = getSS_();
     var targets = collectSheetsForKeys_(ss, keys), done = 0;
     for (var i = 0; i < targets.length; i++) {
       if (targets[i].isSheetHidden()) { targets[i].showSheet(); done++; }
@@ -547,7 +548,7 @@ function archiveAllButLatest(keepCount) {
 }
 
 function loadSheetData(sheetName) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet(), sheet = ss.getSheetByName(sheetName);
+  var ss = getSS_(), sheet = ss.getSheetByName(sheetName);
   if (!sheet) throw new Error("シート '" + sheetName + "' が見つかりません");
   var data = sheet.getDataRange().getValues();
   if (data.length < 2) throw new Error("データがありません");
@@ -583,7 +584,7 @@ function loadSheetData(sheetName) {
 }
 
 function createFinalSheet(meetingDateVal, meetingDisplay, finalRows, originalHeader) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet(), dateObj = new Date(meetingDateVal), baseSheetName = Utilities.formatDate(dateObj, "Asia/Tokyo", "MMdd") + "参加者";
+  var ss = getSS_(), dateObj = new Date(meetingDateVal), baseSheetName = Utilities.formatDate(dateObj, "Asia/Tokyo", "MMdd") + "参加者";
   var dataSheetName = baseSheetName, dataSheet = ss.getSheetByName(dataSheetName);
   if (!dataSheet) dataSheet = ss.insertSheet(dataSheetName); else dataSheet.clear();
   var printSheetName = baseSheetName + "_印刷用", printSheet = ss.getSheetByName(printSheetName);
@@ -633,7 +634,7 @@ function createFinalSheet(meetingDateVal, meetingDisplay, finalRows, originalHea
 
 function regeneratePdfOnly(dataSheetName) {
   if (!dataSheetName) throw new Error("対象シートを選択してください");
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getSS_();
   var printSheetName = dataSheetName + "_印刷用";
   var printSheet = ss.getSheetByName(printSheetName);
   if (!printSheet) throw new Error("印刷用シート '" + printSheetName + "' が見つかりません。先に「再編集」で印刷用シートを作成してください。");
@@ -647,7 +648,7 @@ function regeneratePdfOnly(dataSheetName) {
 }
 
 function exportSheetToPdf(sheet, fileName, fileIdPropKey) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet(), spreadsheetId = ss.getId(), sheetId = sheet.getSheetId(), lastRow = sheet.getLastRow();
+  var ss = getSS_(), spreadsheetId = ss.getId(), sheetId = sheet.getSheetId(), lastRow = sheet.getLastRow();
   var url = "https://docs.google.com/spreadsheets/d/" + spreadsheetId + "/export?exportFormat=pdf&format=pdf&size=A4&portrait=true&fitw=true&sheetnames=false&printtitle=false&pagenumbers=false&gridlines=false&fzr=false&gid=" + sheetId + "&r1=0&c1=0&r2=" + lastRow + "&c2=7";
   var token = ScriptApp.getOAuthToken(), response = UrlFetchApp.fetch(url, { headers: { 'Authorization': 'Bearer ' + token }, muteHttpExceptions: true });
   var blob = response.getBlob().setName(fileName), props = PropertiesService.getScriptProperties();
@@ -905,7 +906,7 @@ function saveTemplates(data) {
 }
 
 function generateEmailDrafts() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet(), sheet = ss.getActiveSheet(), data = sheet.getDataRange().getValues();
+  var ss = getSS_(), sheet = ss.getActiveSheet(), data = sheet.getDataRange().getValues();
   if (data.length < 2) throw new Error("データがありません。作成された「〇〇参加者」シートを開いた状態で実行してください。");
   var headers = data[0];
   var nameIdx = headers.indexOf("参加者氏名"), emailIdx = headers.indexOf("メール"), typeIdx = headers.indexOf("種別"), inviterIdx = headers.indexOf("招待者");
@@ -987,7 +988,7 @@ function saveMemberPriorities(priorities) {
 }
 
 function getAllocationData(meetingDateVal) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet(), dateObj = new Date(meetingDateVal), mmdd = Utilities.formatDate(dateObj, "Asia/Tokyo", "MMdd");
+  var ss = getSS_(), dateObj = new Date(meetingDateVal), mmdd = Utilities.formatDate(dateObj, "Asia/Tokyo", "MMdd");
   var sheetName = mmdd + "参加者", allocSheetName = mmdd + "割り振り表", dataSheet = ss.getSheetByName(sheetName);
   if(!dataSheet) throw new Error("対象のデータシートがありません。");
   var data = dataSheet.getDataRange().getValues(), headerRowIdx = -1;
@@ -1083,7 +1084,7 @@ function getAllocationData(meetingDateVal) {
 }
 
 function saveAllocationSheet(meetingDateVal, displayVal, visitors, pool, facilAlloc, orienAlloc, roomAlloc, connectReq, mergedWith) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet(), dateObj = new Date(meetingDateVal), mmdd = Utilities.formatDate(dateObj, "Asia/Tokyo", "MMdd");
+  var ss = getSS_(), dateObj = new Date(meetingDateVal), mmdd = Utilities.formatDate(dateObj, "Asia/Tokyo", "MMdd");
   var sheetName = mmdd + "割り振り表", sheet = ss.getSheetByName(sheetName);
   if (!sheet) sheet = ss.insertSheet(sheetName); else sheet.clear();
   
@@ -1292,7 +1293,7 @@ function estimateRowHeight_(text, charsPerLine, lineHeight) {
 }
 
 function exportAllocationSheetToPdf(sheet, fileName, fileIdPropKey) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet(), spreadsheetId = ss.getId(), sheetId = sheet.getSheetId(), lastRow = sheet.getLastRow();
+  var ss = getSS_(), spreadsheetId = ss.getId(), sheetId = sheet.getSheetId(), lastRow = sheet.getLastRow();
   // A4縦。fitw=true（幅を1ページに合わせる）は必須。
   // これを外すと、幅が印字領域をわずかでも超えたときに表が左右に分断され、
   // 「A〜G列のページ」と「H列だけのページ」に分かれてしまう。

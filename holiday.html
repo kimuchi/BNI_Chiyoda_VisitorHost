@@ -69,7 +69,12 @@
     function save() {
       document.body.innerHTML = "<h3 style='color:#0055ff;'>保存中です...</h3>";
       google.script.run.withSuccessHandler(function(){
-        google.script.host.close();
+        // ダイアログなら閉じる。ウェブアプリには閉じる相手がいないので保存結果を出す。
+        try {
+          if (google.script.host && google.script.host.close) { google.script.host.close(); return; }
+        } catch (e) {}
+        document.body.innerHTML = "<h3 style='color:green;'>保存しました。</h3>"
+          + "<p style='font-size:13px;color:#666;'>このタブは閉じて構いません。</p>";
       }).saveHolidays(holidays);
     }
   </script>
