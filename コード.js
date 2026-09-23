@@ -33,6 +33,7 @@ function onOpen() {
       .addSeparator()
       .addItem('Spreadingから名簿を更新', 'openSpreadingDialog')
       .addItem('メンバーリスト(OCR)の更新', 'openPdfDialog')
+      .addItem('メンバーリスト(OCR)の更新（ダイアログなし）', 'importMemberListSimple')
       .addItem('メンバーブック(PDF)の更新', 'openMemberBookDialog')
       .addItem('AI参考資料', 'openAiDocsDialog')
       .addSeparator()
@@ -53,6 +54,58 @@ function onOpen() {
 function openCsvDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createTemplateFromFile('dialog').evaluate().setWidth(1000).setHeight(700), 'データの確認・PDF作成'); }
 function openHolidayDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('holiday').setWidth(450).setHeight(400), '休会日の管理'); }
 function openPdfDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('pdf').setWidth(480).setHeight(540), 'メンバーリスト(OCR)登録'); }
+
+// === ダイアログを使わないメンバーリスト(OCR)取り込み ===
+// ダイアログの中身は googleusercontent.com という別ドメインのiframeで表示されるため、
+// ブラウザの設定や拡張機能の影響で真っ白になることがある。
+// ui.prompt / ui.alert はスプレッドシート自身が描くのでiframeを使わず、その影響を受けない。
+// （権限確認の画面が出ているのに、ダイアログだけ真っ白、という状況で使う）
+function importMemberListSimple() {
+  var ui = SpreadsheetApp.getUi();
+  var res = ui.prompt('メンバーリスト(OCR)の取り込み',
+    'PDFの共有リンク、またはファイルIDを貼り付けてOKを押してください。\n\n'
+    + '空のままOKを押すと、BNI素材フォルダに置かれている一番新しいPDFを読み取ります。',
+    ui.ButtonSet.OK_CANCEL);
+  if (res.getSelectedButton() !== ui.Button.OK) return;
+
+  var target = String(res.getResponseText() || '').trim(), usedName = '';
+  if (!target) {
+    var found = findNewestPdfInAssetFolder_();
+    if (!found) {
+      ui.alert('メンバーリスト(OCR)の取り込み',
+        '❌ BNI素材フォルダにPDFが見つかりませんでした。\n\n'
+        + 'PDFをそのフォルダに置くか、共有リンクを貼り付けてもう一度お試しください。',
+        ui.ButtonSet.OK);
+      return;
+    }
+    target = found.getId();
+    usedName = found.getName();
+  }
+
+  var r;
+  try { r = processMemberListFromDrive(target); }
+  catch (e) { r = { ok: false, message: '取り込み中に例外が発生しました: ' + (e && e.message ? e.message : e) }; }
+
+  ui.alert('メンバーリスト(OCR)の取り込み',
+    (r && r.ok ? '✅ ' : '❌ ')
+    + (usedName ? '読み取ったファイル: ' + usedName + '\n\n' : '')
+    + ((r && r.message) || '結果を取得できませんでした。'), ui.ButtonSet.OK);
+}
+
+// BNI素材フォルダ直下にある、一番新しいPDFを探す
+function findNewestPdfInAssetFolder_() {
+  try {
+    var it = getAssetRootFolder_().getFilesByType(MimeType.PDF), best = null;
+    while (it.hasNext()) {
+      var f = it.next();
+      if (!best || f.getLastUpdated() > best.getLastUpdated()) best = f;
+    }
+    return best;
+  } catch (e) {
+    console.warn('[OCR] 素材フォルダを参照できません: ' + (e && e.message ? e.message : e));
+    return null;
+  }
+}
 
 // ダイアログが真っ白になるときの切り分け。
 // サーバー側（GAS）にHTMLの中身があるかどうかを実際に読み出して確かめる。
