@@ -40,7 +40,7 @@ function onOpen() {
       .addItem('Gemini API・モデル', 'openApiSettingsDialog'))
     .addSubMenu(ui.createMenu('🔧 動作確認')
       .addItem('Gemini接続テスト', 'testGeminiConnection')
-      .addItem('大きなファイル機能の権限確認', 'authorizeDriveForBigFiles'))
+      .addItem('Googleの権限を確認・許可する', 'authorizeDriveAccess'))
     .addSeparator()
     .addItem('❓ 使い方（ヘルプ）', 'openManualDialog')
     .addToUi();

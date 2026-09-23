@@ -205,17 +205,27 @@ function openBigTemplateDialog() {
 }
 
 // 初回の権限取得用。モーダル内では認可画面を出せないため、メニューから1回実行する。
-function authorizeDriveForBigFiles() {
-  var ui = SpreadsheetApp.getUi();
+// Googleドライブへの許可を確認する。
+// 読み取りだけ試しても、保存のときに出る権限不足は見つけられないので、
+// 実際にファイルを作って共有設定まで行い、最後に片付ける。
+// ダイアログの中からは許可を求める画面を出せないため、この関数はメニューから直接呼ぶ。
+function authorizeDriveAccess() {
+  var ui = SpreadsheetApp.getUi(), testName = '_権限確認.txt';
   try {
     var folder = getAssetFolder_('output');
-    ui.alert('大きなファイル機能の権限確認',
-      '✅ 準備できています。\n\n保存先フォルダ: ' + folder.getName() +
-      '\n\n「⚙️ 大きなスライドの登録」でテンプレートを登録し、「動作確認」を実行してください。', ui.ButtonSet.OK);
+    var saved = saveOutputFile_(Utilities.newBlob('ok', 'text/plain', testName), testName);
+    try { DriveApp.getFileById(saved.id).setTrashed(true); } catch (e) {}
+    var msg = '✅ 準備できています。\n\n保存先フォルダ: ' + folder.getName()
+            + '\nファイルの作成' + (saved.shared ? 'とリンク共有' : '') + 'まで確認しました。';
+    if (!saved.shared) {
+      msg += '\n\n⚠ リンク共有だけ設定できませんでした。\n'
+           + '組織のドライブ設定で、リンクでの共有が制限されている可能性があります。\n'
+           + 'ファイルの保存自体はできるので、共有が必要な場合はドライブ側で個別に設定してください。';
+    }
+    ui.alert('Googleの権限確認', msg, ui.ButtonSet.OK);
   } catch (e) {
-    ui.alert('大きなファイル機能の権限確認',
-      '❌ 失敗しました: ' + (e && e.message ? e.message : e) +
-      '\n\n権限の許可を求める画面が出た場合は「許可」を選んでから、もう一度実行してください。', ui.ButtonSet.OK);
+    ui.alert('Googleの権限確認',
+      '❌ 失敗しました。\n\n' + (e && e.message ? e.message : e), ui.ButtonSet.OK);
   }
 }
 

@@ -71,7 +71,7 @@
 </div></div>
 
 <script>
- var members=[], cats=[], photos={}, editing=-1;
+ var members=[], cats=[], photos={}, photosB64={}, editing=-1;
  window.onload=load;
  function esc(x){var d=document.createElement('span');d.textContent=x==null?'':x;return d.innerHTML;}
  function show(t,ok){var m=document.getElementById('msg');m.innerText=t;m.style.color=ok===true?'green':(ok===false?'#d00':'#0055ff');}
@@ -88,14 +88,24 @@
      fetchPhotos(members.map(function(m){return m.name;}));
    }).withFailureHandler(fail).getMemberBookData();
  }
- // 写真は重いので20件ずつ取得する
+ // 写真はファイルIDだけをまとめて受け取り、画像はブラウザにサムネイルを読ませる。
+ // 実体をbase64で送っていたころは1人あたり数MBが行き来して非常に遅かった。
+ // IDなら全員分でも一瞬で、画像はブラウザが並行して読み込み・キャッシュしてくれる。
  function fetchPhotos(names){
    if(!names.length) return;
-   var batch=names.slice(0,20), rest=names.slice(20);
    google.script.run.withSuccessHandler(function(r){
-     if(r&&r.ok){ for(var k in r.map) photos[k]=r.map[k]; render(); }
-     fetchPhotos(rest);
-   }).withFailureHandler(function(){ fetchPhotos(rest); }).getMemberPhotosBase64(batch);
+     if(r&&r.ok){ for(var k in r.map) photos[k]='https://drive.google.com/thumbnail?id='+r.map[k]+'&sz=w200'; render(); }
+   }).withFailureHandler(function(){}).getMemberPhotoIds(names);
+ }
+ // サムネイルが読めなかったときだけ、その1名分を実体で取り直す
+ // （複数のGoogleアカウントにログインしていると、サムネイルURLが弾かれることがある）
+ function photoFallback(img, name){
+   if(img.dataset.retried) { img.style.visibility='hidden'; return; }
+   img.dataset.retried='1';
+   google.script.run.withSuccessHandler(function(r){
+     if(r&&r.ok&&r.map[name]){ photos[name]=r.map[name]; img.src=r.map[name]; }
+     else img.style.visibility='hidden';
+   }).withFailureHandler(function(){ img.style.visibility='hidden'; }).getMemberPhotosBase64([name]);
  }
  function catOf(key){ for(var i=0;i<cats.length;i++) if(cats[i].key===key) return cats[i]; return null; }
 
@@ -111,7 +121,7 @@
      var c=catOf(m.cat), ph=photos[m.name];
      return '<div class="card" onclick="openM('+i+')"><span class="cn">'+(i+1)+'</span>'
       + (c?'<div class="cat" style="background:'+esc(c.bg||'#888')+'">'+esc(c.label||c.key)+'</div>':'')
-      + (ph?'<img class="ph" src="'+ph+'">':'<div class="ph"></div>')
+      + (ph?'<img class="ph" src="'+ph+'" onerror="photoFallback(this,\''+esc(m.name)+'\')">':'<div class="ph"></div>')
       + '<div class="cti">'+esc(m.title)+'</div>'
       + '<div class="cname">'+esc(m.name)+'</div>'
       + '<div class="cco">'+esc(m.company)+'</div>'
@@ -155,6 +165,26 @@
      .withFailureHandler(fail).saveMemberBookData(members, null);
  }
 
+ // 冊子と配布用HTMLには写真の実体（base64）を埋め込む必要がある。
+ // サムネイルのURLのままだと、受け取った人にDriveの閲覧権限がないと写真が出ない。
+ // 画面表示には不要なので、印刷・書き出しを押したときだけ読みに行く。
+ function withPhotoData(next){
+   var need=members.map(function(m){return m.name;})
+                   .filter(function(n){ return n && photos[n] && !photosB64[n]; });
+   if(!need.length){ next(); return; }
+   busy(true);
+   var total=need.length, done=0;
+   (function step(list){
+     if(!list.length){ busy(false); next(); return; }
+     var batch=list.slice(0,10), rest=list.slice(10);
+     google.script.run.withSuccessHandler(function(r){
+       if(r&&r.ok) for(var k in r.map) photosB64[k]=r.map[k];
+       done+=batch.length; show('写真を読み込んでいます...（'+done+'/'+total+'）');
+       step(rest);
+     }).withFailureHandler(function(){ done+=batch.length; step(rest); }).getMemberPhotosBase64(batch);
+   })(need);
+ }
+
  function bookHtml(){
    var css='@page{size:A4;margin:8mm;}*{box-sizing:border-box;margin:0;padding:0;}'
     +'body{font-family:"Hiragino Sans","Meiryo",sans-serif;}'
@@ -167,7 +197,7 @@
     +'.co{font-size:7.5pt;color:#444;}.cm{font-size:7pt;color:#666;margin-top:1mm;clear:both;}'
     +'.rf{font-size:6.5pt;color:#555;margin-top:1mm;}';
    var body=members.map(function(m,i){
-     var c=catOf(m.cat), ph=photos[m.name];
+     var c=catOf(m.cat), ph=photosB64[m.name];
      return '<div class="c"><span class="cn">'+(i+1)+'</span>'
       +(c?'<div class="cat" style="background:'+esc(c.bg||'#888')+'">'+esc(c.label||c.key)+'</div>':'')
       +(ph?'<img class="ph" src="'+ph+'">':'<div class="ph"></div>')
@@ -179,19 +209,23 @@
     +'<style>'+css+'</style></head><body><div class="pg">'+body+'</div></body></html>';
  }
  function printBook(){
-   var w=window.open('','_blank');
-   if(!w){ show('ポップアップがブロックされました。ブラウザで許可してください。',false); return; }
-   w.document.open(); w.document.write(bookHtml()); w.document.close();
-   setTimeout(function(){ try{ w.focus(); w.print(); }catch(e){} }, 700);
-   show('印刷画面を開きました。送信先で「PDFに保存」を選んでください。',true);
+   withPhotoData(function(){
+     var w=window.open('','_blank');
+     if(!w){ show('ポップアップがブロックされました。ブラウザで許可してください。',false); return; }
+     w.document.open(); w.document.write(bookHtml()); w.document.close();
+     setTimeout(function(){ try{ w.focus(); w.print(); }catch(e){} }, 700);
+     show('印刷画面を開きました。送信先で「PDFに保存」を選んでください。',true);
+   });
  }
  function exportHtml(){
-   busy(true); show('保存中...');
-   google.script.run.withSuccessHandler(function(r){
-     busy(false);
-     if(!r.ok){ show(r.message,false); return; }
-     document.getElementById('msg').innerHTML='<span style="color:green;">'+esc(r.message)+'</span><br><a href="'+r.url+'" target="_blank">保存先を開く</a>';
-   }).withFailureHandler(fail).exportMemberBookHtml(bookHtml(),'BNI_memberbook');
+   withPhotoData(function(){
+     busy(true); show('保存中...');
+     google.script.run.withSuccessHandler(function(r){
+       busy(false);
+       if(!r.ok){ show(r.message,false); return; }
+       document.getElementById('msg').innerHTML='<span style="color:green;">'+esc(r.message)+'</span><br><a href="'+r.url+'" target="_blank">保存先を開く</a>';
+     }).withFailureHandler(fail).exportMemberBookHtml(bookHtml(),'BNI_memberbook');
+   });
  }
 </script>
 </body></html>

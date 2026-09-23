@@ -137,7 +137,7 @@
  function show(t,ok){ var m=document.getElementById('msg'); m.innerText=t; m.style.color= ok===true?'green':(ok===false?'#d00':'#0055ff'); }
  function fail(e){ var d=(e&&e.message)?e.message:String(e);
    document.getElementById('msg').innerHTML='<span style="color:#d00;">エラー: '+esc(d)+'</span>'
-    +'<br><span style="font-size:12px;color:#666;">「サーバーエラー」と出る場合は、メニュー「⚙️ 大きなファイル機能の権限確認」を1回実行してください。</span>';
+    +'<br><span style="font-size:12px;color:#666;">「サーバーエラー」と出る場合は、メニュー「🔧 Googleの権限を確認・許可する」を1回実行してください。</span>';
    setBusy(false); }
 
  function collect(){

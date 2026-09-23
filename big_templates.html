@@ -26,7 +26,7 @@
    デザイン・フォント・座標には触れず、必要な文字だけを差し替えます。
  </div>
  <div class="warn">
-   初めて使うときは、先にメニュー「<b>⚙️ 大きなファイル機能の権限確認</b>」を1回実行してください。
+   初めて使うときは、先にメニュー「<b>🔧 Googleの権限を確認・許可する</b>」を1回実行してください。
    権限が未取得のままだと、この画面の操作が「サーバーエラー」になります。
  </div>
 
@@ -41,7 +41,7 @@
    if(t){document.getElementById('msg').style.color='#0055ff';document.getElementById('msg').innerText=t;} }
  function fail(e){ var d=(e&&e.message)?e.message:String(e);
    document.getElementById('msg').innerHTML='<span style="color:#d00;">エラー: '+esc(d)+'</span>'
-    +'<br><span style="font-size:12px;color:#666;">「サーバーエラー」と出る場合は、メニュー「⚙️ 大きなファイル機能の権限確認」を1回実行してから再度お試しください。</span>';
+    +'<br><span style="font-size:12px;color:#666;">「サーバーエラー」と出る場合は、メニュー「🔧 Googleの権限を確認・許可する」を1回実行してから再度お試しください。</span>';
    setBusy(false); }
 
  function render(st){

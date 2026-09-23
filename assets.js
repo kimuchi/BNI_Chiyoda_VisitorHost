@@ -78,20 +78,50 @@ function getAssetFolder_(kind) {
   return ensureChildFolder_(getAssetRootFolder_(), ASSET_SUB_[kind] || ASSET_SUB_.output);
 }
 
+// Driveの権限エラーは原因が分かりにくいので、次にやることを添えて返す
+function driveHelpHint_(e) {
+  var msg = (e && e.message) ? e.message : String(e);
+  if (/アクセスが拒否|Access denied|権限|permission|Authorization|承認/i.test(msg)) {
+    return msg + '\n\nGoogleドライブへの許可がまだ取れていない可能性があります。\n'
+      + 'この画面をいったん閉じて、メニューの「🔧 動作確認」＞「Googleの権限を確認・許可する」を実行し、\n'
+      + '表示される画面で「許可」を選んでから、もう一度お試しください。\n'
+      + '※ 許可を求める画面は、いまのような小窓（ダイアログ）の中には表示できません。\n'
+      + '　 そのためメニューから直接実行する必要があります。';
+  }
+  return msg;
+}
+
 // 生成物を 03_生成物 に保存し、リンク共有を付けてURLを返す
 function saveOutputFile_(blob, fileName) {
-  var folder = getAssetFolder_('output');
+  var folder;
+  try {
+    folder = getAssetFolder_('output');
+  } catch (e) {
+    throw new Error('保存先フォルダを開けませんでした。' + driveHelpHint_(e));
+  }
   // 同名ファイルがあれば置き換えではなく更新（URLを変えない）
   var it = folder.getFilesByName(fileName), file;
-  if (it.hasNext()) {
-    file = it.next();
-    try { Drive.Files.update({}, file.getId(), blob); }
-    catch (e) { file.setTrashed(true); file = folder.createFile(blob.setName(fileName)); }
-  } else {
-    file = folder.createFile(blob.setName(fileName));
+  try {
+    if (it.hasNext()) {
+      file = it.next();
+      try { Drive.Files.update({}, file.getId(), blob); }
+      catch (e) { file.setTrashed(true); file = folder.createFile(blob.setName(fileName)); }
+    } else {
+      file = folder.createFile(blob.setName(fileName));
+    }
+  } catch (e) {
+    throw new Error('「' + folder.getName() + '」にファイルを書き込めませんでした。' + driveHelpHint_(e));
   }
-  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-  return { id: file.getId(), url: file.getUrl(), name: fileName };
+  // リンク共有は組織の設定で禁止されていることがある。
+  // 共有できなくてもファイル自体は保存できているので、ここでは止めない。
+  var shared = true;
+  try {
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  } catch (e) {
+    shared = false;
+    console.warn('[DRIVE] リンク共有を設定できませんでした: ' + (e && e.message ? e.message : e));
+  }
+  return { id: file.getId(), url: file.getUrl(), name: fileName, shared: shared };
 }
 
 // === PowerPointテンプレートの登録 ===
@@ -269,6 +299,23 @@ function findPhotoIdForName_(name) {
 }
 
 // 氏名配列 → {氏名: dataURI} のマップ（重いのでクライアントから20件ずつ呼ぶ）
+// 一覧表示用。写真の実体ではなくDriveのファイルIDだけを返す。
+// 実体をbase64で送ると1人あたり数MBになり、49名では数十MBがやり取りされて非常に遅い。
+// IDだけならごく小さく、画像はブラウザがサムネイルURLから並行して読み込む。
+function getMemberPhotoIds(names) {
+  try {
+    var map = {}, miss = [];
+    for (var i = 0; i < (names || []).length; i++) {
+      var id = findPhotoIdForName_(names[i]);
+      if (id) map[names[i]] = id; else miss.push(names[i]);
+    }
+    return { ok: true, map: map, missing: miss };
+  } catch (e) {
+    return { ok: false, message: '写真の照合に失敗しました: ' + (e && e.message ? e.message : e), map: {} };
+  }
+}
+
+// 実体が必要な場面（PDFへの埋め込みなど）や、サムネイルが表示できなかったときの控え
 function getMemberPhotosBase64(names) {
   try {
     var map = {}, miss = [];
