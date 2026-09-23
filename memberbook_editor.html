@@ -273,7 +273,9 @@
      google.script.run.withSuccessHandler(function(r){
        busy(false);
        if(!r.ok){ show(r.message,false); return; }
-       document.getElementById('msg').innerHTML='<span style="color:green;">'+esc(r.message)+'</span><br><a href="'+r.url+'" target="_blank">保存先を開く</a>';
+       document.getElementById('msg').innerHTML='<span style="color:green;">'+esc(r.message)+'</span>'
+         +'<br><a href="'+(r.downloadUrl||r.url)+'" target="_blank">⬇ ダウンロード</a>'
+         +' <a href="'+r.url+'" target="_blank" style="font-size:12px;color:#666;">ドライブで見る</a>';
      }).withFailureHandler(fail).exportMemberBookHtml(bookHtml(),'BNI_memberbook');
    });
  }
