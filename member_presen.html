@@ -8,24 +8,22 @@
        border-radius:0 4px 4px 0;margin-bottom:10px;line-height:1.7;}
  .err{background:#fdecea;border-left:4px solid #d93025;padding:9px 12px;font-size:12px;
       border-radius:0 4px 4px 0;margin-bottom:10px;line-height:1.7;}
- select{padding:6px;font-size:14px;border:1px solid #ccc;border-radius:4px;}
- .cols{display:flex;gap:14px;align-items:flex-start;margin-top:10px;}
+ select{padding:6px;font-size:14px;border:1px solid #ccc;border-radius:4px;max-width:260px;}
+ .row{margin-top:8px;}
+ .row label{color:#666;font-size:13px;margin-right:4px;}
+ .sub{font-size:11.5px;color:#888;margin-top:3px;}
+ .tidy{background:#fff;color:#c00000;border:1px solid #c00000;border-radius:4px;
+       padding:4px 10px;font-size:11.5px;font-weight:bold;cursor:pointer;margin-top:6px;}
+ .cols{display:flex;gap:14px;align-items:flex-start;margin-top:12px;}
  .cols>div{flex:1;min-width:0;}
  h4{font-size:13px;margin:0 0 6px;color:#c00000;}
  table{border-collapse:collapse;width:100%;font-size:12px;}
  th{background:#c00000;color:#fff;padding:5px 8px;text-align:left;white-space:nowrap;}
  td{padding:5px 8px;border-bottom:1px solid #eee;}
- td.num{text-align:right;white-space:nowrap;}
- tr.empty td{color:#aaa;}
- .ord{border:1px solid #eee;border-radius:4px;max-height:260px;overflow:auto;}
- .ordrow{display:flex;align-items:center;gap:6px;padding:3px 8px;border-bottom:1px solid #f4f4f4;}
- .ordrow:last-child{border-bottom:none;}
- .ordn{width:18px;color:#999;font-size:12px;}
- .ordname{flex:1;min-width:0;font-size:12px;}
- .ordcnt{color:#888;font-size:11px;white-space:nowrap;}
- .ordrow button{width:24px;height:24px;padding:0;font-size:11px;background:#fff;color:#c00000;
-                border:1px solid #ddd;border-radius:3px;cursor:pointer;font-weight:bold;}
- .ordrow button:disabled{opacity:.3;cursor:default;}
+ td.num{text-align:right;white-space:nowrap;color:#666;}
+ td.n{width:22px;color:#aaa;text-align:right;}
+ tr.first td{background:#fff5f5;font-weight:bold;}
+ tr.unknown td{color:#b26b00;}
  #gen{margin-top:14px;width:100%;padding:14px;color:#fff;border:none;border-radius:8px;
       font-size:15px;font-weight:700;cursor:pointer;background:linear-gradient(135deg,#c00000,#e53935);}
  #gen:disabled{opacity:.4;cursor:not-allowed;}
@@ -37,18 +35,25 @@
  <h3>🎤 メンバープレゼンスライドの作成</h3>
  <div class="hint">
    「メンバー名簿」と「メンバー写真」から、業種区分ごとの扉ページと個人ページを作ります。<br>
-   発表の順番は<b>名簿の行順</b>、業種区分の順番は<b>開催日から自動で決まります</b>（1週ごとに順繰り）。
+   発表の順番は<b>名簿の行順</b>。業種区分は<b>いつも同じ並び</b>で、<b>始まりの区分だけ</b>が週ごとにずれます。
  </div>
  <div class="err"  id="err"  style="display:none;"></div>
  <div class="warn" id="warn" style="display:none;"></div>
 
- <div>開催日：<select id="date" onchange="onDate()"></select>
+ <div class="row"><label>開催日</label><select id="date" onchange="onDate()"></select>
    <span id="count" style="font-size:12px;color:#666;margin-left:8px;"></span></div>
+ <div class="row"><label>始まりの業種区分</label><select id="start" onchange="render()"></select>
+   <div class="sub" id="startNote"></div></div>
+ <div class="row">
+   <label><input type="checkbox" id="auto" checked onchange="render()">
+     個人ページは<b>30秒のカウントダウンが終わったら自動で次へ</b>進む</label>
+   <div class="sub">外すと、テンプレートのまま（クリックで進む）になります。扉ページはいつもクリックで進みます。</div>
+ </div>
 
  <div class="cols">
    <div>
-     <h4>この日の業種区分の順番</h4>
-     <div class="ord" id="ord"></div>
+     <h4>この日の順番</h4>
+     <table id="ord"></table>
    </div>
    <div>
      <h4>出来上がりの内訳</h4>
@@ -62,12 +67,19 @@
 <script>
 // ===== 組版（元の生成ツールと同じ計算をここで行う）=====
 // 文字幅はブラウザのcanvasで実測する。サーバー（GAS）には文字を測る手段が無いため、
-// 折り返し位置と文字の大きさはここで決め、結果だけをサーバーへ渡す。
+// 折り返し位置・文字の大きさ・枠の寸法はここで決め、結果だけをサーバーへ渡す。
 
-var COMPANY_W_PT  = 7461517 / 12700;   // 会社名の枠（1行のとき）
-var COMPANY_W2_PT = 6893161 / 12700;   // 会社名の枠（2行のとき）
-var CATEGORY_W_PT = 7311519 / 12700;   // カテゴリーの枠
-var BASE_PT = 44, MIN_PT = 28;
+// テンプレートの枠（EMU）。元のスライドから採った実測値。
+var COMPANY_DEFAULT = { x: 4830858, y: 2849608, cx: 7461517, cy: 769441 };   // 会社名が1行
+var COMPANY_TALL    = { x: 5087424, y: 2776058, cx: 6893161, cy: 1446550 };  // 会社名が2行
+var CATEGORY_TOP = 3456634, CATEGORY_TOP_LOW = 4071101;                      // 【カテゴリー】の上端
+// 1pt・1行ぶんの高さと枠の上下余白。上の2つの枠から逆算した値で、
+// 3行以上になったときに枠と【カテゴリー】の位置を自分で出すために使う。
+var LINE_EMU = 12700 * 1.213, PAD_EMU = 91440;
+var GAP_EMU = 151507;          // 会社名の枠の下端と【カテゴリー】の上端の差
+var BASE_PT = 44, MIN_PT = 28, HARD_MIN_PT = 20;
+
+function widthPt(g){ return g.cx / 12700; }
 
 function measurePt(text, sizePt, bold){
   if(!measurePt._c){ measurePt._c = document.createElement('canvas').getContext('2d'); }
@@ -113,24 +125,48 @@ function splitCorp(text){
   return null;
 }
 
-// 会社名：まず1行に収める。無理なら「○○／株式会社」で折り、それも無理なら普通に2行。
-// fontPt が 0 のときはテンプレートの大きさのまま（44pt）。
+function companyFit(lines, pt, geom, catTop){
+  return { lines:lines, fontPt:(pt===BASE_PT?0:pt), geom:geom, categoryTop:catTop };
+}
+// 行数と文字の大きさから、枠の高さと【カテゴリー】の位置を出す
+function companyCalc(lines, pt){
+  var g = { x:COMPANY_TALL.x, y:COMPANY_TALL.y, cx:COMPANY_TALL.cx,
+            cy:Math.round(PAD_EMU + lines.length * pt * LINE_EMU) };
+  return companyFit(lines, pt, g, Math.round(g.y + g.cy - GAP_EMU));
+}
+
+// 会社名の収め方。上から順に試し、収まったところで決める。
+//  ① 1行に収まるまで小さくする（44→28pt）… ほとんどの方はここ
+//  ② ㈱などの略記があれば展開して「社名／株式会社」で折る（2行）
+//  ③ 2行に収まるまで小さくする（44→28pt）
+//  ④ それでも入らなければ3行まで許し、さらに小さくする（20ptまで）
+// ③④では枠の高さと【カテゴリー】の位置を実際の行数から出し直す。
+// 2行決め打ちのままだと、3行になったときに【カテゴリー】と文字が重なる。
 function layoutCompany(raw){
   var wasAbbrev=/[㈱㈲㈾]/.test(raw||''), text=expandCorp(raw);
-  if(!text) return { lines:[''], fontPt:0, tall:false };
+  if(!text) return companyFit([''], BASE_PT, COMPANY_DEFAULT, CATEGORY_TOP);
   if(wasAbbrev){
     var sp=splitCorp(text);
-    if(sp) return { lines:[sp.main,sp.suffix], fontPt:0, tall:true };
+    if(sp) return companyFit([sp.main,sp.suffix], BASE_PT, COMPANY_TALL, CATEGORY_TOP_LOW);
   }
-  var pt=BASE_PT, lines=wrapKinsoku(text,pt,true,COMPANY_W_PT);
-  while(lines.length>1 && pt>MIN_PT){ pt-=2; lines=wrapKinsoku(text,pt,true,COMPANY_W_PT); }
-  if(lines.length<=1) return { lines:lines, fontPt:(pt!==BASE_PT?pt:0), tall:false };
+  var pt=BASE_PT, w1=widthPt(COMPANY_DEFAULT), w2=widthPt(COMPANY_TALL);
+  var lines=wrapKinsoku(text,pt,true,w1);
+  while(lines.length>1 && pt>MIN_PT){ pt-=2; lines=wrapKinsoku(text,pt,true,w1); }
+  if(lines.length<=1) return companyFit(lines, pt, COMPANY_DEFAULT, CATEGORY_TOP);
+
   var sp2=splitCorp(text);
-  if(sp2) return { lines:[sp2.main,sp2.suffix], fontPt:0, tall:true };
-  return { lines:mergeOrphan(wrapKinsoku(text,BASE_PT,true,COMPANY_W2_PT)), fontPt:0, tall:true };
+  if(sp2) return companyFit([sp2.main,sp2.suffix], BASE_PT, COMPANY_TALL, CATEGORY_TOP_LOW);
+
+  pt=BASE_PT; lines=wrapKinsoku(text,pt,true,w2);
+  while(lines.length>2 && pt>MIN_PT){ pt-=2; lines=wrapKinsoku(text,pt,true,w2); }
+  while(lines.length>3 && pt>HARD_MIN_PT){ pt-=2; lines=wrapKinsoku(text,pt,true,w2); }
+  lines=mergeOrphan(lines);
+  if(lines.length<=2 && pt===BASE_PT) return companyFit(lines, pt, COMPANY_TALL, CATEGORY_TOP_LOW);
+  return companyCalc(lines, pt);
 }
 
 // カテゴリー：【】で囲み、1行に収まるまで小さくする。それでも無理なら2行＋行間を詰める。
+var CATEGORY_W_PT = 7311519 / 12700;
 function layoutCategory(rawTitle){
   var text='【'+normParens(rawTitle||'')+'】', pt=BASE_PT;
   var lines=wrapKinsoku(text,pt,true,CATEGORY_W_PT);
@@ -140,31 +176,37 @@ function layoutCategory(rawTitle){
 }
 
 // ===== 画面 =====
-var ctx=null, order=[], working=false;
-window.onload=function(){ google.script.run.withSuccessHandler(init).withFailureHandler(fail).getMemberPresenContext(); };
+var ctx=null, startKey='', working=false;
+window.onload=function(){ load(); };
+function load(){ google.script.run.withSuccessHandler(init).withFailureHandler(fail).getMemberPresenContext(); }
 function esc(x){ var d=document.createElement('span'); d.textContent=x==null?'':x; return d.innerHTML; }
-function blockName(key){ for(var i=0;i<ctx.blocks.length;i++) if(ctx.blocks[i].key===key) return ctx.blocks[i].block; return key; }
-function membersOf(key){ return ctx.members.filter(function(m){ return m.blockKey===key; }); }
+function live(){ return ctx.blocks.filter(function(b){ return b.count>0; }); }
+function membersOf(g){ return ctx.members.filter(function(m){ return m.blockKey===g; }); }
 
 function init(c){
   if(!c.ok){ fail({message:c.message}); return; }
   ctx=c;
-  var tpl=c.template;
-  if(!tpl || !tpl.registered){
+  if(!c.template || !c.template.registered){
     var e=document.getElementById('err'); e.style.display='block';
     e.innerHTML='<b>テンプレートが未登録です。</b><br>'
       +'「⚙️ 設定 ＞ 大きなスライド」の<b>メンバープレゼン</b>に、Driveに置いたpptxのリンクを登録してください。';
   }
   var notes=[];
-  var noCat=c.members.filter(function(m){ return !m.blockKey; });
-  if(noCat.length) notes.push('業種区分が業種区分マスタと一致しない方が'+noCat.length+'名います（この方はスライドに出ません）: '
-    +noCat.map(function(m){ return esc(m.name)+'（'+esc(m.cat||'未設定')+'）'; }).join('、'));
+  var unknown=ctx.blocks.filter(function(b){ return !b.known && b.count>0; });
+  if(unknown.length) notes.push('業種区分マスタに無い区分があります（そのままの名前で扉ページを作ります）: '
+    +unknown.map(function(b){ return esc(b.block)+'（'+b.count+'名）'; }).join('、'));
+  var noCat=c.members.filter(function(m){ return !m.cat; });
+  if(noCat.length) notes.push('業種区分が空の方が'+noCat.length+'名います（この方はスライドに出ません）: '
+    +noCat.map(function(m){ return esc(m.name); }).join('、'));
   var noPhoto=c.members.filter(function(m){ return m.blockKey && !m.hasPhoto; });
   if(noPhoto.length) notes.push('写真が見つからない方が'+noPhoto.length+'名います（写真なしで作ります）: '
     +noPhoto.map(function(m){ return esc(m.name); }).join('、'));
-  if(notes.length){
-    var w=document.getElementById('warn'); w.style.display='block'; w.innerHTML=notes.join('<br>');
-  }
+  if((c.unusedCategories||[]).length) notes.push('誰も使っていない業種区分が業種区分マスタに残っています: <b>'
+    +c.unusedCategories.map(esc).join('、')+'</b>'
+    +'<br><button class="tidy" onclick="tidy()">使われていない業種区分を消す</button>');
+  var w=document.getElementById('warn');
+  w.style.display = notes.length ? 'block' : 'none';
+  w.innerHTML = notes.join('<br>');
 
   var sel=document.getElementById('date'), h='';
   (c.candidates||[]).forEach(function(x,i){ h+='<option value="'+i+'">'+esc(x.display)+'</option>'; });
@@ -173,61 +215,77 @@ function init(c){
   onDate();
 }
 
+// 開催日を変えると、始まりの区分を自動で選び直す
 function onDate(){
-  var i=parseInt(document.getElementById('date').value,10);
-  var cand=(ctx.candidates||[])[i];
-  order = (cand && cand.order && cand.order.length) ? cand.order.slice()
-        : ctx.blocks.map(function(b){ return b.key; });
+  var i=parseInt(document.getElementById('date').value,10), cand=(ctx.candidates||[])[i];
+  var list=live(), sh='';
+  list.forEach(function(b){ sh+='<option value="'+esc(b.gkey)+'">'+esc(b.block)+'（'+b.count+'名）</option>'; });
+  var sel=document.getElementById('start');
+  sel.innerHTML = sh || '<option value="">対象のメンバーがいません</option>';
+  startKey = (cand && cand.start) || (list.length ? list[0].gkey : '');
+  var ok=false;
+  list.forEach(function(b){ if(b.gkey===startKey) ok=true; });
+  if(!ok && list.length) startKey=list[0].gkey;
+  sel.value=startKey;
+  document.getElementById('startNote').textContent =
+    'この日の順番から自動で選んでいます。1つずらしたいときだけ変えてください。';
   render();
 }
 
+// 始まりの区分から、いつもの並びを一周ぶん
+function order(){
+  var list=live(), at=0;
+  for(var i=0;i<list.length;i++) if(list[i].gkey===startKey) { at=i; break; }
+  return list.slice(at).concat(list.slice(0,at));
+}
+
 function render(){
-  var oh='';
-  order.forEach(function(k,i){
-    var n=membersOf(k).length;
-    oh+='<div class="ordrow"><span class="ordn">'+(i+1)+'</span>'
-      +'<span class="ordname">'+esc(blockName(k))+'</span>'
-      +'<span class="ordcnt">'+n+'名</span>'
-      +'<button onclick="move('+i+',-1)"'+(i===0?' disabled':'')+'>↑</button>'
-      +'<button onclick="move('+i+',1)"'+(i===order.length-1?' disabled':'')+'>↓</button></div>';
+  startKey = document.getElementById('start').value || startKey;
+  var seq=order(), oh='<tr><th></th><th>業種区分</th><th>人数</th><th>先頭</th></tr>';
+  seq.forEach(function(b,i){
+    var list=membersOf(b.gkey);
+    oh+='<tr class="'+(i===0?'first':'')+(b.known?'':' unknown')+'">'
+      +'<td class="n">'+(i+1)+'</td><td>'+esc(b.block)+'</td>'
+      +'<td class="num">'+b.count+'名</td><td>'+esc(list.length?list[0].name:'―')+'</td></tr>';
   });
   document.getElementById('ord').innerHTML=oh;
 
   var items=buildItems(), ov=0, ind=0;
   items.forEach(function(x){ if(x.kind==='overview') ov++; else ind++; });
-  var sh='<tr><th>業種区分</th><th>人数</th><th>先頭</th></tr>';
-  order.forEach(function(k){
-    var list=membersOf(k);
-    sh+='<tr'+(list.length?'':' class="empty"')+'><td>'+esc(blockName(k))+'</td>'
-      +'<td class="num">'+list.length+'名</td><td>'+esc(list.length?list[0].name:'―')+'</td></tr>';
-  });
-  sh+='<tr><th>合計</th><th class="num">'+items.length+'枚</th>'
-    +'<th>扉'+ov+'＋個人'+ind+'</th></tr>';
+  var sh='<tr><th>内容</th><th>枚数</th></tr>'
+    +'<tr><td>業種区分の扉ページ</td><td class="num">'+ov+'枚</td></tr>'
+    +'<tr><td>個人ページ</td><td class="num">'+ind+'枚</td></tr>'
+    +'<tr><th>合計</th><th class="num">'+items.length+'枚</th></tr>';
+  var wide=items.filter(function(x){ return x.kind==='individual' && x.companyLines.length>1; });
+  if(wide.length){
+    sh+='<tr><td colspan="2" style="color:#888;font-size:11px;line-height:1.6;">'
+      +'会社名が2行以上になる方 '+wide.length+'名<br>'
+      +wide.map(function(x){ return esc(x.name)+'（'+x.companyLines.length+'行'
+        +(x.companyPt?' '+x.companyPt+'pt':'')+'）'; }).join('、')+'</td></tr>';
+  }
   document.getElementById('sum').innerHTML=sh;
   refresh();
-}
-
-function move(i,d){
-  var j=i+d; if(j<0||j>=order.length) return;
-  var t=order[i]; order[i]=order[j]; order[j]=t; render();
 }
 
 // 業種区分ごとに「扉ページ（7名ずつ）→ 個人ページ」を並べる
 function buildItems(){
   var items=[], rows=ctx.rowsPerPage||7;
-  order.forEach(function(k){
-    var list=membersOf(k);
+  // カウントダウンは1秒ごとに30回。終わってから1秒おいて次のスライドへ。
+  var el=document.getElementById('auto'), advMs=(!el || el.checked) ? 31000 : 0;
+  order().forEach(function(b){
+    var list=membersOf(b.gkey);
     if(!list.length) return;
-    var name=blockName(k), pages=Math.ceil(list.length/rows);
+    var pages=Math.ceil(list.length/rows);
     for(var p=0;p<pages;p++){
-      items.push({ kind:'overview', block:name, photoName:list[0].name, nextName:list[0].name,
+      items.push({ kind:'overview', block:b.block, photoName:list[0].name, nextName:list[0].name,
         rows:list.slice(p*rows,(p+1)*rows).map(function(m){
           return { title:normParens(m.title||''), name:m.name }; }) });
     }
     list.forEach(function(m,i){
       var co=layoutCompany(m.company||''), ca=layoutCategory(m.title||'');
-      items.push({ kind:'individual', photoName:m.name, name:m.name,
-        companyLines:co.lines, companyPt:co.fontPt, companyTall:co.tall,
+      items.push({ kind:'individual', photoName:m.name, name:m.name, autoAdvanceMs:advMs,
+        companyLines:co.lines, companyPt:co.fontPt, companyGeom:co.geom, categoryTop:co.categoryTop,
+        companyTall:(co.geom!==COMPANY_DEFAULT),
         categoryLines:ca.lines, categoryPt:ca.fontPt, categoryTight:ca.tight,
         nextName:(list[i+1]?list[i+1].name:'') });
     });
@@ -243,9 +301,25 @@ function show(t,ok){ var m=document.getElementById('msg'); m.innerText=t;
   m.style.color = ok===true?'green':(ok===false?'#d00':'#0055ff'); }
 function fail(e){ show('エラー: '+((e&&e.message)?e.message:e),false); working=false; refresh(); }
 
+// 誰も使っていない業種区分をマスタから消す（消す前に中身を見せる）
+function tidy(){
+  working=true; refresh(); show('確認中...',null);
+  google.script.run.withSuccessHandler(function(r){
+    working=false; refresh();
+    if(!r.ok){ show(r.message,false); return; }
+    if(!r.removed.length){ show(r.message,true); return; }
+    if(!confirm(r.message+'\n\nよろしいですか？')){ show('やめました。',null); return; }
+    working=true; refresh(); show('整理しています...',null);
+    google.script.run.withSuccessHandler(function(r2){
+      working=false;
+      show(r2.message, r2.ok);
+      if(r2.ok) load();
+    }).withFailureHandler(fail).tidyCategoryMaster(true);
+  }).withFailureHandler(fail).tidyCategoryMaster(false);
+}
+
 function gen(){
-  var i=parseInt(document.getElementById('date').value,10);
-  var cand=(ctx.candidates||[])[i];
+  var i=parseInt(document.getElementById('date').value,10), cand=(ctx.candidates||[])[i];
   var label=cand ? cand.dateValue.replace(/\//g,'') : '';
   var items=buildItems();
   if(!items.length){ alert('作成するスライドがありません。'); return; }

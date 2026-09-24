@@ -86,7 +86,8 @@ BNI_Chiyoda_VisitorHost/
     ├── check_gas_names.py    #   名前の衝突・参照先HTMLの検査
     ├── check_html.py         #   divの対応・スクリプトの構文
     ├── check_manual_links.py #   マニュアルの導線 ↔ 実際のメニュー
-    └── check_member_presen.py#   メンバープレゼン生成の通し検査
+    ├── check_member_presen.py#   メンバープレゼン生成の通し検査
+    └── build_member_presen_template.py  # メンバープレゼンのテンプレートを作り直す
 ```
 
 ## セットアップ

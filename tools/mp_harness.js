@@ -37,12 +37,10 @@ function memBlob(content, type, n) {
   };
 }
 
-// --- テスト用の写真（テンプレート内の実物を流用する）---
-const PHOTOS = {
-  '岡安秀明': 'ppt/media/image12.jpeg',
-  '田中秀一': 'ppt/media/image16.jpeg',
-  '佐藤祐之': 'ppt/media/image14.png',
-};
+// --- テスト用の写真（テンプレート内の画像を流用する。縦横比ちがいの3枚）---
+const SAMPLE = Object.keys(manifest.photos);
+const PHOTOS = {};
+['岡安秀明', '田中秀一', '佐藤祐之'].forEach((n, i) => { if (SAMPLE[i]) PHOTOS[n] = SAMPLE[i]; });
 
 const sandbox = {
   console,
@@ -63,6 +61,8 @@ for (const p of manifest.parts) map[p] = fileBlob(p);
 
 // --- 入力（画面が作るのと同じ形）---
 const items = JSON.parse(fs.readFileSync(path.join(WORK, 'items.json'), 'utf8'));
+fs.writeFileSync(path.join(WORK, 'photo_names.json'), JSON.stringify(Object.keys(PHOTOS)));
+
 const info = sandbox.buildMemberPresenSlides_(map, items);
 
 // --- 結果を書き出す（Python側でzipに固める）---

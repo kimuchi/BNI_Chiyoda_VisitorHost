@@ -15,7 +15,7 @@ vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'member_presen_srv.js
 // 業種区分マスタの初期値（巡回順つき）
 const blocks = [['企業サポート', 1], ['研修・教育', 2], ['不動産関連', 3], ['建築＆住まい', 4],
                 ['プロモーション', 5], ['暮らし・生活', 6], ['美容・健康', 7], ['飲食・エンタメ', 8]]
-  .map(([b, o]) => ({ key: b, block: b, order: o }));
+  .map(([b, o]) => ({ key: b, block: b, order: o, gkey: b.replace(/[\s・･＆&と]/g, ''), keys: [b], count: 1, known: true }));
 
 // 元ツールの計算を、そのまま素直に書いたもの
 const ORIG = blocks.map(b => b.block);
@@ -25,12 +25,19 @@ function original(iso) {
   return Array.from({ length: 8 }, (_, i) => ORIG[(st + i) % 8]);
 }
 
+// 始まりの区分から、いつもの並びを一周ぶん（画面がやっているのと同じこと）
+function rotate(startKey) {
+  let at = blocks.findIndex(b => b.gkey === startKey);
+  if (at < 0) at = 0;
+  return blocks.slice(at).concat(blocks.slice(0, at)).map(b => b.block);
+}
+
 let bad = 0, n = 0;
 for (let k = -52; k <= 104; k++) {          // 基準日の前後2年ぶん
   const d = new Date('2026-08-19T00:00:00');
   d.setDate(d.getDate() + 7 * k);
   const iso = d.toISOString().slice(0, 10);
-  const mine = s.mpOrderFor_(blocks, iso.replace(/-/g, '/'));
+  const mine = rotate(s.mpStartFor_(blocks, iso.replace(/-/g, '/')));
   n++;
   if (JSON.stringify(mine) !== JSON.stringify(original(iso))) {
     bad++;
