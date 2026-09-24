@@ -38,6 +38,8 @@ def ck(cond, msg):
         fails.append(msg)
 
 
+WITH_PHOTO = set(json.load(open(os.path.join(WORK, 'photo_names.json'))))
+
 z = zipfile.ZipFile(dst)
 names = set(z.namelist())
 ck(z.testzip() is None, 'zipが壊れている')
@@ -186,12 +188,19 @@ for i, it in enumerate(items):
         ck(paras(sh['2']) == it['companyLines'], '%d %s 会社名が違う: %s' % (n, tag, paras(sh['2'])))
         ck(paras(sh['12']) == it['categoryLines'], '%d %s カテゴリーが違う: %s' % (n, tag, paras(sh['12'])))
         g = geom(sh['2'])
-        want = (5087424, 2776058, 6893161, 1446550) if it['companyTall'] else (4830858, 2849608, 7461517, 769441)
+        cg = it['companyGeom']
+        want = (cg['x'], cg['y'], cg['cx'], cg['cy'])
         ck(g == want, '%d %s 会社名の枠が %s（%s のはず）' % (n, tag, g, want))
         gc = geom(sh['12'])
-        wy = 4071101 if it['companyTall'] else 3456634
-        ck(gc[0] == 4830481 and gc[1] == wy and gc[2] == 7311519,
-           '%d %s カテゴリーの枠が %s（x=4830481 y=%d cx=7311519 のはず）' % (n, tag, gc, wy))
+        ck(gc[0] == 4830481 and gc[1] == it['categoryTop'] and gc[2] == 7311519,
+           '%d %s カテゴリーの枠が %s（x=4830481 y=%d cx=7311519 のはず）' % (n, tag, gc, it['categoryTop']))
+        # 会社名の下に【カテゴリー】が来ていること（3行になったときに重なっていた）
+        ck(it['categoryTop'] >= g[1] + g[3] - 200000,
+           '%d %s 【カテゴリー】が会社名の枠に食い込んでいる（枠の下端 %d / カテゴリー上端 %d）'
+           % (n, tag, g[1] + g[3], it['categoryTop']))
+        # 30秒カウントダウンの数字（上端 4414085）に重ならないこと
+        ck(it['categoryTop'] + 584775 <= 4700000,
+           '%d %s 【カテゴリー】がカウントダウンの数字に重なる（上端 %d）' % (n, tag, it['categoryTop']))
         bp = sh['12'].getElementsByTagNameNS(NS_A, 'bodyPr')[0]
         ck(bp.getAttribute('anchor') == 't', '%d %s カテゴリーが上寄せになっていない' % (n, tag))
         ck(len(bp.getElementsByTagNameNS(NS_A, 'noAutofit')) == 1, '%d %s カテゴリーの自動調整が切れていない' % (n, tag))
@@ -210,10 +219,20 @@ for i, it in enumerate(items):
             ck(paras(sh['14']) == [it['nextName']], '%d %s NEXT氏名が違う: %s' % (n, tag, paras(sh['14'])))
         else:
             ck('14' not in sh and '6' not in sh, '%d %s 最後の人なのにNEXTが残っている' % (n, tag))
+        # 30秒カウントダウンが自動で始まり、終わったら次のスライドへ進むこと
+        sx = z.read('ppt/slides/slide%d.xml' % n).decode('utf-8')
+        ck('<p:cond delay="indefinite"/>' not in sx,
+           '%d %s カウントダウンがクリック待ちのまま' % (n, tag))
+        adv = re.findall(r'advTm="(\d+)"', sx)
+        ck(adv and all(int(a) >= 30000 for a in adv),
+           '%d %s 自動で次へ進む時間が %s（30000以上のはず）' % (n, tag, adv))
+        ck(len(re.findall(r'<p:spTgt spid="\d+"/>', sx)) >= 30,
+           '%d %s カウントダウンのアニメーションが欠けている' % (n, tag))
+
     # 写真
     pid = '2' if it['kind'] == 'overview' else '3'
     rid = 'rId3' if it['kind'] == 'overview' else 'rId2'
-    if it['photoName'].replace('　', '') in ('岡安秀明', '田中秀一', '佐藤祐之'):
+    if it['photoName'].replace('　', '') in WITH_PHOTO:
         ck(pid in sh, '%d %s 写真の図形が消えている' % (n, tag))
         tgt = re.search(r'Id="%s"[^>]*Target="([^"]+)"' % rid, rels)
         ck(tgt is not None and 'mpphoto' in tgt.group(1),

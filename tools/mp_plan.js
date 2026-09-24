@@ -29,7 +29,8 @@ const sandbox = {
   console,
   document: {
     createElement: (tag) => (tag === 'canvas' ? { getContext: () => fakeCtx() } : { set textContent(v) { this._t = v; }, get innerHTML() { return String(this._t == null ? '' : this._t); } }),
-    getElementById: (id) => (els[id] = els[id] || { style: {}, innerHTML: '', textContent: '', value: '0', innerText: '' }),
+    // checked は既定でオン（画面の <input type="checkbox" checked> と同じ）
+    getElementById: (id) => (els[id] = els[id] || { style: {}, innerHTML: '', textContent: '', value: '0', innerText: '', checked: true }),
   },
   google: { script: { run: { withSuccessHandler: () => ({ withFailureHandler: () => ({ getMemberPresenContext() {} }) }) } } },
   window: {},
@@ -40,17 +41,18 @@ vm.createContext(sandbox);
 vm.runInContext(js, sandbox, { filename: 'member_presen.html' });
 
 // --- 検証用のメンバー（組版のあらゆる分岐を通す）---
-const B = (k, block, order) => ({ key: k, block, order });
-const blocks = [B('企業サポート', '企業サポート', 1), B('研修・教育', '研修・教育', 2),
-                B('不動産関連', '不動産関連', 3), B('美容と健康', '美容・健康', 4)];
-const M = (name, company, title, cat, hasPhoto) => ({ name, company, title, cat, blockKey: cat, hasPhoto: hasPhoto !== false });
+const gk = (x) => x.replace(/[\s・･＆&と]/g, '');
+const B = (block, order) => ({ gkey: gk(block), block, order, keys: [block], count: 0, known: true });
+const blocks = [B('企業サポート', 1), B('研修・教育', 2), B('不動産関連', 3), B('美容・健康', 4)];
+const M = (name, company, title, block, hasPhoto) =>
+  ({ name, company, title, cat: block, blockKey: gk(block), hasPhoto: hasPhoto !== false });
 const members = [
   // 企業サポート … 8名（＝扉ページが2枚になる）
   M('岡安　秀明', 'プルデンシャル生命保険㈱', '生命保険(法人)', '企業サポート'),          // ㈱ → 展開して2行
   M('田中　秀一', 'ABC総研', '中小企業診断士', '企業サポート'),                           // 短い → 1行44pt
   M('佐藤　祐之', '損害保険ジャパン株式会社', '損害保険', '企業サポート'),                 // 長い → 縮めて1行
-  M('合川　周平', '一般社団法人日本オフィスプロデュース協会連合会', 'オフィスプロデュース', '企業サポート'), // 非常に長い→2行
-  M('木村　光範', '株式会社ニューフィールドテクノロジーソリューションズ', '新規事業ITサポート', '企業サポート'),
+  M('竹田　明日翔', 'ジブラルタ生命保険株式会社 新宿支社 第十一営業所', '生命保険(法人営業)', '企業サポート'), // 3行になっていた例
+  M('合川　周平', '一般社団法人日本オフィスプロデュース協会連合会', 'オフィスプロデュース', '企業サポート'),
   M('分銅　雅一', '分銅税理士事務所', '税理士（事業承継と相続対策の専門家として）', '企業サポート'), // カテゴリーが長い
   M('岡本　翔太', '岡本法律事務所', '弁護士（企業法務）', '企業サポート'),
   M('写真　無子', 'テスト商会', 'テスト', '企業サポート', false),                          // 写真なし
@@ -59,10 +61,11 @@ const members = [
   // 不動産関連 … 2名
   M('不動　産一', '不動産一番館', '売買仲介', '不動産関連'),
   M('宅建　次郎', '有限会社宅建サポート', '賃貸管理', '不動産関連'),
-  // 美容と健康 … 0名（＝スライドが作られない）
+  // 美容・健康 … 0名（＝スライドが作られない）
 ];
+members.forEach((m) => { const b = blocks.find((x) => x.gkey === m.blockKey); if (b) b.count++; });
 sandbox.ctx = { ok: true, blocks, members, rowsPerPage: 7, candidates: [], template: { registered: true } };
-sandbox.order = blocks.map(b => b.key);
+sandbox.startKey = blocks[0].gkey;
 
 const items = sandbox.buildItems();
 fs.mkdirSync(OUT, { recursive: true });
@@ -73,8 +76,9 @@ for (const it of items) {
   if (it.kind === 'overview') {
     console.log(`  [扉] ${it.block}  先頭=${it.photoName}  表${it.rows.length}行`);
   } else {
-    console.log(`  [個] ${it.name}  会社=${JSON.stringify(it.companyLines)} pt=${it.companyPt || '既定'}`
-      + ` ${it.companyTall ? '(2行枠)' : ''}  区分=${JSON.stringify(it.categoryLines)} pt=${it.categoryPt || '既定'}`
-      + `${it.categoryTight ? ' 行間詰' : ''}  次=${it.nextName || '(なし)'}`);
+    console.log(`  [個] ${it.name}  会社=${JSON.stringify(it.companyLines)} ${it.companyPt || 44}pt`
+      + ` 枠cy=${it.companyGeom.cy} 区分の上端=${it.categoryTop}`
+      + `  区分=${JSON.stringify(it.categoryLines)} ${it.categoryPt || 44}pt${it.categoryTight ? ' 行間詰' : ''}`
+      + `  次=${it.nextName || '(なし)'}`);
   }
 }

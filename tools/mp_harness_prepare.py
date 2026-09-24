@@ -54,11 +54,18 @@ def main():
         with open(dst, 'wb') as f:
             f.write(z.read(n))
         names.append(n)
-    # 写真の見本にテンプレート内の実物を使う（大きさが分かっているので切り抜きの検算ができる）
+    # 写真の見本にはテンプレート内の画像を流用する。
+    # 大きさが分かっているので、切り抜き量を検算できる。
+    # 縦横比のちがう3枚を選ぶ（正方形・横長・縦長で切り取られ方が変わるため）。
+    cand = []
+    for n in sorted(x for x in names if x.startswith('ppt/media/')):
+        d = img_size(os.path.join(parts, n))
+        if d and d[0] >= 64 and d[1] >= 64:
+            cand.append((n, d))
+    cand.sort(key=lambda kv: kv[1][0] / kv[1][1])
     photos = {}
-    for n in ('ppt/media/image12.jpeg', 'ppt/media/image16.jpeg', 'ppt/media/image14.png'):
-        if n in names:
-            photos[n] = img_size(os.path.join(parts, n))
+    for n, d in ([cand[0], cand[len(cand) // 2], cand[-1]] if len(cand) >= 3 else cand):
+        photos[n] = d
     json.dump({'parts': names, 'photos': photos},
               open(os.path.join(OUT, 'manifest.json'), 'w'), ensure_ascii=False, indent=1)
     print('展開: %d パーツ' % len(names))
