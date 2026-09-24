@@ -203,7 +203,7 @@
 clasp push
 clasp deploy -i &lt;デプロイID&gt; -d &quot;更新&quot;
 </pre>
-<p><code>-i</code> を付けると既存のデプロイを上書きするので<strong>URLは変わりません</strong>。 付け忘れると別のURLが新しく作られてしまいます。 デプロイIDは <code>clasp deployments</code> で調べられるほか、 ウェブアプリURLの <code>/s/</code> と <code>/exec</code> の間の文字列がそのままIDです。</p>
+<p>（<code>appsscript.json</code> に <code>webapp</code> の宣言が必要です。無いとライブラリとして デプロイされ、URLで開けなくなります。詳しくはREADMEをご覧ください） <code>-i</code> を付けると既存のデプロイを上書きするので<strong>URLは変わりません</strong>。 付け忘れると別のURLが新しく作られてしまいます。 デプロイIDは <code>clasp deployments</code> で調べられるほか、 ウェブアプリURLの <code>/s/</code> と <code>/exec</code> の間の文字列がそのままIDです。</p>
 <hr>
 <h2 id="sec4">メニューの構成</h2>
 <p>メニューは、よく使うものほど手前に来るように整理しています。</p>
