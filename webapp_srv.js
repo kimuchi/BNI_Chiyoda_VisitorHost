@@ -96,6 +96,7 @@ function doGet(e) {
       // href="?p=..." のような相対リンクだとiframeのURLを基準にしてしまい、
       // まったく別の場所へ飛んで真っ白になる。必ず絶対URLを使う。
       t.appUrl = getWebAppUrl_();
+      t.version = (typeof SYSTEM_VERSION_ === 'string') ? SYSTEM_VERSION_ : '';
       return t.evaluate()
         .setTitle('Activeチャプター 名簿システム')
         .addMetaTag('viewport', 'width=device-width, initial-scale=1');
