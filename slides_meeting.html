@@ -14,12 +14,14 @@
  .mkrow .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
  .mkrow .dt{color:#999;font-size:11px;white-space:nowrap;}
  /* 下の button{} が color:#fff・font-weight:bold を効かせてしまい、
-    白地に白文字で読めなくなっていたので、ここで打ち消す */
- .mkbtn{border:1px solid #999;background:#fff;color:#333;font-weight:normal;
+    白地に白文字で読めなくなっていた。
+    button.mkbtn と書いて、確実に button{} より強くする。 */
+ button.mkbtn{border:1px solid #888;background:#fff;color:#222;font-weight:normal;
         border-radius:3px;font-size:11px;padding:3px 9px;cursor:pointer;white-space:nowrap;}
- .mkbtn:hover{background:#eef1f6;border-color:#555;}
- .mkbtn.on{background:#188038;color:#fff;border-color:#188038;}
- .mkbtn.off{background:#b0453a;color:#fff;border-color:#b0453a;}
+ button.mkbtn:hover{background:#eef1f6;border-color:#444;}
+ button.mkbtn.on{background:#188038;color:#fff;border-color:#188038;}
+ button.mkbtn.off{background:#b0453a;color:#fff;border-color:#b0453a;}
+ .mkrow .nm{color:#222;}
  .mkdone{color:#888;font-size:11px;line-height:1.8;}
  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:8px;}
  label{font-size:12px;color:#444;}
@@ -35,6 +37,7 @@
 </style></head>
 <body>
  <h3>定例会スライドの自動更新</h3>
+ <div style="float:right;font-size:11px;color:#aaa;" id="ver"></div>
  <div class="hint">
    開催日を選ぶと、<b>メンバー名簿の入会日・更新日・更新期限日から自動で算出</b>した内容が入ります。
    緑の「自動」が付いている項目は手入力不要です。内容を確認・修正してから生成してください。
@@ -185,6 +188,11 @@
      else show(L.message,false);
    }).withFailureHandler(fail).computeRenewalLists(d);
  }
+ // 反映されたかどうかを画面で確かめられるようにする
+ google.script.run.withSuccessHandler(function(v){
+   var e=document.getElementById('ver'); if(e && v) e.textContent='版 '+v;
+ }).getSystemVersion();
+
  function setBusy(b,t){ working=b; ['b1','b2'].forEach(function(i){var e=document.getElementById(i); if(e) e.disabled=b;}); if(t) show(t,null); }
  function show(t,ok){ var m=document.getElementById('msg'); m.innerText=t; m.style.color= ok===true?'green':(ok===false?'#d00':'#0055ff'); }
  function fail(e){ var d=(e&&e.message)?e.message:String(e);

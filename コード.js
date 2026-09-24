@@ -1,5 +1,11 @@
 // Copyright Mitsunori KIMURA
 
+// 反映されたか確かめるための版。変更したら日付を更新する。
+// clasp push / デプロイが効いているかは、これを画面で見れば分かる。
+var SYSTEM_VERSION_ = '2026-09-24';
+
+function getSystemVersion() { return SYSTEM_VERSION_; }
+
 function onOpen() {
   var ui = SpreadsheetApp.getUi();
   // ウェブアプリには「開いているスプレッドシート」が無いので、
@@ -134,13 +140,14 @@ function diagnoseDialogFiles() {
       lines.push('❌ ' + files[i] + ' … 読めません: ' + (e && e.message ? e.message : e));
     }
   }
-  var head;
+  var head = '今のコードの版: ' + SYSTEM_VERSION_ + '\n'
+           + '（clasp push やデプロイが効いていれば、ここが最新の日付になります）\n\n';
   if (ng) {
-    head = '❌ ' + ng + '件のHTMLに中身がありません。\n'
+    head += '❌ ' + ng + '件のHTMLに中身がありません。\n'
          + 'clasp push が正しく反映されていない可能性があります。\n'
          + 'もう一度 clasp push を実行してから、この確認をやり直してください。\n\n';
   } else {
-    head = '✅ サーバー側は正常です（全ファイルに中身があります）。\n\n'
+    head += '✅ サーバー側は正常です（全ファイルに中身があります）。\n\n'
          + 'それでもダイアログが真っ白なら、原因はブラウザ側です。\n'
          + 'ダイアログの中身は googleusercontent.com という別ドメインから\n'
          + '読み込まれるため、ブラウザが「第三者Cookie」を止めていると\n'
