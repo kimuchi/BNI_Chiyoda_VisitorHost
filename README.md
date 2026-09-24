@@ -49,6 +49,7 @@ BNI_Chiyoda_VisitorHost/
 │   └ member_presen.html
 ├── meeting_slides_srv.js     # 定例会スライドの自動更新
 │   └ slides_meeting.html
+├── routine_srv.js            # ルーティンチェックシートから、その日の決めごとを読む
 ├── memberbook_srv.js         # メンバーブック（配布PDFの登録）
 │   ├ memberbook.html
 │   ├ memberbook_editor.html  #   冊子の編集画面
@@ -87,6 +88,8 @@ BNI_Chiyoda_VisitorHost/
     ├── check_html.py         #   divの対応・スクリプトの構文
     ├── check_manual_links.py #   マニュアルの導線 ↔ 実際のメニュー
     ├── check_member_presen.py#   メンバープレゼン生成の通し検査
+    ├── check_meeting_slides.js  # 第○回・日付の書き換えとコアバリューのページ
+    ├── check_routine.js      #   ルーティンチェックシートの読み取り
     └── build_member_presen_template.py  # メンバープレゼンのテンプレートを作り直す
 ```
 

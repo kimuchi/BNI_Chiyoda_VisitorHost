@@ -126,7 +126,16 @@ function getMemberPresenContext() {
     var cycle = mpBlocks_(members);          // members[].blockKey がここで決まる
 
     var cands = getMeetingCandidates();
-    for (var c = 0; c < cands.length; c++) cands[c].start = mpStartFor_(cycle, cands[c].dateValue);
+    for (var c = 0; c < cands.length; c++) {
+      cands[c].start = mpStartFor_(cycle, cands[c].dateValue);
+      // 2分30秒プレゼンの方は、ルーティンチェックシートに書いてある
+      var ri = null;
+      try { ri = getRoutineInfo(cands[c].dateValue); } catch (e) {}
+      cands[c].longPresenter = (ri && ri.found) ? ri.longPresenter : '';
+      cands[c].longPresenterRaw = (ri && ri.found) ? ri.longPresenterRaw : '';
+      cands[c].longUnmatched = !!(ri && ri.longPresenterUnmatched);
+      cands[c].routineSheet = (ri && ri.found) ? ri.sheetName : '';
+    }
 
     var tpl = null, st = getBigTemplateStatus();
     for (var t = 0; t < st.templates.length; t++) if (st.templates[t].kind === MP_TEMPLATE_KIND_) tpl = st.templates[t];
