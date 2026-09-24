@@ -588,6 +588,12 @@ function loadSheetData(sheetName) {
 
 function createFinalSheet(meetingDateVal, meetingDisplay, finalRows, originalHeader) {
   var ss = getSS_(), dateObj = new Date(meetingDateVal), baseSheetName = Utilities.formatDate(dateObj, "Asia/Tokyo", "MMdd") + "参加者";
+  // シート名は MMdd しか持たないので、開催日を控えておく（年をまたぐと判別できないため）
+  try {
+    PropertiesService.getScriptProperties()
+      .setProperty('MEETING_DATE_' + Utilities.formatDate(dateObj, "Asia/Tokyo", "MMdd"),
+                   Utilities.formatDate(dateObj, "Asia/Tokyo", "yyyy/MM/dd"));
+  } catch (e) {}
   var dataSheetName = baseSheetName, dataSheet = ss.getSheetByName(dataSheetName);
   if (!dataSheet) dataSheet = ss.insertSheet(dataSheetName); else dataSheet.clear();
   var printSheetName = baseSheetName + "_印刷用", printSheet = ss.getSheetByName(printSheetName);
@@ -908,17 +914,73 @@ function saveTemplates(data) {
   return "テンプレートを保存しました。";
 }
 
-function generateEmailDrafts() {
-  var ss = getSS_(), sheet = ss.getActiveSheet(), data = sheet.getDataRange().getValues();
-  if (data.length < 2) throw new Error("データがありません。作成された「〇〇参加者」シートを開いた状態で実行してください。");
+// 「MMdd参加者」シートの MMdd から開催日を求める。
+// 作成時に控えた値があればそれを使い、無ければ今日から前後6か月の範囲で年を推定する。
+function meetingDateFromMmdd_(mmdd) {
+  var saved = PropertiesService.getScriptProperties().getProperty('MEETING_DATE_' + mmdd);
+  if (saved) { var sd = new Date(saved); if (!isNaN(sd.getTime())) return sd; }
+  var mm = parseInt(mmdd.substring(0, 2), 10), dd = parseInt(mmdd.substring(2, 4), 10);
+  if (!mm || !dd) return null;
+  var today = new Date(), y = today.getFullYear();
+  var best = null;
+  for (var k = -1; k <= 1; k++) {
+    var cand = new Date(y + k, mm - 1, dd);
+    if (!best || Math.abs(cand - today) < Math.abs(best - today)) best = cand;
+  }
+  return best;
+}
+
+// メール画面の初期表示。対象にできる「MMdd参加者」シートと、既定の開催日を返す。
+// 既定は「今日以降でいちばん近い開催日」。無ければ直近の過去。
+function getEmailContext() {
+  try {
+    var names = getExistingVisitorSheets();     // 新しい順（名前順）
+    var list = [];
+    for (var i = 0; i < names.length; i++) {
+      var mmdd = names[i].substring(0, 4), d = meetingDateFromMmdd_(mmdd);
+      list.push({ sheet: names[i], mmdd: mmdd,
+                  label: d ? (d.getFullYear() + '年' + (d.getMonth() + 1) + '月' + d.getDate() + '日')
+                           : (mmdd.slice(0, 2) + '/' + mmdd.slice(2)),
+                  time: d ? d.getTime() : 0 });
+    }
+    // 開催日の新しい順に並べる
+    list.sort(function (a, b) { return b.time - a.time; });
+
+    var today = new Date(); today.setHours(0, 0, 0, 0);
+    var future = list.filter(function (x) { return x.time >= today.getTime(); });
+    // 今日以降でいちばん近いもの。無ければ直近の過去。
+    var def = future.length ? future[future.length - 1] : (list.length ? list[0] : null);
+    return { ok: true, sheets: list, defaultSheet: def ? def.sheet : '' };
+  } catch (e) {
+    console.error('[MAIL] ' + (e && e.stack ? e.stack : e));
+    return { ok: false, message: '開催日の一覧を取得できませんでした: ' + (e && e.message ? e.message : e), sheets: [] };
+  }
+}
+
+// sheetName を省略した場合は、開いているシート（メニューから使う従来の動き）
+function generateEmailDrafts(sheetName) {
+  var ss = getSS_(), sheet;
+  if (sheetName) {
+    sheet = ss.getSheetByName(sheetName);
+    if (!sheet) throw new Error("シート「" + sheetName + "」が見つかりません。");
+  } else {
+    sheet = ss.getActiveSheet();
+  }
+  var data = sheet.getDataRange().getValues();
+  if (data.length < 2) throw new Error("「" + sheet.getName() + "」にデータがありません。開催日の選択をご確認ください。");
   var headers = data[0];
   var nameIdx = headers.indexOf("参加者氏名"), emailIdx = headers.indexOf("メール"), typeIdx = headers.indexOf("種別"), inviterIdx = headers.indexOf("招待者");
-  if (nameIdx === -1 || emailIdx === -1 || typeIdx === -1) throw new Error("現在のシートに必須列が見つかりません。");
-  
+  if (nameIdx === -1 || emailIdx === -1 || typeIdx === -1) throw new Error("「" + sheet.getName() + "」に必須列（参加者氏名・メール・種別）が見つかりません。");
+
   var tpls = getTemplates(), props = PropertiesService.getScriptProperties();
   var visitorListUrl = props.getProperty('LATEST_VISITOR_LIST_URL') || "【未生成】", memberBookUrl = props.getProperty('MEMBER_BOOK_URL') || "【未生成】";
-  var rawDate = props.getProperty('LATEST_MEETING_DATE') || "", dateFormatted = "";
-  if(rawDate) { var d = new Date(rawDate); dateFormatted = d.getFullYear() + "年" + (d.getMonth() + 1) + "月" + d.getDate() + "日"; }
+  // 日付は選ばれたシートから求める（以前は最後に作った開催日を使っていたため、
+  // 過去の回を選んでも最新の日付が入ってしまっていた）
+  var dateFormatted = "";
+  var m = sheet.getName().match(/^(\d{4})参加者$/);
+  var d = m ? meetingDateFromMmdd_(m[1]) : null;
+  if (!d) { var raw = props.getProperty('LATEST_MEETING_DATE') || ""; if (raw) d = new Date(raw); }
+  if (d && !isNaN(d.getTime())) dateFormatted = d.getFullYear() + "年" + (d.getMonth() + 1) + "月" + d.getDate() + "日";
   
   var drafts = [];
   for (var i = 1; i < data.length; i++) {
@@ -937,7 +999,7 @@ function generateEmailDrafts() {
     var body = tplBody.replace(/{{name}}/g, name).replace(/{{inviter}}/g, inviter).replace(/{{invitee}}/g, inviter).replace(/{{date}}/g, dateFormatted).replace(/{{visitorlist}}/g, visitorListUrl).replace(/{{memberbook}}/g, memberBookUrl);
     drafts.push({ name: name, email: email, type: type, subject: subject, body: body, send: true });
   }
-  return { drafts: drafts, cc: tpls.cc, bcc: tpls.bcc };
+  return { drafts: drafts, cc: tpls.cc, bcc: tpls.bcc, sheet: sheet.getName(), date: dateFormatted };
 }
 
 function sendSingleEmail(e, cc, bcc) {

@@ -11,6 +11,10 @@
     .checkbox-lbl { font-weight: bold; color: #d35400; cursor: pointer;}
     .btn-send { background: #e74c3c; color: white; padding: 15px; border: none; width: 100%; font-size: 16px; font-weight: bold; border-radius: 4px; cursor: pointer;}
     .cc-container { background: #eaf2ff; padding: 15px; border-radius: 6px; margin-bottom: 20px; border: 1px solid #cce0ff;}
+    .meet-container { background: #fff8e6; padding: 13px 15px; border-radius: 6px; margin-bottom: 15px; border: 1px solid #f0dca8;}
+    .meet-container label { font-size: 13px; font-weight: bold; color: #7a5c00;}
+    .meet-container select { font-size: 14px; padding: 5px 8px; margin-left: 6px; border: 1px solid #ccc; border-radius: 4px;}
+    .meet-container span { display: block; font-size: 12px; color: #8a7433; margin-top: 6px;}
     .cc-container label { display: block; margin-bottom: 8px; font-size: 13px; font-weight: bold; color: #0044cc;}
     .progress-wrap { width: 100%; background: #ddd; height: 25px; margin: 20px 0; border-radius: 12px; overflow: hidden; display: none;}
     .progress-bar { width: 0%; background: #4caf50; height: 100%; transition: width 0.3s ease; }
@@ -21,6 +25,13 @@
   <div id="setupArea">
     <h3>送信前プレビューと設定</h3>
     <p style="font-size:13px; color:#555;">個別に内容を編集するか、チェックを外して送信対象から除外できます。</p>
+
+    <div class="meet-container">
+      <label>対象の開催日：
+        <select id="meetSel" onchange="loadDrafts()"><option value="">読み込み中...</option></select>
+      </label>
+      <span id="meetNote"></span>
+    </div>
     
     <div class="cc-container">
       <label>共通 Cc: <input type="text" id="commonCc" value="" placeholder="例: info@example.com"></label>
@@ -29,7 +40,7 @@
 
     <div id="emailContainer">読み込み中...</div>
     
-    <button class="btn-send hidden" id="sendBtn" onclick="startSending()">上記の内容で順番に送信する</button>
+    <button class="btn-send" id="sendBtn" style="display:none;" onclick="startSending()">上記の内容で順番に送信する</button>
   </div>
 
   <div id="progressArea" style="display:none; text-align:center; padding-top:40px;">
@@ -49,20 +60,49 @@
     var commonCc = "";
     var commonBcc = "";
 
+    // 開いているシートに頼らず、開催日を選んで作る。
+    // （ウェブアプリには「開いているシート」が無いため）
     window.onload = function() {
-      google.script.run.withSuccessHandler(render).withFailureHandler(function(err){
-        document.getElementById('emailContainer').innerHTML = "<p style='color:red; font-weight:bold;'>" + err.message + "</p>";
-      }).generateEmailDrafts();
+      google.script.run.withSuccessHandler(function(c){
+        var sel = document.getElementById('meetSel');
+        if (!c || !c.ok || !c.sheets.length) {
+          sel.innerHTML = '<option value="">参加者シートがありません</option>';
+          document.getElementById('emailContainer').innerHTML =
+            "<p style='color:red;font-weight:bold;'>「〇〇参加者」シートが見つかりません。先に「1. CSVから名簿・PDF作成」で作成してください。</p>";
+          return;
+        }
+        sel.innerHTML = c.sheets.map(function(x){
+          return '<option value="' + x.sheet + '"' + (x.sheet === c.defaultSheet ? ' selected' : '') + '>'
+               + x.label + '（' + x.sheet + '）</option>';
+        }).join('');
+        loadDrafts();
+      }).withFailureHandler(function(err){
+        document.getElementById('emailContainer').innerHTML =
+          "<p style='color:red;font-weight:bold;'>" + ((err && err.message) ? err.message : err) + "</p>";
+      }).getEmailContext();
     };
+
+    function loadDrafts() {
+      var sheet = document.getElementById('meetSel').value;
+      if (!sheet) return;
+      document.getElementById('emailContainer').innerHTML = '読み込み中...';
+      document.getElementById('sendBtn').style.display = 'none';
+      google.script.run.withSuccessHandler(render).withFailureHandler(function(err){
+        document.getElementById('emailContainer').innerHTML = "<p style='color:red; font-weight:bold;'>" + ((err && err.message) ? err.message : err) + "</p>";
+      }).generateEmailDrafts(sheet);
+    }
 
     function render(data) {
       drafts = data.drafts;
       document.getElementById('commonCc').value = data.cc || "";
       document.getElementById('commonBcc').value = data.bcc || "";
+      document.getElementById('meetNote').innerText =
+        '「' + data.sheet + '」を読み込みました。'
+        + (data.date ? '本文の{{date}}には「' + data.date + '」が入ります。' : '');
 
       var container = document.getElementById('emailContainer');
       container.innerHTML = '';
-      
+
       if(drafts.length === 0) {
         container.innerHTML = "<b>送信対象のメールアドレスが見つかりませんでした。</b>";
         return;
@@ -85,7 +125,7 @@
         `;
         container.appendChild(div);
       }
-      document.getElementById('sendBtn').classList.remove('hidden');
+      document.getElementById('sendBtn').style.display = '';
     }
 
     function startSending() {
