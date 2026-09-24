@@ -85,24 +85,30 @@ clasp push
 
 ### 1. デプロイIDを調べる
 
-```bash
-clasp deployments
-```
+**いちばん確実なのは、実際に使っているウェブアプリURLから読み取る方法です。**
+デプロイIDは、URLの `/s/` と `/exec` の間の文字列そのものです。
 
 ```
-2 Deployments.
-- AKfycbwAAA...  @HEAD
-- AKfycbxeZur-sqvWW_vr3i1A2VPJ8Bd4...  @5 - ウェブアプリ
+https://script.google.com/macros/s/AKfycbxeZur-sqvWW_vr3i1A2VPJ8Bd4.../exec
+                                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ これがデプロイID
 ```
 
-`@HEAD` の行は**テスト用**なので使いません。`@数字` が付いている方が公開中のデプロイです。
+Apps Scriptの `デプロイ` ＞ `デプロイを管理` にも「デプロイ ID」として表示されています。
 
-> **URLから読み取ることもできます。**
-> デプロイIDは、ウェブアプリURLの `/s/` と `/exec` の間の文字列そのものです。
+> **⚠ `clasp deployments` の一覧から選ぶときは要注意**
+>
 > ```
-> https://script.google.com/macros/s/AKfycbxeZur-.../exec
->                                    ~~~~~~~~~~~~~~~ これがデプロイID
+> 3 Deployments.
+> - AKfycbwWgjw...  @HEAD
+> - AKfycbxeZur...  @5 - ウェブアプリ
+> - AKfycbzQQQQ...  @2 - 古いもの
 > ```
+>
+> - **`@HEAD` の行は使えません。**テスト用で、バージョンを割り当てられません。
+> - 過去のデプロイも並ぶので、**別の行を選ぶと**
+>   `Requested entity was not found.` になります。
+> - デプロイIDはどれも `AKfycb` で始まるため、**先頭数文字だけ見ると見分けがつきません。**
+>   必ず全体を見比べてください。
 
 ### 前提：appsscript.json にウェブアプリの宣言が要る
 
@@ -160,6 +166,14 @@ clasp deploy -i <デプロイID> -d "更新内容のメモ"
 clasp push
 clasp deploy -i AKfycbxeZur-sqvWW_vr3i1A2VPJ8Bd4iJ9QQ_UOlQSrmIa4LSdDsNDogomVsMhxkNQ-TEzXqA -d "更新"
 ```
+
+### `Requested entity was not found.` と出るとき
+
+**デプロイIDが違います。**指定したIDのデプロイが存在しません。
+
+実際に使っているウェブアプリURLの `/s/` と `/exec` の間をコピーし直してください。
+`clasp deployments` の一覧から選んだ場合、`@HEAD` の行や古いデプロイの行を
+拾ってしまっていることがよくあります。
 
 ### `clasp deploy -i` で更新されないとき
 
