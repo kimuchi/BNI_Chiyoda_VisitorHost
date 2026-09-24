@@ -244,8 +244,8 @@ function fitTextAndPush_(xml, shapeId, belowId, text, minPt) {
 function replaceFirstT_(runXml, text) {
   var esc = escapeXml_(text);
   // <a:t>…</a:t> / <a:t/>
-  if (/<a:t[^>]*\/>/.test(runXml)) return runXml.replace(/<a:t[^>]*\/>/, '<a:t>' + esc + '</a:t>');
-  return runXml.replace(/(<a:t[^>]*>)[\s\S]*?(<\/a:t>)/, '$1' + esc + '$2');
+  if (/<a:t(?=[\s/])[^>]*\/>/.test(runXml)) return runXml.replace(/<a:t(?=[\s/])[^>]*\/>/, '<a:t>' + esc + '</a:t>');
+  return runXml.replace(/(<a:t(?=[\s>])[^>]*>)[\s\S]*?(<\/a:t>)/, '$1' + esc + '$2');
 }
 
 function escapeXml_(s) {
@@ -374,7 +374,7 @@ function replaceInParagraph_(seg, findHits) {
   var texts = [], spans = [], joined = '';
   for (var i = 0; i < ts.length; i++) {
     var inner = seg.substring(ts[i].start, ts[i].end);
-    var m = inner.match(/<a:t[^>]*>([\s\S]*?)<\/a:t>/);
+    var m = inner.match(/<a:t(?=[\s>])[^>]*>([\s\S]*?)<\/a:t>/);
     var t = m ? unescapeXml_(m[1]) : '';
     texts.push(t);
     spans.push({ from: joined.length, to: joined.length + t.length });
@@ -398,8 +398,8 @@ function replaceInParagraph_(seg, findHits) {
   var out = seg;
   for (var j = ts.length - 1; j >= 0; j--) {
     var innerOld = seg.substring(ts[j].start, ts[j].end);
-    var innerNew = innerOld.replace(/(<a:t[^>]*>)[\s\S]*?(<\/a:t>)/, '$1' + escapeXml_(texts[j]) + '$2');
-    if (/<a:t[^>]*\/>/.test(innerOld)) innerNew = innerOld.replace(/<a:t[^>]*\/>/, '<a:t>' + escapeXml_(texts[j]) + '</a:t>');
+    var innerNew = innerOld.replace(/(<a:t(?=[\s>])[^>]*>)[\s\S]*?(<\/a:t>)/, '$1' + escapeXml_(texts[j]) + '$2');
+    if (/<a:t(?=[\s/])[^>]*\/>/.test(innerOld)) innerNew = innerOld.replace(/<a:t(?=[\s/])[^>]*\/>/, '<a:t>' + escapeXml_(texts[j]) + '</a:t>');
     out = out.substring(0, ts[j].start) + innerNew + out.substring(ts[j].end);
   }
   return out;
@@ -456,7 +456,7 @@ function listTokensInXml_(xml) {
     var seg = xml.substring(paras[p].start, paras[p].end);
     var ts = findTagRanges_(seg, 'a:t'), joined = '';
     for (var i = 0; i < ts.length; i++) {
-      var m = seg.substring(ts[i].start, ts[i].end).match(/<a:t[^>]*>([\s\S]*?)<\/a:t>/);
+      var m = seg.substring(ts[i].start, ts[i].end).match(/<a:t(?=[\s>])[^>]*>([\s\S]*?)<\/a:t>/);
       joined += m ? unescapeXml_(m[1]) : '';
     }
     var re = /\{\{([^{}]{1,60})\}\}/g, mm;

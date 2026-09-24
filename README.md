@@ -90,7 +90,9 @@ BNI_Chiyoda_VisitorHost/
     ├── check_member_presen.py#   メンバープレゼン生成の通し検査
     ├── check_meeting_slides.js  # 第○回・日付の書き換えとコアバリューのページ
     ├── check_routine.js      #   ルーティンチェックシートの読み取り
-    └── build_member_presen_template.py  # メンバープレゼンのテンプレートを作り直す
+    ├── check_meeting_output.js  # 前半スライドを実際に生成してみる
+    ├── build_member_presen_template.py  # メンバープレゼンのテンプレートを作り直す
+    └── build_meeting_first_template.py  # 前半スライドの出力に差し込み口を入れる
 ```
 
 ## セットアップ

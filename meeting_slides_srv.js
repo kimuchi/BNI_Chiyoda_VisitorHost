@@ -149,7 +149,10 @@ function getMeetingSlideContext() {
              routine: routine,
              coreValues: CORE_VALUES_.map(function (c) { return c.label; }),
              memberCount: members.length,
-             memberNames: members.map(function (m) { return m.name; }) };
+             memberNames: members.map(function (m) { return m.name; }),
+             members: members.map(function (m) {
+               return { name: m.name, company: m.company, title: m.title };
+             }) };
   } catch (e) {
     console.error('[MEETING] ' + (e && e.stack ? e.stack : e));
     return { ok: false, message: '初期表示の取得に失敗しました: ' + (e && e.message ? e.message : e) };
@@ -202,7 +205,7 @@ function meetingPatternRules_(no, d) {
 // ただし「責任」「伝統」のような語はふつうの文にも出るため、
 // 「1つだけ当てはまるページ」が3種類以上そろったときにだけ、まとめて切り替える。
 function coreValuesInSlide_(xml, useJa) {
-  var t = '', m, re = /<a:t[^>]*>([\s\S]*?)<\/a:t>/g;
+  var t = '', m, re = /<a:t(?=[\s>])[^>]*>([\s\S]*?)<\/a:t>/g;
   while ((m = re.exec(xml)) !== null) t += unescapeXml_(m[1]) + ' ';
   var en = t.toLowerCase().replace(/[^a-z]/g, ''), ja = t.replace(/[\s　]/g, ''), found = [];
   for (var i = 0; i < CORE_VALUES_.length; i++) {
@@ -257,6 +260,128 @@ function applyCoreValue_(parts, wanted) {
                     + hidden.length + '枚を非表示にしました。' };
 }
 
+// --- 一般規定のページ ---
+// 12枚あるうちの1枚だけを表示にする。何番かはルーティンチェックシートに書いてある。
+// ページの見分けには、BNI公式スライドがノートに持っている通し番号（J-04164 …）を使う。
+// スライドの位置や文言が変わっても、この番号は付いて回る。
+var GENERAL_POLICY_NOTE_BASE_ = 4163;    // J-04164 が「一般規定1番」
+var GENERAL_POLICY_MAX_ = 12;
+
+function slideNoteText_(parts, slidePath) {
+  var m = slidePath.match(/^ppt\/slides\/slide(\d+)\.xml$/);
+  if (!m) return '';
+  var rels = xmlOf_(parts, 'ppt/slides/_rels/slide' + m[1] + '.xml.rels');
+  if (!rels) return '';
+  var nm = rels.match(/Target="\.\.\/notesSlides\/(notesSlide\d+\.xml)"/);
+  if (!nm) return '';
+  var note = xmlOf_(parts, 'ppt/notesSlides/' + nm[1]);
+  if (!note) return '';
+  var t = '', mm, re = /<a:t(?=[\s>])[^>]*>([\s\S]*?)<\/a:t>/g;
+  while ((mm = re.exec(note)) !== null) t += unescapeXml_(mm[1]);
+  return t;
+}
+
+function applyGeneralPolicy_(parts, no) {
+  if (!no) return null;
+  var byNo = {}, path, found = 0;
+  for (path in parts) {
+    if (!/^ppt\/slides\/slide\d+\.xml$/.test(path)) continue;
+    var id = slideNoteText_(parts, path).match(/J-0(\d{4})/);
+    if (!id) continue;
+    var n = parseInt(id[1], 10) - GENERAL_POLICY_NOTE_BASE_;
+    if (n >= 1 && n <= GENERAL_POLICY_MAX_ && !byNo[n]) { byNo[n] = path; found++; }
+  }
+  if (found < 6) {
+    return { no: no, found: found,
+             message: '一般規定のページを見分けられませんでした（' + found + '枚）。表示の切り替えは行っていません。' };
+  }
+  var shown = 0, hidden = 0;
+  for (var k in byNo) {
+    var on = (parseInt(k, 10) === no);
+    var xml = xmlOf_(parts, byNo[k]), out = setSlideShow_(xml, on);
+    if (out !== xml) putXml_(parts, byNo[k], out);
+    if (on) shown++; else hidden++;
+  }
+  return { no: no, found: found, shown: shown, hidden: hidden,
+           message: shown ? ('一般規定' + no + '番のページを表示、他' + hidden + '枚を非表示にしました。')
+                          : ('一般規定' + no + '番のページが見つかりませんでした（' + found + '枚中）。') };
+}
+
+// --- メインプレゼンのお2人の写真 ---
+// {{メインプレゼン1氏名}} が載っているページを探し、大きな写真2枚を左右で割り当てる。
+// 背景いっぱいの画像や小さな飾りを拾わないよう、大きさで絞る。
+function applyMainPresenterPhotos_(parts, names) {
+  if (!names || !names.length) return null;
+  var path = null, xml = null, p;
+  for (p in parts) {
+    if (!/^ppt\/slides\/slide\d+\.xml$/.test(p)) continue;
+    var x = xmlOf_(parts, p);
+    if (x && x.indexOf('メインプレゼン1氏名') >= 0) { path = p; xml = x; break; }
+  }
+  if (!path) return { message: '' };
+
+  var prs = xmlOf_(parts, 'ppt/presentation.xml') || '';
+  var sz = prs.match(/<p:sldSz\s+cx="(\d+)"/);
+  var slideW = sz ? parseInt(sz[1], 10) : 12192000;
+
+  var pics = [], ranges = findTagRanges_(xml, 'p:pic');
+  for (var i = 0; i < ranges.length; i++) {
+    var seg = xml.substring(ranges[i].start, ranges[i].end);
+    var id = (seg.match(/<p:cNvPr[^>]*\sid="(\d+)"/) || [])[1];
+    var off = seg.match(/<a:off\s+x="(-?\d+)"\s+y="(-?\d+)"\s*\/>/);
+    var ext = seg.match(/<a:ext\s+cx="(\d+)"\s+cy="(\d+)"\s*\/>/);
+    var rid = (seg.match(/<a:blip[^>]*r:embed="([^"]+)"/) || [])[1];
+    if (!id || !off || !ext || !rid) continue;
+    var cx = parseInt(ext[1], 10), cy = parseInt(ext[2], 10);
+    if (cy < 1500000) continue;                       // 小さな飾りは対象外
+    if (cx > slideW * 0.4) continue;                  // 背景いっぱいの画像は対象外
+    pics.push({ id: id, rid: rid, cx: cx, cy: cy, center: parseInt(off[1], 10) + cx / 2 });
+  }
+  pics.sort(function (a, b) { return a.center - b.center; });
+  if (pics.length < 1) return { message: 'メインプレゼンのページで写真の枠が見つかりませんでした。' };
+
+  var rp = 'ppt/slides/_rels/' + path.replace(/^.*\//, '') + '.rels';
+  var rels = xmlOf_(parts, rp), cache = { by: {}, seq: 0 }, done = [], miss = [];
+  for (var k = 0; k < pics.length && k < names.length; k++) {
+    if (!names[k]) continue;
+    var photo = mpAddPhoto_(parts, cache, names[k]);
+    if (!photo) { miss.push(names[k]); continue; }
+    var box = readShapeGeomEmu_(xml, pics[k].id);
+    if (box && photo.width && photo.height) {
+      xml = setSrcRectInPic_(xml, pics[k].id, coverCrop_(photo.width, photo.height, box.cx, box.cy));
+    }
+    rels = retargetRel_(rels, pics[k].rid, '../media/' + photo.path.replace('ppt/media/', ''));
+    done.push(names[k]);
+  }
+  putXml_(parts, path, xml);
+  if (rels) putXml_(parts, rp, rels);
+  var msg = done.length ? ('メインプレゼンの写真を差し替えました: ' + done.join('、')) : '';
+  if (miss.length) msg += (msg ? '／' : '') + '写真が見つからない方: ' + miss.join('、');
+  return { message: msg, replaced: done.length };
+}
+
+// pptxの中身を書き換える本体。Driveの読み書きから切り離してあるので、
+// 手元で同じ処理を走らせて確かめられる（tools/check_meeting_output.js）。
+function editMeetingSlides_(parts, map, rules, o) {
+  var touched = 0, byPattern = 0, path;
+  // 写真の差し替えは {{ }} を消す前に行う（差し込み口の名前でページを探すため）
+  var photos = applyMainPresenterPhotos_(parts, o.mainPresenters || []);
+  for (path in parts) {
+    if (!/^ppt\/(slides|notesSlides)\/[^\/]+\.xml$/.test(path)) continue;   // 本文だけ
+    var xml = xmlOf_(parts, path), before = xml;
+    if (!xml) continue;
+    if (xml.indexOf('{{') !== -1) xml = replaceTokensInXml_(xml, map);
+    if (rules && rules.length) {
+      var pr = replacePatternsInXml_(xml, rules);
+      if (pr.changed) { xml = pr.xml; byPattern += pr.changed; }
+    }
+    if (xml !== before) { putXml_(parts, path, xml); touched++; }
+  }
+  var core = o.coreValue ? applyCoreValue_(parts, o.coreValue) : null;
+  var policy = o.generalPolicy ? applyGeneralPolicy_(parts, o.generalPolicy) : null;
+  return { touched: touched, byPattern: byPattern, core: core, policy: policy, photos: photos };
+}
+
 // 定例会スライドを生成する。テンプレート内の {{キー}} を置換する方式。
 // pptxのままサーバー側で加工し、Driveへ保存してURLを返す。
 // opts: { patterns: true/false（差し込み口が無いページの第○回・日付も直す）,
@@ -275,20 +400,7 @@ function generateMeetingSlides(kind, values, meetingDateVal, opts) {
               : meetingPatternRules_(String(map['開催回'] || '').replace(/[^\d]/g, ''), d);
 
     var r = editPptxOnServer_(kind, outName, function (parts) {
-      var touched = 0, byPattern = 0, path;
-      for (path in parts) {
-        if (!/^ppt\/(slides|notesSlides)\/[^\/]+\.xml$/.test(path)) continue;   // 本文だけ
-        var xml = xmlOf_(parts, path), before = xml;
-        if (!xml) continue;
-        if (xml.indexOf('{{') !== -1) xml = replaceTokensInXml_(xml, map);
-        if (rules.length) {
-          var pr = replacePatternsInXml_(xml, rules);
-          if (pr.changed) { xml = pr.xml; byPattern += pr.changed; }
-        }
-        if (xml !== before) { putXml_(parts, path, xml); touched++; }
-      }
-      var core = o.coreValue ? applyCoreValue_(parts, o.coreValue) : null;
-      return { touched: touched, byPattern: byPattern, core: core };
+      return editMeetingSlides_(parts, map, rules, o);
     });
 
     var info = r.info || {};
@@ -301,8 +413,11 @@ function generateMeetingSlides(kind, values, meetingDateVal, opts) {
       msg += info.byPattern ? '（うち「第○回・日付」を直した段落 ' + info.byPattern + 'か所）。' : '。';
     }
     if (info.core) msg += '\n' + info.core.message;
+    if (info.policy) msg += '\n' + info.policy.message;
+    if (info.photos && info.photos.message) msg += '\n' + info.photos.message;
     return { ok: true, message: msg, url: r.saved.url, downloadUrl: r.saved.downloadUrl,
-             fileName: outName, touched: info.touched, core: info.core, timing: r.timing };
+             fileName: outName, touched: info.touched, core: info.core, policy: info.policy,
+             timing: r.timing };
   } catch (e) {
     console.error('[MEETING] ' + (e && e.stack ? e.stack : e));
     return { ok: false, message: 'スライドの作成に失敗しました: ' + (e && e.message ? e.message : e) };
