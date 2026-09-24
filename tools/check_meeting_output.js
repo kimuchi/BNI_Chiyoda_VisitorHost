@@ -79,10 +79,33 @@ const sandbox = {
 sandbox.global = sandbox;
 vm.createContext(sandbox);
 // member_presen_srv.js は写真の取り込み（mpAddPhoto_）を使うため読み込む
-for (const f of ['ooxml.js', 'routine_srv.js', 'member_presen_srv.js', 'meeting_slides_srv.js']) {
+for (const f of ['ooxml.js', 'routine_srv.js', 'member_presen_srv.js', 'referral_srv.js', 'meeting_slides_srv.js']) {
   vm.runInContext(fs.readFileSync(path.join(__dirname, '..', f), 'utf8'), sandbox, { filename: f });
 }
 const F = sandbox;
+
+// 画面側の組版（slides_layout.html）も読み込む。canvasはNodeに無いので、
+// 全角1文字ぶん・半角0.5文字ぶんで測る簡易版に差し替える。
+function fakeCtx() {
+  let size = 44, bold = false;
+  return {
+    set font(v) { const m = /(\d+(?:\.\d+)?)px/.exec(v); size = m ? parseFloat(m[1]) : 44; bold = /bold/.test(v); },
+    get font() { return `${bold ? 'bold ' : ''}${size}px`; },
+    measureText(t) {
+      let w = 0;
+      for (const ch of String(t)) w += ch.charCodeAt(0) < 128 ? 0.5 : 1.0;
+      return { width: w * size };
+    },
+  };
+}
+const layoutBox = { console, document: { createElement: () => ({ getContext: () => fakeCtx() }) } };
+layoutBox.global = layoutBox;
+vm.createContext(layoutBox);
+{
+  const html = fs.readFileSync(path.join(__dirname, '..', 'slides_layout.html'), 'utf8');
+  const js = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]).join('\n');
+  vm.runInContext(js, layoutBox, { filename: 'slides_layout.html' });
+}
 
 // --- ルーティンチェックシートから、その日の決めごとを読む ---
 const R = F.getRoutineInfo(DATE);
@@ -137,7 +160,26 @@ if (audioList.length) {
     + `${a.video ? '[動画]' : '[音声]'} ${a.name || a.file}  いまの音量=${a.volume}%`));
 }
 
+// --- リファーラル発表（名簿のNo.順・全員ぶん）---
+let referral = [];
+const rfBoxes = F.rfLayoutBoxes_(parts);
+if (rfBoxes && process.env.MTG_REFERRAL !== '0') {
+  layoutBox.setLayoutBoxes(rfBoxes);
+  const list = MEMBERS.slice().sort((a, b) => (parseFloat(a.no) || 9999) - (parseFloat(b.no) || 9999));
+  referral = list.map((m, i) => {
+    const co = layoutBox.layoutCompany(m.company || '');
+    const ca = layoutBox.layoutCategory(m.title || '');
+    return { name: m.name, photoName: m.name, seconds: 7,
+             companyLines: co.lines, companyPt: co.fontPt, companyGeom: co.geom, categoryTop: co.categoryTop,
+             categoryLines: ca.lines, categoryPt: ca.fontPt, categoryTight: ca.tight,
+             nextName: (list[i + 1] ? list[i + 1].name : '') };
+  });
+  console.log(`\nリファーラル発表: ${referral.length}名ぶん（${referral[0].name} → … → ${referral[referral.length - 1].name}）`);
+  console.log(`  ひな形の枠: 会社名 ${JSON.stringify(rfBoxes.companyTall)} カテゴリー上端=${rfBoxes.categoryLow}`);
+}
+
 const info = F.editMeetingSlides_(parts, map, rules, {
+  referral: referral,
   coreValue: R.coreValue,
   generalPolicy: R.generalPolicy,
   mainPresenters: mainNames.filter((x) => x),
@@ -152,6 +194,7 @@ if (info.core) console.log('  ' + info.core.message);
 if (info.policy) console.log('  ' + info.policy.message);
 if (info.photos && info.photos.message) console.log('  ' + info.photos.message.split('\n').join('\n  '));
 if (info.audio && info.audio.message) console.log('  ' + info.audio.message);
+if (info.referral && info.referral.message) console.log('  ' + info.referral.message.split('\n').join('\n  '));
 
 // --- 書き出し ---
 const OUT = process.env.MTG_OUT || path.join(DIR, '..', 'out');
@@ -174,5 +217,6 @@ fs.writeFileSync(path.join(OUT, 'plan.json'), JSON.stringify({ plan, map, info: 
   core: info.core, policy: info.policy,
   photos: info.photos ? info.photos.message : '',
   audio: info.audio ? info.audio.message : '', audioList: audioList,
+  referral: info.referral || null, referralPlan: referral,
 } }, null, 1));
 console.log(`\n書き出し: ${Object.keys(plan).length} パーツ → ${OUT}`);

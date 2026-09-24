@@ -48,7 +48,7 @@ var MP_BASE_BLOCK_ = 'プロモーション';
 
 function openMemberPresenDialog() {
   SpreadsheetApp.getUi().showModalDialog(
-    HtmlService.createHtmlOutputFromFile('member_presen').setWidth(760).setHeight(700),
+    HtmlService.createTemplateFromFile('member_presen').evaluate().setWidth(760).setHeight(700),
     'メンバープレゼンスライドの作成');
 }
 
@@ -429,6 +429,17 @@ function mpSetCountdown_(xml, sec) {
   var fit = Math.floor(usable / mpTextEm_(labels[0]) * 0.95);
   if (fit < pt) pt = Math.max(fit, 24);
 
+  // 色は見本から拾う。すべて同じ色のテンプレート（リファーラル発表など）では
+  // その色をそのまま使い、30秒のように色分けされていれば残り10秒から赤にする。
+  var colors = {}, ci;
+  for (ci = 0; ci < boxes.length; ci++) {
+    var cm = boxes[ci].xml.match(/<a:srgbClr val="([0-9A-Fa-f]{6})"\/>/);
+    if (cm) colors[cm[1].toUpperCase()] = true;
+  }
+  var only = null, cn = 0;
+  for (var ck in colors) { only = ck; cn++; }
+  var COL_NEAR = (cn === 1) ? only : 'CF2030', COL_FAR = (cn === 1) ? only : '64666A';
+
   var maxId = 0, mm, reId = /<p:cNvPr[^>]*\sid="(\d+)"/g;
   while ((mm = reId.exec(xml)) !== null) maxId = Math.max(maxId, parseInt(mm[1], 10));
 
@@ -437,7 +448,7 @@ function mpSetCountdown_(xml, sec) {
   for (var d = 0; d < n; d++) {
     var id = ++maxId;
     ids[d] = id;
-    shapes += mpNumberBox_(base, id, labels[n - 1 - d], d <= 10 ? 'CF2030' : '64666A', pt);
+    shapes += mpNumberBox_(base, id, labels[n - 1 - d], d <= 10 ? COL_NEAR : COL_FAR, pt);
   }
   var spids = [];
   for (var r = sec; r >= 1; r--) spids.push(ids[r]);

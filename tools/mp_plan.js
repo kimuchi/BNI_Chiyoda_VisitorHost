@@ -9,7 +9,9 @@ const path = require('path');
 const vm = require('vm');
 
 const OUT = process.argv[2];
-const html = fs.readFileSync(path.join(__dirname, '..', 'member_presen.html'), 'utf8');
+// 組版は slides_layout.html に切り出してあるので、両方つなげて読み込む
+const html = ['slides_layout.html', 'member_presen.html']
+  .map((f) => fs.readFileSync(path.join(__dirname, '..', f), 'utf8')).join('\n');
 const js = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]).join('\n');
 
 function fakeCtx() {

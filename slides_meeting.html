@@ -111,8 +111,16 @@
    </table>
    <div id="rcNote" style="font-size:11px;color:#888;margin-top:6px;"></div>
    <div class="mk">
+     <h5>リファーラル発表（名簿のNo.順・全員ぶん）</h5>
+     <label><input type="checkbox" id="rfOn" onchange="renderReferral()">
+       リファーラル発表のページを<b>名簿のNo.順で全員ぶん</b>作る</label>
+     　<label>カウントダウン <input type="text" id="rfSec" size="2" value="7">秒</label>
+     <div id="rfNote" style="font-size:11px;color:#888;margin-top:4px;">
+       先に「後半テンプレートを読み込む」を押してください。</div>
+   </div>
+   <div class="mk">
      <h5>音楽の差し替え・音量</h5>
-     <button class="sub" onclick="loadAudio()">後半テンプレートの音楽を読み込む</button>
+     <button class="sub" onclick="loadTemplate()">後半テンプレートを読み込む</button>
      <span style="font-size:11px;color:#888;">（テンプレートを開くので少し時間がかかります）</span>
      <div id="audio" style="margin-top:8px;"></div>
      <div style="margin-top:8px;font-size:12px;">
@@ -329,15 +337,46 @@
    m['審査中カテゴリー']=get('t_審査中カテゴリー');
    return m;
  }
- // --- 音楽の差し替え・音量 ---
- var audioList=[], musicFiles=[];
- function loadAudio(){
-   setBusy(true,'後半テンプレートを開いて音楽を調べています。1分ほどかかります...');
+ // --- 後半テンプレートの読み込み（音楽の一覧とリファーラル発表のひな形）---
+ var audioList=[], musicFiles=[], rfBoxes=null;
+ function loadTemplate(){
+   setBusy(true,'後半テンプレートを開いて調べています。1分ほどかかります...');
    google.script.run.withSuccessHandler(function(r){
      setBusy(false);
      if(!r.ok){ show(r.message,false); return; }
-     audioList=r.list||[]; renderAudio(); show(r.message,true);
-   }).withFailureHandler(fail).getMeetingAudioList('meetingSecond');
+     audioList=r.list||[]; rfBoxes=r.referralBoxes||null;
+     if(rfBoxes) setLayoutBoxes(rfBoxes);
+     renderAudio(); renderReferral(); show(r.message,true);
+   }).withFailureHandler(fail).getMeetingTemplateInfo('meetingSecond');
+ }
+
+ // --- リファーラル発表 ---
+ // 発表の順番は名簿のNo.順（1番から）。会社名の収め方は slides_layout.html の処理を使う。
+ function referralMembers(){
+   return (ctx.members||[]).filter(function(m){ return m.name; })
+     .slice().sort(function(a,b){ return (parseFloat(a.no)||9999)-(parseFloat(b.no)||9999); });
+ }
+ function buildReferral(){
+   var on=document.getElementById('rfOn');
+   if(!on || !on.checked || !rfBoxes) return [];
+   var sec=parseInt(document.getElementById('rfSec').value,10)||7;
+   var list=referralMembers();
+   return list.map(function(m,i){
+     var co=layoutCompany(m.company||''), ca=layoutCategory(m.title||'');
+     return { name:m.name, photoName:m.name, seconds:sec,
+       companyLines:co.lines, companyPt:co.fontPt, companyGeom:co.geom, categoryTop:co.categoryTop,
+       categoryLines:ca.lines, categoryPt:ca.fontPt, categoryTight:ca.tight,
+       nextName:(list[i+1]?list[i+1].name:'') };
+   });
+ }
+ function renderReferral(){
+   var n=document.getElementById('rfNote'), on=document.getElementById('rfOn');
+   if(!rfBoxes){ n.innerHTML='先に「後半テンプレートを読み込む」を押してください。'; return; }
+   if(!on.checked){ n.innerHTML='チェックを入れると、テンプレートのひな形ページを人数ぶんに増やします。'; return; }
+   var list=referralMembers(), noPhoto=list.filter(function(m){ return !m.hasPhoto; });
+   n.innerHTML='<b>'+list.length+'名ぶん</b>作ります（'+esc(list[0]?list[0].name:'')+' → … → '
+     +esc(list[list.length-1]?list[list.length-1].name:'')+'）。'
+     +(noPhoto.length?'<br><span style="color:#c60;">写真が見つからない方 '+noPhoto.length+'名は写真なしになります。</span>':'');
  }
  function renderAudio(){
    var opt='<option value="">（そのまま）</option>'
@@ -406,7 +445,8 @@
      mainPresenters: [get('mp1'), get('mp2')],
      recommenders: [get('rc1'), get('rc2')],
      lottery: [get('lt1'), get('lt2')],
-     music: collectMusic()
+     music: collectMusic(),
+     referral: buildReferral()
    });
  }
 </script>
