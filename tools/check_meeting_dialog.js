@@ -133,7 +133,17 @@ const shown = (el) => !!el && el.style.display !== 'none' && el.style.display !=
 
 // ===================== 後半 =====================
 {
-  routine = Object.assign({}, routine, { recommendations: [] });
+  // 推薦のことば：定例会中2組・アフター1組（名簿に無い方が1人）・翌週以降1組
+  const N = (i) => MEMBERS[i].name;
+  const who = (i) => ({ raw: N(i).split(' ')[0] + 'さん', name: N(i), matched: true });
+  routine = Object.assign({}, routine, {
+    recommendationsRaw: '定例会中\n①A→B\n②C→D\nアフター\nE→大野さん\n翌週以降\nF→G',
+    recommendations: [
+      { giver: who(0), receiver: who(1), raw: 'A→B', when: 'during' },
+      { giver: who(2), receiver: who(3), raw: 'C→D', when: 'during' },
+      { giver: who(4), receiver: { raw: '大野さん', name: '', matched: false }, raw: 'E→大野さん', when: 'after' },
+      { giver: who(5), receiver: who(6), raw: 'F→G', when: 'later' },
+    ] });
   const page = loadPage('slides_meeting_second.html', { server: SERVER, fails });
   const { els, window, run, step } = page;
   page.flush();
@@ -163,6 +173,49 @@ const shown = (el) => !!el && el.style.display !== 'none' && el.style.display !=
      '音楽の指定: ' + JSON.stringify(o.music));
   ck(o.memberPresen === undefined && o.weeklyGuests === undefined, '後半なのにメンバーのページが渡っている');
   ck(lastCall()[1]['更新90'] === 'Aさん' && lastCall()[1]['新メンバー'] === undefined, '後半の差し込む値がおかしい');
+
+  // 推薦のことば：ルーティンチェックシートの組が、定例会中・アフターに分かれて入っている
+  const rows = (w) => (els[w === 'during' ? 'recoDuring' : 'recoAfter'].innerHTML.match(/id="rp_\w+_g_\d+"/g) || []).length;
+  ck(rows('during') === 2 && rows('after') === 1, '推薦のことばの組の数: 定例会中' + rows('during') + '・アフター' + rows('after'));
+  ck(els.rp_during_g_0.value === N(0) && els.rp_during_r_0.value === N(1) && els.rp_during_g_1.value === N(2)
+     && els.rp_during_r_1.value === N(3), '定例会中の組が入っていない');
+  ck(els.rp_after_g_0.value === N(4) && els.rp_after_r_0.value === '', 'アフターの組が入っていない');
+  ck(/名簿の氏名と一致しなかった方：大野さん/.test(els.rcNote.innerHTML), '名簿に無い方の案内が出ていない: ' + els.rcNote.innerHTML);
+  ck(/翌週以降の分（F→G）は入れていません/.test(els.rcNote.innerHTML), '翌週以降の分の案内が出ていない');
+  const pairsOf = (x) => (x.recommendPairs || []).map((q) => (q.after ? 'A:' : 'D:') + q.giver.name + '>' + q.receiver.name).join(',');
+  ck(pairsOf(o) === `D:${N(0)}>${N(1)},D:${N(2)}>${N(3)},A:${N(4)}>`, '渡した組: ' + pairsOf(o));
+  const p0 = (o.recommendPairs || [])[0] || {};
+  ck(p0.giver && p0.giver.company === MEMBERS[0].company && p0.giver.category === '【' + MEMBERS[0].title + '】',
+     '推薦する人の会社名・カテゴリーが渡っていない: ' + JSON.stringify(p0.giver));
+  ck(o.recommenders === undefined && lastCall()[1]['推薦のことば1氏名'] === undefined, '推薦のことばを1組だけの形でも渡している');
+
+  // 組を足す・外す（外しても、ほかの組の選んだ値は残る）
+  step('定例会中に組を足す', () => {
+    els.rp_during_g_0.value = N(7);                  // 画面で選び直した値は、足したあとも残る
+    run("addPair('during')");
+    els.rp_during_g_2.value = N(8); els.rp_during_r_2.value = N(9);
+    run("addPair('after')");                         // 2人とも空の組は渡さない
+    run('gen()');
+  });
+  ck(rows('during') === 3 && rows('after') === 2, '組を足したあとの数: 定例会中' + rows('during') + '・アフター' + rows('after'));
+  ck(pairsOf(lastOpts()) === `D:${N(7)}>${N(1)},D:${N(2)}>${N(3)},D:${N(8)}>${N(9)},A:${N(4)}>`,
+     '組を足したあとに渡した組: ' + pairsOf(lastOpts()));
+  step('定例会中の1組目を外す', () => { run("delPair('during',0)"); run('gen()'); });
+  ck(rows('during') === 2 && els.rp_during_g_0.value === N(2) && els.rp_during_g_1.value === N(8),
+     '外したあとの並び: ' + els.rp_during_g_0.value + ' / ' + els.rp_during_g_1.value);
+  ck(pairsOf(lastOpts()) === `D:${N(2)}>${N(3)},D:${N(8)}>${N(9)},A:${N(4)}>`, '外したあとに渡した組: ' + pairsOf(lastOpts()));
+  step('定例会中の組を全部外す', () => { run("delPair('during',0)"); run("delPair('during',0)"); run('gen()'); });
+  ck(rows('during') === 0 && /（なし）/.test(els.recoDuring.innerHTML), '定例会中の組が無いときの表示: ' + els.recoDuring.innerHTML);
+  ck(pairsOf(lastOpts()) === `A:${N(4)}>`, '定例会中なしで渡した組: ' + pairsOf(lastOpts()));
+
+  // 開催日を選び直すと、その日のルーティンチェックシートの組に入れ替わる（記載が無ければ空の1組）
+  routine = Object.assign({}, routine, { recommendations: [], recommendationsRaw: '' });
+  step('後半：開催日を選び直す', () => run('reload()'));
+  ck(rows('during') === 1 && rows('after') === 0 && els.rp_during_g_0.value === '',
+     '選び直したあとの組: 定例会中' + rows('during') + '・アフター' + rows('after'));
+  step('推薦のことばなしで作る', () => run('gen()'));
+  ck(Array.isArray(lastOpts().recommendPairs) && lastOpts().recommendPairs.length === 0,
+     '組が無いときに渡した値: ' + JSON.stringify(lastOpts().recommendPairs));
 }
 
 console.log(`画面の動作確認: 検査 ${checks} 件`);
@@ -171,4 +224,4 @@ if (fails.length) {
   fails.slice(0, 30).forEach((f) => console.log('   ' + f));
   process.exit(1);
 }
-console.log('OK: 前半（読み込み中・メンバーのページ・アンバサダー・ディレクター）／後半（読み込み中・リファーラル発表・音楽）');
+console.log('OK: 前半（読み込み中・メンバーのページ・アンバサダー・ディレクター）／後半（読み込み中・推薦のことば・リファーラル発表・音楽）');

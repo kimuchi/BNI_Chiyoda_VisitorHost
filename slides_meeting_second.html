@@ -45,13 +45,20 @@
 
  <div class="sec">
    <h4>3. 推薦のことば・抽選コーナー <span class="auto">ルーティンチェックシート</span></h4>
-   <table>
-     <tr><th>推薦のことば</th><td><select id="rc1"></select> →
-         <select id="rc2"></select></td></tr>
-     <tr><th>抽選コーナー</th><td><select id="lt1"></select>　<select id="lt2"></select>
-         <div style="font-size:11px;color:#888;">通常はメインプレゼンのお2人と同じです</div></td></tr>
-   </table>
-   <div id="rcNote" style="font-size:11px;color:#888;margin-top:6px;"></div>
+   <h5 style="margin:0 0 4px;font-size:12px;color:#555;">推薦のことば（定例会中）… 推薦のことばのページの場所に、組の数だけ並べます</h5>
+   <div id="recoDuring"></div>
+   <button class="mkbtn" onclick="addPair('during')">＋ 組を足す</button>
+   <div class="mk">
+     <h5>推薦のことば（アフター・定例会後）… 抽選コーナーのあとに並べます</h5>
+     <div id="recoAfter"></div>
+     <button class="mkbtn" onclick="addPair('after')">＋ 組を足す</button>
+   </div>
+   <div id="rcNote" style="font-size:11px;color:#888;margin-top:6px;line-height:1.7;"></div>
+   <div class="mk">
+     <h5>抽選コーナー</h5>
+     <select id="lt1"></select>　<select id="lt2"></select>
+     <div style="font-size:11px;color:#888;">通常はメインプレゼンのお2人と同じです</div>
+   </div>
  </div>
 
  <div class="sec">
@@ -94,7 +101,8 @@
    ctx=c;
    initMeetings(c);
    var mh=memberOptions();
-   ['rc1','rc2','lt1','lt2'].forEach(function(id){ document.getElementById(id).innerHTML=mh; });
+   ['lt1','lt2'].forEach(function(id){ document.getElementById(id).innerHTML=mh; });
+   renderPairs();
    applyRoutine(c.routine);
    applyLists(c.lists);
    if(!c.memberCount){
@@ -164,19 +172,24 @@
    }
    if(R.meetingNo) val('no', R.meetingNo);
    var mp=R.mainPresenters||[];
-   // 推薦のことば（推薦する人 → 推薦される人）と、抽選コーナー（通常はメインプレゼンと同じ）
-   var rc=(R.recommendations||[])[0]||null;
-   document.getElementById('rc1').value = (rc && rc.giver.name) || '';
-   document.getElementById('rc2').value = (rc && rc.receiver.name) || '';
+   // 推薦のことば（推薦する人 → 推薦される人）。定例会中とアフター・定例会後に分けて入れる
+   var rs=R.recommendations||[];
+   var pick=function(when){ return rs.filter(function(x){ return x.when===when; })
+     .map(function(x){ return { g:x.giver.name||'', r:x.receiver.name||'' }; }); };
+   pairs={ during:pick('during'), after:pick('after') };
+   if(!pairs.during.length) pairs.during.push({ g:'', r:'' });
+   renderPairs();
+   // 抽選コーナー（通常はメインプレゼンと同じ）
    document.getElementById('lt1').value = (mp[0] && mp[0].name) || '';
    document.getElementById('lt2').value = (mp[1] && mp[1].name) || '';
-   var rn=document.getElementById('rcNote'), more=(R.recommendations||[]).slice(1);
-   rn.innerHTML = rc
-     ? ('記載：'+esc(rc.raw)
-        + (more.length ? '<br><span style="color:#c60;">他に '
-            + esc(more.map(function(x){return x.raw;}).join('／'))
-            + ' の記載があります。スライドに載るのは1組だけなので、必要なら手で選び直してください。</span>' : ''))
-     : (R.recommendationsRaw ? '記載：'+esc(String(R.recommendationsRaw).replace(/\n/g,' ')) : '');
+   var notes=[];
+   if(R.recommendationsRaw) notes.push('記載：'+esc(String(R.recommendationsRaw).replace(/\n+/g,' ／ ')));
+   var un=[];
+   rs.forEach(function(x){ [x.giver,x.receiver].forEach(function(p){ if(p.raw && !p.name) un.push(p.raw); }); });
+   if(un.length) notes.push('<span style="color:#c60;">名簿の氏名と一致しなかった方：'+esc(un.join('、'))+'（手で選んでください）</span>');
+   var later=rs.filter(function(x){ return x.when==='later'; });
+   if(later.length) notes.push('<span style="color:#888;">翌週以降の分（'+esc(later.map(function(x){return x.raw;}).join('、'))+'）は入れていません。</span>');
+   document.getElementById('rcNote').innerHTML=notes.join('<br>');
    note.innerText=R.sheetName + ' から読み込みました'; note.style.color='#188038';
  }
  function reload(){
@@ -192,9 +205,53 @@
  function collect(){
    var m=baseValues();
    ['更新90','更新60','更新30','更新超過'].forEach(function(k){ m[k]=get('t_'+k); });
-   twoPersonValues(m,'推薦のことば','rc');
    twoPersonValues(m,'抽選','lt');
    return m;
+ }
+
+ // --- 推薦のことば（何組でも）---
+ // 組ごとにページを1枚作る。定例会中の組は推薦のことばのページの場所に、
+ // アフター・定例会後の組は抽選コーナーのあとに並ぶ。組が無ければそのページは非表示になる。
+ var pairs={ during:[{ g:'', r:'' }], after:[] };
+ function syncPairs(){
+   ['during','after'].forEach(function(w){
+     pairs[w].forEach(function(p,i){
+       var g=document.getElementById('rp_'+w+'_g_'+i), r=document.getElementById('rp_'+w+'_r_'+i);
+       if(g) p.g=g.value; if(r) p.r=r.value;
+     });
+   });
+ }
+ function renderPairs(){
+   var opts=memberOptions();
+   ['during','after'].forEach(function(w){
+     document.getElementById(w==='during'?'recoDuring':'recoAfter').innerHTML = pairs[w].length
+       ? pairs[w].map(function(p,i){
+           return '<div class="mkrow"><span style="width:16px;color:#888;">'+(i+1)+'</span>'
+             +'<select id="rp_'+w+'_g_'+i+'">'+opts+'</select> →'
+             +' <select id="rp_'+w+'_r_'+i+'">'+opts+'</select>'
+             +' <button class="mkbtn" onclick="delPair(\''+w+'\','+i+')">外す</button></div>';
+         }).join('')
+       : '<div style="font-size:11px;color:#888;padding:3px 0;">（なし）</div>';
+     pairs[w].forEach(function(p,i){ val('rp_'+w+'_g_'+i, p.g); val('rp_'+w+'_r_'+i, p.r); });
+   });
+ }
+ function addPair(w){ syncPairs(); pairs[w].push({ g:'', r:'' }); renderPairs(); }
+ function delPair(w,i){ syncPairs(); pairs[w].splice(i,1); renderPairs(); }
+ function personValue(name){
+   var who=memberOf(name);
+   return { name:name||'', company:who.company||'', category:who.title?('【'+who.title+'】'):'' };
+ }
+ // 作成に渡す組（2人とも空の組は入れない）
+ function collectPairs(){
+   syncPairs();
+   var out=[];
+   ['during','after'].forEach(function(w){
+     pairs[w].forEach(function(p){
+       if(!p.g && !p.r) return;
+       out.push({ giver:personValue(p.g), receiver:personValue(p.r), after:(w==='after') });
+     });
+   });
+   return out;
  }
 
  // --- リファーラル発表 ---
@@ -288,7 +345,7 @@
  function gen(){
    genSlides('meetingSecond', {
      patterns: document.getElementById('pat').checked,
-     recommenders: [get('rc1'), get('rc2')],
+     recommendPairs: collectPairs(),
      lottery: [get('lt1'), get('lt2')],
      music: collectMusic(),
      referral: buildReferral()
