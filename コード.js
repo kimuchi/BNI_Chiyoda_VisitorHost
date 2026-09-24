@@ -32,8 +32,7 @@ function onOpen() {
       .addItem('シートにボタンを置く', 'setupRouletteButton'))
     .addSubMenu(ui.createMenu('🗂 シートの整理')
       .addItem('アーカイブして整理する', 'openArchiveDialog')
-      .addItem('アーカイブを全て表示に戻す', 'menuUnarchiveAll')
-      .addItem('シート名に年を付ける（0930→20260930）', 'renameSheetsToFullDate'))
+      .addItem('アーカイブを全て表示に戻す', 'menuUnarchiveAll'))
     .addSubMenu(ui.createMenu('⚙️ 設定')
       .addItem('BNI 素材フォルダ', 'openAssetSettingsDialog')
       .addItem('メンバー名簿', 'openMemberMasterDialog')
@@ -416,61 +415,6 @@ function getExistingVisitorSheets() {
 // 割り振りは getSheetByName で引き続き動作する（タブ表示だけ減る）。
 // 開催日は yyyyMMdd。移行前の MMdd（4桁）も読めるようにしてある。
 var ARCHIVE_SHEET_PATTERN_ = /^(\d{8}|\d{4})(参加者_印刷用|参加者|割り振り表|オリエン|オープンネット)$/;
-
-// === 旧いシート名（MMdd）を yyyyMMdd に直す ===
-// 手作業だと、1つの開催日につき最大5枚（参加者／参加者_印刷用／割り振り表／
-// オリエン／オープンネット）を直すことになり間違いやすいので、まとめて行う。
-// 既に8桁のシートには触らない。同じ名前が既にある場合は、そのシートを飛ばす。
-function renameSheetsToFullDate() {
-  var ui = SpreadsheetApp.getUi(), ss = getSS_();
-  var res = ui.prompt('シート名に年を付ける',
-    '「0930参加者」のような4桁のシート名を「20260930参加者」に直します。\n\n'
-    + '付ける年を4桁で入力してください（例: 2026）。',
-    ui.ButtonSet.OK_CANCEL);
-  if (res.getSelectedButton() !== ui.Button.OK) return;
-  var year = String(res.getResponseText() || '').trim();
-  if (!/^\d{4}$/.test(year)) { ui.alert('シート名に年を付ける', '年は4桁の数字で入力してください。', ui.ButtonSet.OK); return; }
-
-  var sheets = ss.getSheets(), plan = [], skip = [];
-  for (var i = 0; i < sheets.length; i++) {
-    var name = sheets[i].getName();
-    var m = name.match(/^(\d{4})(参加者_印刷用|参加者|割り振り表|オリエン|オープンネット)$/);
-    if (!m) continue;                                   // 8桁や対象外はそのまま
-    var next = year + m[1] + m[2];
-    if (ss.getSheetByName(next)) { skip.push(name + ' →（' + next + ' が既にあります）'); continue; }
-    plan.push({ sheet: sheets[i], from: name, to: next });
-  }
-  if (!plan.length) {
-    ui.alert('シート名に年を付ける',
-      (skip.length ? '直せるシートがありませんでした。\n\n' + skip.join('\n')
-                   : '4桁のシート名は見つかりませんでした。すべて年が付いています。'),
-      ui.ButtonSet.OK);
-    return;
-  }
-  var preview = plan.slice(0, 20).map(function (x) { return x.from + ' → ' + x.to; }).join('\n');
-  if (plan.length > 20) preview += '\n…ほか ' + (plan.length - 20) + ' 枚';
-  var ok = ui.alert('シート名に年を付ける',
-    plan.length + ' 枚のシート名を次のように変更します。よろしいですか？\n\n' + preview,
-    ui.ButtonSet.OK_CANCEL);
-  if (ok !== ui.Button.OK) return;
-
-  var props = PropertiesService.getScriptProperties(), done = 0;
-  for (var j = 0; j < plan.length; j++) {
-    plan[j].sheet.setName(plan[j].to);
-    // PDFの控え（同じファイルを上書きするための記録）も付け替える
-    var keys = [['VISITOR_PDF_ID_', ''], ['ALLOC_PDF_ID_', '割り振り']];
-    for (var k = 0; k < keys.length; k++) {
-      var oldKey = keys[k][0] + plan[j].from + keys[k][1];
-      var v = props.getProperty(oldKey);
-      if (v) { props.setProperty(keys[k][0] + plan[j].to + keys[k][1], v); props.deleteProperty(oldKey); }
-    }
-    done++;
-  }
-  ui.alert('シート名に年を付ける',
-    '✅ ' + done + ' 枚のシート名を変更しました。'
-    + (skip.length ? '\n\n次のシートは飛ばしました:\n' + skip.join('\n') : ''),
-    ui.ButtonSet.OK);
-}
 
 // 「20260930」→「2026/09/30」、移行前の「0930」→「09/30」
 function archiveLabel_(key) {
