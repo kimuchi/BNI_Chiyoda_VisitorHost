@@ -6,7 +6,7 @@
 // 共通部品の読み込み漏れ）を見つけるために使う。
 //
 //   const { loadPage } = require('./lib_minidom');
-//   const page = loadPage('slides_meeting.html', { server: { getX: () => ({ ok: true }) } });
+//   const page = loadPage('slides_meeting_first.html', { server: { getX: () => ({ ok: true }) } });
 //   page.step('開く', () => page.window.onload());
 
 const fs = require('fs');
@@ -145,6 +145,8 @@ function loadPage(file, opts) {
     return r;
   }
   function flush() { while (queue.length) queue.shift()(); }
+  // 返事を1つだけ届ける（読み込みの途中の画面を確かめるため）。届けたら true
+  function flushOne() { if (!queue.length) return false; queue.shift()(); return true; }
 
   const window = {};
   const sandbox = { window, document, console,
@@ -161,7 +163,7 @@ function loadPage(file, opts) {
       fails.push(label + ' でエラー: ' + (e && e.stack ? e.stack.split('\n').slice(0, 3).join(' / ') : e));
     }
   }
-  return { els, document, window, sandbox, run, step, flush, log, fails };
+  return { els, document, window, sandbox, run, step, flush, flushOne, pending: () => queue.length, log, fails };
 }
 
 module.exports = { loadPage };

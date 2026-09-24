@@ -68,6 +68,7 @@ function spliceSlides_(target, source, slidePaths, afterPath) {
         if (!copied[abs]) {
           var ext = (abs.match(/\.[A-Za-z0-9]+$/) || ['.bin'])[0];
           var dst = 'ppt/media/spliced' + (++mediaSeq) + ext.toLowerCase();
+          while (target[dst]) dst = 'ppt/media/spliced' + (++mediaSeq) + ext.toLowerCase();   // 上書きしない
           target[dst] = source[abs];
           if (target[dst] && target[dst].setName) target[dst].setName(dst);
           copied[abs] = dst;

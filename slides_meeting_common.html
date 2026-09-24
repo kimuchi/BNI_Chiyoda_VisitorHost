@@ -1,0 +1,145 @@
+<!-- 定例会スライド（前半・後半）の画面で共通の部品。
+     slides_meeting_first.html / slides_meeting_second.html の head で include('slides_meeting_common') して読む。
+     各画面は ready()（作成できる状態か）と collect()（差し込む値）を用意する。 -->
+<style>
+ body{font-family:sans-serif;padding:18px;font-size:13px;margin:0;}
+ h3{margin:0 0 4px;color:#c00000;}
+ .hint{font-size:12px;color:#666;line-height:1.7;margin-bottom:12px;}
+ .warn{background:#fffbe8;border-left:4px solid #ffc107;padding:9px 12px;font-size:12px;border-radius:0 4px 4px 0;margin-bottom:12px;line-height:1.7;}
+ .loading{position:sticky;top:0;z-index:5;background:#e8f0fe;border:1px solid #aecbfa;color:#174ea6;
+          padding:9px 12px;font-size:13px;border-radius:6px;margin-bottom:12px;line-height:1.6;}
+ .loading .sp{display:inline-block;width:12px;height:12px;border:2px solid #aecbfa;border-top-color:#174ea6;
+              border-radius:50%;animation:spin 0.9s linear infinite;vertical-align:-2px;margin-right:6px;}
+ @keyframes spin{to{transform:rotate(360deg);}}
+ .sec{border:1px solid #ddd;border-radius:6px;padding:12px;margin-bottom:12px;}
+ .sec h4{margin:0 0 8px;font-size:13px;color:#0055ff;}
+ .auto{background:#e8f5e9;color:#188038;font-size:11px;padding:1px 7px;border-radius:9px;margin-left:6px;}
+ .mk{margin-top:10px;border-top:1px dashed #ddd;padding-top:9px;}
+ .mk h5{margin:0 0 6px;font-size:12px;color:#555;font-weight:bold;}
+ .mkrow{display:flex;align-items:center;gap:6px;padding:3px 0;font-size:12px;}
+ .mkrow .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#222;}
+ .mkrow .dt{color:#999;font-size:11px;white-space:nowrap;}
+ /* 下の button{} が color:#fff・font-weight:bold を効かせてしまい、
+    白地に白文字で読めなくなっていた。
+    button.mkbtn と書いて、確実に button{} より強くする。 */
+ button.mkbtn{border:1px solid #888;background:#fff;color:#222;font-weight:normal;
+        border-radius:3px;font-size:11px;padding:3px 9px;cursor:pointer;white-space:nowrap;}
+ button.mkbtn:hover{background:#eef1f6;border-color:#444;}
+ button.mkbtn.on{background:#188038;color:#fff;border-color:#188038;}
+ button.mkbtn.off{background:#b0453a;color:#fff;border-color:#b0453a;}
+ .mkdone{color:#888;font-size:11px;line-height:1.8;}
+ .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:8px;}
+ label{font-size:12px;color:#444;}
+ input[type=text],select{padding:5px;border:1px solid #ccc;border-radius:4px;font-size:13px;}
+ input.wide{width:100%;box-sizing:border-box;}
+ button{border:none;padding:9px 16px;border-radius:5px;cursor:pointer;font-weight:bold;font-size:13px;background:#c00000;color:#fff;}
+ button.sub{background:#fff;color:#0055ff;border:1px solid #0055ff;padding:6px 12px;font-size:12px;}
+ button:disabled{opacity:.5;cursor:default;}
+ table{border-collapse:collapse;width:100%;font-size:12px;}
+ th,td{border:1px solid #e3e3e3;padding:5px 7px;text-align:left;} th{background:#f7f9fc;width:120px;}
+ table.ord th{width:auto;}
+ table.ord td.num{text-align:right;white-space:nowrap;color:#666;}
+ table.ord tr.first td{background:#fff5f5;font-weight:bold;}
+ #msg{margin-top:12px;font-weight:bold;white-space:pre-wrap;}
+ a.dl{display:inline-block;margin-top:8px;background:#0055ff;color:#fff;padding:8px 16px;border-radius:5px;text-decoration:none;font-weight:bold;}
+</style>
+<script>
+ // ===== 定例会スライド（前半・後半）で共通 =====
+ var ctx=null, working=false, loading={};
+ function esc(x){var d=document.createElement('span');d.textContent=x==null?'':x;return d.innerHTML;}
+ function val(id,v){ var e=document.getElementById(id); if(e) e.value = v==null?'':v; }
+ function get(id){ var e=document.getElementById(id); return e?e.value:''; }
+ function show(t,ok){ var m=document.getElementById('msg'); m.innerText=t; m.style.color= ok===true?'green':(ok===false?'#d00':'#0055ff'); }
+ function fail(e){ var d=(e&&e.message)?e.message:String(e);
+   document.getElementById('msg').innerHTML='<span style="color:#d00;">エラー: '+esc(d)+'</span>'
+    +'<br><span style="font-size:12px;color:#666;">「サーバーエラー」と出る場合は、メニュー「🔧 Googleの権限を確認・許可する」を1回実行してください。</span>';
+   setBusy(false); }
+
+ // --- 読み込み中の表示 ---
+ // 読み込んでいるものを並べて出し、終わるまで「作成」を押せないようにする。
+ function loadStart(key,label){ loading[key]=label; renderLoading(); }
+ function loadEnd(key){ delete loading[key]; renderLoading(); }
+ function isLoading(){ for(var k in loading) return true; return false; }
+ function renderLoading(){
+   var names=[], k;
+   for(k in loading) names.push(loading[k]);
+   var el=document.getElementById('loading');
+   el.style.display = names.length ? 'block' : 'none';
+   el.innerHTML = names.length ? '<span class="sp"></span><b>読み込み中…</b> '+names.map(esc).join('／') : '';
+   refreshGen();
+ }
+ // サーバーを呼ぶ。呼んでいる間は「読み込み中」に label を出す
+ function loadFrom(key,label,fn,args,onOk){
+   loadStart(key,label);
+   var r=google.script.run.withSuccessHandler(function(res){ loadEnd(key); onOk(res); })
+     .withFailureHandler(function(e){ loadEnd(key); fail(e); });
+   r[fn].apply(r, args||[]);
+ }
+ function refreshGen(){
+   var b=document.getElementById('genBtn');
+   if(b) b.disabled = working || isLoading() || !ready();
+ }
+ function setBusy(b,t){ working=b; refreshGen(); if(t) show(t,null); }
+
+ // --- 開催日 ---
+ function initMeetings(c){
+   var sel=document.getElementById('meeting'), h='';
+   (c.meetings||[]).forEach(function(m){ h+='<option value="'+esc(m.dateValue)+'">'+esc(m.display)+'</option>'; });
+   sel.innerHTML=h||'<option value="">開催日候補がありません</option>';
+   if(c.defaultMeeting){
+     var mm=(c.defaultMeeting.display||'').match(/第(\d+)回/); val('no', mm?mm[1]:'');
+   }
+ }
+ // 開催日を選び直したとき、開催回を候補の表示から入れ直す（ルーティンチェックシートの値で上書きされる）
+ function meetingNoFromList(){
+   var d=get('meeting'), m=((ctx&&ctx.meetings)||[]).filter(function(x){return x.dateValue===d;})[0];
+   if(m){ var mm=(m.display||'').match(/第(\d+)回/); val('no', mm?mm[1]:''); }
+ }
+ function memberOf(name){ return ((ctx&&ctx.members)||[]).filter(function(x){return x.name===name;})[0]||{}; }
+ function memberOptions(){
+   var mh='<option value="">（なし）</option>';
+   ((ctx&&ctx.members)||[]).forEach(function(m){ mh+='<option value="'+esc(m.name)+'">'+esc(m.name)+'</option>'; });
+   return mh;
+ }
+ // 左右にお2人が並ぶページ（氏名・会社名・カテゴリーは名簿から引く）
+ function twoPersonValues(m, prefix, idPrefix){
+   [1,2].forEach(function(n){
+     var name=get(idPrefix+n), who=memberOf(name);
+     m[prefix+n+'氏名']=name;
+     m[prefix+n+'会社名']=who.company||'';
+     m[prefix+n+'カテゴリー']=who.title?('【'+who.title+'】'):'';
+   });
+ }
+ function baseValues(){
+   var m={}, sel=document.getElementById('meeting');
+   m['開催回']=get('no');
+   m['開催日']=sel.options[sel.selectedIndex]?sel.options[sel.selectedIndex].text:'';
+   m['開催日付']=get('meeting');
+   return m;
+ }
+ function templateWarn(kind,label){
+   if(ctx && ctx.templates && ctx.templates[kind]) return true;
+   var w=document.getElementById('warn'); w.style.display='block';
+   w.innerHTML+=(w.innerHTML?'<br>':'')+'テンプレート未登録：<b>'+esc(label)+'</b>。'
+     +'メニュー「⚙️ 設定」＞「大きなスライド」でDriveの共有リンクを登録してください。';
+   return false;
+ }
+
+ // --- 作成 ---
+ function genSlides(kind, opts){
+   if(isLoading()){ show('読み込み中です。終わるまでお待ちください。',null); return; }
+   setBusy(true,'PowerPointを作成しています。ファイルが大きいので1〜2分かかります...');
+   google.script.run.withSuccessHandler(function(r){
+     setBusy(false);
+     if(!r.ok){ show(r.message,false); return; }
+     document.getElementById('msg').innerHTML='<span style="color:green;">'+esc(r.message).replace(/\n/g,'<br>')+'</span>'
+       +'<br><a class="dl" href="'+(r.downloadUrl||r.url)+'" target="_blank">⬇ PowerPointをダウンロード</a> '
+       +'<a href="'+r.url+'" target="_blank" style="font-size:12px;color:#666;">ドライブで見る</a>';
+   }).withFailureHandler(fail).generateMeetingSlides(kind, collect(), get('meeting'), opts);
+ }
+
+ // 反映されたかどうかを画面で確かめられるようにする
+ google.script.run.withSuccessHandler(function(v){
+   var e=document.getElementById('ver'); if(e && v) e.textContent='版 '+v;
+ }).getSystemVersion();
+</script>

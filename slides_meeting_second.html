@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html><head><base target="_top">
+<?!= include('slides_meeting_common') ?>
+<?!= include('slides_layout') ?>
+</head>
+<body>
+ <h3>定例会スライド（後半）</h3>
+ <div style="float:right;font-size:11px;color:#aaa;" id="ver"></div>
+ <div class="hint">
+   開くと、<b>後半テンプレート</b>を読み込み（音楽の一覧・リファーラル発表のひな形）、
+   <b>ルーティンチェックシート</b>と<b>メンバー名簿</b>から、この週の内容が各欄に入ります。
+   確かめて、違うところだけ直してから「後半スライドを作成」を押してください。
+ </div>
+ <div class="loading" id="loading" style="display:none;"></div>
+ <div class="warn" id="warn" style="display:none;"></div>
+
+ <div class="sec">
+   <h4>1. 開催回・開催日 <span class="auto">ルーティンチェックシート</span></h4>
+   <div class="row">
+     <label>開催日：<select id="meeting" onchange="reload()"></select></label>
+     <label>開催回：<input type="text" id="no" size="6"></label>
+     <span id="routineNote" style="font-size:11px;color:#888;"></span>
+   </div>
+   <div class="row">
+     <label><input type="checkbox" id="pat" checked>
+       <code>{{ }}</code> が無いページの「第○回」「○年○月○日」も自動で直す</label>
+   </div>
+ </div>
+
+ <div class="sec">
+   <h4>2. 更新状況一覧（書記兼会計による報告） <span class="auto">自動</span></h4>
+   <table>
+     <tr><th>90日以内</th><td><input type="text" class="wide" id="t_更新90"></td></tr>
+     <tr><th>60日以内</th><td><input type="text" class="wide" id="t_更新60"></td></tr>
+     <tr><th>30日以内</th><td><input type="text" class="wide" id="t_更新30"></td></tr>
+     <tr><th>期限超過</th><td><input type="text" class="wide" id="t_更新超過"></td></tr>
+   </table>
+   <div id="noDate" style="font-size:11px;color:#c00;margin-top:6px;"></div>
+   <div class="mk">
+     <h5>更新の確認がとれた方にチェックを入れると、上の一覧から外れます</h5>
+     <div id="mkList"></div>
+     <div id="mkDone" class="mkdone"></div>
+   </div>
+ </div>
+
+ <div class="sec">
+   <h4>3. 推薦のことば・抽選コーナー <span class="auto">ルーティンチェックシート</span></h4>
+   <table>
+     <tr><th>推薦のことば</th><td><select id="rc1"></select> →
+         <select id="rc2"></select></td></tr>
+     <tr><th>抽選コーナー</th><td><select id="lt1"></select>　<select id="lt2"></select>
+         <div style="font-size:11px;color:#888;">通常はメインプレゼンのお2人と同じです</div></td></tr>
+   </table>
+   <div id="rcNote" style="font-size:11px;color:#888;margin-top:6px;"></div>
+ </div>
+
+ <div class="sec">
+   <h4>4. リファーラル発表 <span class="auto">名簿のNo.順</span></h4>
+   <label><input type="checkbox" id="rfOn" checked onchange="renderReferral()">
+     リファーラル発表のページを<b>名簿のNo.順で全員ぶん</b>作る</label>
+   　<label>カウントダウン <input type="text" id="rfSec" size="2" value="7">秒</label>
+   <div id="rfNote" style="font-size:11px;color:#888;margin-top:4px;"></div>
+   <div style="font-size:11px;color:#888;">カウントダウンはクリックで始まり、次のページへもクリックで進みます。</div>
+ </div>
+
+ <div class="sec">
+   <h4>5. 音楽の差し替え・音量</h4>
+   <div id="audio"><span style="font-size:11px;color:#888;">後半テンプレートを読み込むと、入っている音楽が並びます。</span></div>
+   <div style="margin-top:8px;font-size:12px;">
+     差し替え用の音楽：<input type="text" id="musicLink" style="width:52%;"
+       placeholder="Driveの共有リンクを貼り付け（mp3・m4a・wav など）">
+     <button class="sub" onclick="addMusic()">登録</button>
+   </div>
+   <div id="musicFiles" style="font-size:11px;color:#666;margin-top:6px;"></div>
+ </div>
+
+ <div class="sec">
+   <h4>6. 作成</h4>
+   <button id="genBtn" onclick="gen()" disabled>後半スライドを作成</button>
+ </div>
+ <div id="msg"></div>
+
+<script>
+ var tplInfo=null, audioList=[], musicFiles=[], rfBoxes=null;
+ window.onload=function(){
+   loadFrom('ctx','開催日とルーティンチェックシート','getMeetingSlideContext',[],init);
+   loadFrom('music','登録した音楽','getMeetingMusicFiles',[],renderMusicFiles);
+ };
+ // 作成できる状態か（読み込みが済み、後半テンプレートがある）
+ function ready(){ return !!(ctx && ctx.templates && ctx.templates.meetingSecond); }
+
+ function init(c){
+   if(!c.ok){ fail({message:c.message}); return; }
+   ctx=c;
+   initMeetings(c);
+   var mh=memberOptions();
+   ['rc1','rc2','lt1','lt2'].forEach(function(id){ document.getElementById(id).innerHTML=mh; });
+   applyRoutine(c.routine);
+   applyLists(c.lists);
+   if(!c.memberCount){
+     var w=document.getElementById('warn'); w.style.display='block';
+     w.innerHTML+=(w.innerHTML?'<br>':'')+'メンバー名簿が空です。「⚙️ メンバー名簿の管理」で取り込んでください（自動算出に必要です）。';
+   }
+   if(templateWarn('meetingSecond','定例会スライド（後半）')) loadTemplate();
+   else document.getElementById('audio').innerHTML='';
+   renderReferral();
+   refreshGen();
+ }
+ // 後半テンプレートを開いて、音楽の一覧とリファーラル発表のひな形の枠を調べる
+ // （2回目からは、テンプレートが同じ間は覚えている結果を使うのですぐ終わる）
+ function loadTemplate(){
+   loadFrom('tpl','後半テンプレート（音楽・リファーラル発表のひな形）。初回は1分ほどかかります','getMeetingTemplateInfo',['meetingSecond'],function(r){
+     if(!r.ok){ show(r.message,false); return; }
+     tplInfo=r; audioList=r.list||[]; rfBoxes=r.referralBoxes||null;
+     renderAudio(); renderReferral();
+   });
+ }
+
+ function applyLists(L){
+   if(!L){ return; }
+   val('t_更新90', L.text.d90); val('t_更新60', L.text.d60);
+   val('t_更新30', L.text.d30); val('t_更新超過', L.text.overdue);
+   document.getElementById('noDate').innerText = (L.noDate&&L.noDate.length)
+     ? '更新期限日が未入力のメンバー('+L.noDate.length+'名): '+L.noDate.join('、') : '';
+   renderMarks(L);
+ }
+ // 一覧に出ている人に「更新済み」「更新しない」のチェックを出す。
+ // 「更新済み」はその更新期限日に対する印なので、会費レポートで期限が伸びれば
+ // 自動的に外れ、次の期限でまた一覧に戻る。
+ var mkRows=[];   // onclick から番号で引くための控え（氏名を直接埋めると引用符で壊れるため）
+ function renderMarks(L){
+   mkRows=[].concat(L.overdue||[],L.d30||[],L.d60||[],L.d90||[],L.done||[],L.leaving||[]);
+   var target=[].concat(L.overdue||[],L.d30||[],L.d60||[],L.d90||[]);
+   document.getElementById('mkList').innerHTML = target.length
+     ? target.map(function(r,i){
+         return '<div class="mkrow"><span class="nm">'+esc(r.name)+'</span>'
+           +'<span class="dt">期限 '+esc(r.date)+'</span>'
+           +'<button class="mkbtn" onclick="mark('+i+',\'done\')">更新した</button>'
+           +'<button class="mkbtn" onclick="mark('+i+',\'leaving\')">更新しない</button></div>';
+       }).join('')
+     : '<div style="font-size:11px;color:#888;">対象の方はいません。</div>';
+   var base=target.length, d=[];
+   (L.done||[]).forEach(function(r,i){ d.push(chip(r,'更新した','on',base+i)); });
+   (L.leaving||[]).forEach(function(r,i){ d.push(chip(r,'更新しない','off',base+(L.done||[]).length+i)); });
+   document.getElementById('mkDone').innerHTML = d.length ? 'チェック済み: '+d.join(' ') : '';
+ }
+ function chip(r,label,cls,idx){
+   return '<span style="margin-right:8px;white-space:nowrap;">'+esc(r.name)
+     +'<span class="mkbtn '+cls+'" style="margin-left:3px;">'+label+'</span>'
+     +'<button class="mkbtn" style="margin-left:2px;" onclick="mark('+idx+',\'\')">戻す</button></span>';
+ }
+ function mark(idx,status){
+   var r=mkRows[idx]; if(!r) return;
+   google.script.run.withSuccessHandler(function(res){
+     if(res&&res.ok) reload(); else alert((res&&res.message)||'保存に失敗しました。');
+   }).withFailureHandler(fail).setRenewalMark(r.name,status,r.date);
+ }
+ // ルーティンチェックシートに書いてある内容を反映する
+ function applyRoutine(R){
+   var note=document.getElementById('routineNote');
+   if(!R || !R.ok || !R.found){
+     note.innerText = (R&&R.message) ? R.message : 'ルーティンチェックシートに該当する開催日が見つかりません。';
+     note.style.color='#c60'; return;
+   }
+   if(R.meetingNo) val('no', R.meetingNo);
+   var mp=R.mainPresenters||[];
+   // 推薦のことば（推薦する人 → 推薦される人）と、抽選コーナー（通常はメインプレゼンと同じ）
+   var rc=(R.recommendations||[])[0]||null;
+   document.getElementById('rc1').value = (rc && rc.giver.name) || '';
+   document.getElementById('rc2').value = (rc && rc.receiver.name) || '';
+   document.getElementById('lt1').value = (mp[0] && mp[0].name) || '';
+   document.getElementById('lt2').value = (mp[1] && mp[1].name) || '';
+   var rn=document.getElementById('rcNote'), more=(R.recommendations||[]).slice(1);
+   rn.innerHTML = rc
+     ? ('記載：'+esc(rc.raw)
+        + (more.length ? '<br><span style="color:#c60;">他に '
+            + esc(more.map(function(x){return x.raw;}).join('／'))
+            + ' の記載があります。スライドに載るのは1組だけなので、必要なら手で選び直してください。</span>' : ''))
+     : (R.recommendationsRaw ? '記載：'+esc(String(R.recommendationsRaw).replace(/\n/g,' ')) : '');
+   note.innerText=R.sheetName + ' から読み込みました'; note.style.color='#188038';
+ }
+ function reload(){
+   var d=get('meeting'); if(!d) return;
+   meetingNoFromList();
+   loadFrom('routine','ルーティンチェックシート','getRoutineInfo',[d],applyRoutine);
+   loadFrom('lists','更新状況','computeRenewalLists',[d],function(L){
+     if(L.ok){ applyLists(L); show('開催日にあわせて更新しました。',true); }
+     else show(L.message,false);
+   });
+ }
+
+ function collect(){
+   var m=baseValues();
+   ['更新90','更新60','更新30','更新超過'].forEach(function(k){ m[k]=get('t_'+k); });
+   twoPersonValues(m,'推薦のことば','rc');
+   twoPersonValues(m,'抽選','lt');
+   return m;
+ }
+
+ // --- リファーラル発表 ---
+ // 発表の順番は名簿のNo.順（1番から）。会社名の収め方は slides_layout.html の処理を使う。
+ function referralMembers(){
+   return ((ctx&&ctx.members)||[]).filter(function(m){ return m.name; })
+     .slice().sort(function(a,b){ return (parseFloat(a.no)||9999)-(parseFloat(b.no)||9999); });
+ }
+ function buildReferral(){
+   var on=document.getElementById('rfOn');
+   if(!on || !on.checked || !rfBoxes) return [];
+   var sec=parseInt(document.getElementById('rfSec').value,10)||7;
+   var list=referralMembers();
+   // 枠の位置はリファーラル発表のひな形の実測値に切り替えて組む（組み終わったら元に戻る）
+   return withLayoutBoxes(rfBoxes, function(){
+     return list.map(function(m,i){
+       var co=layoutCompany(m.company||''), ca=layoutCategory(m.title||'');
+       // auto:false … カウントダウンはクリックで始まり、次のページへもクリックで進む
+       return { name:m.name, photoName:m.name, seconds:sec, auto:false,
+         companyLines:co.lines, companyPt:co.fontPt, companyGeom:co.geom, categoryTop:co.categoryTop,
+         categoryLines:ca.lines, categoryPt:ca.fontPt, categoryTight:ca.tight,
+         nextName:(list[i+1]?list[i+1].name:'') };
+     });
+   });
+ }
+ function renderReferral(){
+   var n=document.getElementById('rfNote'), on=document.getElementById('rfOn');
+   if(!ctx || !ctx.templates || !ctx.templates.meetingSecond){ n.innerHTML=''; return; }
+   if(loading.tpl){ n.innerHTML='後半テンプレートを読み込み中です…'; return; }
+   if(!rfBoxes){ n.innerHTML='<span style="color:#c60;">後半テンプレートに「REFERRAL PRESENTATION」のページが見つかりませんでした。</span>'; return; }
+   if(!on.checked){ n.innerHTML='チェックを入れると、テンプレートのひな形ページを人数ぶんに増やします。'; return; }
+   var list=referralMembers(), noPhoto=list.filter(function(m){ return !m.hasPhoto; });
+   n.innerHTML='<b>'+list.length+'名ぶん</b>作ります（'+esc(list[0]?list[0].name:'')+' → … → '
+     +esc(list[list.length-1]?list[list.length-1].name:'')+'）。'
+     +(noPhoto.length?'<br><span style="color:#c60;">写真が見つからない方 '+noPhoto.length+'名は写真なしになります。</span>':'');
+ }
+
+ // --- 音楽の差し替え・音量 ---
+ // 動画は差し替えられない（音楽を選ぶと動画が音に置き換わってしまう）ので、音量だけ変える。
+ function renderAudio(){
+   var opt='<option value="">（そのまま）</option>'
+     + musicFiles.map(function(f){ return '<option value="'+esc(f.id)+'">'+esc(f.name)+'</option>'; }).join('');
+   document.getElementById('audio').innerHTML = audioList.length
+     ? '<table><tr><th>ページ</th><th>いまの音楽</th><th>差し替え</th><th>音量</th></tr>'
+       + audioList.map(function(a,i){
+           return '<tr><td>'+a.slideNo+'枚目'+(a.video?'（動画）':'')+'</td>'
+             +'<td>'+esc(a.name||a.file)+'</td>'
+             +'<td>'+(a.video ? '<span style="font-size:11px;color:#888;">動画は差し替えできません</span>'
+                              : '<select id="au_'+i+'">'+opt+'</select>')+'</td>'
+             +'<td><input type="text" id="av_'+i+'" size="3" value="'+esc(a.volume)+'">%</td></tr>';
+         }).join('') + '</table>'
+     : (tplInfo ? '<div style="font-size:11px;color:#888;">このテンプレートに音楽は入っていません。</div>'
+                : '<span style="font-size:11px;color:#888;">後半テンプレートを読み込むと、入っている音楽が並びます。</span>');
+ }
+ function collectMusic(){
+   var m={};
+   audioList.forEach(function(a,i){
+     var f=document.getElementById('au_'+i), v=document.getElementById('av_'+i);
+     if(!f&&!v) return;
+     var cfg={};
+     if(f&&f.value) cfg.fileId=f.value;
+     if(v&&v.value!==''&&String(v.value)!==String(a.volume)) cfg.volume=Number(v.value);
+     if(cfg.fileId!==undefined||cfg.volume!==undefined) m[a.key]=cfg;
+   });
+   return m;
+ }
+ function renderMusicFiles(r){
+   musicFiles=(r&&r.files)||[];
+   document.getElementById('musicFiles').innerHTML = musicFiles.length
+     ? '登録済み：'+musicFiles.map(function(f,i){
+         return esc(f.name)+'（'+f.sizeMB+'MB）<button class="mkbtn" onclick="delMusic('+i+')">外す</button>';
+       }).join('　')
+     : '差し替え用の音楽はまだ登録されていません。';
+   if(tplInfo) renderAudio();
+ }
+ function addMusic(){
+   var v=document.getElementById('musicLink').value;
+   if(!v){ alert('Driveの共有リンクを貼り付けてください。'); return; }
+   setBusy(true,'登録しています...');
+   google.script.run.withSuccessHandler(function(r){
+     setBusy(false); show(r.message, !!r.ok);
+     if(r.ok){ document.getElementById('musicLink').value=''; renderMusicFiles(r); }
+   }).withFailureHandler(fail).addMeetingMusicFile(v);
+ }
+ function delMusic(i){
+   var f=musicFiles[i]; if(!f) return;
+   google.script.run.withSuccessHandler(function(r){ show(r.message, !!r.ok); if(r.ok) renderMusicFiles(r); })
+     .withFailureHandler(fail).removeMeetingMusicFile(f.id);
+ }
+
+ function gen(){
+   genSlides('meetingSecond', {
+     patterns: document.getElementById('pat').checked,
+     recommenders: [get('rc1'), get('rc2')],
+     lottery: [get('lt1'), get('lt2')],
+     music: collectMusic(),
+     referral: buildReferral()
+   });
+ }
+</script>
+</body></html>

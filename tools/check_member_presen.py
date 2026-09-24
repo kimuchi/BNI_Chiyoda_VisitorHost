@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """メンバープレゼン生成の通し検査。
 
-実物のテンプレートpptxに対して、本番と同じ member_presen_srv.js / ooxml.js / member_presen.html
+実物のテンプレートpptxに対して、本番と同じ member_presen_srv.js / ooxml.js / slides_layout.html
 を動かし、出来上がりのpptxを機械的に検証する。PowerPointが無い環境でも、
 壊れたzip・切れた参照・文字や座標の取り違えは、ここで捕まえられる。
 

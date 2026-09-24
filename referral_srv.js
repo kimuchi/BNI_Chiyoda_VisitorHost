@@ -48,6 +48,7 @@ function presenterShapes_(xml, slideW) {
     if (pcx > (slideW || 12192000) * 0.5) continue;    // 背景いっぱいの画像
     pics.push({ id: id, cx: pcx, cy: pcy });
   }
+  pics.sort(function (a, b) { return b.cx * b.cy - a.cx * a.cy; });   // 候補が複数あれば大きいもの
   wide.sort(function (a, b) { return a.y - b.y; });
   low.sort(function (a, b) { return a.x - b.x; });
   var label = null, next = null;
@@ -136,10 +137,8 @@ function rfBuildSlide_(tplXml, tplRels, item, photo, SH) {
     if (box && photo.width && photo.height) {
       xml = setSrcRectInPic_(xml, SH.photo, coverCrop_(photo.width, photo.height, box.cx, box.cy));
     }
-    var rid = (tplXml.substring(findShapeRange_(tplXml, SH.photo).start,
-                                findShapeRange_(tplXml, SH.photo).end)
-                     .match(/<a:blip[^>]*r:embed="([^"]+)"/) || [])[1];
-    if (rid) rels = retargetRel_(rels, rid, '../media/' + photo.path.replace('ppt/media/', ''));
+    var set = setPicImage_(xml, rels, SH.photo, '../media/' + photo.path.replace('ppt/media/', ''));
+    xml = set.xml; rels = set.rels;
   }
   return { xml: xml, rels: rels };
 }
@@ -190,7 +189,7 @@ function expandPresenterSlides_(parts, items, opts) {
     if (sm) maxSlide = Math.max(maxSlide, parseInt(sm[1], 10));
   }
 
-  var cache = { by: {}, seq: 0 }, made = [], noPhoto = [];
+  var cache = o.photoCache || { by: {}, seq: 0 }, made = [], noPhoto = [];
   for (i = 0; i < items.length; i++) {
     var it = items[i], n = maxSlide + 1 + i, rid = 'rId' + (maxRid + 1 + i);
     var photo = mpAddPhoto_(parts, cache, it.photoName || it.name);

@@ -43,11 +43,41 @@ function memBlob(c, type, n) {
            setName(x) { name = x; return this; }, getName: () => name };
 }
 
-// 写真は、テンプレートに入っている画像を借りて代用する
-const media = fs.readdirSync(path.join(DIR, 'ppt/media'))
-  .filter((n) => /\.(jpe?g|png)$/i.test(n)).sort();
-const PHOTO_OF = {};
-MEMBERS.forEach((m, i) => { PHOTO_OF[m.name.replace(/[\s　]/g, '')] = media[i % media.length]; });
+// 写真は、1人ずつ中身の違う小さなPNGを作って代用する。
+// テンプレートの画像を借りると、飾りの画像と同じものが混ざって「誰の写真か」を見分けられないため。
+const zlib = require('zlib');
+const os = require('os');
+function crc32(buf) {
+  let c, crc = 0xffffffff;
+  for (let n = 0; n < buf.length; n++) {
+    c = (crc ^ buf[n]) & 0xff;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    crc = (crc >>> 8) ^ c;
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+function pngOf(w, h, rgb) {
+  const chunk = (type, data) => {
+    const len = Buffer.alloc(4); len.writeUInt32BE(data.length);
+    const td = Buffer.concat([Buffer.from(type, 'ascii'), data]);
+    const crc = Buffer.alloc(4); crc.writeUInt32BE(crc32(td));
+    return Buffer.concat([len, td, crc]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 2; ihdr[10] = 0; ihdr[11] = 0; ihdr[12] = 0;
+  const raw = Buffer.alloc((w * 3 + 1) * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) raw.set(rgb, y * (w * 3 + 1) + 1 + x * 3);
+  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr),
+                        chunk('IDAT', zlib.deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
+}
+const PHOTO_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'mtg_photos_'));
+const PHOTO_OF = {}, PHOTO_FILE = {};
+MEMBERS.forEach((m, i) => {
+  const id = 'photo' + i + '.png';
+  fs.writeFileSync(path.join(PHOTO_DIR, id), pngOf(30 + (i % 7), 40 + (i % 5), [(i * 37) % 256, (i * 91) % 256, (i * 53) % 256]));
+  PHOTO_OF[m.name.replace(/[\s　]/g, '')] = id;
+  PHOTO_FILE[m.name] = path.join(PHOTO_DIR, id);
+});
 
 const sandbox = {
   console,
@@ -58,7 +88,7 @@ const sandbox = {
                  const p = (n) => ('0' + n).slice(-2);
                  return f.replace('yyyy', d.getFullYear()).replace('MM', p(d.getMonth() + 1)).replace('dd', p(d.getDate()));
                } },
-  DriveApp: { getFileById: (id) => ({ getBlob: () => fileBlob(path.join(DIR, 'ppt/media', id), /\.png$/i.test(id) ? 'image/png' : 'image/jpeg') }) },
+  DriveApp: { getFileById: (id) => ({ getBlob: () => fileBlob(path.join(PHOTO_DIR, id), 'image/png') }) },
   getSS_: () => ({ getSheets: () => sheets }),
   getMembersList: () => MEMBERS.map((m) => ({ no: m.no, name: m.name })),
   getMemberMaster: () => ({ ok: true, members: MEMBERS }),
@@ -240,9 +270,10 @@ const info = F.editMeetingSlides_(parts, map, rules, {
   referral: referral,
   coreValue: R.coreValue,
   generalPolicy: R.generalPolicy,
-  mainPresenters: mainNames.filter((x) => x),
-  recommenders: recoNames.filter((x) => x),
-  lottery: lotteryNames.filter((x) => x),
+  // 画面と同じく、並び（左・右）はそのまま渡す（名簿に無い方は空）
+  mainPresenters: mainNames,
+  recommenders: recoNames,
+  lottery: lotteryNames,
   music: music,
 });
 
@@ -280,5 +311,8 @@ fs.writeFileSync(path.join(OUT, 'plan.json'), JSON.stringify({ plan, map, info: 
   referral: info.referral || null, referralPlan: referral,
   weekly: info.weekly || null, memberPresenPlan: memberPresen,
   guests: info.guests || null, guestPages: guestPages,
+  // 写真の取り違いを確かめるため：お名前 → 代わりの写真のファイル、ページごとに入るはずのお2人
+  photoOf: PHOTO_FILE,
+  twoPerson: { メインプレゼン: mainNames, 推薦のことば: recoNames, 抽選: lotteryNames },
 } }, null, 1));
 console.log(`\n書き出し: ${Object.keys(plan).length} パーツ → ${OUT}`);
