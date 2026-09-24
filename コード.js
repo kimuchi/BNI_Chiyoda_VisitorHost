@@ -24,6 +24,7 @@ function onOpen() {
     .addSeparator()
     .addSubMenu(ui.createMenu('📊 スライド・冊子をつくる')
       .addItem('ビジター・代理スライド作成', 'openVisitorSlideDialog')
+      .addItem('メンバープレゼンスライド作成', 'openMemberPresenDialog')
       .addItem('定例会スライドの自動更新', 'openMeetingSlideDialog')
       .addItem('メンバーブックの編集・PDF出力', 'openMemberBookEditorDialog')
       .addItem('Zoom入室案内の作成', 'openZoomGuideDialog'))

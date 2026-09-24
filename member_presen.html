@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html><head><base target="_top">
+<style>
+ body{font-family:sans-serif;padding:20px;font-size:14px;margin:0;color:#222;}
+ h3{margin:0 0 6px;color:#c00000;}
+ .hint{font-size:12px;color:#666;line-height:1.7;margin-bottom:12px;}
+ .warn{background:#fffbe8;border-left:4px solid #ffc107;padding:9px 12px;font-size:12px;
+       border-radius:0 4px 4px 0;margin-bottom:10px;line-height:1.7;}
+ .err{background:#fdecea;border-left:4px solid #d93025;padding:9px 12px;font-size:12px;
+      border-radius:0 4px 4px 0;margin-bottom:10px;line-height:1.7;}
+ select{padding:6px;font-size:14px;border:1px solid #ccc;border-radius:4px;}
+ .cols{display:flex;gap:14px;align-items:flex-start;margin-top:10px;}
+ .cols>div{flex:1;min-width:0;}
+ h4{font-size:13px;margin:0 0 6px;color:#c00000;}
+ table{border-collapse:collapse;width:100%;font-size:12px;}
+ th{background:#c00000;color:#fff;padding:5px 8px;text-align:left;white-space:nowrap;}
+ td{padding:5px 8px;border-bottom:1px solid #eee;}
+ td.num{text-align:right;white-space:nowrap;}
+ tr.empty td{color:#aaa;}
+ .ord{border:1px solid #eee;border-radius:4px;max-height:260px;overflow:auto;}
+ .ordrow{display:flex;align-items:center;gap:6px;padding:3px 8px;border-bottom:1px solid #f4f4f4;}
+ .ordrow:last-child{border-bottom:none;}
+ .ordn{width:18px;color:#999;font-size:12px;}
+ .ordname{flex:1;min-width:0;font-size:12px;}
+ .ordcnt{color:#888;font-size:11px;white-space:nowrap;}
+ .ordrow button{width:24px;height:24px;padding:0;font-size:11px;background:#fff;color:#c00000;
+                border:1px solid #ddd;border-radius:3px;cursor:pointer;font-weight:bold;}
+ .ordrow button:disabled{opacity:.3;cursor:default;}
+ #gen{margin-top:14px;width:100%;padding:14px;color:#fff;border:none;border-radius:8px;
+      font-size:15px;font-weight:700;cursor:pointer;background:linear-gradient(135deg,#c00000,#e53935);}
+ #gen:disabled{opacity:.4;cursor:not-allowed;}
+ #msg{margin-top:12px;font-weight:bold;white-space:pre-wrap;}
+ a.dl{display:inline-block;margin-top:8px;background:#0055ff;color:#fff;padding:8px 16px;
+      border-radius:5px;text-decoration:none;font-weight:bold;font-size:13px;}
+</style></head>
+<body>
+ <h3>🎤 メンバープレゼンスライドの作成</h3>
+ <div class="hint">
+   「メンバー名簿」と「メンバー写真」から、業種区分ごとの扉ページと個人ページを作ります。<br>
+   発表の順番は<b>名簿の行順</b>、業種区分の順番は<b>開催日から自動で決まります</b>（1週ごとに順繰り）。
+ </div>
+ <div class="err"  id="err"  style="display:none;"></div>
+ <div class="warn" id="warn" style="display:none;"></div>
+
+ <div>開催日：<select id="date" onchange="onDate()"></select>
+   <span id="count" style="font-size:12px;color:#666;margin-left:8px;"></span></div>
+
+ <div class="cols">
+   <div>
+     <h4>この日の業種区分の順番</h4>
+     <div class="ord" id="ord"></div>
+   </div>
+   <div>
+     <h4>出来上がりの内訳</h4>
+     <table id="sum"></table>
+   </div>
+ </div>
+
+ <button id="gen" onclick="gen()" disabled>PowerPointを作成する</button>
+ <div id="msg"></div>
+
+<script>
+// ===== 組版（元の生成ツールと同じ計算をここで行う）=====
+// 文字幅はブラウザのcanvasで実測する。サーバー（GAS）には文字を測る手段が無いため、
+// 折り返し位置と文字の大きさはここで決め、結果だけをサーバーへ渡す。
+
+var COMPANY_W_PT  = 7461517 / 12700;   // 会社名の枠（1行のとき）
+var COMPANY_W2_PT = 6893161 / 12700;   // 会社名の枠（2行のとき）
+var CATEGORY_W_PT = 7311519 / 12700;   // カテゴリーの枠
+var BASE_PT = 44, MIN_PT = 28;
+
+function measurePt(text, sizePt, bold){
+  if(!measurePt._c){ measurePt._c = document.createElement('canvas').getContext('2d'); }
+  measurePt._c.font = (bold?'bold ':'') + sizePt + 'px "Meiryo UI","Hiragino Kaku Gothic ProN",sans-serif';
+  return measurePt._c.measureText(text).width;
+}
+function isProtectedChar(ch){ return /[゠-ヿ一-鿿]/.test(ch); }
+
+// カタカナ語や熟語の途中で改行されないように、折り返し位置を自前で決める
+function wrapKinsoku(text, sizePt, bold, maxWidthPt){
+  var lines=[], cur='';
+  for(var i=0;i<text.length;i++){
+    var ch=text[i], test=cur+ch;
+    if(cur.length>0 && measurePt(test,sizePt,bold)*1.15 > maxWidthPt){
+      var br=cur.length;
+      if(isProtectedChar(ch) && isProtectedChar(cur[cur.length-1])){
+        var j=cur.length-1;
+        while(j>0 && isProtectedChar(cur[j-1])) j--;
+        if(j>0) br=j;
+      }
+      lines.push(cur.slice(0,br));
+      cur=cur.slice(br)+ch;
+    } else cur=test;
+  }
+  if(cur) lines.push(cur);
+  return lines;
+}
+// 最後の行が「ー】」のように短すぎるときは、前の行にくっつけて体裁を整える
+function mergeOrphan(lines){
+  if(lines.length>1 && lines[lines.length-1].length<=2){
+    return lines.slice(0,-2).concat([lines[lines.length-2]+lines[lines.length-1]]);
+  }
+  return lines;
+}
+function normParens(s){ return String(s==null?'':s).replace(/（/g,'(').replace(/）/g,')'); }
+function expandCorp(s){ return String(s==null?'':s).replace(/㈱/g,'株式会社').replace(/㈲/g,'有限会社').replace(/㈾/g,'合資会社'); }
+var CORP_SUFFIXES=['株式会社','有限会社','合同会社','合資会社'];
+function splitCorp(text){
+  for(var i=0;i<CORP_SUFFIXES.length;i++){
+    var s=CORP_SUFFIXES[i];
+    if(text.length>s.length && text.slice(-s.length)===s) return { main:text.slice(0,-s.length), suffix:s };
+  }
+  return null;
+}
+
+// 会社名：まず1行に収める。無理なら「○○／株式会社」で折り、それも無理なら普通に2行。
+// fontPt が 0 のときはテンプレートの大きさのまま（44pt）。
+function layoutCompany(raw){
+  var wasAbbrev=/[㈱㈲㈾]/.test(raw||''), text=expandCorp(raw);
+  if(!text) return { lines:[''], fontPt:0, tall:false };
+  if(wasAbbrev){
+    var sp=splitCorp(text);
+    if(sp) return { lines:[sp.main,sp.suffix], fontPt:0, tall:true };
+  }
+  var pt=BASE_PT, lines=wrapKinsoku(text,pt,true,COMPANY_W_PT);
+  while(lines.length>1 && pt>MIN_PT){ pt-=2; lines=wrapKinsoku(text,pt,true,COMPANY_W_PT); }
+  if(lines.length<=1) return { lines:lines, fontPt:(pt!==BASE_PT?pt:0), tall:false };
+  var sp2=splitCorp(text);
+  if(sp2) return { lines:[sp2.main,sp2.suffix], fontPt:0, tall:true };
+  return { lines:mergeOrphan(wrapKinsoku(text,BASE_PT,true,COMPANY_W2_PT)), fontPt:0, tall:true };
+}
+
+// カテゴリー：【】で囲み、1行に収まるまで小さくする。それでも無理なら2行＋行間を詰める。
+function layoutCategory(rawTitle){
+  var text='【'+normParens(rawTitle||'')+'】', pt=BASE_PT;
+  var lines=wrapKinsoku(text,pt,true,CATEGORY_W_PT);
+  while(lines.length>1 && pt>MIN_PT){ pt-=2; lines=wrapKinsoku(text,pt,true,CATEGORY_W_PT); }
+  if(lines.length<=1) return { lines:lines, fontPt:(pt!==BASE_PT?pt:0), tight:false };
+  return { lines:mergeOrphan(lines), fontPt:pt, tight:true };
+}
+
+// ===== 画面 =====
+var ctx=null, order=[], working=false;
+window.onload=function(){ google.script.run.withSuccessHandler(init).withFailureHandler(fail).getMemberPresenContext(); };
+function esc(x){ var d=document.createElement('span'); d.textContent=x==null?'':x; return d.innerHTML; }
+function blockName(key){ for(var i=0;i<ctx.blocks.length;i++) if(ctx.blocks[i].key===key) return ctx.blocks[i].block; return key; }
+function membersOf(key){ return ctx.members.filter(function(m){ return m.blockKey===key; }); }
+
+function init(c){
+  if(!c.ok){ fail({message:c.message}); return; }
+  ctx=c;
+  var tpl=c.template;
+  if(!tpl || !tpl.registered){
+    var e=document.getElementById('err'); e.style.display='block';
+    e.innerHTML='<b>テンプレートが未登録です。</b><br>'
+      +'「⚙️ 設定 ＞ 大きなスライド」の<b>メンバープレゼン</b>に、Driveに置いたpptxのリンクを登録してください。';
+  }
+  var notes=[];
+  var noCat=c.members.filter(function(m){ return !m.blockKey; });
+  if(noCat.length) notes.push('業種区分が業種区分マスタと一致しない方が'+noCat.length+'名います（この方はスライドに出ません）: '
+    +noCat.map(function(m){ return esc(m.name)+'（'+esc(m.cat||'未設定')+'）'; }).join('、'));
+  var noPhoto=c.members.filter(function(m){ return m.blockKey && !m.hasPhoto; });
+  if(noPhoto.length) notes.push('写真が見つからない方が'+noPhoto.length+'名います（写真なしで作ります）: '
+    +noPhoto.map(function(m){ return esc(m.name); }).join('、'));
+  if(notes.length){
+    var w=document.getElementById('warn'); w.style.display='block'; w.innerHTML=notes.join('<br>');
+  }
+
+  var sel=document.getElementById('date'), h='';
+  (c.candidates||[]).forEach(function(x,i){ h+='<option value="'+i+'">'+esc(x.display)+'</option>'; });
+  sel.innerHTML = h || '<option value="">開催日が計算できません</option>';
+  document.getElementById('count').textContent='メンバー '+c.members.length+'名';
+  onDate();
+}
+
+function onDate(){
+  var i=parseInt(document.getElementById('date').value,10);
+  var cand=(ctx.candidates||[])[i];
+  order = (cand && cand.order && cand.order.length) ? cand.order.slice()
+        : ctx.blocks.map(function(b){ return b.key; });
+  render();
+}
+
+function render(){
+  var oh='';
+  order.forEach(function(k,i){
+    var n=membersOf(k).length;
+    oh+='<div class="ordrow"><span class="ordn">'+(i+1)+'</span>'
+      +'<span class="ordname">'+esc(blockName(k))+'</span>'
+      +'<span class="ordcnt">'+n+'名</span>'
+      +'<button onclick="move('+i+',-1)"'+(i===0?' disabled':'')+'>↑</button>'
+      +'<button onclick="move('+i+',1)"'+(i===order.length-1?' disabled':'')+'>↓</button></div>';
+  });
+  document.getElementById('ord').innerHTML=oh;
+
+  var items=buildItems(), ov=0, ind=0;
+  items.forEach(function(x){ if(x.kind==='overview') ov++; else ind++; });
+  var sh='<tr><th>業種区分</th><th>人数</th><th>先頭</th></tr>';
+  order.forEach(function(k){
+    var list=membersOf(k);
+    sh+='<tr'+(list.length?'':' class="empty"')+'><td>'+esc(blockName(k))+'</td>'
+      +'<td class="num">'+list.length+'名</td><td>'+esc(list.length?list[0].name:'―')+'</td></tr>';
+  });
+  sh+='<tr><th>合計</th><th class="num">'+items.length+'枚</th>'
+    +'<th>扉'+ov+'＋個人'+ind+'</th></tr>';
+  document.getElementById('sum').innerHTML=sh;
+  refresh();
+}
+
+function move(i,d){
+  var j=i+d; if(j<0||j>=order.length) return;
+  var t=order[i]; order[i]=order[j]; order[j]=t; render();
+}
+
+// 業種区分ごとに「扉ページ（7名ずつ）→ 個人ページ」を並べる
+function buildItems(){
+  var items=[], rows=ctx.rowsPerPage||7;
+  order.forEach(function(k){
+    var list=membersOf(k);
+    if(!list.length) return;
+    var name=blockName(k), pages=Math.ceil(list.length/rows);
+    for(var p=0;p<pages;p++){
+      items.push({ kind:'overview', block:name, photoName:list[0].name, nextName:list[0].name,
+        rows:list.slice(p*rows,(p+1)*rows).map(function(m){
+          return { title:normParens(m.title||''), name:m.name }; }) });
+    }
+    list.forEach(function(m,i){
+      var co=layoutCompany(m.company||''), ca=layoutCategory(m.title||'');
+      items.push({ kind:'individual', photoName:m.name, name:m.name,
+        companyLines:co.lines, companyPt:co.fontPt, companyTall:co.tall,
+        categoryLines:ca.lines, categoryPt:ca.fontPt, categoryTight:ca.tight,
+        nextName:(list[i+1]?list[i+1].name:'') });
+    });
+  });
+  return items;
+}
+
+function refresh(){
+  document.getElementById('gen').disabled =
+    working || !ctx || !ctx.template || !ctx.template.registered || !buildItems().length;
+}
+function show(t,ok){ var m=document.getElementById('msg'); m.innerText=t;
+  m.style.color = ok===true?'green':(ok===false?'#d00':'#0055ff'); }
+function fail(e){ show('エラー: '+((e&&e.message)?e.message:e),false); working=false; refresh(); }
+
+function gen(){
+  var i=parseInt(document.getElementById('date').value,10);
+  var cand=(ctx.candidates||[])[i];
+  var label=cand ? cand.dateValue.replace(/\//g,'') : '';
+  var items=buildItems();
+  if(!items.length){ alert('作成するスライドがありません。'); return; }
+  working=true; refresh();
+  show('PowerPointを作成中です。テンプレートが大きいので1〜2分かかることがあります...',null);
+  google.script.run.withSuccessHandler(function(r){
+    working=false; refresh();
+    if(!r.ok){ show(r.message,false); return; }
+    document.getElementById('msg').innerHTML='<span style="color:green;">'+esc(r.message)+'</span><br>'
+      +'<a class="dl" href="'+(r.downloadUrl||r.url)+'" target="_blank">⬇ PowerPointをダウンロード</a> '
+      +'<a href="'+r.url+'" target="_blank" style="font-size:12px;color:#666;">ドライブで見る</a>';
+  }).withFailureHandler(fail).generateMemberPresenSlides({ dateLabel:label, items:items });
+}
+</script>
+</body></html>

@@ -21,25 +21,72 @@ BNI Activeチャプターの定例会運営を支援する、Google スプレッ
 
 ## プロジェクト構成
 
+サーバー側は `*.js`、画面は同名の `*.html`。
+**GASはファイル名を拡張子抜きで見る**ため、`foo.js` と `foo.html` は同居できない。
+そのためサーバー側のファイルには `_srv` を付けている（`tools/check_gas_names.py` が検査する）。
+
 ```
 BNI_Chiyoda_VisitorHost/
-├── コード.js              # サーバーサイド全ロジック（GAS）
-├── appsscript.json        # GAS マニフェスト（タイムゾーン・依存サービス定義）
-├── dialog.html            # CSV取込・名簿作成ダイアログ
-├── allocation.html        # ルーム割り振りダイアログ（D&D UI + AI連携）
-├── email.html             # メール確認・一括送信ダイアログ
-├── pdf_links.html         # 作成済みPDF確認ダイアログ
-├── pdf.html               # メンバーリストOCRアップロード
-├── memberbook.html        # メンバーブックPDFアップロード
-├── holiday.html           # 休会日管理
-├── template.html          # メールテンプレート設定
-├── allocation_note.html   # 割り振り表の特記事項設定
-├── visitor_host.html      # ビジターホスト設定
-├── api_settings.html      # Gemini API・モデル設定
-├── .claspignore           # clasp push 除外設定
-├── .gitignore             # Git 除外設定
-├── README.md              # 本ファイル（システム概要）
-└── MANUAL.md              # 詳細な利用マニュアル
+├── コード.js                 # メニュー・名簿作成・PDF・メール・割り振り（本体）
+├── appsscript.json           # GASマニフェスト（タイムゾーン・ウェブアプリの宣言）
+│
+├── webapp_srv.js             # ウェブアプリの入口（doGet）と画面一覧
+│   └ webapp_home.html        #   トップページ
+├── home_srv.js               # メニュー代わりのホーム画面
+│   └ menu_home.html
+│
+│  ── 毎週の作業 ──
+├── dialog.html               # CSV取込・名簿作成
+├── allocation.html           # ルーム・オリエン割り振り表
+├── email.html                # 案内メールの確認・一括送信
+├── pdf_links.html            # 作成済みPDFの確認
+├── archive.html              # シートの整理（アーカイブ）
+│
+│  ── スライド・冊子 ──
+├── slides_visitor_srv.js     # ビジター・ゲスト・代理スライド
+│   └ slides_visitor.html
+├── member_presen_srv.js      # メンバープレゼンスライド
+│   └ member_presen.html
+├── meeting_slides_srv.js     # 定例会スライドの自動更新
+│   └ slides_meeting.html
+├── memberbook_srv.js         # メンバーブック（配布PDFの登録）
+│   ├ memberbook.html
+│   ├ memberbook_editor.html  #   冊子の編集画面
+│   └ memberbook_render.html  #   冊子の組版
+├── zoom_guide.html           # Zoom入室案内
+├── ooxml.js                  # pptx(OOXML)を文字列で書き換える共通処理
+│
+│  ── 名簿・素材 ──
+├── member_master_srv.js      # メンバー名簿マスタ（全機能の正本）
+│   ├ member_master.html
+│   └ member_photos.html
+├── spreading_srv.js          # Spreadingから名簿を更新
+│   └ spreading.html
+├── assets.js                 # 素材フォルダ・写真・テンプレートの保管
+│   ├ asset_settings.html
+│   └ template_files.html
+├── big_templates_srv.js      # 大きなpptxをDriveリンクで登録・加工
+│   └ big_templates.html
+├── pdf.html                  # メンバーリスト(OCR)の取り込み
+│
+│  ── その他 ──
+├── roulette_srv.js           # 抽選ルーレットのビジター招待数
+├── holiday.html              # 休会日
+├── template.html             # メールテンプレート
+├── allocation_note.html      # 割り振り表の特記事項
+├── visitor_host.html         # ビジターホスト・優先順位
+├── ai_documents.html         # AI参考資料
+├── api_settings.html         # Gemini API・モデル
+│
+├── MANUAL.md                 # 利用マニュアル（正本）
+├── manual.html               # ↑から生成。画面に出すもの
+├── templates/                # ビジター用pptxテンプレート
+└── tools/                    # 検査・生成スクリプト（GASには送らない）
+    ├── build_manual.py       #   MANUAL.md → manual.html
+    ├── check_gas_names.py    #   名前の衝突・参照先HTMLの検査
+    ├── check_html.py         #   divの対応・スクリプトの構文
+    ├── check_manual_links.py #   マニュアルの導線 ↔ 実際のメニュー
+    └── check_member_presen.py#   メンバープレゼン生成の通し検査
 ```
 
 ## セットアップ

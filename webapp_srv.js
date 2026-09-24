@@ -42,6 +42,7 @@ var WEBAPP_PAGES_ = [
   ]},
   { group: 'スライド・冊子', items: [
     { key: 'slides_visitor',    label: 'ビジター・代理スライド作成', desc: '紹介・プレゼンのPowerPointを作ります' },
+    { key: 'member_presen',     label: 'メンバープレゼンスライド作成', desc: '業種区分ごとの扉ページと個人ページ' },
     { key: 'slides_meeting',    label: '定例会スライドの自動更新', desc: '更新状況などを差し込みます' },
     { key: 'memberbook_editor', label: 'メンバーブックの編集・PDF出力', desc: '冊子の中身を編集して出力します' },
     { key: 'zoom_guide',        label: 'Zoom入室案内の作成',     desc: '表示名のお願いを作ります' }
