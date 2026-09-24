@@ -262,6 +262,8 @@ function mpIndividualSlide_(tplXml, tplRels, item, photo) {
   if (item.categoryPt) xml = setFontSizeInShape_(xml, MP_INDIVIDUAL_.category, item.categoryPt);
   if (item.categoryTight) xml = setLineSpacingInShape_(xml, MP_INDIVIDUAL_.category, 85);
 
+  // 30秒以外にしたい方（2分30秒プレゼンなど）は、カウントダウンごと作り直す
+  if (item.countdownSec) xml = mpSetCountdown_(xml, item.countdownSec);
   if (item.autoAdvanceMs) xml = mpAutoAdvance_(xml, item.autoAdvanceMs);
 
   if (item.nextName) {
@@ -273,13 +275,35 @@ function mpIndividualSlide_(tplXml, tplRels, item, photo) {
   return mpApplyPhoto_(xml, tplRels, MP_INDIVIDUAL_, photo);
 }
 
-// 30秒カウントダウンを「スライドが出たら自動で始まり、終わったら次のスライドへ」にする。
+// === カウントダウンと自動送り ===
 //
-// テンプレートのカウントダウンは、数字の図形を1秒ごとに1枚ずつ消していく仕掛けで、
-// 開始条件が「クリック待ち」(delay="indefinite") になっている。これだと
-// 何秒で次に進めばよいかがPowerPointにも決められない。
-// ここで開始条件を0秒にし、スライドの「自動で次へ進む」時間(advTm)を
-// カウントダウンの長さに合わせる。
+// テンプレートのカウントダウンは、数字を書いた白い箱を重ねておき、
+// 1秒ごとに上から1枚ずつ消して下の数字を見せる、という仕掛け。
+//
+// 自動で次のスライドへ進ませるには、次の3つが揃っている必要がある。
+//   (1) カウントダウンがスライド表示と同時に始まること  … <p:cond delay="0"/>
+//   (2) スライドに「○秒で次へ」が入っていること         … <p:transition advTm="…">
+//   (3) スライドショーが保存済みのタイミングを使う設定   … <p:showPr useTimings="1">
+// 元のテンプレートは3つとも噛み合っておらず（クリック待ち・0.4秒・タイミング無視）、
+// とくに(3)が0のままだと(1)(2)を直しても絶対に自動で進まない。
+
+// 「スライドショーの設定 ＞ 保存済みのタイミングを使用」を有効にする。
+// プレゼンテーション全体の設定なので、スライドごとではなくここで1回だけ。
+function mpUseTimings_(map) {
+  var path = 'ppt/presProps.xml', xml = xmlOf_(map, path);
+  if (!xml) return false;
+  if (/<p:showPr\b[^>]*\buseTimings="1"/.test(xml)) return true;
+  if (/<p:showPr\b[^>]*\buseTimings="0"/.test(xml)) {
+    putXml_(map, path, xml.replace(/(<p:showPr\b[^>]*\buseTimings=")0(")/, '$11$2'));
+    return true;
+  }
+  if (/<p:showPr\b/.test(xml)) {
+    putXml_(map, path, xml.replace(/<p:showPr\b/, '<p:showPr useTimings="1"'));
+    return true;
+  }
+  return false;
+}
+
 function mpAutoAdvance_(xml, ms) {
   // 開始条件（クリック待ち → すぐ開始）。dur="indefinite" には触らないこと。
   var before = xml;
@@ -294,6 +318,130 @@ function mpAutoAdvance_(xml, ms) {
     xml = xml.replace(/<p:transition\b([^>]*?)(\/?)>/g, '<p:transition$1 advTm="' + ms + '"$2>');
   }
   return xml;
+}
+
+// --- 長さの違うカウントダウンを作る（2分30秒プレゼンなど）---
+// テンプレートに入っているのは30秒ぶんだけなので、秒数を変えるときは
+// 数字の箱とアニメーションを作り直す。書式は見本の箱からそのまま引き継ぐ。
+
+// 表示する文字。60秒以上なら「2:30」のような分:秒にする。
+function mpCountdownLabels_(sec) {
+  var out = [];
+  for (var t = sec; t >= 0; t--) {
+    out.push(sec >= 60 ? (Math.floor(t / 60) + ':' + (t % 60 < 10 ? '0' : '') + (t % 60)) : String(t));
+  }
+  return out;
+}
+
+// Arial Black での文字の幅（全角を1とした目安）。箱に収まる大きさを決めるのに使う。
+function mpTextEm_(s) {
+  var w = 0;
+  for (var i = 0; i < s.length; i++) w += (s.charAt(i) === ':') ? 0.3335 : 0.6665;
+  return w;
+}
+
+// スライド上の「カウントダウンの数字の箱」を集める。
+// アニメーションの対象になっている図形と、それと同じ大きさの図形（最後に残る0）が対象。
+function mpCountdownShapes_(xml) {
+  var anim = {}, m, re = /<p:spTgt spid="(\d+)"\/>/g;
+  while ((m = re.exec(xml)) !== null) anim[m[1]] = true;
+  var ranges = findTagRanges_(xml, 'p:sp'), all = [], sizes = {}, i;
+  for (i = 0; i < ranges.length; i++) {
+    var seg = xml.substring(ranges[i].start, ranges[i].end);
+    var id = (seg.match(/<p:cNvPr[^>]*\sid="(\d+)"/) || [])[1];
+    var t = (seg.match(/<a:t>([^<]*)<\/a:t>/) || [])[1];
+    var ext = seg.match(/<a:ext\s+cx="(\d+)"\s+cy="(\d+)"\s*\/>/);
+    if (!id || t === undefined || !/^\d+$/.test(t) || !ext) continue;
+    var key = ext[1] + 'x' + ext[2];
+    all.push({ id: id, num: parseInt(t, 10), start: ranges[i].start, end: ranges[i].end,
+               xml: seg, key: key, cx: parseInt(ext[1], 10), animated: !!anim[id] });
+    if (anim[id]) sizes[key] = true;
+  }
+  var out = [];
+  for (i = 0; i < all.length; i++) if (all[i].animated || sizes[all[i].key]) out.push(all[i]);
+  return out;
+}
+
+// 数字の箱を1枚作る。見本の書式をそのまま使い、文字・色・大きさだけ変える。
+function mpNumberBox_(model, id, text, color, sizePt) {
+  return model
+    .replace(/<p:cNvPr id="\d+" name="[^"]*"/, '<p:cNvPr id="' + id + '" name="Count ' + id + '"')
+    .replace(/<a:extLst>[\s\S]*?<\/a:extLst>/, '')                 // 図形固有の識別子は引き継がない
+    .replace(/<a:srgbClr val="[0-9A-Fa-f]{6}"\/>/, '<a:srgbClr val="' + color + '"/>')
+    .replace(/(<a:rPr\b[^>]*?)\ssz="\d+"/, '$1 sz="' + Math.round(sizePt * 100) + '"')
+    .replace(/<a:t>[^<]*<\/a:t>/, '<a:t>' + escapeXml_(text) + '</a:t>');
+}
+
+// 1秒ごとに1枚ずつ消していくアニメーション。テンプレートと同じ形で組み立てる。
+function mpCountdownTiming_(spids) {
+  var steps = '', id = 4, i;
+  for (i = 0; i < spids.length; i++) {
+    var a = id++, b = id++, c = id++;
+    steps += '<p:par><p:cTn id="' + a + '" fill="hold"><p:stCondLst><p:cond delay="' + (i * 1000)
+           + '"/></p:stCondLst><p:childTnLst>'
+           + '<p:par><p:cTn id="' + b + '" presetID="1" presetClass="exit" presetSubtype="0"'
+           + ' fill="hold" grpId="0" nodeType="afterEffect">'
+           + '<p:stCondLst><p:cond delay="1000"/></p:stCondLst><p:childTnLst>'
+           + '<p:set><p:cBhvr><p:cTn id="' + c + '" dur="1" fill="hold">'
+           + '<p:stCondLst><p:cond delay="0"/></p:stCondLst></p:cTn>'
+           + '<p:tgtEl><p:spTgt spid="' + spids[i] + '"/></p:tgtEl>'
+           + '<p:attrNameLst><p:attrName>style.visibility</p:attrName></p:attrNameLst></p:cBhvr>'
+           + '<p:to><p:strVal val="hidden"/></p:to></p:set>'
+           + '</p:childTnLst></p:cTn></p:par></p:childTnLst></p:cTn></p:par>';
+  }
+  var bld = '';
+  for (i = 0; i < spids.length; i++) bld += '<p:bldP spid="' + spids[i] + '" grpId="0" animBg="1"/>';
+  return '<p:timing><p:tnLst><p:par><p:cTn id="1" dur="indefinite" restart="never" nodeType="tmRoot">'
+       + '<p:childTnLst><p:seq concurrent="1" nextAc="seek">'
+       + '<p:cTn id="2" dur="indefinite" nodeType="mainSeq"><p:childTnLst>'
+       + '<p:par><p:cTn id="3" fill="hold"><p:stCondLst><p:cond delay="0"/></p:stCondLst>'
+       + '<p:childTnLst>' + steps + '</p:childTnLst></p:cTn></p:par>'
+       + '</p:childTnLst></p:cTn>'
+       + '<p:prevCondLst><p:cond evt="onPrev" delay="0"><p:tgtEl><p:sldTgt/></p:tgtEl></p:cond></p:prevCondLst>'
+       + '<p:nextCondLst><p:cond evt="onNext" delay="0"><p:tgtEl><p:sldTgt/></p:tgtEl></p:cond></p:nextCondLst>'
+       + '</p:seq></p:childTnLst></p:cTn></p:par></p:tnLst>'
+       + '<p:bldLst>' + bld + '</p:bldLst></p:timing>';
+}
+
+// カウントダウンを指定の秒数で作り直す
+function mpSetCountdown_(xml, sec) {
+  var boxes = mpCountdownShapes_(xml);
+  if (boxes.length < 5) {
+    throw new Error('テンプレートにカウントダウンの数字が見つかりません（' + boxes.length + '枚）。');
+  }
+  boxes.sort(function (a, b) { return a.num - b.num; });
+  var model = boxes[boxes.length - 1], base = model.xml;
+
+  var labels = mpCountdownLabels_(sec), n = labels.length;
+  // 文字数が増えるぶん、箱に収まる大きさまで小さくする（「2:30」は4文字）
+  var pt = 96, m = base.match(/<a:rPr\b[^>]*?\ssz="(\d+)"/);
+  if (m) pt = parseInt(m[1], 10) / 100;
+  var usable = (model.cx - 91440 * 2) / 12700;                 // 左右の余白を引いた幅(pt)
+  var fit = Math.floor(usable / mpTextEm_(labels[0]) * 0.95);
+  if (fit < pt) pt = Math.max(fit, 24);
+
+  var maxId = 0, mm, reId = /<p:cNvPr[^>]*\sid="(\d+)"/g;
+  while ((mm = reId.exec(xml)) !== null) maxId = Math.max(maxId, parseInt(mm[1], 10));
+
+  // 文書順は「残り0秒」が一番奥、「残り最大」が一番手前。手前から順に消していく。
+  var ids = [], shapes = '';
+  for (var d = 0; d < n; d++) {
+    var id = ++maxId;
+    ids[d] = id;
+    shapes += mpNumberBox_(base, id, labels[n - 1 - d], d <= 10 ? 'CF2030' : '64666A', pt);
+  }
+  var spids = [];
+  for (var r = sec; r >= 1; r--) spids.push(ids[r]);
+
+  boxes.sort(function (a, b) { return a.start - b.start; });
+  var at = boxes[0].start, out = xml;
+  for (var i = boxes.length - 1; i >= 0; i--) out = out.substring(0, boxes[i].start) + out.substring(boxes[i].end);
+  out = out.substring(0, at) + shapes + out.substring(at);
+
+  var timing = mpCountdownTiming_(spids);
+  if (/<p:timing>/.test(out)) out = out.replace(/<p:timing>[\s\S]*?<\/p:timing>/, timing);
+  else out = out.replace('</p:sld>', timing + '</p:sld>');
+  return out;
 }
 
 // テンプレートの中身を、指示どおりのスライドの並びに置き換える
@@ -349,6 +497,8 @@ function buildMemberPresenSlides_(map, items) {
   var maxRid = 0, m, reR = /Id="rId(\d+)"/g;
   while ((m = reR.exec(prsRels)) !== null) maxRid = Math.max(maxRid, parseInt(m[1], 10));
 
+  var timings = mpUseTimings_(map);      // 自動送りが効くようにしておく
+
   var cache = { by: {}, seq: 0 }, sldIds = '', relAdd = '', ctAdd = '', noPhoto = [];
   for (var i = 0; i < items.length; i++) {
     var it = items[i], n = i + 1, rid = 'rId' + (maxRid + n);
@@ -377,7 +527,8 @@ function buildMemberPresenSlides_(map, items) {
   putXml_(map, '[Content_Types].xml', ct);
 
   var pruned = mpPruneMedia_(map);
-  return { slides: items.length, photos: cache.seq, noPhoto: noPhoto, prunedMedia: pruned };
+  return { slides: items.length, photos: cache.seq, noPhoto: noPhoto,
+           prunedMedia: pruned, useTimings: timings };
 }
 
 // どこからも使われなくなった画像を捨てる。

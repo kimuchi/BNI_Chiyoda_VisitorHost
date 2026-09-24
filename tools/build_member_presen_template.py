@@ -10,6 +10,7 @@
   ・使う2枚とその土台（レイアウト・マスター・テーマ・画像）だけを残す
   ・実在の方の氏名・会社名・写真を、差し込み用の見本に置き換える
   ・30秒カウントダウンを自動で始め、終わったら次のスライドへ進むようにする
+  ・「保存済みのタイミングを使用」を有効にする（これが無いと自動送りが効かない）
 を行う。デザイン・座標・フォント・配色には触れない。
 
     python3 tools/build_member_presen_template.py <元のpptx> <出力先pptx>
@@ -133,7 +134,18 @@ def main():
         if r.returncode != 0:
             sys.exit(r.returncode)
 
-        # 5) マスターが持つレイアウトを1つだけにする
+        # 5) 「保存済みのタイミングを使用」を有効にする。
+        # これが 0 のままだと、スライドに何秒で次へ進むか書いてあっても
+        # PowerPointは無視するので、自動送りが絶対に効かない。
+        pp = parts['ppt/presProps.xml']
+        x = open(pp, encoding='utf-8').read()
+        if re.search(r'<p:showPr\b[^>]*\buseTimings="0"', x):
+            x = re.sub(r'(<p:showPr\b[^>]*\buseTimings=")0(")', r'\g<1>1\g<2>', x)
+        elif not re.search(r'<p:showPr\b[^>]*\buseTimings=', x):
+            x = x.replace('<p:showPr', '<p:showPr useTimings="1"', 1)
+        open(pp, 'w', encoding='utf-8').write(x)
+
+        # 6) マスターが持つレイアウトを1つだけにする
         mrels = parts[rels_path(MASTER)]
         x = open(mrels, encoding='utf-8').read()
         keep_rid = re.search(r'<Relationship\b[^>]*\bId="([^"]+)"[^>]*slideLayout16\.xml"[^>]*/>', x).group(1)
@@ -146,7 +158,7 @@ def main():
                    '<p:sldLayoutIdLst>%s</p:sldLayoutIdLst>' % one, x, flags=re.S)
         open(mx, 'w', encoding='utf-8').write(x)
 
-        # 6) presentation.xml と、その関係を作り直す
+        # 7) presentation.xml と、その関係を作り直す
         px = parts['ppt/presentation.xml']
         x = open(px, encoding='utf-8').read()
         x = re.sub(r'<p:sldMasterIdLst>.*?</p:sldMasterIdLst>',
@@ -181,7 +193,7 @@ def main():
             + rel(7, 'tableStyles', 'tableStyles.xml')
             + '</Relationships>')
 
-        # 7) [Content_Types].xml を、残したパーツだけで作り直す
+        # 8) [Content_Types].xml を、残したパーツだけで作り直す
         ct = open(parts['[Content_Types].xml'], encoding='utf-8').read()
         defaults = re.findall(r'<Default\b[^>]*/>', ct)
         exts = {re.search(r'Extension="([^"]+)"', d).group(1).lower() for d in defaults}
@@ -216,7 +228,7 @@ def main():
             '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
             '<Types xmlns="%s">%s%s</Types>' % (CT_NS, ''.join(defaults), ''.join(ov)))
 
-        # 8) 固める
+        # 9) 固める
         with zipfile.ZipFile(dst, 'w', zipfile.ZIP_DEFLATED) as out:
             for p in sorted(parts):
                 out.write(parts[p], p)

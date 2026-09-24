@@ -219,15 +219,32 @@ for i, it in enumerate(items):
             ck(paras(sh['14']) == [it['nextName']], '%d %s NEXT氏名が違う: %s' % (n, tag, paras(sh['14'])))
         else:
             ck('14' not in sh and '6' not in sh, '%d %s 最後の人なのにNEXTが残っている' % (n, tag))
-        # 30秒カウントダウンが自動で始まり、終わったら次のスライドへ進むこと
+        # カウントダウンが自動で始まり、終わったら次のスライドへ進むこと
         sx = z.read('ppt/slides/slide%d.xml' % n).decode('utf-8')
+        sec = it.get('countdownSec') or 30
         ck('<p:cond delay="indefinite"/>' not in sx,
            '%d %s カウントダウンがクリック待ちのまま' % (n, tag))
-        adv = re.findall(r'advTm="(\d+)"', sx)
-        ck(adv and all(int(a) >= 30000 for a in adv),
-           '%d %s 自動で次へ進む時間が %s（30000以上のはず）' % (n, tag, adv))
-        ck(len(re.findall(r'<p:spTgt spid="\d+"/>', sx)) >= 30,
-           '%d %s カウントダウンのアニメーションが欠けている' % (n, tag))
+        adv = set(re.findall(r'advTm="(\d+)"', sx))
+        ck(adv == {str((sec + 1) * 1000)},
+           '%d %s 自動で次へ進む時間が %s（%d のはず）' % (n, tag, adv or 'なし', (sec + 1) * 1000))
+        ck(len(re.findall(r'<p:spTgt spid="\d+"/>', sx)) == sec,
+           '%d %s カウントダウンの手順が %d 回（%d 回のはず）'
+           % (n, tag, len(re.findall(r'<p:spTgt spid="\d+"/>', sx)), sec))
+        # 数字の箱が「残り最大」から「0」まで揃っていること
+        want = ['%d:%02d' % (t // 60, t % 60) if sec >= 60 else str(t) for t in range(sec, -1, -1)]
+        doc = minidom.parseString(sx)
+        nums = []
+        for sp2 in doc.getElementsByTagNameNS(NS_P, 'sp'):
+            # <a:extLst> の中にも <a:ext> があるので、必ず <a:xfrm> の中を見る
+            xf = sp2.getElementsByTagNameNS(NS_A, 'xfrm')
+            ex = xf[0].getElementsByTagNameNS(NS_A, 'ext') if xf else []
+            if not ex or ex[0].getAttribute('cx') != '2878814':
+                continue
+            nums.append(''.join(t.firstChild.nodeValue if t.firstChild else ''
+                                for t in sp2.getElementsByTagNameNS(NS_A, 't')))
+        ck(nums == list(reversed(want)),
+           '%d %s カウントダウンの数字が %s…%s（%s…%s のはず）'
+           % (n, tag, nums[:2], nums[-2:], list(reversed(want))[:2], list(reversed(want))[-2:]))
 
     # 写真
     pid = '2' if it['kind'] == 'overview' else '3'
@@ -257,6 +274,11 @@ for i, it in enumerate(items):
 tmp = os.path.join(OUT, '_photo.tmp')
 if os.path.exists(tmp):
     os.remove(tmp)
+
+# 「保存済みのタイミングを使用」が有効か（これが無いと自動送りは効かない）
+pp = z.read('ppt/presProps.xml').decode('utf-8')
+ck(re.search(r'<p:showPr\b[^>]*\buseTimings="1"', pp) is not None,
+   'スライドショーが保存済みのタイミングを使う設定になっていない（advTmが無視される）')
 
 sz = os.path.getsize(dst)
 print('出来上がり: %s  %.2f MB  %d パーツ  %d スライド' % (os.path.basename(dst), sz / 1048576, len(names), len(items)))
