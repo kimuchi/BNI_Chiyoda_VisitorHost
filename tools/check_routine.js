@@ -32,8 +32,10 @@ function fakeSheet(name, grid) {
 const sheets = Object.keys(DATA).map((n) => fakeSheet(n, DATA[n]));
 
 // --- 名簿（検証用。実際の氏名は使わない）---
-const MEMBERS = ['谷村 大輔', '竹田 明日翔', '本田 圭吾', '竹中 直人', '桒原 一郎',
-                 '野崎 佳子', '豊田 章', '高瀬 舟', '平井 堅一', '舩山 陽子', '杉浦 太郎']
+const MEMBERS = ['谷村 大輔', '竹田 明日翔', '本田 圭吾', '竹中 直人', '桒原 美穂',
+                 '野崎 佳子', '豊田 恵', '高瀬 舟', '平井 成美', '舩山 ちひろ', '杉浦 太郎',
+                 '山本 登一郎', '金子 高志', '瞳 ゆり', '田中 秀一', '小池 美咲',
+                 '木村 光範', '若林 勇貴', '石渕 裕介', '分銅 雅一', '三澤 浩三', '上野 誠']
   .map((n) => ({ no: '1', name: n }));
 
 const sandbox = {
@@ -105,6 +107,20 @@ if (badCore.length) {
 if (unmatched.length) {
   console.log(`  名簿と一致しなかった方 ${unmatched.length} 件（検証用の名簿には少ししか入れていないため）:`);
   unmatched.slice(0, 8).forEach(([d, v]) => console.log(`    ${d}  ${v}`));
+}
+
+// --- スライドに載せる項目 ---
+console.log('\nスライドに載せる項目:');
+for (const d of ['2026/09/09', '2026/09/16', '2026/09/23', '2026/09/30']) {
+  const r = sandbox.getRoutineInfo(d);
+  if (!r.found) { console.log(`  ${d} (該当なし)`); continue; }
+  const mp = (r.mainPresenters || []).map((m) => `${m.raw}→${m.name || '(未一致)'}`).join(' / ');
+  console.log(`  ${d}`);
+  console.log(`     メインプレゼン : ${mp || '(なし)'}`);
+  console.log(`     一般規定       : ${r.generalPolicy || '(なし)'}番  ［${r.generalPolicyRaw}］`);
+  console.log(`     求める専門分野 : ${JSON.stringify(r.wantedCategories)}`);
+  console.log(`     開放カテゴリー : ${r.openCategory || '(空欄)'}`);
+  console.log(`     審査中         : ${r.reviewCategory || '(空欄)'}`);
 }
 
 // --- 決まった日で中身を確かめる ---

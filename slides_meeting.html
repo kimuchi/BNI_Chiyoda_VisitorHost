@@ -86,14 +86,30 @@
  </div>
 
  <div class="sec">
-   <h4>4. 実績数値 <span class="auto">前回値</span></h4>
+   <h4>4. メンバーシップ委員会・メインプレゼン <span class="auto">ルーティンチェックシート</span></h4>
+   <table>
+     <tr><th>メインプレゼン①</th><td><select id="mp1" class="wide"></select></td></tr>
+     <tr><th>メインプレゼン②</th><td><select id="mp2" class="wide"></select></td></tr>
+     <tr><th>チャプターが求める<br>専門分野</th>
+         <td><input type="text" class="wide" id="t_求める専門分野">
+             <div style="font-size:11px;color:#888;">「、」で区切って並べます（最大12件）</div></td></tr>
+     <tr><th>開放カテゴリー</th><td><input type="text" class="wide" id="t_開放カテゴリー"></td></tr>
+     <tr><th>審査中の申込み</th><td><input type="text" class="wide" id="t_審査中カテゴリー"></td></tr>
+     <tr><th>一般規定</th><td><select id="gp"></select>
+         <span style="font-size:11px;color:#888;">選んだ番号のページだけを表示にします</span></td></tr>
+   </table>
+   <div id="mpNote" style="font-size:11px;color:#888;margin-top:6px;"></div>
+ </div>
+
+ <div class="sec">
+   <h4>5. 実績数値 <span class="auto">前回値</span></h4>
    <div style="font-size:11px;color:#666;margin-bottom:6px;">保存すると次回の初期値になります。</div>
    <div id="stats"></div>
    <button class="sub" onclick="saveStats()">この数値を保存</button>
  </div>
 
  <div class="sec">
-   <h4>5. 生成</h4>
+   <h4>6. 生成</h4>
    <div style="font-size:11px;color:#666;margin-bottom:8px;">
      テンプレートの <code>{{ }}</code> の箇所が差し替わります。どこに差し込めるかは
      「⚙️ 大きなスライドの登録」の<b>「差し込み口を調べる」</b>で確認できます。<br>
@@ -123,6 +139,13 @@
    var ch='<option value="">（指定しない）</option>';
    (c.coreValues||[]).forEach(function(v){ ch+='<option value="'+esc(v)+'">'+esc(v)+'</option>'; });
    document.getElementById('core').innerHTML=ch;
+   var mh='<option value="">（なし）</option>';
+   (c.members||[]).forEach(function(m){ mh+='<option value="'+esc(m.name)+'">'+esc(m.name)+'</option>'; });
+   document.getElementById('mp1').innerHTML=mh;
+   document.getElementById('mp2').innerHTML=mh;
+   var gh='<option value="">（指定しない）</option>';
+   for(var g=1; g<=12; g++) gh+='<option value="'+g+'">'+g+'番</option>';
+   document.getElementById('gp').innerHTML=gh;
    if(c.defaultMeeting){
      var mm=(c.defaultMeeting.display||'').match(/第(\d+)回/); val('no', mm?mm[1]:'');
    }
@@ -201,6 +224,19 @@
    }
    if(R.meetingNo) val('no', R.meetingNo);
    document.getElementById('core').value = R.coreValue || '';
+   var mp=R.mainPresenters||[];
+   document.getElementById('mp1').value = (mp[0] && mp[0].name) || '';
+   document.getElementById('mp2').value = (mp[1] && mp[1].name) || '';
+   val('t_求める専門分野', (R.wantedCategories||[]).join('、'));
+   val('t_開放カテゴリー', R.openCategory||'');
+   val('t_審査中カテゴリー', R.reviewCategory||'');
+   document.getElementById('gp').value = R.generalPolicy ? String(R.generalPolicy) : '';
+   var un=mp.filter(function(x){ return x.raw && !x.name; });
+   document.getElementById('mpNote').innerHTML = un.length
+     ? '<span style="color:#c60;">ルーティンチェックシートの「'+esc(R.mainPresentersRaw)
+       +'」から、'+esc(un.map(function(x){return x.raw;}).join('・'))
+       +' は名簿の氏名と一致しませんでした。手で選んでください。</span>'
+     : (R.mainPresentersRaw ? '記載：'+esc(R.mainPresentersRaw) : '');
    var t = R.sheetName + ' から読み込みました';
    if(R.coreValueRaw && !R.coreValue) t += '／コアバリュー「'+R.coreValueRaw+'」は見分けられませんでした';
    note.innerText=t; note.style.color='#188038';
@@ -237,6 +273,20 @@
    m['開催日付']=d;
    ['新メンバー','更新メンバー','更新90','更新60','更新30','更新超過'].forEach(function(k){ m[k]=get('t_'+k); });
    STAT_KEYS.forEach(function(k){ var e=document.getElementById('s_'+k); if(e) m[k]=e.value; });
+
+   // メインプレゼンのお2人（氏名・会社名・カテゴリーは名簿から引く）
+   [1,2].forEach(function(n){
+     var name=get('mp'+n), who=(ctx.members||[]).filter(function(x){return x.name===name;})[0]||{};
+     m['メインプレゼン'+n+'氏名']=name;
+     m['メインプレゼン'+n+'会社名']=who.company||'';
+     m['メインプレゼン'+n+'カテゴリー']=who.title?('【'+who.title+'】'):'';
+   });
+   // チャプターが求める専門分野は、表のマス目に1つずつ入れる
+   var want=get('t_求める専門分野').split(/[、,・･\/／]+/).map(function(x){return x.trim();})
+              .filter(function(x){return x;});
+   for(var i=1;i<=12;i++) m['求める専門分野'+i]=want[i-1]||'';
+   m['開放カテゴリー']=get('t_開放カテゴリー');
+   m['審査中カテゴリー']=get('t_審査中カテゴリー');
    return m;
  }
  function saveStats(){
@@ -252,7 +302,9 @@
        +'<br>'+'<a class="dl" href="'+(r.downloadUrl||r.url)+'" target="_blank">⬇ PowerPointをダウンロード</a> '+'<a href="'+r.url+'" target="_blank" style="font-size:12px;color:#666;">ドライブで見る</a>';
    }).withFailureHandler(fail).generateMeetingSlides(kind, collect(), get('meeting'), {
      patterns: document.getElementById('pat').checked,
-     coreValue: get('core')
+     coreValue: get('core'),
+     generalPolicy: parseInt(get('gp'),10) || 0,
+     mainPresenters: [get('mp1'), get('mp2')]
    });
  }
 </script>

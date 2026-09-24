@@ -110,6 +110,67 @@ function routineMemberName_(raw) {
   return { raw: s0, name: '', matched: false };
 }
 
+// --- 欄の書き方を、スライドに載せられる形に直す ----------------------------
+
+// 「なし」などをそのまま残す（スライドにも「なし」と出るため）。空欄だけ空にする。
+function routineText_(v) {
+  return String(v == null ? '' : v).replace(/[\r\n]+/g, ' ').trim();
+}
+
+// 「43.0 一般規定」の欄。「2番」「６番」→ 2 / 6
+function routinePolicyNo_(v) {
+  var s = String(v == null ? '' : v).normalize('NFKC');
+  var m = s.match(/(\d+)\s*番/) || s.match(/^\s*(\d+)\s*$/);
+  return m ? parseInt(m[1], 10) : 0;
+}
+
+// 「22 メインプレゼン」の欄。「①山本さん　②金子さん」「①木村‗②若林」など。
+// 番号の丸数字で切り、無ければ読点で切る。それぞれをメンバー名簿の氏名に合わせる。
+function routineMainPresenters_(v) {
+  var s = String(v == null ? '' : v).replace(/[\r\n]+/g, ' ').trim();
+  if (routineIsBlank_(s.replace(/[\s　]/g, ''))) return [];
+  var parts;
+  if (/[①②③④⑤]/.test(s)) {
+    parts = s.split(/[①②③④⑤]/).slice(1);
+  } else {
+    parts = s.split(/[、,／\/･・]/);
+  }
+  var out = [];
+  for (var i = 0; i < parts.length && out.length < 2; i++) {
+    var raw = String(parts[i]).replace(/[‗_＿\-－―]/g, ' ').trim();
+    if (!raw) continue;
+    var hit = routineMemberName_(raw);
+    out.push({ raw: raw, name: hit.name, matched: hit.matched });
+  }
+  return out;
+}
+
+// 「募集カテゴリー」の欄。「赤文字／黒文字」の見出しや但し書きを落として、項目だけ並べる。
+//   赤文字
+//   ・結婚相談所　・電気工事業　・SNS運用
+//   黒文字
+//   ・ハウスメーカー　・工務店
+// → ['結婚相談所','電気工事業','SNS運用','ハウスメーカー','工務店']
+function routineList_(v) {
+  var s = String(v == null ? '' : v);
+  if (routineIsBlank_(s.replace(/[\s　]/g, ''))) return [];
+  var lines = s.split(/[\r\n]+/), out = [];
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].trim();
+    if (!line) continue;
+    if (/^[（(]/.test(line)) continue;                       // 「（…から更新します）」などの但し書き
+    if (/^(赤文字|黒文字|赤|黒)[：:　 ]*$/.test(line)) continue;  // 色の見出し
+    var items = line.split(/[・･、,／\/]+/);
+    for (var k = 0; k < items.length; k++) {
+      var t = items[k].replace(/[\s　]+/g, ' ').trim();
+      if (!t) continue;
+      if (/^(赤文字|黒文字)$/.test(t)) continue;
+      out.push(t);
+    }
+  }
+  return out;
+}
+
 // 開催日の欄を読む。画面から直接呼べる。
 function getRoutineInfo(dateStr) {
   try {
@@ -123,34 +184,53 @@ function getRoutineInfo(dateStr) {
     var rows = Math.min(ROUTINE_SCAN_ROWS_, hit.sheet.getLastRow());
     var grid = hit.sheet.getRange(1, 1, rows, hit.col).getValues();
 
-    // 項目名（B〜E列のどこか）で行を探し、その開催日の列の値を返す
-    var pick = function (labels) {
+    // 項目名（B〜E列のどこか）で行を探し、その開催日の列の値を返す。
+    // まず完全一致で探し、無ければ前方一致で探す。
+    // 「メインプレゼン」で前方一致だけにすると「メインプレゼン用スライド画像」の行を
+    // 先に拾ってしまうため、この順番が要る。
+    var scan = function (labels, exact) {
       for (var r = 0; r < grid.length; r++) {
         for (var c = 1; c < Math.min(ROUTINE_LABEL_COLS_, grid[r].length); c++) {
           var s = String(grid[r][c] == null ? '' : grid[r][c]).replace(/[\s　]/g, '');
           if (!s) continue;
           for (var k = 0; k < labels.length; k++) {
-            if (s.indexOf(labels[k]) === 0) {
-              return { row: r + 1, value: String(grid[r][hit.col - 1] == null ? '' : grid[r][hit.col - 1]).trim() };
+            var ok = exact ? (s === labels[k]) : (s.indexOf(labels[k]) === 0);
+            if (ok) {
+              return { row: r + 1, label: s,
+                       value: String(grid[r][hit.col - 1] == null ? '' : grid[r][hit.col - 1]).trim() };
             }
           }
         }
       }
-      return { row: 0, value: '' };
+      return null;
+    };
+    var pick = function (labels) {
+      return scan(labels, true) || scan(labels, false) || { row: 0, label: '', value: '' };
     };
 
     var no = pick(['定例会回数']);
     var core = pick(['BNI目的と概要', 'BNIの目的と概要']);
-    var long = pick(['2分30秒']);
+    var long = pick(['2分30秒プレゼン', '2分30秒']);
+    var main = pick(['メインプレゼン']);
+    var wanted = pick(['募集カテゴリー', 'チャプターが求める', '求める専門分野']);
+    var open = pick(['開放カテゴリー']);
+    var review = pick(['審査中カテゴリー', '審査中の申込み']);
+    var policy = pick(['一般規定']);
     var cv = coreValueOf_(core.value);
     var pres = routineMemberName_(long.value);
+    var mains = routineMainPresenters_(main.value);
 
     return { ok: true, found: true, sheetName: hit.name, term: hit.term,
              date: fmtDate_(t),
              meetingNo: String(no.value || '').replace(/[^\d]/g, ''),
              coreValue: cv ? cv.label : '', coreValueRaw: core.value,
              longPresenter: pres.name, longPresenterRaw: pres.raw,
-             longPresenterUnmatched: (!!pres.raw && !pres.matched) };
+             longPresenterUnmatched: (!!pres.raw && !pres.matched),
+             mainPresenters: mains, mainPresentersRaw: main.value,
+             wantedCategories: routineList_(wanted.value), wantedCategoriesRaw: wanted.value,
+             openCategory: routineText_(open.value),
+             reviewCategory: routineText_(review.value),
+             generalPolicy: routinePolicyNo_(policy.value), generalPolicyRaw: policy.value };
   } catch (e) {
     console.error('[ROUTINE] ' + (e && e.stack ? e.stack : e));
     return { ok: false, found: false, message: 'ルーティンチェックシートの読み取りに失敗しました: '
