@@ -102,7 +102,32 @@
  </div>
 
  <div class="sec">
-   <h4>5. 後半スライド <span class="auto">ルーティンチェックシート</span></h4>
+   <h4>5. ウィークリープレゼン（前半） <span class="auto">メンバープレゼン</span></h4>
+   <label><input type="checkbox" id="mpOn" onchange="toggleMP()">
+     メンバープレゼンのページを作って、<b>前半スライドのウィークリープレゼンテーションに差し込む</b></label>
+   <div id="mpBox" style="display:none;margin-top:8px;">
+     <table>
+       <tr><th>始まりの業種区分</th><td><select id="mpStart" onchange="renderMP()"></select>
+           <div style="font-size:11px;color:#888;">開催日から自動で選んでいます。1つずらしたいときだけ変えてください。</div></td></tr>
+       <tr><th>2分30秒プレゼン</th><td><select id="mpLong" onchange="renderMP()"></select>
+           <div id="mpLongNote" style="font-size:11px;color:#888;"></div></td></tr>
+     </table>
+     <div id="mpNote2" style="font-size:12px;color:#444;margin-top:6px;"></div>
+   </div>
+   <div class="mk">
+     <h5>アンバサダー・ディレクター（メンバーの後、「全員終わりましたか？」の前）
+       <span class="auto">ルーティンチェックシート</span></h5>
+     <div id="gsList" style="font-size:12px;"></div>
+     <div id="gsNote" style="font-size:11px;color:#888;margin-top:4px;"></div>
+   </div>
+   <div class="mk">
+     <label><input type="checkbox" id="mpAuto" checked onchange="renderMP()">
+       カウントダウンが終わったら<b>自動で次へ進む</b>（メンバー・アンバサダー・ディレクターのページ）</label>
+   </div>
+ </div>
+
+ <div class="sec">
+   <h4>6. 後半スライド <span class="auto">ルーティンチェックシート</span></h4>
    <table>
      <tr><th>推薦のことば</th><td><select id="rc1"></select> →
          <select id="rc2"></select></td></tr>
@@ -111,7 +136,7 @@
    </table>
    <div id="rcNote" style="font-size:11px;color:#888;margin-top:6px;"></div>
    <div class="mk">
-     <h5>リファーラル発表（名簿のNo.順・全員ぶん）</h5>
+     <h5>リファーラル発表（名簿のNo.順・全員ぶん・クリックで進む）</h5>
      <label><input type="checkbox" id="rfOn" onchange="renderReferral()">
        リファーラル発表のページを<b>名簿のNo.順で全員ぶん</b>作る</label>
      　<label>カウントダウン <input type="text" id="rfSec" size="2" value="7">秒</label>
@@ -133,14 +158,14 @@
  </div>
 
  <div class="sec">
-   <h4>6. 実績数値 <span class="auto">前回値</span></h4>
+   <h4>7. 実績数値 <span class="auto">前回値</span></h4>
    <div style="font-size:11px;color:#666;margin-bottom:6px;">保存すると次回の初期値になります。</div>
    <div id="stats"></div>
    <button class="sub" onclick="saveStats()">この数値を保存</button>
  </div>
 
  <div class="sec">
-   <h4>7. 生成</h4>
+   <h4>8. 生成</h4>
    <div style="font-size:11px;color:#666;margin-bottom:8px;">
      テンプレートの <code>{{ }}</code> の箇所が差し替わります。どこに差し込めるかは
      「⚙️ 大きなスライドの登録」の<b>「差し込み口を調べる」</b>で確認できます。<br>
@@ -153,6 +178,7 @@
  </div>
  <div id="msg"></div>
 
+<?!= include('slides_layout') ?>
 <script>
  var ctx=null, working=false;
  var STAT_KEYS=['総リファーラル数','サンキューカード','1to1','ビジター数','外部リファーラル','CEU'];
@@ -196,6 +222,7 @@
    }
    renderStats(c.stats||{});
    applyLists(c.lists);
+   loadGuests();
  }
  function renderStats(s){
    document.getElementById('stats').innerHTML='<table>'+STAT_KEYS.map(function(k){
@@ -251,6 +278,8 @@
  // ルーティンチェックシートに書いてある開催回とコアバリューを反映する
  function applyRoutine(R){
    var note=document.getElementById('coreNote');
+   guestRaw = (R && R.ok && R.found) ? (R.regionGuestsRaw||'') : '';
+   renderGuests();
    if(!R || !R.ok || !R.found){
      note.innerText = (R&&R.message) ? R.message : 'ルーティンチェックシートに該当する開催日が見つかりません。';
      note.style.color='#c60'; return;
@@ -292,6 +321,7 @@
    var m=(ctx.meetings||[]).filter(function(x){return x.dateValue===d;})[0];
    if(m){ var mm=(m.display||'').match(/第(\d+)回/); val('no', mm?mm[1]:''); }
    google.script.run.withSuccessHandler(applyRoutine).getRoutineInfo(d);
+   mpForDate();
    setBusy(true,'開催日にあわせて再計算しています...');
    google.script.run.withSuccessHandler(function(L){
      setBusy(false);
@@ -337,6 +367,113 @@
    m['審査中カテゴリー']=get('t_審査中カテゴリー');
    return m;
  }
+ // --- メンバープレゼンを前半に差し込む ---
+ // 並びの組み立ては slides_layout.html の memberPresenItems()（メンバープレゼンの画面と共通）。
+ var mpCtx=null;
+ function toggleMP(){
+   var on=document.getElementById('mpOn').checked;
+   document.getElementById('mpBox').style.display = on ? 'block' : 'none';
+   if(on && !mpCtx){
+     setBusy(true,'メンバーと写真を読み込んでいます...');
+     google.script.run.withSuccessHandler(function(c){
+       setBusy(false);
+       if(!c.ok){ show(c.message,false); return; }
+       mpCtx=c; initMP(); show('メンバープレゼンの準備ができました。',true);
+     }).withFailureHandler(fail).getMemberPresenContext();
+   }
+ }
+ function mpCandidate(){
+   var d=get('meeting');
+   return ((mpCtx&&mpCtx.candidates)||[]).filter(function(x){ return x.dateValue===d; })[0] || null;
+ }
+ function initMP(){
+   var live=(mpCtx.blocks||[]).filter(function(b){ return b.count>0; });
+   document.getElementById('mpStart').innerHTML = live.map(function(b){
+     return '<option value="'+esc(b.gkey)+'">'+esc(b.block)+'（'+b.count+'名）</option>'; }).join('');
+   var lh='<option value="">（なし）</option>';
+   (mpCtx.members||[]).forEach(function(m){ if(m.blockKey) lh+='<option value="'+esc(m.name)+'">'+esc(m.name)+'</option>'; });
+   document.getElementById('mpLong').innerHTML=lh;
+   mpForDate();
+ }
+ // 開催日が変わったら、始まりの区分と2分30秒の方を選び直す
+ function mpForDate(){
+   if(!mpCtx) return;
+   var c=mpCandidate(), live=(mpCtx.blocks||[]).filter(function(b){ return b.count>0; });
+   var st=(c&&c.start)||(live[0]?live[0].gkey:'');
+   document.getElementById('mpStart').value=st;
+   document.getElementById('mpLong').value=(c&&c.longPresenter)||'';
+   document.getElementById('mpLongNote').innerHTML = !c ? ''
+     : c.longPresenter ? ('<b>'+esc(c.routineSheet)+'</b> の記載（'+esc(c.longPresenterRaw)+'）から選んでいます。')
+     : c.longUnmatched ? ('<span style="color:#c60;">「'+esc(c.longPresenterRaw)+'」は名簿の氏名と一致しませんでした。</span>')
+     : 'いない日は「（なし）」のまま。';
+   renderMP();
+ }
+ function buildMP(){
+   if(!mpCtx || !document.getElementById('mpOn').checked) return [];
+   var items=memberPresenItems(mpCtx, get('mpStart'), get('mpLong'), document.getElementById('mpAuto').checked);
+   // 後ろにアンバサダー・ディレクターが続くときは、最後の方のページの「NEXT」にその方を出す
+   var gs=pickedGuests(), last=items[items.length-1];
+   if(gs.length && last && last.kind==='individual' && !last.nextName) last.nextName=gs[0].name;
+   return items;
+ }
+ function renderMP(){
+   var items=buildMP(), ov=items.filter(function(x){ return x.kind==='overview'; }).length, gs=pickedGuests();
+   document.getElementById('mpNote2').innerHTML = items.length
+     ? ('扉ページ '+ov+'枚＋個人ページ '+(items.length-ov)+'枚＝<b>'+items.length+'枚</b>を、'
+        +'前半の「ウィークリープレゼンテーション」の見出しの直後に差し込みます。'
+        +(gs.length ? '<br>最後の方のページの「NEXT」には '+esc(gs[0].name)+'さんを出します。' : ''))
+     : '';
+ }
+
+ // --- アンバサダー・ディレクターのページ ---
+ // 前半テンプレートに非表示で入っているページを、来られる日だけ表示にする。
+ // 初期値は、ルーティンチェックシートの「リージョン参加者」に名字が書いてあるかどうか
+ // （「吉田ED・坂爪アンバサダー」「なし」など）。空欄の日はテンプレートのまま。
+ var guests=null, guestsLoading=false, guestRaw='';
+ function loadGuests(){
+   var box=document.getElementById('gsList');
+   if(!ctx.templates || !ctx.templates.meetingFirst){
+     box.innerHTML='<span style="color:#888;">前半テンプレートを登録すると選べます。</span>'; return;
+   }
+   guestsLoading=true;
+   box.innerHTML='<span style="color:#888;">前半テンプレートのページを確認しています…</span>';
+   google.script.run.withSuccessHandler(function(r){
+     guestsLoading=false;
+     if(!r.ok){ box.innerHTML='<span style="color:#c60;">'+esc(r.message)+'</span>'; return; }
+     guests=r.guests||[]; renderGuests();
+   }).withFailureHandler(function(e){
+     guestsLoading=false;
+     box.innerHTML='<span style="color:#c60;">確認できませんでした: '+esc(e&&e.message?e.message:e)+'</span>';
+   }).getWeeklyGuests();
+ }
+ // 名字で探す（「吉田ED」「坂爪アンバサダー」のように名字＋役職で書かれるため）。
+ // 氏名に空白が無いときは、先頭2文字を名字とみなす。
+ function guestListed(g){
+   var t=String(guestRaw||'').replace(/[\s　]/g,''), nm=String(g.name||'').trim(), ps=nm.split(/[\s　]+/);
+   var sur = ps.length>1 ? ps[0] : nm.slice(0,2);
+   return !!sur && t.indexOf(sur)>=0;
+ }
+ function renderGuests(){
+   if(!guests) return;
+   var box=document.getElementById('gsList'), note=document.getElementById('gsNote');
+   if(!guests.length){
+     box.innerHTML='<span style="color:#888;">前半テンプレートに、メンバー以外の方のウィークリープレゼンのページはありません。</span>';
+     note.innerHTML=''; renderMP(); return;
+   }
+   box.innerHTML=guests.map(function(g,i){
+     var on = guestRaw ? guestListed(g) : !g.hidden;
+     return '<label style="display:block;padding:2px 0;"><input type="checkbox" id="gs_'+i+'"'
+       +(on?' checked':'')+' onchange="renderMP()"> <b>'+esc(g.name)+'</b>さん'
+       +(g.role?'（'+esc(g.role)+'）':'')+'のページを入れる</label>';
+   }).join('');
+   note.innerHTML = guestRaw ? ('ルーティンチェックシートの「リージョン参加者」：'+esc(guestRaw))
+     : 'ルーティンチェックシートの「リージョン参加者」は空欄です。';
+   renderMP();
+ }
+ function pickedGuests(){
+   return (guests||[]).filter(function(g,i){ var e=document.getElementById('gs_'+i); return !!(e&&e.checked); });
+ }
+
  // --- 後半テンプレートの読み込み（音楽の一覧とリファーラル発表のひな形）---
  var audioList=[], musicFiles=[], rfBoxes=null;
  function loadTemplate(){
@@ -345,7 +482,6 @@
      setBusy(false);
      if(!r.ok){ show(r.message,false); return; }
      audioList=r.list||[]; rfBoxes=r.referralBoxes||null;
-     if(rfBoxes) setLayoutBoxes(rfBoxes);
      renderAudio(); renderReferral(); show(r.message,true);
    }).withFailureHandler(fail).getMeetingTemplateInfo('meetingSecond');
  }
@@ -361,12 +497,16 @@
    if(!on || !on.checked || !rfBoxes) return [];
    var sec=parseInt(document.getElementById('rfSec').value,10)||7;
    var list=referralMembers();
-   return list.map(function(m,i){
-     var co=layoutCompany(m.company||''), ca=layoutCategory(m.title||'');
-     return { name:m.name, photoName:m.name, seconds:sec,
-       companyLines:co.lines, companyPt:co.fontPt, companyGeom:co.geom, categoryTop:co.categoryTop,
-       categoryLines:ca.lines, categoryPt:ca.fontPt, categoryTight:ca.tight,
-       nextName:(list[i+1]?list[i+1].name:'') };
+   // 枠の位置はリファーラル発表のひな形の実測値に切り替えて組む（組み終わったら元に戻る）
+   return withLayoutBoxes(rfBoxes, function(){
+     return list.map(function(m,i){
+       var co=layoutCompany(m.company||''), ca=layoutCategory(m.title||'');
+       // auto:false … カウントダウンはクリックで始まり、次のページへもクリックで進む
+       return { name:m.name, photoName:m.name, seconds:sec, auto:false,
+         companyLines:co.lines, companyPt:co.fontPt, companyGeom:co.geom, categoryTop:co.categoryTop,
+         categoryLines:ca.lines, categoryPt:ca.fontPt, categoryTight:ca.tight,
+         nextName:(list[i+1]?list[i+1].name:'') };
+     });
    });
  }
  function renderReferral(){
@@ -432,6 +572,10 @@
    google.script.run.withSuccessHandler(function(r){ show(r.message, !!r.ok); }).withFailureHandler(fail).saveMeetingStats(s);
  }
  function gen(kind){
+   if(kind==='meetingFirst' && guestsLoading){
+     show('前半テンプレートのアンバサダー・ディレクターのページを確認しています。数秒待ってからもう一度押してください。',null);
+     return;
+   }
    setBusy(true,'PowerPointを作成しています。ファイルが大きい場合は1〜2分かかります...');
    google.script.run.withSuccessHandler(function(r){
      setBusy(false);
@@ -446,7 +590,12 @@
      recommenders: [get('rc1'), get('rc2')],
      lottery: [get('lt1'), get('lt2')],
      music: collectMusic(),
-     referral: buildReferral()
+     // 前半ならメンバープレゼンを差し込み、後半ならリファーラル発表を増やす
+     memberPresen: kind==='meetingFirst' ? buildMP() : [],
+     // 前半：表示にするアンバサダー・ディレクター（読み込めていなければ null＝テンプレートのまま）
+     weeklyGuests: (kind==='meetingFirst' && guests) ? pickedGuests().map(function(g){ return g.name; }) : null,
+     weeklyAuto: document.getElementById('mpAuto').checked,
+     referral: kind==='meetingSecond' ? buildReferral() : []
    });
  }
 </script>

@@ -134,9 +134,14 @@ if plan_rf:
         if it['nextName']:
             ck(it['nextName'] in t, '%d人目のページにNEXT「%s」が無い' % (k + 1, it['nextName']))
         adv = set(re.findall(r'advTm="(\d+)"', sx))
-        ck(adv == {str((it['seconds'] + 1) * 1000)},
-           '%d人目の自動送りが %s（%d のはず）' % (k + 1, adv or 'なし', (it['seconds'] + 1) * 1000))
-        ck('<p:cond delay="indefinite"/>' not in sx, '%d人目のカウントダウンがクリック待ち' % (k + 1))
+        if it.get('auto'):
+            ck(adv == {str((it['seconds'] + 1) * 1000)},
+               '%d人目の自動送りが %s（%d のはず）' % (k + 1, adv or 'なし', (it['seconds'] + 1) * 1000))
+            ck('<p:cond delay="indefinite"/>' not in sx, '%d人目のカウントダウンがクリック待ち' % (k + 1))
+        else:
+            # 自動で進まない：自動送りが無く、カウントダウンはクリックで始まる
+            ck(not adv, '%d人目に自動送りが残っている: %s' % (k + 1, adv))
+            ck('<p:cond delay="indefinite"/>' in sx, '%d人目のカウントダウンがクリックで始まらない' % (k + 1))
         ck(len(re.findall(r'<p:spTgt spid="\d+"/>', sx)) == it['seconds'],
            '%d人目のカウントダウンの手順が %d 回（%d 回のはず）'
            % (k + 1, len(re.findall(r'<p:spTgt spid="\d+"/>', sx)), it['seconds']))
@@ -144,8 +149,98 @@ if plan_rf:
     if idx:
         _, tl = text(order[idx[-1]])
         ck('NEXT' not in tl, '最後の方のページに NEXT が残っている')
-    print('  リファーラル発表: %d枚（%s → … → %s）'
-          % (len(idx), plan_rf[0]['name'], plan_rf[-1]['name']))
+    print('  リファーラル発表: %d枚（%s → … → %s）%s'
+          % (len(idx), plan_rf[0]['name'], plan_rf[-1]['name'],
+             '・自動で次へ' if plan_rf[0].get('auto') else '・クリックで次へ'))
+    if not any(x.get('auto') for x in plan_rf):
+        # 自動で進むページが無いなら、ファイル全体の設定も元のまま（タイミングを使わない）
+        pp = z.read('ppt/presProps.xml').decode('utf-8')
+        ck(re.search(r'useTimings="1"', pp) is None,
+           '自動で進むページが無いのに「保存済みのタイミングを使用」が入っている')
+
+# 前半の「ウィークリープレゼンテーション」の見出しと「全員終わりましたか？」のページ
+def flat(p):
+    return re.sub(r'[\s\u3000]', '', text(p)[1])
+
+
+anchor = next((i for i, p in enumerate(order)
+               if 'ウィークリー' in flat(p) and 'プレゼンテーション' in flat(p)
+               and '終わりましたか' not in flat(p)), None)
+wk_end = next((i for i, p in enumerate(order)
+               if anchor is not None and i > anchor and '終わりましたか' in flat(p)), None)
+plan_mp = plan['info'].get('memberPresenPlan') or []
+
+# アンバサダー・ディレクターのページ：チェックした方だけ表示で、
+# メンバーのページの後ろ・「全員終わりましたか？」の前にあること
+guest_pages = info.get('guestPages') or []
+guest_res = info.get('guests')
+guest_auto = set()
+if guest_pages and guest_res is not None:
+    picked = set(guest_res.get('shown') or [])
+    for g in guest_pages:
+        gp = g['path'].replace('ppt/', '')
+        ck(gp in order, '%sさんのページが消えている' % g['name'])
+        if gp not in order:
+            continue
+        gi, (sx, t) = order.index(gp), text(gp)
+        on = g['name'] in picked
+        ck(('show="0"' not in sx[:600]) == on,
+           '%sさんのページが%s（%sのはず）' % (g['name'], '非表示' if on else '表示', '表示' if on else '非表示'))
+        ck(g['name'] in t, '%sさんのページに氏名が無い' % g['name'])
+        if wk_end is not None:
+            ck(gi < wk_end, '%sさんのページが「全員終わりましたか？」より後ろにある' % g['name'])
+        if anchor is not None:
+            ck(gi > anchor + len(plan_mp), '%sさんのページがメンバーのページより前にある' % g['name'])
+        adv = set(re.findall(r'advTm="(\d+)"', sx))
+        if on:
+            guest_auto.add(gp)
+            ck(adv == {'31000'}, '%sさんのページの自動送りが %s（31000 のはず）' % (g['name'], adv or 'なし'))
+            ck('<p:cond delay="indefinite"/>' not in sx, '%sさんのカウントダウンがクリック待ち' % g['name'])
+            ck(len(re.findall(r'<p:spTgt spid="\d+"/>', sx)) == 30,
+               '%sさんのカウントダウンの手順が %d 回（30 回のはず）'
+               % (g['name'], len(re.findall(r'<p:spTgt spid="\d+"/>', sx))))
+        else:
+            ck(not adv, '非表示の%sさんのページに自動送りが残っている: %s' % (g['name'], adv))
+    print('  アンバサダー・ディレクター: 表示 %s／非表示 %s'
+          % ('、'.join(guest_res.get('shown') or []) or 'なし', '、'.join(guest_res.get('hidden') or []) or 'なし'))
+
+# メンバープレゼンを前半に差し込んだとき
+if plan_mp:
+    # 差し込んだページは「ウィークリープレゼンテーション」の見出しの直後に並んでいるか
+    ck(anchor is not None, '「ウィークリープレゼンテーション」の見出しページが無い')
+    if anchor is not None:
+        block = order[anchor + 1: anchor + 1 + len(plan_mp)]
+        ck(len(block) == len(plan_mp), '差し込んだページが %d 枚（%d 枚のはず）' % (len(block), len(plan_mp)))
+        for k, it in enumerate(plan_mp):
+            if k >= len(block):
+                break
+            sx, t = text(block[k])
+            if it['kind'] == 'overview':
+                ck(it['block'] in t, '%d枚目の扉ページに「%s」が無い' % (k + 1, it['block']))
+                ck('advTm=' not in sx, '%d枚目の扉ページに自動送りが入っている' % (k + 1))
+            else:
+                ck(it['name'] in t, '%d枚目に「%s」が無い' % (k + 1, it['name']))
+                if it.get('nextName'):
+                    ck(it['nextName'] in t, '%d枚目にNEXT「%s」が無い' % (k + 1, it['nextName']))
+                sec = it.get('countdownSec') or 30
+                adv = set(re.findall(r'advTm="(\d+)"', sx))
+                ck(adv == {str((sec + 1) * 1000)},
+                   '%d枚目（%s）の自動送りが %s（%d のはず）' % (k + 1, it['name'], adv or 'なし', (sec + 1) * 1000))
+                ck('<p:cond delay="indefinite"/>' not in sx, '%d枚目のカウントダウンがクリック待ち' % (k + 1))
+        # 差し込んだページの後ろに、2分30秒の下書き（非表示）が残っているか
+        rest = [text(p)[1] for p in order[anchor + 1 + len(plan_mp):]]
+        ck(any('１分' in t for t in rest), '2分30秒の下書きのページが消えている')
+    # 自動送りがあるので「保存済みのタイミングを使用」が入っていること
+    pp = z.read('ppt/presProps.xml').decode('utf-8')
+    ck(re.search(r'useTimings="1"', pp) is not None, '「保存済みのタイミングを使用」が入っていない')
+    # 自分で作っていないページには自動送りが残っていないこと（0.4秒などが急に効くのを防ぐ）
+    mine = set(order[anchor + 1: anchor + 1 + len(plan_mp)]) if anchor is not None else set()
+    mine |= guest_auto
+    stale = [(i + 1, re.findall(r'advTm="(\d+)"', z.read('ppt/' + p).decode('utf-8')))
+             for i, p in enumerate(order) if p not in mine and 'advTm=' in z.read('ppt/' + p).decode('utf-8')]
+    ck(not stale, '作っていないページに自動送りが残っている: %s' % stale[:5])
+    two = [it['name'] for it in plan_mp if it.get('countdownSec')]
+    print('  メンバープレゼン: %d枚を差し込み（2分30秒: %s）' % (len(plan_mp), '、'.join(two) or 'なし'))
 
 # 一般規定・コアバリューは前半スライドだけにあるページ。
 # そのページが見つかったときにだけ「1枚だけ表示」になっていることを確かめる。

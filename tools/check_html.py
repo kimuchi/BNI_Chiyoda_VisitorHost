@@ -9,6 +9,11 @@
 2. <script> の中身が構文として通るか
    GASのスクリプトレット <?= ?> は文字列に置き換えてから見る。
 
+3. 共通部品（<?!= include('slides_layout') ?> で読み込むHTML）の関数を使っているのに、
+   その部品を読み込んでいないページが無いか
+   構文としては正しいので 2. では見つからず、ボタンを押したときに初めて
+   「○○ is not defined」で止まる。
+
     python3 tools/check_html.py
 """
 import glob
@@ -35,8 +40,47 @@ def check_divs(path, text):
     return None
 
 
+def scripts_of(text):
+    return '\n'.join(m.group(1) for m in re.finditer(r'<script[^>]*>(.*?)</script>', text, re.S))
+
+
+def defined_functions(js):
+    return set(re.findall(r'^\s*function\s+([A-Za-z_$][\w$]*)\s*\(', js, re.M)) \
+        | set(re.findall(r'^\s*var\s+([A-Za-z_$][\w$]*)\s*=\s*function\b', js, re.M))
+
+
+INCLUDE_RE = r"include\(\s*['\"]%s['\"]\s*\)"
+
+
+def shared_parts(files):
+    """include('名前') で読み込まれている部品 → その中で定義している関数"""
+    names = set()
+    for f in files:
+        names |= set(re.findall(INCLUDE_RE % r'([^\'\"]+)', io.open(f, encoding='utf-8').read()))
+    parts = {}
+    for n in names:
+        p = os.path.join(ROOT, n + '.html')
+        if os.path.exists(p):
+            parts[n] = defined_functions(scripts_of(io.open(p, encoding='utf-8').read()))
+    return parts
+
+
+def check_includes(path, text, parts):
+    me = os.path.basename(path)[:-len('.html')]
+    js = scripts_of(text)
+    own = defined_functions(js)
+    for name, funcs in sorted(parts.items()):
+        if name == me or re.search(INCLUDE_RE % re.escape(name), text):
+            continue
+        used = sorted(f for f in funcs - own if re.search(r'(?<![\w$.])%s\s*\(' % re.escape(f), js))
+        if used:
+            return '%s.html の関数（%s）を使っているのに <?!= include(\'%s\') ?> がありません' \
+                % (name, '、'.join(used[:4]), name)
+    return None
+
+
 def check_scripts(path, text):
-    js = '\n'.join(m.group(1) for m in re.finditer(r'<script[^>]*>(.*?)</script>', text, re.S))
+    js = scripts_of(text)
     js = re.sub(r'<\?!?=.*?\?>', '""', js, flags=re.S)   # GASのスクリプトレット
     js = re.sub(r'<\?.*?\?>', '', js, flags=re.S)
     if not js.strip():
@@ -57,9 +101,10 @@ def check_scripts(path, text):
 def main():
     bad = []
     files = sorted(glob.glob(os.path.join(ROOT, '*.html')))
+    parts = shared_parts(files)
     for f in files:
         text = io.open(f, encoding='utf-8').read()
-        for problem in (check_divs(f, text), check_scripts(f, text)):
+        for problem in (check_divs(f, text), check_scripts(f, text), check_includes(f, text, parts)):
             if problem:
                 bad.append((os.path.basename(f), problem))
     if bad:
@@ -67,7 +112,7 @@ def main():
         for name, problem in bad:
             print('  %s  %s' % (name, problem))
         sys.exit(1)
-    print('OK: HTML %d ファイル（divの対応・スクリプトの構文）' % len(files))
+    print('OK: HTML %d ファイル（divの対応・スクリプトの構文・共通部品の読み込み）' % len(files))
 
 
 if __name__ == '__main__':

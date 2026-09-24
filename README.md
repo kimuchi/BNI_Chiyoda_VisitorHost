@@ -50,8 +50,9 @@ BNI_Chiyoda_VisitorHost/
 ├── meeting_slides_srv.js     # 定例会スライドの自動更新
 │   └ slides_meeting.html
 ├── referral_srv.js           # リファーラル発表のページを人数ぶんに増やす
+├── splice_srv.js             # 別のpptxのページを差し込む（メンバープレゼン → 前半スライド）
 ├── routine_srv.js            # ルーティンチェックシートから、その日の決めごとを読む
-├── slides_layout.html        # 会社名・カテゴリーの組版（2つの画面で共通）
+├── slides_layout.html        # 会社名・カテゴリーの組版とメンバープレゼンの並び（2つの画面で共通。include で読む）
 ├── memberbook_srv.js         # メンバーブック（配布PDFの登録）
 │   ├ memberbook.html
 │   ├ memberbook_editor.html  #   冊子の編集画面
@@ -87,12 +88,14 @@ BNI_Chiyoda_VisitorHost/
 └── tools/                    # 検査・生成スクリプト（GASには送らない）
     ├── build_manual.py       #   MANUAL.md → manual.html
     ├── check_gas_names.py    #   名前の衝突・参照先HTMLの検査
-    ├── check_html.py         #   divの対応・スクリプトの構文
+    ├── check_html.py         #   divの対応・スクリプトの構文・共通部品の読み込み漏れ
     ├── check_manual_links.py #   マニュアルの導線 ↔ 実際のメニュー
     ├── check_member_presen.py#   メンバープレゼン生成の通し検査
     ├── check_meeting_slides.js  # 第○回・日付の書き換えとコアバリューのページ
     ├── check_routine.js      #   ルーティンチェックシートの読み取り
-    ├── check_meeting_output.js  # 前半スライドを実際に生成してみる
+    ├── check_meeting_output.js  # 前半・後半スライドを実際に生成してみる
+    ├── mtg_zip_check.py      #   ↑の出力をpptxに固めて中身を確かめる
+    ├── check_meeting_dialog.js  # 定例会スライドの画面を簡易DOMで動かしてみる
     ├── build_member_presen_template.py  # メンバープレゼンのテンプレートを作り直す
     ├── build_meeting_first_template.py  # 前半スライドの出力に差し込み口を入れる
     ├── build_meeting_second_template.py # 後半スライドの出力に差し込み口を入れる
