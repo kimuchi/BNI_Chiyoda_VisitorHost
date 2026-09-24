@@ -353,6 +353,22 @@ function replaceTokensInXml_(xml, map) {
 }
 
 function replaceTokensInParagraph_(seg, map) {
+  return replaceInParagraph_(seg, function (joined) {
+    if (joined.indexOf('{{') === -1) return null;
+    var hits = [], re = /\{\{([^{}]{1,60})\}\}/g, mm;
+    while ((mm = re.exec(joined)) !== null) {
+      if (Object.prototype.hasOwnProperty.call(map, mm[1])) {
+        hits.push({ start: mm.index, end: mm.index + mm[0].length,
+                    value: map[mm[1]] == null ? '' : String(map[mm[1]]) });
+      }
+    }
+    return hits;
+  });
+}
+
+// 段落の <a:t> をすべて連結し、findHits(連結文字列) が返した範囲を差し替えて書き戻す。
+// PowerPointは1つの文字列を複数のランに割ることがあるため、必ず連結してから探す。
+function replaceInParagraph_(seg, findHits) {
   var ts = findTagRanges_(seg, 'a:t');
   if (!ts.length) return seg;
   var texts = [], spans = [], joined = '';
@@ -364,15 +380,8 @@ function replaceTokensInParagraph_(seg, map) {
     spans.push({ from: joined.length, to: joined.length + t.length });
     joined += t;
   }
-  if (joined.indexOf('{{') === -1) return seg;
-
-  var hits = [], re = /\{\{([^{}]{1,60})\}\}/g, mm;
-  while ((mm = re.exec(joined)) !== null) {
-    if (Object.prototype.hasOwnProperty.call(map, mm[1])) {
-      hits.push({ start: mm.index, end: mm.index + mm[0].length, value: map[mm[1]] == null ? '' : String(map[mm[1]]) });
-    }
-  }
-  if (!hits.length) return seg;
+  var hits = findHits(joined);
+  if (!hits || !hits.length) return seg;
 
   // 連結文字列の上で後ろから置換し、各ランの新しい文字を決める
   for (var h = hits.length - 1; h >= 0; h--) {
@@ -394,6 +403,38 @@ function replaceTokensInParagraph_(seg, map) {
     out = out.substring(0, ts[j].start) + innerNew + out.substring(ts[j].end);
   }
   return out;
+}
+
+// --- 決まった形の文字の置換（差し込み口が無いページ向け）-----------------
+// テンプレートによっては「第526回」「2026年07月22日」のように、{{ }} を置かずに
+// そのまま書いてあるページがある。そういうページも更新できるよう、形で見つけて書き換える。
+// rules は [{ re: 正規表現, value: function(一致) { return 置き換える文字; } }]。
+// value が null を返した一致は、そのままにする。
+function replacePatternsInXml_(xml, rules) {
+  var paras = findTagRanges_(xml, 'a:p'), changed = 0;
+  for (var p = paras.length - 1; p >= 0; p--) {
+    var seg = xml.substring(paras[p].start, paras[p].end);
+    var updated = replaceInParagraph_(seg, function (joined) {
+      var hits = [], i, m;
+      for (i = 0; i < rules.length; i++) {
+        var re = new RegExp(rules[i].re.source, 'g');
+        while ((m = re.exec(joined)) !== null) {
+          var v = rules[i].value(m);
+          if (v != null && v !== m[0]) hits.push({ start: m.index, end: m.index + m[0].length, value: String(v) });
+          if (m.index === re.lastIndex) re.lastIndex++;      // 空一致で止まらないように
+        }
+      }
+      hits.sort(function (a, b) { return a.start - b.start; });
+      var out = [], last = -1;                                // 重なったら先に見つけた方を優先
+      for (i = 0; i < hits.length; i++) if (hits[i].start >= last) { out.push(hits[i]); last = hits[i].end; }
+      return out;
+    });
+    if (updated !== seg) {
+      xml = xml.substring(0, paras[p].start) + updated + xml.substring(paras[p].end);
+      changed++;
+    }
+  }
+  return { xml: xml, changed: changed };
 }
 
 function runIndexAt_(spans, pos) {

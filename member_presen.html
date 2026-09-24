@@ -46,7 +46,7 @@
  <div class="row"><label>始まりの業種区分</label><select id="start" onchange="render()"></select>
    <div class="sub" id="startNote"></div></div>
  <div class="row"><label>2分30秒プレゼンの方</label><select id="long" onchange="render()"></select>
-   <div class="sub">選ぶと、その方の個人ページだけ <b>2:30</b> からのカウントダウンになります（いない日は「（なし）」のまま）。</div>
+   <div class="sub" id="longNote">選ぶと、その方の個人ページだけ <b>2:30</b> からのカウントダウンになります（いない日は「（なし）」のまま）。</div>
  </div>
  <div class="row">
    <label><input type="checkbox" id="auto" checked onchange="render()">
@@ -230,6 +230,19 @@ function onDate(){
   list.forEach(function(b){ sh+='<option value="'+esc(b.gkey)+'">'+esc(b.block)+'（'+b.count+'名）</option>'; });
   var sel=document.getElementById('start');
   sel.innerHTML = sh || '<option value="">対象のメンバーがいません</option>';
+  // 2分30秒プレゼンの方は、ルーティンチェックシートの記載を初期値にする
+  var ls=document.getElementById('long'), note=document.getElementById('longNote');
+  if(cand){
+    ls.value = cand.longPresenter || '';
+    if(cand.longPresenter){
+      note.innerHTML='<b>'+esc(cand.routineSheet)+'</b> の記載（'+esc(cand.longPresenterRaw)+'）から選んでいます。';
+    } else if(cand.longUnmatched){
+      note.innerHTML='<span style="color:#c60;">ルーティンチェックシートに「'+esc(cand.longPresenterRaw)
+        +'」とありますが、メンバー名簿の氏名と一致しませんでした。手で選んでください。</span>';
+    } else {
+      note.innerHTML='いない日は「（なし）」のまま。選ぶと、その方の個人ページだけ <b>2:30</b> からのカウントダウンになります。';
+    }
+  }
   startKey = (cand && cand.start) || (list.length ? list[0].gkey : '');
   var ok=false;
   list.forEach(function(b){ if(b.gkey===startKey) ok=true; });

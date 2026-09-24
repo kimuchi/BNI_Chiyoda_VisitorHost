@@ -142,8 +142,12 @@ function getMeetingSlideContext() {
     var tpl = getBigTemplateStatus().templates, ready = {};
     for (var i = 0; i < tpl.length; i++) ready[tpl[i].kind] = tpl[i].registered;
     var members = getMemberMaster().members || [];
+    // その日のコアバリュー・開催回は、ルーティンチェックシートに書いてある
+    var routine = first ? getRoutineInfo(first.dateValue) : null;
     return { ok: true, meetings: candidates, defaultMeeting: first,
              lists: lists.ok ? lists : null, stats: stats, templates: ready,
+             routine: routine,
+             coreValues: CORE_VALUES_.map(function (c) { return c.label; }),
              memberCount: members.length,
              memberNames: members.map(function (m) { return m.name; }) };
   } catch (e) {
@@ -168,39 +172,137 @@ function saveMeetingStats(data) {
   }
 }
 
+// --- 差し込み口が無いページの「第○回」「○年○月○日」---
+// テンプレートによっては、表紙などに {{開催回}} を置かず、そのまま
+// 「第526回 2026年07月22日」と書いてあるページがある。
+// そういうページも更新できるよう、形で見つけて書き換える。
+function meetingPatternRules_(no, d) {
+  var rules = [];
+  if (no) {
+    rules.push({ re: /第\s*\d{1,5}\s*回/, value: function () { return '第' + no + '回'; } });
+  }
+  if (d) {
+    var y = d.getFullYear(), mo = d.getMonth() + 1, da = d.getDate();
+    var pad = function (n, wide) { return wide ? ('0' + n).slice(-2) : String(n); };
+    // 「2026年07月22日」… 元の桁数（0埋めの有無）はそのまま引き継ぐ
+    rules.push({ re: /(\d{4})年\s*(\d{1,2})月\s*(\d{1,2})日/, value: function (m) {
+      return y + '年' + pad(mo, m[2].length === 2) + '月' + pad(da, m[3].length === 2) + '日';
+    } });
+    // 「2026/07/22」「2026-07-22」
+    rules.push({ re: /(\d{4})([\/\-])(\d{1,2})\2(\d{1,2})/, value: function (m) {
+      return y + m[2] + pad(mo, m[3].length === 2) + m[2] + pad(da, m[4].length === 2);
+    } });
+  }
+  return rules;
+}
+
+// --- コアバリューのページ ---
+// 前半スライドには7つのコアバリューのページが入っていて、その週の1枚だけを表示する。
+// どのページがどのコアバリューかはテンプレート側の文字から判断する。
+// ただし「責任」「伝統」のような語はふつうの文にも出るため、
+// 「1つだけ当てはまるページ」が3種類以上そろったときにだけ、まとめて切り替える。
+function coreValuesInSlide_(xml, useJa) {
+  var t = '', m, re = /<a:t[^>]*>([\s\S]*?)<\/a:t>/g;
+  while ((m = re.exec(xml)) !== null) t += unescapeXml_(m[1]) + ' ';
+  var en = t.toLowerCase().replace(/[^a-z]/g, ''), ja = t.replace(/[\s　]/g, ''), found = [];
+  for (var i = 0; i < CORE_VALUES_.length; i++) {
+    if (en.indexOf(CORE_VALUES_[i].en) >= 0) { found.push(CORE_VALUES_[i]); continue; }
+    if (useJa && ja.indexOf(CORE_VALUES_[i].ja) >= 0) found.push(CORE_VALUES_[i]);
+  }
+  return found;
+}
+
+function setSlideShow_(xml, show) {
+  return xml.replace(/<p:sld(?=[\s>])([^>]*)>/, function (all, attrs) {
+    return '<p:sld' + attrs.replace(/\sshow="[^"]*"/g, '') + (show ? '' : ' show="0"') + '>';
+  });
+}
+
+function applyCoreValue_(parts, wanted) {
+  var w = coreValueOf_(wanted);
+  if (!w) return null;
+  // まず英語だけで探す。「責任」「伝統」のような語はふつうの文にも出てくるため、
+  // 英語で足りているならそちらを使う方が誤検出が少ない。
+  var scan = function (useJa) {
+    var cand = [], kinds = {}, path;
+    for (path in parts) {
+      if (!/^ppt\/slides\/slide\d+\.xml$/.test(path)) continue;
+      var xml = xmlOf_(parts, path);
+      if (!xml) continue;
+      var found = coreValuesInSlide_(xml, useJa);
+      if (found.length !== 1) continue;
+      cand.push({ path: path, xml: xml, cv: found[0] });
+      kinds[found[0].label] = true;
+    }
+    var n = 0;
+    for (var k in kinds) n++;
+    return { cand: cand, kinds: n };
+  };
+  var res = scan(false);
+  if (res.kinds < 3) res = scan(true);
+  var cand = res.cand, kindCount = res.kinds;
+  if (kindCount < 3) {
+    return { value: w.label, shown: 0, hidden: 0, kinds: kindCount,
+             message: 'コアバリューのページを見分けられませんでした（' + kindCount + '種類）。表示の切り替えは行っていません。' };
+  }
+  var shown = [], hidden = [];
+  for (var i = 0; i < cand.length; i++) {
+    var on = (cand[i].cv.label === w.label);
+    var out = setSlideShow_(cand[i].xml, on);
+    if (out !== cand[i].xml) putXml_(parts, cand[i].path, out);
+    (on ? shown : hidden).push(cand[i].path.replace(/^.*slide(\d+)\.xml$/, '$1'));
+  }
+  return { value: w.label, shown: shown.length, hidden: hidden.length, kinds: kindCount,
+           message: 'コアバリュー「' + w.label + '」のページ' + shown.length + '枚を表示、他'
+                    + hidden.length + '枚を非表示にしました。' };
+}
+
 // 定例会スライドを生成する。テンプレート内の {{キー}} を置換する方式。
 // pptxのままサーバー側で加工し、Driveへ保存してURLを返す。
-function generateMeetingSlides(kind, values, meetingDateVal) {
+// opts: { patterns: true/false（差し込み口が無いページの第○回・日付も直す）,
+//         coreValue: 'Givers Gain' など }
+function generateMeetingSlides(kind, values, meetingDateVal, opts) {
   try {
     if (!BIG_TEMPLATE_KINDS_[kind]) return { ok: false, message: 'スライドの種類が不正です。' };
-    var map = values || {};
+    var map = values || {}, o = opts || {};
     var mmdd = '';
     var d = parseDate_(meetingDateVal);
     if (d) mmdd = Utilities.formatDate(d, 'Asia/Tokyo', 'yyyyMMdd');
     var label = BIG_TEMPLATE_KINDS_[kind].label;
     var outName = (mmdd ? mmdd + '_' : '') + label + '.pptx';
 
-    var replaced = 0, touched = 0;
+    var rules = (o.patterns === false) ? []
+              : meetingPatternRules_(String(map['開催回'] || '').replace(/[^\d]/g, ''), d);
+
     var r = editPptxOnServer_(kind, outName, function (parts) {
-      for (var path in parts) {
+      var touched = 0, byPattern = 0, path;
+      for (path in parts) {
         if (!/^ppt\/(slides|notesSlides)\/[^\/]+\.xml$/.test(path)) continue;   // 本文だけ
-        var xml = xmlOf_(parts, path);
-        if (!xml || xml.indexOf('{{') === -1) continue;
-        var before = xml;
-        xml = replaceTokensInXml_(xml, map);
-        if (xml !== before) { putXml_(parts, path, xml); touched++; replaced++; }
+        var xml = xmlOf_(parts, path), before = xml;
+        if (!xml) continue;
+        if (xml.indexOf('{{') !== -1) xml = replaceTokensInXml_(xml, map);
+        if (rules.length) {
+          var pr = replacePatternsInXml_(xml, rules);
+          if (pr.changed) { xml = pr.xml; byPattern += pr.changed; }
+        }
+        if (xml !== before) { putXml_(parts, path, xml); touched++; }
       }
-      return { touched: touched };
+      var core = o.coreValue ? applyCoreValue_(parts, o.coreValue) : null;
+      return { touched: touched, byPattern: byPattern, core: core };
     });
 
+    var info = r.info || {};
     var msg = '「' + label + '」を作成しました（' + r.partCount + 'パーツ／' +
               (r.timing.合計 / 1000).toFixed(1) + '秒）。';
-    if (!touched) {
-      msg += '\n※ テンプレート内に {{ }} の差し込み口が見つかりませんでした。文字は差し替わっていません。';
+    if (!info.touched) {
+      msg += '\n※ 書き換える箇所が見つかりませんでした（{{ }} も「第○回」も見つかりません）。';
     } else {
-      msg += '\n' + touched + '枚のスライドを書き換えました。';
+      msg += '\n' + info.touched + '枚のスライドを書き換えました';
+      msg += info.byPattern ? '（うち「第○回・日付」を直した段落 ' + info.byPattern + 'か所）。' : '。';
     }
-    return { ok: true, message: msg, url: r.saved.url, downloadUrl: r.saved.downloadUrl, fileName: outName, touched: touched, timing: r.timing };
+    if (info.core) msg += '\n' + info.core.message;
+    return { ok: true, message: msg, url: r.saved.url, downloadUrl: r.saved.downloadUrl,
+             fileName: outName, touched: info.touched, core: info.core, timing: r.timing };
   } catch (e) {
     console.error('[MEETING] ' + (e && e.stack ? e.stack : e));
     return { ok: false, message: 'スライドの作成に失敗しました: ' + (e && e.message ? e.message : e) };

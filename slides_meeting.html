@@ -45,10 +45,18 @@
  <div class="warn" id="warn" style="display:none;"></div>
 
  <div class="sec">
-   <h4>1. 開催回・開催日</h4>
+   <h4>1. 開催回・開催日・コアバリュー <span class="auto">ルーティンチェックシート</span></h4>
    <div class="row">
      <label>開催日：<select id="meeting" onchange="reload()"></select></label>
      <label>開催回：<input type="text" id="no" size="6"></label>
+   </div>
+   <div class="row">
+     <label>コアバリュー：<select id="core"></select></label>
+     <span id="coreNote" style="font-size:11px;color:#888;"></span>
+   </div>
+   <div class="row">
+     <label><input type="checkbox" id="pat" checked>
+       <code>{{ }}</code> が無いページの「第○回」「○年○月○日」も自動で直す</label>
    </div>
  </div>
 
@@ -88,7 +96,10 @@
    <h4>5. 生成</h4>
    <div style="font-size:11px;color:#666;margin-bottom:8px;">
      テンプレートの <code>{{ }}</code> の箇所が差し替わります。どこに差し込めるかは
-     「⚙️ 大きなスライドの登録」の<b>「差し込み口を調べる」</b>で確認できます。
+     「⚙️ 大きなスライドの登録」の<b>「差し込み口を調べる」</b>で確認できます。<br>
+     <code>{{ }}</code> が無いページも、上のチェックが入っていれば
+     <b>「第○回」「○年○月○日」だけは形で見つけて</b>直します。<br>
+     コアバリューを選んでいる場合は、<b>前半スライドのコアバリューのページを1枚だけ表示</b>にします。
    </div>
    <button id="b1" onclick="gen('meetingFirst')">前半スライドを作成</button>
    <button id="b2" onclick="gen('meetingSecond')">後半スライドを作成</button>
@@ -109,9 +120,13 @@
    var sel=document.getElementById('meeting'), h='';
    (c.meetings||[]).forEach(function(m){ h+='<option value="'+esc(m.dateValue)+'">'+esc(m.display)+'</option>'; });
    sel.innerHTML=h||'<option value="">開催日候補がありません</option>';
+   var ch='<option value="">（指定しない）</option>';
+   (c.coreValues||[]).forEach(function(v){ ch+='<option value="'+esc(v)+'">'+esc(v)+'</option>'; });
+   document.getElementById('core').innerHTML=ch;
    if(c.defaultMeeting){
      var mm=(c.defaultMeeting.display||'').match(/第(\d+)回/); val('no', mm?mm[1]:'');
    }
+   applyRoutine(c.routine);
    var miss=[];
    if(!c.templates.meetingFirst)  miss.push('前半');
    if(!c.templates.meetingSecond) miss.push('後半');
@@ -177,10 +192,24 @@
      if(res&&res.ok) reload(); else alert((res&&res.message)||'保存に失敗しました。');
    }).withFailureHandler(fail).setRenewalMark(r.name,status,r.date);
  }
+ // ルーティンチェックシートに書いてある開催回とコアバリューを反映する
+ function applyRoutine(R){
+   var note=document.getElementById('coreNote');
+   if(!R || !R.ok || !R.found){
+     note.innerText = (R&&R.message) ? R.message : 'ルーティンチェックシートに該当する開催日が見つかりません。';
+     note.style.color='#c60'; return;
+   }
+   if(R.meetingNo) val('no', R.meetingNo);
+   document.getElementById('core').value = R.coreValue || '';
+   var t = R.sheetName + ' から読み込みました';
+   if(R.coreValueRaw && !R.coreValue) t += '／コアバリュー「'+R.coreValueRaw+'」は見分けられませんでした';
+   note.innerText=t; note.style.color='#188038';
+ }
  function reload(){
    var d=get('meeting'); if(!d) return;
    var m=(ctx.meetings||[]).filter(function(x){return x.dateValue===d;})[0];
    if(m){ var mm=(m.display||'').match(/第(\d+)回/); val('no', mm?mm[1]:''); }
+   google.script.run.withSuccessHandler(applyRoutine).getRoutineInfo(d);
    setBusy(true,'開催日にあわせて再計算しています...');
    google.script.run.withSuccessHandler(function(L){
      setBusy(false);
@@ -221,7 +250,10 @@
      if(!r.ok){ show(r.message,false); return; }
      document.getElementById('msg').innerHTML='<span style="color:green;">'+esc(r.message).replace(/\n/g,'<br>')+'</span>'
        +'<br>'+'<a class="dl" href="'+(r.downloadUrl||r.url)+'" target="_blank">⬇ PowerPointをダウンロード</a> '+'<a href="'+r.url+'" target="_blank" style="font-size:12px;color:#666;">ドライブで見る</a>';
-   }).withFailureHandler(fail).generateMeetingSlides(kind, collect(), get('meeting'));
+   }).withFailureHandler(fail).generateMeetingSlides(kind, collect(), get('meeting'), {
+     patterns: document.getElementById('pat').checked,
+     coreValue: get('core')
+   });
  }
 </script>
 </body></html>
