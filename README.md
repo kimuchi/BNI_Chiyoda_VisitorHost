@@ -77,6 +77,60 @@ clasp push
 
 スプレッドシートを開き、メニューバーの **「名簿システム」** から各種設定を行ってください。詳細は [MANUAL.md](MANUAL.md) を参照してください。
 
+## ウェブアプリの更新（URLを変えずに）
+
+ダイアログが表示されない環境向けに、ウェブアプリとしても公開できます。
+`clasp push` はスクリプトを更新するだけで、**ウェブアプリには反映されません。**
+公開中のデプロイを更新する必要があります。
+
+### 1. デプロイIDを調べる
+
+```bash
+clasp deployments
+```
+
+```
+2 Deployments.
+- AKfycbwAAA...  @HEAD
+- AKfycbxeZur-sqvWW_vr3i1A2VPJ8Bd4...  @5 - ウェブアプリ
+```
+
+`@HEAD` の行は**テスト用**なので使いません。`@数字` が付いている方が公開中のデプロイです。
+
+> **URLから読み取ることもできます。**
+> デプロイIDは、ウェブアプリURLの `/s/` と `/exec` の間の文字列そのものです。
+> ```
+> https://script.google.com/macros/s/AKfycbxeZur-.../exec
+>                                    ~~~~~~~~~~~~~~~ これがデプロイID
+> ```
+
+### 2. 同じデプロイを更新する
+
+```bash
+clasp push
+clasp deploy -i <デプロイID> -d "更新内容のメモ"
+```
+
+`-i`（`--deploymentId`）を付けると**既存のデプロイを上書き**するので、**URLは変わりません。**
+新しいバージョンが自動で作られ、それがそのURLに割り当てられます。
+
+`-i` を付けずに `clasp deploy` を実行すると**新しいデプロイが作られ、URLも別物になります。**
+ブックマークが効かなくなるので注意してください。
+
+### まとめ（毎回この2行）
+
+```bash
+clasp push
+clasp deploy -i AKfycbxeZur-sqvWW_vr3i1A2VPJ8Bd4iJ9QQ_UOlQSrmIa4LSdDsNDogomVsMhxkNQ-TEzXqA -d "更新"
+```
+
+### 補足
+
+- `-d`（説明）は省略できます。あとで `clasp deployments` を見たときに分かりやすいので付けるのがおすすめです。
+- 特定のバージョンを割り当て直したいときは `-V <バージョン番号>` を併用します。
+- コマンド名はclaspのバージョンで変わることがあります。`clasp --version` で確認してください。
+- デプロイをやめるときは `clasp undeploy <デプロイID>` です。
+
 ## 使い方（毎週のワークフロー）
 
 1. **事前準備**: SpreadingからCSV、メンバーリストPDFをダウンロード
