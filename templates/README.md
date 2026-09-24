@@ -111,6 +111,10 @@ Driveに置いて、`⚙️ 設定` ＞ `大きなスライド` の **メンバ�
     python3 tools/check_member_presen.py <テンプレート.pptx>
 
 zipの整合性・切れた参照・文字・座標・写真の切り抜きまで機械的に確かめます。
+業種区分の巡回だけは、テンプレートが無くても単体で確かめられます。
+
+    node tools/mp_check_rotation.js
+
 配置を目で見たいときは、出来上がったpptxから確認用のHTMLを作れます。
 
     python3 tools/mp_preview.py <出来上がり.pptx> 1 2 3 > preview.html
