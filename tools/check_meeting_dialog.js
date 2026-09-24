@@ -39,7 +39,8 @@ const SERVER = {
   getWeeklyGuests: () => ({ ok: true, guests: GUESTS }),
   getMemberPresenContext: () => ({
     ok: true, members: mm, blocks, rowsPerPage: 7,
-    candidates: [{ dateValue: DATE, start: gk('建築・住まい'), longPresenter: '', longPresenterRaw: '' }],
+    candidates: [{ dateValue: DATE, start: gk('建築・住まい'), longPresenter: '', longPresenterRaw: '',
+                   startFrom: 'routine', startRaw: '建築　住まい　２２番　熊谷さん', startRawDate: DATE, startSteps: 0 }],
   }),
   getMeetingTemplateInfo: () => ({
     ok: true, list: [], message: '',
@@ -65,6 +66,8 @@ ck(/吉田ED/.test(els.gsNote.innerHTML), 'リージョン参加者の記載が�
 // 2) メンバープレゼンを差し込む → 前半を作る
 step('メンバープレゼンを入れる', () => { els.mpOn.checked = true; run('toggleMP()'); });
 ck(els.mpStart.value === gk('建築・住まい'), '始まりの業種区分が選ばれていない: ' + els.mpStart.value);
+ck(/ルーティンチェックシートの記載（建築　住まい　２２番　熊谷さん）/.test(els.mpStartNote.textContent),
+   '始まりの業種区分の出どころが表示されていない: ' + els.mpStartNote.textContent);
 step('前半を作る', () => run("gen('meetingFirst')"));
 let o = lastOpts();
 ck(JSON.stringify(o.weeklyGuests) === JSON.stringify(['吉田　まり子']), 'weeklyGuests が ' + JSON.stringify(o.weeklyGuests));

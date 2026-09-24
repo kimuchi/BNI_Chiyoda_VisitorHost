@@ -108,7 +108,7 @@
    <div id="mpBox" style="display:none;margin-top:8px;">
      <table>
        <tr><th>始まりの業種区分</th><td><select id="mpStart" onchange="renderMP()"></select>
-           <div style="font-size:11px;color:#888;">開催日から自動で選んでいます。1つずらしたいときだけ変えてください。</div></td></tr>
+           <div id="mpStartNote" style="font-size:11px;color:#888;"></div></td></tr>
        <tr><th>2分30秒プレゼン</th><td><select id="mpLong" onchange="renderMP()"></select>
            <div id="mpLongNote" style="font-size:11px;color:#888;"></div></td></tr>
      </table>
@@ -401,6 +401,7 @@
    var c=mpCandidate(), live=(mpCtx.blocks||[]).filter(function(b){ return b.count>0; });
    var st=(c&&c.start)||(live[0]?live[0].gkey:'');
    document.getElementById('mpStart').value=st;
+   document.getElementById('mpStartNote').textContent = c ? memberPresenStartNote(c)+' 違うときだけ選び直してください。' : '';
    document.getElementById('mpLong').value=(c&&c.longPresenter)||'';
    document.getElementById('mpLongNote').innerHTML = !c ? ''
      : c.longPresenter ? ('<b>'+esc(c.routineSheet)+'</b> の記載（'+esc(c.longPresenterRaw)+'）から選んでいます。')

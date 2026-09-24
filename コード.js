@@ -2,7 +2,7 @@
 
 // 反映されたか確かめるための版。変更したら日付を更新する。
 // clasp push / デプロイが効いているかは、これを画面で見れば分かる。
-var SYSTEM_VERSION_ = '2026-09-24b';
+var SYSTEM_VERSION_ = '2026-09-24c';
 
 function getSystemVersion() { return SYSTEM_VERSION_; }
 
