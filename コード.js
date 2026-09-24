@@ -2,7 +2,7 @@
 
 // 反映されたか確かめるための版。変更したら日付を更新する。
 // clasp push / デプロイが効いているかは、これを画面で見れば分かる。
-var SYSTEM_VERSION_ = '2026-09-24c';
+var SYSTEM_VERSION_ = '2026-09-24d';
 
 function getSystemVersion() { return SYSTEM_VERSION_; }
 
@@ -15,7 +15,6 @@ function onOpen() {
   // それ以外は用途ごとのサブメニューにまとめている。全機能は「メニュー画面」からも開ける。
   ui.createMenu('名簿システム')
     .addItem('🏠 メニュー画面をひらく', 'openHomeDialog')
-    .addItem('🌐 ウェブアプリで開く（URLを表示）', 'showWebAppUrl')
     .addSeparator()
     .addItem('1. CSVから名簿・PDF作成', 'openCsvDialog')
     .addItem('2. メールの確認・一括送信', 'openEmailDialog')
@@ -25,8 +24,8 @@ function onOpen() {
     .addSeparator()
     .addSubMenu(ui.createMenu('📊 スライド・冊子をつくる')
       .addItem('ビジター・代理スライド作成', 'openVisitorSlideDialog')
-      .addItem('メンバープレゼンスライド作成', 'openMemberPresenDialog')
-      .addItem('定例会スライドの自動更新', 'openMeetingSlideDialog')
+      .addItem('定例会スライド（前半）', 'openMeetingFirstDialog')
+      .addItem('定例会スライド（後半）', 'openMeetingSecondDialog')
       .addItem('メンバーブックの編集・PDF出力', 'openMemberBookEditorDialog')
       .addItem('Zoom入室案内の作成', 'openZoomGuideDialog'))
     .addSubMenu(ui.createMenu('🎯 抽選ルーレット')
@@ -127,7 +126,7 @@ function findNewestPdfInAssetFolder_() {
 function diagnoseDialogFiles() {
   var ui = SpreadsheetApp.getUi();
   var files = ['pdf', 'dialog', 'allocation', 'email', 'pdf_links', 'member_master',
-               'memberbook_editor', 'memberbook_render', 'slides_visitor', 'slides_meeting',
+               'memberbook_editor', 'memberbook_render', 'slides_visitor', 'slides_meeting_first', 'slides_meeting_second',
                'menu_home', 'manual', 'spreading', 'zoom_guide', 'archive'];
   var lines = [], ng = 0;
   for (var i = 0; i < files.length; i++) {

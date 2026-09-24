@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html><head><base target="_top">
+<?!= include('slides_meeting_common') ?>
+<?!= include('slides_layout') ?>
+</head>
+<body>
+ <h3>定例会スライド（前半）</h3>
+ <div style="float:right;font-size:11px;color:#aaa;" id="ver"></div>
+ <div class="hint">
+   開くと、<b>ルーティンチェックシート</b>と<b>メンバー名簿</b>から、この週の内容が各欄に入ります。
+   <b>ウィークリープレゼン（メンバーのページ）もここで一緒に作ります。</b>
+   確かめて、違うところだけ直してから「前半スライドを作成」を押してください。
+ </div>
+ <div class="loading" id="loading" style="display:none;"></div>
+ <div class="warn" id="warn" style="display:none;"></div>
+
+ <div class="sec">
+   <h4>1. 開催回・開催日・コアバリュー <span class="auto">ルーティンチェックシート</span></h4>
+   <div class="row">
+     <label>開催日：<select id="meeting" onchange="reload()"></select></label>
+     <label>開催回：<input type="text" id="no" size="6"></label>
+   </div>
+   <div class="row">
+     <label>コアバリュー：<select id="core"></select></label>
+     <span id="coreNote" style="font-size:11px;color:#888;"></span>
+   </div>
+   <div class="row">
+     <label><input type="checkbox" id="pat" checked>
+       <code>{{ }}</code> が無いページの「第○回」「○年○月○日」も自動で直す</label>
+   </div>
+ </div>
+
+ <div class="sec">
+   <h4>2. 新メンバー・更新メンバー <span class="auto">自動</span></h4>
+   <table>
+     <tr><th>新メンバー</th><td><input type="text" class="wide" id="t_新メンバー"></td></tr>
+     <tr><th>更新メンバー</th><td><input type="text" class="wide" id="t_更新メンバー"></td></tr>
+   </table>
+   <div id="nmDetail" style="font-size:11px;color:#888;margin-top:6px;"></div>
+ </div>
+
+ <div class="sec">
+   <h4>3. メンバーシップ委員会・メインプレゼン <span class="auto">ルーティンチェックシート</span></h4>
+   <table>
+     <tr><th>メインプレゼン①</th><td><select id="mp1" class="wide"></select></td></tr>
+     <tr><th>メインプレゼン②</th><td><select id="mp2" class="wide"></select></td></tr>
+     <tr><th>チャプターが求める<br>専門分野</th>
+         <td><input type="text" class="wide" id="t_求める専門分野">
+             <div style="font-size:11px;color:#888;">「、」で区切って並べます（最大12件）</div></td></tr>
+     <tr><th>開放カテゴリー</th><td><input type="text" class="wide" id="t_開放カテゴリー"></td></tr>
+     <tr><th>審査中の申込み</th><td><input type="text" class="wide" id="t_審査中カテゴリー"></td></tr>
+     <tr><th>一般規定</th><td><select id="gp"></select>
+         <span style="font-size:11px;color:#888;">選んだ番号のページだけを表示にします</span></td></tr>
+   </table>
+   <div id="mpNote" style="font-size:11px;color:#888;margin-top:6px;"></div>
+ </div>
+
+ <div class="sec">
+   <h4>4. ウィークリープレゼン <span class="auto">ルーティンチェックシート</span></h4>
+   <label><input type="checkbox" id="mpOn" checked onchange="toggleMP()">
+     メンバーのページ（業種区分の扉ページ＋個人ページ）を作って、<b>「ウィークリープレゼンテーション」の見出しの直後に入れる</b></label>
+   <div id="mpBox" style="margin-top:8px;">
+     <table>
+       <tr><th>始まりの業種区分</th><td><select id="mpStart" onchange="renderMP()"></select>
+           <div id="mpStartNote" style="font-size:11px;color:#888;"></div></td></tr>
+       <tr><th>2分30秒プレゼン</th><td><select id="mpLong" onchange="renderMP()"></select>
+           <div id="mpLongNote" style="font-size:11px;color:#888;"></div></td></tr>
+     </table>
+     <div id="mpWarn" style="font-size:12px;color:#b26b00;margin-top:6px;line-height:1.7;"></div>
+     <div class="mk">
+       <h5>この日の順番</h5>
+       <table class="ord" id="mpOrder"></table>
+       <div id="mpNote2" style="font-size:12px;color:#444;margin-top:6px;"></div>
+     </div>
+   </div>
+   <div class="mk">
+     <h5>アンバサダー・ディレクター（メンバーの後、「全員終わりましたか？」の前）
+       <span class="auto">ルーティンチェックシート</span></h5>
+     <div id="gsList" style="font-size:12px;"></div>
+     <div id="gsNote" style="font-size:11px;color:#888;margin-top:4px;"></div>
+   </div>
+   <div class="mk">
+     <label><input type="checkbox" id="mpAuto" checked onchange="renderMP()">
+       カウントダウンが終わったら<b>自動で次へ進む</b>（メンバー・アンバサダー・ディレクターのページ）</label>
+   </div>
+ </div>
+
+ <div class="sec">
+   <h4>5. 実績数値 <span class="auto">前回値</span></h4>
+   <div style="font-size:11px;color:#666;margin-bottom:6px;">保存すると次回の初期値になります。</div>
+   <div id="stats"></div>
+   <button class="sub" onclick="saveStats()">この数値を保存</button>
+ </div>
+
+ <div class="sec">
+   <h4>6. 作成</h4>
+   <div style="font-size:11px;color:#666;margin-bottom:8px;">
+     コアバリュー・一般規定は、選んだものの<b>ページを1枚だけ表示</b>にします。
+     メンバーのページは「ウィークリープレゼンテーション」の見出しの直後に入ります。
+   </div>
+   <button id="genBtn" onclick="gen()" disabled>前半スライドを作成</button>
+ </div>
+ <div id="msg"></div>
+
+<script>
+ var STAT_KEYS=['総リファーラル数','サンキューカード','1to1','ビジター数','外部リファーラル','CEU'];
+ window.onload=function(){
+   loadFrom('ctx','開催日とルーティンチェックシート','getMeetingSlideContext',[],init);
+ };
+ // 作成できる状態か（読み込みが済み、前半テンプレートがある）
+ function ready(){ return !!(ctx && ctx.templates && ctx.templates.meetingFirst); }
+
+ function init(c){
+   if(!c.ok){ fail({message:c.message}); return; }
+   ctx=c;
+   initMeetings(c);
+   var ch='<option value="">（指定しない）</option>';
+   (c.coreValues||[]).forEach(function(v){ ch+='<option value="'+esc(v)+'">'+esc(v)+'</option>'; });
+   document.getElementById('core').innerHTML=ch;
+   var mh=memberOptions();
+   ['mp1','mp2'].forEach(function(id){ document.getElementById(id).innerHTML=mh; });
+   var gh='<option value="">（指定しない）</option>';
+   for(var g=1; g<=12; g++) gh+='<option value="'+g+'">'+g+'番</option>';
+   document.getElementById('gp').innerHTML=gh;
+   applyRoutine(c.routine);
+   var tplOk=templateWarn('meetingFirst','定例会スライド（前半）');
+   if(!c.templates.memberPresen){
+     templateWarn('memberPresen','メンバープレゼン（メンバーのページを入れるのに使います）');
+   }
+   if(!c.memberCount){
+     var w=document.getElementById('warn'); w.style.display='block';
+     w.innerHTML+=(w.innerHTML?'<br>':'')+'メンバー名簿が空です。「⚙️ メンバー名簿の管理」で取り込んでください（自動算出に必要です）。';
+   }
+   renderStats(c.stats||{});
+   applyLists(c.lists);
+   // 前半テンプレート（アンバサダー・ディレクターのページ）と、メンバーのページの材料を読む
+   if(tplOk) loadGuests(); else document.getElementById('gsList').innerHTML='<span style="color:#888;">前半テンプレートを登録すると選べます。</span>';
+   toggleMP();
+   refreshGen();
+ }
+ function renderStats(s){
+   document.getElementById('stats').innerHTML='<table>'+STAT_KEYS.map(function(k){
+     return '<tr><th>'+esc(k)+'</th><td><input type="text" class="wide" id="s_'+esc(k)+'" value="'+esc(s[k]||'')+'"></td></tr>';
+   }).join('')+'</table>';
+ }
+ function applyLists(L){
+   if(!L){ return; }
+   val('t_新メンバー', L.text.newMembers); val('t_更新メンバー', L.text.renewMembers);
+   var d=[];
+   if(L.newMembers.length)   d.push('新メンバー: '+L.newMembers.map(function(m){return m.name+'('+m.date+')';}).join('、'));
+   if(L.renewMembers.length) d.push('更新: '+L.renewMembers.map(function(m){return m.name+'('+m.years+'年)';}).join('、'));
+   document.getElementById('nmDetail').innerText=d.join(' ／ ');
+ }
+ // ルーティンチェックシートに書いてある内容を反映する
+ function applyRoutine(R){
+   var note=document.getElementById('coreNote');
+   guestRaw = (R && R.ok && R.found) ? (R.regionGuestsRaw||'') : '';
+   renderGuests();
+   if(!R || !R.ok || !R.found){
+     note.innerText = (R&&R.message) ? R.message : 'ルーティンチェックシートに該当する開催日が見つかりません。';
+     note.style.color='#c60'; return;
+   }
+   if(R.meetingNo) val('no', R.meetingNo);
+   document.getElementById('core').value = R.coreValue || '';
+   var mp=R.mainPresenters||[];
+   document.getElementById('mp1').value = (mp[0] && mp[0].name) || '';
+   document.getElementById('mp2').value = (mp[1] && mp[1].name) || '';
+   val('t_求める専門分野', (R.wantedCategories||[]).join('、'));
+   val('t_開放カテゴリー', R.openCategory||'');
+   val('t_審査中カテゴリー', R.reviewCategory||'');
+   document.getElementById('gp').value = R.generalPolicy ? String(R.generalPolicy) : '';
+   var un=mp.filter(function(x){ return x.raw && !x.name; });
+   document.getElementById('mpNote').innerHTML = un.length
+     ? '<span style="color:#c60;">ルーティンチェックシートの「'+esc(R.mainPresentersRaw)
+       +'」から、'+esc(un.map(function(x){return x.raw;}).join('・'))
+       +' は名簿の氏名と一致しませんでした。手で選んでください。</span>'
+     : (R.mainPresentersRaw ? '記載：'+esc(R.mainPresentersRaw) : '');
+   var t = R.sheetName + ' から読み込みました';
+   if(R.coreValueRaw && !R.coreValue) t += '／コアバリュー「'+R.coreValueRaw+'」は見分けられませんでした';
+   note.innerText=t; note.style.color='#188038';
+ }
+ function reload(){
+   var d=get('meeting'); if(!d) return;
+   meetingNoFromList();
+   loadFrom('routine','ルーティンチェックシート','getRoutineInfo',[d],applyRoutine);
+   mpForDate();
+   loadFrom('lists','新メンバー・更新メンバー','computeRenewalLists',[d],function(L){
+     if(L.ok){ applyLists(L); show('開催日にあわせて更新しました。',true); }
+     else show(L.message,false);
+   });
+ }
+
+ function collect(){
+   var m=baseValues();
+   ['新メンバー','更新メンバー'].forEach(function(k){ m[k]=get('t_'+k); });
+   STAT_KEYS.forEach(function(k){ var e=document.getElementById('s_'+k); if(e) m[k]=e.value; });
+   twoPersonValues(m,'メインプレゼン','mp');
+   // チャプターが求める専門分野は、表のマス目に1つずつ入れる
+   var want=get('t_求める専門分野').split(/[、,・･\/／]+/).map(function(x){return x.trim();})
+              .filter(function(x){return x;});
+   for(var i=1;i<=12;i++) m['求める専門分野'+i]=want[i-1]||'';
+   m['開放カテゴリー']=get('t_開放カテゴリー');
+   m['審査中カテゴリー']=get('t_審査中カテゴリー');
+   return m;
+ }
+
+ // --- ウィークリープレゼン：メンバーのページ ---
+ // 並びの組み立ては slides_layout.html の memberPresenItems()。
+ var mpCtx=null;
+ function toggleMP(){
+   var on=document.getElementById('mpOn').checked;
+   document.getElementById('mpBox').style.display = on ? 'block' : 'none';
+   if(on && !mpCtx){
+     loadFrom('members','メンバーと写真','getMemberPresenContext',[],function(c){
+       if(!c.ok){ show(c.message,false); return; }
+       mpCtx=c; initMP();
+     });
+   }
+   renderMP();
+ }
+ function mpCandidate(){
+   var d=get('meeting');
+   return ((mpCtx&&mpCtx.candidates)||[]).filter(function(x){ return x.dateValue===d; })[0] || null;
+ }
+ function mpLive(){ return ((mpCtx&&mpCtx.blocks)||[]).filter(function(b){ return b.count>0; }); }
+ function initMP(){
+   document.getElementById('mpStart').innerHTML = mpLive().map(function(b){
+     return '<option value="'+esc(b.gkey)+'">'+esc(b.block)+'（'+b.count+'名）</option>'; }).join('');
+   var lh='<option value="">（なし）</option>';
+   (mpCtx.members||[]).forEach(function(m){ if(m.blockKey) lh+='<option value="'+esc(m.name)+'">'+esc(m.name)+'</option>'; });
+   document.getElementById('mpLong').innerHTML=lh;
+   // 名簿と業種区分の気になる点（写真が無い・業種区分が空・マスタに無い・使われていない）
+   var notes=[], c=mpCtx;
+   var noPhoto=(c.members||[]).filter(function(m){ return m.blockKey && !m.hasPhoto; });
+   if(noPhoto.length) notes.push('写真が見つからない方（写真なしで作ります）: '+noPhoto.map(function(m){ return esc(m.name); }).join('、'));
+   var noCat=(c.members||[]).filter(function(m){ return !m.cat; });
+   if(noCat.length) notes.push('業種区分が空の方（ページに出ません）: '+noCat.map(function(m){ return esc(m.name); }).join('、'));
+   var unknown=(c.blocks||[]).filter(function(b){ return !b.known && b.count>0; });
+   if(unknown.length) notes.push('業種区分マスタに無い区分（その名前で扉ページを作ります）: '
+     +unknown.map(function(b){ return esc(b.block)+'（'+b.count+'名）'; }).join('、'));
+   if((c.unusedCategories||[]).length) notes.push('誰も使っていない業種区分がマスタに残っています: <b>'
+     +c.unusedCategories.map(esc).join('、')+'</b> <button class="mkbtn" onclick="tidy()">使われていない業種区分を消す</button>');
+   document.getElementById('mpWarn').innerHTML=notes.join('<br>');
+   mpForDate();
+ }
+ // 開催日が変わったら、始まりの区分と2分30秒の方を選び直す
+ function mpForDate(){
+   if(!mpCtx) return;
+   var c=mpCandidate(), live=mpLive();
+   var st=(c&&c.start)||(live[0]?live[0].gkey:'');
+   document.getElementById('mpStart').value=st;
+   document.getElementById('mpStartNote').textContent = c ? memberPresenStartNote(c)+' 違うときだけ選び直してください。' : '';
+   document.getElementById('mpLong').value=(c&&c.longPresenter)||'';
+   document.getElementById('mpLongNote').innerHTML = !c ? ''
+     : c.longPresenter ? ('<b>'+esc(c.routineSheet)+'</b> の記載（'+esc(c.longPresenterRaw)+'）から選んでいます。')
+     : c.longUnmatched ? ('<span style="color:#c60;">「'+esc(c.longPresenterRaw)+'」は名簿の氏名と一致しませんでした。</span>')
+     : 'いない日は「（なし）」のまま。';
+   renderMP();
+ }
+ function buildMP(){
+   if(!mpCtx || !document.getElementById('mpOn').checked) return [];
+   var items=memberPresenItems(mpCtx, get('mpStart'), get('mpLong'), document.getElementById('mpAuto').checked);
+   // 後ろにアンバサダー・ディレクターが続くときは、最後の方のページの「NEXT」にその方を出す
+   var gs=pickedGuests(), last=items[items.length-1];
+   if(gs.length && last && last.kind==='individual' && !last.nextName) last.nextName=gs[0].name;
+   return items;
+ }
+ function renderMP(){
+   var box=document.getElementById('mpOrder'), note=document.getElementById('mpNote2');
+   if(!mpCtx){ box.innerHTML=''; note.innerHTML=''; refreshGen(); return; }
+   var seq=memberPresenOrder(mpCtx, get('mpStart')), h='<tr><th></th><th>業種区分</th><th>人数</th><th>先頭</th></tr>';
+   seq.forEach(function(b,i){
+     var first=(mpCtx.members||[]).filter(function(m){ return m.blockKey===b.gkey; })[0];
+     h+='<tr class="'+(i===0?'first':'')+'"><td class="num">'+(i+1)+'</td><td>'+esc(b.block)+'</td>'
+       +'<td class="num">'+b.count+'名</td><td>'+esc(first?first.name:'―')+'</td></tr>';
+   });
+   box.innerHTML=h;
+   var items=buildMP(), ov=items.filter(function(x){ return x.kind==='overview'; }).length, gs=pickedGuests();
+   note.innerHTML = items.length
+     ? ('扉ページ '+ov+'枚＋個人ページ '+(items.length-ov)+'枚＝<b>'+items.length+'枚</b>を差し込みます。'
+        +(gs.length ? '<br>最後の方のページの「NEXT」には '+esc(gs[0].name)+'さんを出します。' : ''))
+     : '';
+   refreshGen();
+ }
+ // 誰も使っていない業種区分をマスタから消す（消す前に中身を見せる）
+ function tidy(){
+   setBusy(true,'確認中...');
+   google.script.run.withSuccessHandler(function(r){
+     setBusy(false);
+     if(!r.ok){ show(r.message,false); return; }
+     if(!r.removed.length){ show(r.message,true); return; }
+     if(!confirm(r.message+'\n\nよろしいですか？')){ show('やめました。',null); return; }
+     setBusy(true,'整理しています...');
+     google.script.run.withSuccessHandler(function(r2){
+       setBusy(false); show(r2.message, r2.ok);
+       if(r2.ok){ mpCtx=null; toggleMP(); }
+     }).withFailureHandler(fail).tidyCategoryMaster(true);
+   }).withFailureHandler(fail).tidyCategoryMaster(false);
+ }
+
+ // --- アンバサダー・ディレクターのページ ---
+ // 前半テンプレートに非表示で入っているページを、来られる日だけ表示にする。
+ // 初期値は、ルーティンチェックシートの「リージョン参加者」に名字が書いてあるかどうか
+ // （「吉田ED・坂爪アンバサダー」「なし」など）。空欄の日はテンプレートのまま。
+ var guests=null, guestRaw='';
+ function loadGuests(){
+   loadFrom('guests','前半テンプレート（アンバサダー・ディレクターのページ）','getWeeklyGuests',[],function(r){
+     if(!r.ok){ document.getElementById('gsList').innerHTML='<span style="color:#c60;">'+esc(r.message)+'</span>'; return; }
+     guests=r.guests||[]; renderGuests();
+   });
+ }
+ // 名字で探す（「吉田ED」「坂爪アンバサダー」のように名字＋役職で書かれるため）。
+ // 氏名に空白が無いときは、先頭2文字を名字とみなす。
+ function guestListed(g){
+   var t=String(guestRaw||'').replace(/[\s　]/g,''), nm=String(g.name||'').trim(), ps=nm.split(/[\s　]+/);
+   var sur = ps.length>1 ? ps[0] : nm.slice(0,2);
+   return !!sur && t.indexOf(sur)>=0;
+ }
+ function renderGuests(){
+   if(!guests) return;
+   var box=document.getElementById('gsList'), note=document.getElementById('gsNote');
+   if(!guests.length){
+     box.innerHTML='<span style="color:#888;">前半テンプレートに、メンバー以外の方のウィークリープレゼンのページはありません。</span>';
+     note.innerHTML=''; renderMP(); return;
+   }
+   box.innerHTML=guests.map(function(g,i){
+     var on = guestRaw ? guestListed(g) : !g.hidden;
+     return '<label style="display:block;padding:2px 0;"><input type="checkbox" id="gs_'+i+'"'
+       +(on?' checked':'')+' onchange="renderMP()"> <b>'+esc(g.name)+'</b>さん'
+       +(g.role?'（'+esc(g.role)+'）':'')+'のページを入れる</label>';
+   }).join('');
+   note.innerHTML = guestRaw ? ('ルーティンチェックシートの「リージョン参加者」：'+esc(guestRaw))
+     : 'ルーティンチェックシートの「リージョン参加者」は空欄です。';
+   renderMP();
+ }
+ function pickedGuests(){
+   return (guests||[]).filter(function(g,i){ var e=document.getElementById('gs_'+i); return !!(e&&e.checked); });
+ }
+
+ function saveStats(){
+   var s={}; STAT_KEYS.forEach(function(k){ var e=document.getElementById('s_'+k); if(e) s[k]=e.value; });
+   google.script.run.withSuccessHandler(function(r){ show(r.message, !!r.ok); }).withFailureHandler(fail).saveMeetingStats(s);
+ }
+ function gen(){
+   if(document.getElementById('mpOn').checked && !buildMP().length){
+     show('メンバーのページを作れません（メンバーと写真の読み込みが終わっていないか、名簿が空です）。',false); return;
+   }
+   genSlides('meetingFirst', {
+     patterns: document.getElementById('pat').checked,
+     coreValue: get('core'),
+     generalPolicy: parseInt(get('gp'),10) || 0,
+     mainPresenters: [get('mp1'), get('mp2')],
+     memberPresen: buildMP(),
+     // 表示にするアンバサダー・ディレクター（読み込めていなければ null＝テンプレートのまま）
+     weeklyGuests: guests ? pickedGuests().map(function(g){ return g.name; }) : null,
+     weeklyAuto: document.getElementById('mpAuto').checked
+   });
+ }
+</script>
+</body></html>

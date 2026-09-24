@@ -3,6 +3,7 @@
 
     python3 tools/mtg_zip_check.py <出力ディレクトリ> <保存先.pptx>
 """
+import hashlib
 import json
 import os
 import re
@@ -241,6 +242,83 @@ if plan_mp:
     ck(not stale, '作っていないページに自動送りが残っている: %s' % stale[:5])
     two = [it['name'] for it in plan_mp if it.get('countdownSec')]
     print('  メンバープレゼン: %d枚を差し込み（2分30秒: %s）' % (len(plan_mp), '、'.join(two) or 'なし'))
+
+# 写真の取り違い：ページごとに、入るはずの方の写真が入るはずの枠に入っているか。
+# 写真は1人ずつ中身の違う画像にしてあるので、中身（md5）で誰の写真かが分かる。
+photo_of = info.get('photoOf') or {}
+md5_of_person = {}
+for nm, fp in photo_of.items():
+    try:
+        md5_of_person[hashlib.md5(open(fp, 'rb').read()).hexdigest()] = nm
+    except OSError:
+        pass
+slide_w = int((re.search(r'<p:sldSz\s+cx="(\d+)"', pres) or [0, 12192000])[1])
+
+
+def pics_of(p):
+    """ページの画像 → [(id, x, y, cx, cy, 写っている方の氏名 or '')]"""
+    sx = z.read('ppt/' + p).decode('utf-8')
+    rp = 'ppt/slides/_rels/' + p.split('/')[-1] + '.rels'
+    rels = z.read(rp).decode('utf-8') if rp in names else ''
+    tg = {}
+    for m in re.finditer(r'<Relationship\b[^>]*>', rels):
+        a = m.group(0)
+        i = re.search(r'Id="([^"]+)"', a)
+        t = re.search(r'Target="([^"]+)"', a)
+        if i and t and 'External' not in a:
+            tg[i.group(1)] = os.path.normpath(os.path.join('ppt/slides', t.group(1))).replace('\\', '/')
+    out = []
+    for m in re.finditer(r'<p:pic>.*?</p:pic>', sx, re.S):
+        seg = m.group(0)
+        pid = re.search(r'<p:cNvPr id="(\d+)"', seg)
+        geo = re.search(r'<a:off x="(-?\d+)" y="(-?\d+)"\s*/>\s*<a:ext cx="(\d+)" cy="(\d+)"', seg)
+        rid = re.search(r'<a:blip[^>]*r:embed="([^"]+)"', seg)
+        who = ''
+        if rid and tg.get(rid.group(1)) in names:
+            who = md5_of_person.get(hashlib.md5(z.read(tg[rid.group(1)])).hexdigest(), '')
+        if pid and geo:
+            out.append((pid.group(1),) + tuple(int(v) for v in geo.groups()) + (who,))
+    return out
+
+
+if photo_of:
+    # リファーラル発表：どのページにも、その方の写真だけ
+    for k, it in enumerate(plan_rf):
+        pg = [p for p in order if 'REFERRAL PRESENTATION' in text(p)[1]]
+        if k >= len(pg):
+            break
+        faces = [w for (_i, _x, _y, _cx, _cy, w) in pics_of(pg[k]) if w]
+        want = [it['name']] if it['name'] in photo_of else []
+        ck(faces == want, 'リファーラル発表 %d枚目（%s）の写真が %s' % (k + 1, it['name'], faces or 'なし'))
+    # 左右にお2人が並ぶページ：左に1人目、右に2人目。ほかの方の写真や、元の写真が残っていないこと
+    for title, prefix in (('Main Presenter', 'メインプレゼン'), ('Words of Recommendation', '推薦のことば'), ('賞品の抽選', '抽選')):
+        pg = [p for p in order if title in text(p)[1]]
+        if not pg:
+            continue
+        want = (info.get('twoPerson') or {}).get(prefix) or []
+        pics = pics_of(pg[0])
+        # 写真の枠＝縦長で大きな画像（背景いっぱいの画像と、飾りの小さな画像は除く）
+        frames = [q for q in pics if q[4] >= 2500000 and q[3] <= slide_w * 0.4]
+        for side, nm in enumerate(want[:2]):
+            on_side = [q[5] for q in frames if q[5] and ((q[1] + q[3] / 2) < slide_w / 2) == (side == 0)]
+            exp = [nm] if nm in photo_of else []
+            ck(on_side == exp, '%s の%sの写真が %s（%s のはず）'
+               % (prefix, '左' if side == 0 else '右', on_side or 'なし', exp or '写真なし'))
+        # 写真の枠に、入るはずの方以外（元のテンプレートの写真）が残っていないこと
+        stale = [q[0] for q in frames if q[5] not in [n for n in want if n]]
+        ck(not stale, '%s のページに、元の写真が残っている枠がある（図形ID %s）' % (prefix, stale))
+        # 飾りの画像に、誰かの写真が入っていないこと
+        deco = [(q[0], q[5]) for q in pics if q not in frames and q[5]]
+        ck(not deco, '%s のページで、写真の枠でない画像に写真が入っている: %s' % (prefix, deco))
+    # 前半に差し込んだメンバーのページ：扉ページは先頭の方、個人ページはその方の写真
+    if plan_mp and anchor is not None:
+        for k, it in enumerate(plan_mp):
+            if anchor + 1 + k >= len(order):
+                break
+            faces = [q[5] for q in pics_of(order[anchor + 1 + k]) if q[5]]
+            want = [it['photoName']] if it.get('photoName') in photo_of else []
+            ck(faces == want, 'メンバーのページ %d枚目（%s）の写真が %s' % (k + 1, it.get('photoName'), faces or 'なし'))
+    print('  写真: リファーラル発表・左右にお2人のページ・メンバーのページを、1人ずつ中身で照合しました')
 
 # 一般規定・コアバリューは前半スライドだけにあるページ。
 # そのページが見つかったときにだけ「1枚だけ表示」になっていることを確かめる。

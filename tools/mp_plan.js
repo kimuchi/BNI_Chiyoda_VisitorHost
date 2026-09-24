@@ -1,4 +1,5 @@
-// 画面(member_presen.html)の組版ロジックを、そのままNodeで動かして items.json を作る。
+// 画面の組版ロジック（slides_layout.html の memberPresenItems()）を、そのままNodeで動かして items.json を作る。
+// 定例会スライド（前半）の画面が、メンバーのページを差し込むときに使うのと同じ処理。
 // canvasはNodeに無いので、全角1文字ぶん・半角0.5文字ぶんで測る簡易版に差し替える。
 // 折り返しの「位置」までは本物と一致しないが、1行/2行の分岐や社名の分割は同じ経路を通る。
 //
@@ -9,9 +10,7 @@ const path = require('path');
 const vm = require('vm');
 
 const OUT = process.argv[2];
-// 組版は slides_layout.html に切り出してあるので、両方つなげて読み込む
-const html = ['slides_layout.html', 'member_presen.html']
-  .map((f) => fs.readFileSync(path.join(__dirname, '..', f), 'utf8')).join('\n');
+const html = fs.readFileSync(path.join(__dirname, '..', 'slides_layout.html'), 'utf8');
 const js = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]).join('\n');
 
 function fakeCtx() {
@@ -31,20 +30,14 @@ const sandbox = {
   console,
   document: {
     createElement: (tag) => (tag === 'canvas' ? { getContext: () => fakeCtx() } : { set textContent(v) { this._t = v; }, get innerHTML() { return String(this._t == null ? '' : this._t); } }),
-    // checked は既定でオン（画面の <input type="checkbox" checked> と同じ）。
-    // long は「2分30秒プレゼンの方」の選択。検証のため1人選んだ状態にしておく。
-    getElementById: (id) => (els[id] = els[id] || {
-      style: {}, innerHTML: '', textContent: '', innerText: '', checked: true,
-      value: (id === 'long' ? '佐藤　祐之' : '0'),
-    }),
+    getElementById: (id) => (els[id] = els[id] || { style: {}, innerHTML: '', textContent: '', value: '' }),
   },
-  google: { script: { run: { withSuccessHandler: () => ({ withFailureHandler: () => ({ getMemberPresenContext() {} }) }) } } },
   window: {},
   alert: () => {},
 };
 sandbox.window = sandbox;
 vm.createContext(sandbox);
-vm.runInContext(js, sandbox, { filename: 'member_presen.html' });
+vm.runInContext(js, sandbox, { filename: 'slides_layout.html' });
 
 // --- 検証用のメンバー（組版のあらゆる分岐を通す）---
 const gk = (x) => x.replace(/[\s・･＆&と]/g, '');
@@ -70,10 +63,9 @@ const members = [
   // 美容・健康 … 0名（＝スライドが作られない）
 ];
 members.forEach((m) => { const b = blocks.find((x) => x.gkey === m.blockKey); if (b) b.count++; });
-sandbox.ctx = { ok: true, blocks, members, rowsPerPage: 7, candidates: [], template: { registered: true } };
-sandbox.startKey = blocks[0].gkey;
-
-const items = sandbox.buildItems();
+const ctx = { ok: true, blocks, members, rowsPerPage: 7, candidates: [], template: { registered: true } };
+// 2分30秒プレゼンの方は、検証のため1人選んだ状態にする。自動送りはオン（画面の既定と同じ）
+const items = sandbox.memberPresenItems(ctx, blocks[0].gkey, '佐藤　祐之', true);
 fs.mkdirSync(OUT, { recursive: true });
 fs.writeFileSync(path.join(OUT, 'items.json'), JSON.stringify(items, null, 1));
 

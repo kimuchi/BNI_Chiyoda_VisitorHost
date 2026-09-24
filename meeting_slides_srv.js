@@ -2,10 +2,33 @@
 // メンバー名簿の入会日・更新日・更新期限日から、スライドに載せる内容を自動算出する。
 // 手入力していた「新メンバー」「更新メンバー」「更新状況一覧(90/60/30日)」が不要になる。
 
-function openMeetingSlideDialog() {
+// 前半と後半は入口を分けてある。どちらも開いたらすぐ、そのテンプレートと
+// ルーティンチェックシートを読み込む（読み込み中は画面に「読み込み中…」を出す）。
+function openMeetingFirstDialog() {
   SpreadsheetApp.getUi().showModalDialog(
-    HtmlService.createTemplateFromFile('slides_meeting').evaluate().setWidth(900).setHeight(760),
-    '定例会スライドの自動更新');
+    HtmlService.createTemplateFromFile('slides_meeting_first').evaluate().setWidth(900).setHeight(760),
+    '定例会スライド（前半）');
+}
+function openMeetingSecondDialog() {
+  SpreadsheetApp.getUi().showModalDialog(
+    HtmlService.createTemplateFromFile('slides_meeting_second').evaluate().setWidth(900).setHeight(760),
+    '定例会スライド（後半）');
+}
+
+// テンプレートを開いて調べた結果を、テンプレートが変わるまで覚えておく。
+// 数十MBのファイルを開くので、画面を開くたびに読むと毎回待たされるため。
+// ファイルを差し替える（別のファイルを登録する・Drive上で更新する）と読み直す。
+function templateMemo_(kind, name, compute) {
+  var file = getBigTemplateFile_(kind);
+  var stamp = file.getId() + ':' + file.getLastUpdated().getTime();
+  var props = PropertiesService.getScriptProperties(), key = 'BNI_TPL_MEMO_' + name;
+  try {
+    var memo = JSON.parse(props.getProperty(key) || 'null');
+    if (memo && memo.stamp === stamp) return memo.value;
+  } catch (e) {}
+  var value = compute(unzipToMap_(file.getBlob()));
+  try { props.setProperty(key, JSON.stringify({ stamp: stamp, value: value })); } catch (e) {}   // 大きすぎるときは覚えない
+  return value;
 }
 
 // 文字列/日付値 → Date（時刻を0時に丸める）。解釈できなければ null
@@ -311,9 +334,12 @@ function applyGeneralPolicy_(parts, no) {
 // --- 2人が並ぶページの写真（メインプレゼン・推薦のことば・抽選コーナー）---
 // 前半のメインプレゼン、後半の推薦のことば・抽選コーナーは、どれも
 // 「左右に写真とお名前が並ぶ」同じ作りなので、1つの処理でまかなう。
-// {{○○1氏名}} が載っているページを探し、大きな写真2枚を左右で割り当てる。
-// 背景いっぱいの画像や小さな飾りを拾わないよう、大きさで絞る。
-function applyTwoPersonPhotos_(parts, prefix, names) {
+// {{○○1氏名}} が載っているページを探し、それぞれの方の写真の枠を決めて差し替える。
+//
+// 写真の枠は「その方の氏名の差し込み口の真上にある枠」で決める。大きさだけで選ぶと、
+// 抽選コーナーの中央下にある飾りの画像（写真と同じくらいの大きさ）を枠と取り違えるため。
+// 名前が空・写真が無い方の枠は、テンプレートの元の写真が残らないよう枠ごと消す。
+function applyTwoPersonPhotos_(parts, prefix, names, cache) {
   if (!names || !names.length) return null;
   var path = null, xml = null, p;
   for (p in parts) {
@@ -327,40 +353,111 @@ function applyTwoPersonPhotos_(parts, prefix, names) {
   var sz = prs.match(/<p:sldSz\s+cx="(\d+)"/);
   var slideW = sz ? parseInt(sz[1], 10) : 12192000;
 
+  // 写真の枠の候補（背景いっぱいの画像と、小さな飾りは除く）
   var pics = [], ranges = findTagRanges_(xml, 'p:pic');
   for (var i = 0; i < ranges.length; i++) {
     var seg = xml.substring(ranges[i].start, ranges[i].end);
     var id = (seg.match(/<p:cNvPr[^>]*\sid="(\d+)"/) || [])[1];
     var off = seg.match(/<a:off\s+x="(-?\d+)"\s+y="(-?\d+)"\s*\/>/);
     var ext = seg.match(/<a:ext\s+cx="(\d+)"\s+cy="(\d+)"\s*\/>/);
-    var rid = (seg.match(/<a:blip[^>]*r:embed="([^"]+)"/) || [])[1];
-    if (!id || !off || !ext || !rid) continue;
+    if (!id || !off || !ext || !/<a:blip[^>]*r:embed=/.test(seg)) continue;
     var cx = parseInt(ext[1], 10), cy = parseInt(ext[2], 10);
     if (cy < 1500000) continue;                       // 小さな飾りは対象外
     if (cx > slideW * 0.4) continue;                  // 背景いっぱいの画像は対象外
-    pics.push({ id: id, rid: rid, cx: cx, cy: cy, center: parseInt(off[1], 10) + cx / 2 });
+    pics.push({ id: id, x: parseInt(off[1], 10), y: parseInt(off[2], 10), cx: cx, cy: cy,
+                center: parseInt(off[1], 10) + cx / 2, area: cx * cy });
   }
-  pics.sort(function (a, b) { return a.center - b.center; });
-  if (pics.length < 1) return { message: 'メインプレゼンのページで写真の枠が見つかりませんでした。' };
+  if (!pics.length) return { message: prefix + 'のページで写真の枠が見つかりませんでした。' };
+  var slots = pickPhotoFrames_(xml, prefix, Math.min(names.length, 2), pics);
 
-  var rp = 'ppt/slides/_rels/' + path.replace(/^.*\//, '') + '.rels';
-  var rels = xmlOf_(parts, rp), cache = { by: {}, seq: 0 }, done = [], miss = [];
-  for (var k = 0; k < pics.length && k < names.length; k++) {
-    if (!names[k]) continue;
-    var photo = mpAddPhoto_(parts, cache, names[k]);
-    if (!photo) { miss.push(names[k]); continue; }
-    var box = readShapeGeomEmu_(xml, pics[k].id);
-    if (box && photo.width && photo.height) {
-      xml = setSrcRectInPic_(xml, pics[k].id, coverCrop_(photo.width, photo.height, box.cx, box.cy));
+  var rp = relsPathOf_(path);
+  var rels = xmlOf_(parts, rp), done = [], miss = [];
+  cache = cache || { by: {}, seq: 0 };
+  for (var k = 0; k < slots.length; k++) {
+    var pic = slots[k];
+    if (!pic) continue;
+    var photo = names[k] ? mpAddPhoto_(parts, cache, names[k]) : null;
+    if (!photo) {
+      xml = removeShape_(xml, pic.id);
+      if (names[k]) miss.push(names[k]);
+      continue;
     }
-    rels = retargetRel_(rels, pics[k].rid, '../media/' + photo.path.replace('ppt/media/', ''));
+    var box = readShapeGeomEmu_(xml, pic.id);
+    if (box && photo.width && photo.height) {
+      xml = setSrcRectInPic_(xml, pic.id, coverCrop_(photo.width, photo.height, box.cx, box.cy));
+    }
+    var set = setPicImage_(xml, rels, pic.id, '../media/' + photo.path.replace('ppt/media/', ''));
+    xml = set.xml; rels = set.rels;
     done.push(names[k]);
   }
   putXml_(parts, path, xml);
   if (rels) putXml_(parts, rp, rels);
   var msg = done.length ? (prefix + 'の写真を差し替えました: ' + done.join('、')) : '';
-  if (miss.length) msg += (msg ? '／' : '') + '写真が見つからない方: ' + miss.join('、');
+  if (miss.length) msg += (msg ? '／' : '') + '写真が見つからない方（写真なし）: ' + miss.join('、');
   return { message: msg, replaced: done.length };
+}
+
+// 氏名の差し込み口（{{○○1氏名}}）の文字箱の位置
+function tokenBox_(xml, token) {
+  var ranges = findTagRanges_(xml, 'p:sp');
+  for (var i = 0; i < ranges.length; i++) {
+    var seg = xml.substring(ranges[i].start, ranges[i].end);
+    if (slideText_(seg).indexOf(token) < 0) continue;
+    var off = seg.match(/<a:off\s+x="(-?\d+)"\s+y="(-?\d+)"\s*\/>/);
+    var ext = seg.match(/<a:ext\s+cx="(\d+)"\s+cy="(\d+)"\s*\/>/);
+    if (off && ext) return { y: parseInt(off[2], 10), center: parseInt(off[1], 10) + parseInt(ext[1], 10) / 2 };
+  }
+  return null;
+}
+
+// count 人ぶんの写真の枠を決める（slots[k] が k 人目の枠）。
+// 氏名の差し込み口が見つかれば、その真上（左右の位置がいちばん近く、氏名より上）の枠。
+// 見つからなければ、大きい順に count 個採って左から割り当てる。
+function pickPhotoFrames_(xml, prefix, count, pics) {
+  var anchors = [], k, j;
+  for (k = 0; k < count; k++) anchors.push(tokenBox_(xml, '{{' + prefix + (k + 1) + '氏名}}'));
+  var anchored = true;
+  for (k = 0; k < count; k++) if (!anchors[k]) anchored = false;
+  if (anchored) {
+    var pairs = [];
+    for (k = 0; k < count; k++) {
+      for (j = 0; j < pics.length; j++) {
+        var below = pics[j].y >= anchors[k].y;       // 氏名より下にあるものは写真の枠ではない
+        pairs.push({ k: k, j: j, d: Math.abs(pics[j].center - anchors[k].center) + (below ? 1e12 : 0) });
+      }
+    }
+    pairs.sort(function (a, b) { return a.d - b.d; });
+    var slots = [], usedK = {}, usedJ = {};
+    for (var q = 0; q < pairs.length; q++) {
+      if (usedK[pairs[q].k] || usedJ[pairs[q].j]) continue;
+      slots[pairs[q].k] = pics[pairs[q].j];
+      usedK[pairs[q].k] = usedJ[pairs[q].j] = true;
+    }
+    return slots;
+  }
+  var big = pics.slice().sort(function (a, b) { return b.area - a.area; }).slice(0, count);
+  big.sort(function (a, b) { return a.center - b.center; });
+  return big;
+}
+
+// 画像の図形の中身を差し替える。同じ関係IDを別の図形も使っているときは、
+// その図形だけ新しい関係IDに付け替える（片方を替えるともう片方も替わってしまうため）。
+function setPicImage_(xml, rels, picId, target) {
+  var r = findShapeRange_(xml, picId);
+  if (!r || !rels) return { xml: xml, rels: rels };
+  var seg = xml.substring(r.start, r.end);
+  var rid = (seg.match(/<a:blip[^>]*r:embed="([^"]+)"/) || [])[1];
+  if (!rid) return { xml: xml, rels: rels };
+  if (xml.split('r:embed="' + rid + '"').length - 1 <= 1) {
+    return { xml: xml, rels: retargetRel_(rels, rid, target) };
+  }
+  var max = 0, m, re = /Id="rId(\d+)"/g;
+  while ((m = re.exec(rels)) !== null) max = Math.max(max, parseInt(m[1], 10));
+  var nid = 'rId' + (max + 1);
+  rels = rels.replace('</Relationships>', '<Relationship Id="' + nid + '" Type="'
+    + 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="' + target + '"/></Relationships>');
+  seg = seg.replace(new RegExp('(<a:blip[^>]*r:embed=")' + rid + '"'), '$1' + nid + '"');
+  return { xml: xml.substring(0, r.start) + seg + xml.substring(r.end), rels: rels };
 }
 
 // --- 音楽の差し替えと音量 ---
@@ -500,18 +597,19 @@ function applyMeetingAudio_(parts, music) {
 // 画面用：登録してあるテンプレートの中を調べる。
 //   ・入っている音楽・動画（差し替えと音量の一覧に使う）
 //   ・リファーラル発表のひな形ページの枠の位置（会社名の収め方を画面で決めるのに使う）
-// テンプレートを開くので少し時間がかかる（ボタンを押したときだけ読む）。
+// 後半の画面を開いたときに読む。テンプレートが同じ間は結果を覚えておくので、2回目からはすぐ返る。
 function getMeetingTemplateInfo(kind) {
   try {
     if (!BIG_TEMPLATE_KINDS_[kind]) return { ok: false, message: 'スライドの種類が不正です。' };
-    var parts = unzipToMap_(getBigTemplateFile_(kind).getBlob());
-    var list = listMeetingAudio_(parts);
-    for (var i = 0; i < list.length; i++) {
-      list[i].slideNo = parseInt(String(list[i].slide).replace(/\D+/g, ''), 10);
-    }
-    var boxes = null, weeklyBoxes = null;
-    try { boxes = rfLayoutBoxes_(parts, RF_TITLE_); } catch (e) {}
-    try { weeklyBoxes = rfLayoutBoxes_(parts, WEEKLY_TITLE_); } catch (e) {}
+    var info = templateMemo_(kind, 'info_' + kind, function (parts) {
+      var l = listMeetingAudio_(parts);
+      for (var i = 0; i < l.length; i++) l[i].slideNo = parseInt(String(l[i].slide).replace(/\D+/g, ''), 10);
+      var rb = null, wb = null;
+      try { rb = rfLayoutBoxes_(parts, RF_TITLE_); } catch (e) {}
+      try { wb = rfLayoutBoxes_(parts, WEEKLY_TITLE_); } catch (e) {}
+      return { list: l, referralBoxes: rb, weeklyBoxes: wb };
+    });
+    var list = info.list || [], boxes = info.referralBoxes, weeklyBoxes = info.weeklyBoxes;
     var msg = list.length ? (list.length + '件の音楽・動画が入っています。')
                           : 'このテンプレートに音楽は入っていません。';
     if (boxes) msg += '／リファーラル発表のひな形が見つかりました。';
@@ -643,20 +741,13 @@ function applyWeeklyGuests_(parts, names, auto) {
 
 // 画面用：前半テンプレートに入っているアンバサダー・ディレクターのページ。
 // 27MBほどのファイルを開くので、テンプレートが同じ間は結果を覚えておく。
-var WEEKLY_GUEST_CACHE_KEY_ = 'BNI_WEEKLY_GUESTS';
 function getWeeklyGuests() {
   try {
-    var file = getBigTemplateFile_('meetingFirst');
-    var stamp = file.getId() + ':' + file.getLastUpdated().getTime();
-    var props = PropertiesService.getScriptProperties();
-    try {
-      var memo = JSON.parse(props.getProperty(WEEKLY_GUEST_CACHE_KEY_) || 'null');
-      if (memo && memo.stamp === stamp) return { ok: true, guests: memo.guests };
-    } catch (e) {}
-    var guests = weeklyGuestPages_(unzipToMap_(file.getBlob())).map(function (g) {
-      return { name: g.name, role: g.role, hidden: g.hidden };
+    var guests = templateMemo_('meetingFirst', 'guests', function (parts) {
+      return weeklyGuestPages_(parts).map(function (g) {
+        return { name: g.name, role: g.role, hidden: g.hidden };
+      });
     });
-    props.setProperty(WEEKLY_GUEST_CACHE_KEY_, JSON.stringify({ stamp: stamp, guests: guests }));
     return { ok: true, guests: guests };
   } catch (e) {
     console.error('[MEETING] ' + (e && e.stack ? e.stack : e));
@@ -693,9 +784,12 @@ function editMeetingSlides_(parts, map, rules, o) {
   // 発表のページを人数ぶんに増やす（先にページを増やしてから文字を差し替える）
   //   前半 … ウィークリープレゼン（メンバープレゼンと同じ内容）
   //   後半 … リファーラル発表
+  // 写真は1つの控えで取り込む。同じ方の写真は1枚だけ入れて使い回し、
+  // 別の処理が同じ名前の画像を作って上書きし合うこと（写真の取り違い）も起きない。
+  var photoCache = { by: {}, seq: 0 };
   var referral = (o.referral && o.referral.length)
     ? expandPresenterSlides_(parts, o.referral,
-        { title: RF_TITLE_, label: 'リファーラル発表', seconds: RF_SECONDS_ }) : null;
+        { title: RF_TITLE_, label: 'リファーラル発表', seconds: RF_SECONDS_, photoCache: photoCache }) : null;
   // 前半：アンバサダー・ディレクターのページの表示を切り替える（差し込みより先に。同じ作りのため）
   var guests = o.weeklyGuests ? applyWeeklyGuests_(parts, o.weeklyGuests, o.weeklyAuto !== false) : null;
   // 前半：メンバープレゼンのページを差し込む（メンバープレゼンのテンプレートから作る）
@@ -717,7 +811,7 @@ function editMeetingSlides_(parts, map, rules, o) {
     { prefix: '抽選',           names: o.lottery }
   ];
   for (var w = 0; w < TWO.length; w++) {
-    var ph = applyTwoPersonPhotos_(parts, TWO[w].prefix, TWO[w].names || []);
+    var ph = applyTwoPersonPhotos_(parts, TWO[w].prefix, TWO[w].names || [], photoCache);
     if (ph && ph.message) photoMsgs.push(ph.message);
   }
   var photos = { message: photoMsgs.join('\n') };

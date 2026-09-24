@@ -147,7 +147,8 @@ ck(sandbox.mpAdvance_(A, 'b', 3) === 'a', '誰もいない区分からの繰り�
 ck(sandbox.mpAdvance_(A, 'd', 1) === 'a', '最後の区分から先頭に戻らない');
 ck(sandbox.mpAdvance_(A, 'c', 6) === 'c', '2周ぶんの繰り上げで元に戻らない');
 
-// 5) 画面（メンバープレゼン）まで通す：サーバーの getMemberPresenContext() の結果で画面を開く
+// 5) 画面（定例会スライド（前半）のウィークリープレゼン欄）まで通す：
+//    サーバーの getMemberPresenContext() の結果で画面を開き、開催日を切り替える
 sandbox.getMemberMaster = () => ({ members: MEMBERS });
 sandbox.findPhotoIdForName_ = () => 'photo';
 sandbox.getBigTemplateStatus = () => ({ templates: [{ kind: 'memberPresen', registered: true }] });
@@ -158,14 +159,24 @@ const cands = ctx.candidates || [];
 ck(cands[0] && cands[0].startFrom === 'routine' && cands[1] && cands[1].startFrom === 'previous',
    '候補の出どころ: ' + JSON.stringify(cands.map((c) => c.startFrom)));
 const { loadPage } = require('./lib_minidom');
-const page = loadPage('member_presen.html', { fails, server: { getMemberPresenContext: () => JSON.parse(JSON.stringify(ctx)) } });
-page.step('メンバープレゼンの画面を開く', () => page.window.onload());
-ck(page.els.start.value === cands[0].start, `画面の始まりの区分が ${page.els.start.value}（${cands[0].start} のはず）`);
-ck(/ルーティンチェックシートの記載/.test(page.els.startNote.textContent), '画面に出どころが出ていない: ' + page.els.startNote.textContent);
-page.step('次の開催日に切り替える', () => { page.els.date.value = '1'; page.run('onDate()'); });
-ck(page.els.start.value === cands[1].start, `次の開催日の始まりの区分が ${page.els.start.value}（${cands[1].start} のはず）`);
-ck(/前回の記載/.test(page.els.startNote.textContent), '前回からの繰り上げが画面に出ていない: ' + page.els.startNote.textContent);
-console.log(`画面: ${last} → ${page.els.startNote.textContent ? '「' + blockName(cands[0].start) + '」' : ''}／${next} → 「${blockName(cands[1].start)}」`);
+const meetings = [last, next].map((d) => ({ dateValue: d, display: d }));
+const page = loadPage('slides_meeting_first.html', { fails, server: {
+  getSystemVersion: () => 'test',
+  getMeetingSlideContext: () => ({ ok: true, meetings, defaultMeeting: meetings[0], lists: null, stats: {},
+    templates: { meetingFirst: true, memberPresen: true }, routine: null, coreValues: [], memberCount: MEMBERS.length,
+    members: MEMBERS.map((m) => ({ no: m.no, name: m.name, company: m.company, title: m.title, hasPhoto: true })) }),
+  getWeeklyGuests: () => ({ ok: true, guests: [] }),
+  getMemberPresenContext: () => JSON.parse(JSON.stringify(ctx)),
+  getRoutineInfo: (d) => sandbox.getRoutineInfo(d),
+  computeRenewalLists: () => ({ ok: false, message: '（省略）' }),
+} });
+page.step('前半の画面を開く', () => page.window.onload());
+ck(page.els.mpStart.value === cands[0].start, `画面の始まりの区分が ${page.els.mpStart.value}（${cands[0].start} のはず）`);
+ck(/ルーティンチェックシートの記載/.test(page.els.mpStartNote.textContent), '画面に出どころが出ていない: ' + page.els.mpStartNote.textContent);
+page.step('次の開催日に切り替える', () => { page.els.meeting.value = next; page.run('reload()'); });
+ck(page.els.mpStart.value === cands[1].start, `次の開催日の始まりの区分が ${page.els.mpStart.value}（${cands[1].start} のはず）`);
+ck(/前回の記載/.test(page.els.mpStartNote.textContent), '前回からの繰り上げが画面に出ていない: ' + page.els.mpStartNote.textContent);
+console.log(`画面: ${last} → 「${blockName(cands[0].start)}」／${next} → 「${blockName(cands[1].start)}」`);
 
 console.log(`\n始まりの業種区分: 検査 ${checks} 件`);
 if (fails.length) {

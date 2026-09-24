@@ -1,9 +1,13 @@
-// === メンバープレゼンスライドの自動生成 ===
+// === メンバープレゼン（ウィークリープレゼンのページ）の生成 ===
 //
 // もとは「メンバープレゼンスライド 自動生成ツール」という単体のHTMLで、
 // メンバーリストHTMLを読ませて pptx を作るものだった。それを名簿システムに取り込み、
 // 「メンバー名簿」と「メンバー写真」から直接作れるようにしたもの。
 // 出来上がりの見た目は元ツールと同じになるようにしてある。
+//
+// 単独の画面は持たず、定例会スライド（前半）の画面から作る。作ったページは
+// 前半スライドの「ウィークリープレゼンテーション」の見出しの直後に差し込む
+// （meeting_slides_srv.js の insertMemberPresen_）。
 //
 // 【役割を2つに分けている理由】
 //  ・会社名の折り返しや文字の縮小には文字幅の実測が要るが、GASには文字を測る手段が無い。
@@ -45,12 +49,6 @@ var MP_CATEGORY_TOP_LOW_ = 4071101;    // 会社名が2行のとき（そのぶ�
 // 巡回の基準。この週が「プロモーション」始まりで、以降1週ごとに1つずつずれる。
 var MP_BASE_DATE_ = '2026/08/19';
 var MP_BASE_BLOCK_ = 'プロモーション';
-
-function openMemberPresenDialog() {
-  SpreadsheetApp.getUi().showModalDialog(
-    HtmlService.createTemplateFromFile('member_presen').evaluate().setWidth(760).setHeight(700),
-    'メンバープレゼンスライドの作成');
-}
 
 // 業種区分の照合キー。「美容と健康」「美容・健康」のような表記ゆれを吸収する
 function mpCatKey_(s) {
@@ -300,8 +298,12 @@ function mpAddPhoto_(map, cache, name) {
     try { size = imageSizeOf_(blob.getBytes()); } catch (e) {}
     if (size && cs) { try { cs.put(ck, JSON.stringify(size), 21600); } catch (e) {} }
   }
+  // 画像の名前は、すでにある画像と重ならないものにする。
+  // 重なると後から入れた写真で上書きされ、別の方のページの写真が入れ替わってしまう。
   cache.seq++;
-  var path = 'ppt/media/mpphoto' + cache.seq + '.' + ext;
+  var n = cache.seq, path = 'ppt/media/mpphoto' + n + '.' + ext;
+  while (map[path]) path = 'ppt/media/mpphoto' + (++n) + '.' + ext;
+  cache.seq = n;
   map[path] = blob.setName(path);
   cache.by[key] = { path: path, width: size ? size.width : 0, height: size ? size.height : 0 };
   return cache.by[key];
@@ -685,31 +687,4 @@ function mpPruneMedia_(map) {
   }
   for (var i = 0; i < drop.length; i++) delete map[drop[i]];
   return drop.length;
-}
-
-// 画面から呼ぶ本体
-function generateMemberPresenSlides(payload) {
-  try {
-    var items = (payload && payload.items) || [];
-    if (!items.length) return { ok: false, message: '作成するスライドがありません。' };
-    var label = (payload.dateLabel || '') + (payload.dateLabel ? '_' : '');
-    var outName = label + 'BNI_メンバープレゼン.pptx';
-
-    var r = editPptxOnServer_(MP_TEMPLATE_KIND_, outName, function (map) {
-      return buildMemberPresenSlides_(map, items);
-    });
-
-    var info = r.info || {};
-    var msg = '✅ ' + info.slides + '枚のスライドを作りました（' + (r.timing.合計 / 1000).toFixed(1) + '秒）。';
-    if (info.noPhoto && info.noPhoto.length) {
-      msg += '\n⚠ 写真が見つからなかった方は写真なしで出しています: ' + info.noPhoto.join('、');
-    }
-    console.log('[MPRESEN] ' + msg.replace(/\n/g, ' / '));
-    return { ok: true, message: msg, url: r.saved.url, downloadUrl: r.saved.downloadUrl,
-             fileName: outName, slides: info.slides, noPhoto: info.noPhoto || [],
-             seconds: r.timing.合計 / 1000 };
-  } catch (e) {
-    console.error('[MPRESEN] ' + (e && e.stack ? e.stack : e));
-    return { ok: false, message: '作成に失敗しました: ' + (e && e.message ? e.message : e) };
-  }
 }
