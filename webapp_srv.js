@@ -84,31 +84,62 @@ function include(name) {
 }
 
 function doGet(e) {
-  var key = (e && e.parameter && e.parameter.p) ? String(e.parameter.p) : '';
-  var page = key ? findWebAppPage_(key) : null;
+  try {
+    var key = (e && e.parameter && e.parameter.p) ? String(e.parameter.p) : '';
+    var page = key ? findWebAppPage_(key) : null;
 
-  if (!page) {
-    var t = HtmlService.createTemplateFromFile('webapp_home');
-    t.groups = WEBAPP_PAGES_;
-    return t.evaluate()
-      .setTitle('Activeチャプター 名簿システム')
+    if (!page) {
+      var t = HtmlService.createTemplateFromFile('webapp_home');
+      t.groups = WEBAPP_PAGES_;
+      t.status = webAppStatus_();
+      return t.evaluate()
+        .setTitle('Activeチャプター 名簿システム')
+        .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+    }
+
+    // 既存のダイアログHTMLをそのまま表示する。
+    // ダイアログ用に作られているので、上に「メニューに戻る」の帯だけ足す。
+    var content = HtmlService.createTemplateFromFile(page.key).evaluate().getContent();
+    var home = getWebAppUrl_() || '?';
+    var bar = '<div style="position:sticky;top:0;z-index:9999;background:#16233f;color:#fff;'
+            + 'padding:8px 14px;font-family:sans-serif;font-size:13px;display:flex;'
+            + 'align-items:center;gap:12px;">'
+            + '<a href="' + escapeHtmlText_(home) + '" style="color:#ffd200;text-decoration:none;font-weight:bold;">'
+            + '← メニューに戻る</a>'
+            + '<span style="opacity:.85;">' + escapeHtmlText_(page.label) + '</span></div>';
+    content = content.replace(/(<body[^>]*>)/i, '$1' + bar);
+
+    return HtmlService.createHtmlOutput(content)
+      .setTitle(page.label + ' | 名簿システム')
       .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+  } catch (err) {
+    // 何も出ないと原因が分からないので、画面にそのまま出す
+    console.error('[WEBAPP] ' + (err && err.stack ? err.stack : err));
+    return HtmlService.createHtmlOutput(
+      '<!DOCTYPE html><html><head><meta charset="utf-8"></head>'
+      + '<body style="font-family:sans-serif;padding:24px;line-height:1.8;">'
+      + '<h2 style="color:#c00;margin:0 0 12px;">画面を表示できませんでした</h2>'
+      + '<pre style="white-space:pre-wrap;background:#f6f6f6;padding:12px;border-radius:6px;'
+      + 'font-size:12px;">' + escapeHtmlText_(err && err.stack ? err.stack : String(err)) + '</pre>'
+      + '<p style="font-size:13px;color:#555;">この内容をそのままお知らせください。</p>'
+      + '</body></html>').setTitle('エラー | 名簿システム');
   }
+}
 
-  // 既存のダイアログHTMLをそのまま表示する。
-  // ダイアログ用に作られているので、上に「メニューに戻る」の帯だけ足す。
-  var content = HtmlService.createTemplateFromFile(page.key).evaluate().getContent();
-  var bar = '<div style="position:sticky;top:0;z-index:9999;background:#16233f;color:#fff;'
-          + 'padding:8px 14px;font-family:sans-serif;font-size:13px;display:flex;'
-          + 'align-items:center;gap:12px;">'
-          + '<a href="' + getWebAppUrl_() + '" style="color:#ffd200;text-decoration:none;font-weight:bold;">'
-          + '← メニューに戻る</a>'
-          + '<span style="opacity:.85;">' + escapeHtmlText_(page.label) + '</span></div>';
-  content = content.replace(/(<body[^>]*>)/i, '$1' + bar);
-
-  return HtmlService.createHtmlOutput(content)
-    .setTitle(page.label + ' | 名簿システム')
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+// ウェブアプリが「どのスプレッドシートに繋がっているか」を確かめる。
+// ここが繋がっていないと、どの画面も動かない。
+function webAppStatus_() {
+  var st = { ok: false, name: '', url: '', user: '', message: '' };
+  try { st.user = Session.getEffectiveUser().getEmail() || ''; } catch (e) {}
+  try {
+    var ss = getSS_();
+    st.ok = true;
+    st.name = ss.getName();
+    st.url = ss.getUrl();
+  } catch (e) {
+    st.message = (e && e.message ? e.message : String(e));
+  }
+  return st;
 }
 
 function escapeHtmlText_(s) {
