@@ -152,6 +152,15 @@ function withLayoutBoxes(box, fn){
 //   longName … 2分30秒プレゼンの方（いなければ空）
 //   auto     … カウントダウンが終わったら自動で次へ進むか
 var MP_LONG_SEC = 150, MP_NORMAL_SEC = 30;
+// 始まりの業種区分をどこから決めたか（画面に出す一言。textContent で使う）
+//   c … getMemberPresenContext() の candidates の1つ
+function memberPresenStartNote(c){
+  if(!c) return '';
+  if(c.startFrom==='routine') return 'ルーティンチェックシートの記載（'+c.startRaw+'）から選んでいます。';
+  if(c.startFrom==='previous') return 'この日の記載はまだ無いので、前回の記載（'+c.startRawDate+'：'+c.startRaw+'）から'
+    +c.startSteps+'回ぶん進めています。';
+  return 'ルーティンチェックシートに記載が無いため、開催日から計算しています。';
+}
 function memberPresenOrder(mctx, startKey){
   var live = (mctx.blocks||[]).filter(function(b){ return b.count>0; }), at = 0;
   for (var i=0;i<live.length;i++) if (live[i].gkey===startKey) { at=i; break; }

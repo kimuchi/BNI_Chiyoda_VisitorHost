@@ -12,6 +12,12 @@ BNI Activeチャプターの定例会運営を支援する、Google スプレッ
 | **ルーム割り振り** | ブレイクアウトルーム・オリエンテーションの割り振りをドラッグ＆ドロップUIで直感的に作成。Gemini AIによる自動割り振りにも対応 |
 | **メール一括送信** | テンプレートに基づき、参加者全員への案内メールをプレビュー・編集・一括送信 |
 | **PDF管理** | 作成済みのビジターリスト・割り振り表・メンバーブックPDFへのクイックアクセス |
+| **ビジター情報の投稿文** | 参加者シートから「第○回(M/D)定例会ビジター情報」の投稿文（入金済み／未入金つき）を作ってコピー |
+| **ビジター・代理スライド** | 参加者シートから紹介スライド・ビジタープレゼンのPowerPointを作成 |
+| **メンバープレゼン** | メンバー名簿と写真から、業種区分ごとの扉ページと個人ページ（30秒／2分30秒のカウントダウン・自動送り）を作成 |
+| **定例会スライド（前半・後半）** | ルーティンチェックシートと名簿から、開催回・コアバリュー・メインプレゼン・委員会報告・一般規定・推薦のことば・抽選・リファーラル発表・音楽を差し込み。前半にはメンバープレゼンとアンバサダー・ディレクターのページも入る |
+| **メンバーブック・Zoom案内** | 名簿から配布用の冊子（PDF/HTML）とZoom入室案内を作成 |
+| **ウェブアプリ** | ダイアログが開けない環境でも、全機能を普通のタブで使える |
 
 ## システム要件
 
@@ -86,24 +92,43 @@ BNI_Chiyoda_VisitorHost/
 │
 ├── MANUAL.md                 # 利用マニュアル（正本）
 ├── manual.html               # ↑から生成。画面に出すもの
-├── templates/                # ビジター用pptxテンプレート
+├── templates/                # ビジター用pptxテンプレート（大きなテンプレートはDriveに置く。templates/README.md）
 └── tools/                    # 検査・生成スクリプト（GASには送らない）
-    ├── build_manual.py       #   MANUAL.md → manual.html
+    │  ── 毎回走らせる検査 ──
     ├── check_gas_names.py    #   名前の衝突・参照先HTMLの検査
     ├── check_html.py         #   divの対応・スクリプトの構文・共通部品の読み込み漏れ
     ├── check_manual_links.py #   マニュアルの導線 ↔ 実際のメニュー
-    ├── check_member_presen.py#   メンバープレゼン生成の通し検査
+    ├── build_manual.py       #   MANUAL.md → manual.html
+    │  ── 画面をNodeで動かす（ブラウザ無し）──
+    ├── lib_minidom.js        #   画面をNodeで動かすための簡易DOM
+    ├── check_meeting_dialog.js  # 定例会スライドの画面（前半・後半・ウィークリープレゼン）
+    ├── check_visitor_post.js #   ビジター情報の投稿文（入金の読み方・文面・画面）
+    │  ── ルーティンチェックシート（実物をExcelに書き出したもので確かめる）──
+    ├── routine_dump.py       #   xlsx → routine.json
+    ├── check_routine.js      #   開催回・コアバリュー・メインプレゼンなどの読み取り
+    ├── check_weekly_start.js #   ウィークリープレゼンの始まりの業種区分（記載・前回からの繰り上げ）
+    │  ── メンバープレゼン ──
+    ├── check_member_presen.py#   テンプレートに対する通し検査（巡回の検査と↓の4つを順に呼ぶ）
+    ├── mp_harness_prepare.py #     テンプレートを展開し、写真の見本を用意
+    ├── mp_plan.js            #     画面の組版ロジックで items.json を作る
+    ├── mp_harness.js         #     本番のコードでpptxのパーツを作る
+    ├── mp_harness_check.py   #     出来上がりを組み立てて中身を確かめる
+    ├── mp_check_rotation.js  #   業種区分の巡回（従来の計算）を元ツールと突き合わせる
+    ├── mp_preview.py         #   出来上がりの配置を確認用のHTMLにする
+    ├── build_member_presen_template.py  # テンプレートを作り直す（61枚 → 2枚）
+    ├── mp_make_template.js   #     ↑のうち、スライド本文の書き換え
+    │  ── 定例会スライド（前半・後半）──
     ├── check_meeting_slides.js  # 第○回・日付の書き換えとコアバリューのページ
-    ├── check_routine.js      #   ルーティンチェックシートの読み取り
     ├── check_meeting_output.js  # 前半・後半スライドを実際に生成してみる
     ├── mtg_zip_check.py      #   ↑の出力をpptxに固めて中身を確かめる
-    ├── check_meeting_dialog.js  # 定例会スライドの画面を簡易DOMで動かしてみる
-    ├── check_visitor_post.js #   ビジター情報の投稿文（入金の読み方・文面・画面）
-    ├── lib_minidom.js        #   画面をNodeで動かすための簡易DOM
-    ├── build_member_presen_template.py  # メンバープレゼンのテンプレートを作り直す
     ├── build_meeting_first_template.py  # 前半スライドの出力に差し込み口を入れる
+    ├── make_meeting_first_template.js   #   ↑のうち、スライド本文の書き換え
     ├── build_meeting_second_template.py # 後半スライドの出力に差し込み口を入れる
-    └── extract_slide_media.py #   スライドの音楽・動画を曲名で取り出す
+    ├── make_meeting_second_template.js  #   ↑のうち、スライド本文の書き換え
+    ├── lib_meeting_tokens.js #   前半・後半で共通の差し込み口の入れ方
+    ├── extract_slide_media.py #  スライドの音楽・動画を曲名で取り出す
+    │  ── ビジター用テンプレート ──
+    └── extract_visitor_templates.py  # 運用中のpptxから1枚ずつ取り出す
 ```
 
 ## セットアップ
@@ -293,10 +318,21 @@ clasp deployments
 
 ## 使い方（毎週のワークフロー）
 
-1. **事前準備**: SpreadingからCSV、メンバーリストPDFをダウンロード
+1. **事前準備**: SpreadingからCSVをダウンロード
 2. **名簿作成**: `名簿システム` > `1. CSVから名簿・PDF作成` でビジターリストPDFを生成
 3. **割り振り作成**: `名簿システム` > `3. ルーム・オリエン割り振り表` で割り振り表PDFを生成
 4. **メール送信**: `名簿システム` > `2. メールの確認・一括送信` で案内メールを配信
+5. **投稿文**: `名簿システム` > `5. ビジター情報の投稿文` でグループへの投稿文をコピー
+6. **スライド**: `名簿システム` > `📊 スライド・冊子をつくる` から、ビジター・代理スライドと
+   定例会スライド（前半・後半）を作成。前半にはメンバープレゼンのページも1回で入る
+
+画面ごとの操作は [MANUAL.md](MANUAL.md) を参照してください。
+
+### 更新が反映されたかの確かめ方
+
+`コード.js` の `SYSTEM_VERSION_`（例: `2026-09-24c`）が、ウェブアプリのトップページの下と
+「定例会スライドの自動更新」の画面の右上に **「版 …」** として出ます。
+機能を変えたらこの値を変え、`clasp push`・`clasp deploy` のあとに画面で確かめてください。
 
 ## 使用技術
 

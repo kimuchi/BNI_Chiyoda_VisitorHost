@@ -114,6 +114,84 @@ function mpStartFor_(cycle, dateStr) {
   return cycle[start].gkey;
 }
 
+// --- 始まりの業種区分をルーティンチェックシートから決める ---
+// 「ウィークリープレゼン」の欄に「建築　住まい　22番　熊谷さん」のように書いてある。
+// チャプターの運用は「開催した回ごとに1つ進み、誰もいない区分は飛ばす」なので、
+//   1) その日の記載があれば、その区分
+//   2) 無ければ、前回までの記載から、開催した回数ぶん進めた区分
+//   3) どちらも無ければ、従来の計算（mpStartFor_）
+// の順で決める。
+
+// 書いてある文から区分を探す。書き方が揺れる（「建築 住まい」「美容 健康」）ので、
+// 空白や「・」を除いて比べ、いちばん前に出てくる区分を採る。
+// 区分名が無ければ、書かれている方の氏名から、その方の区分を引く。
+function mpBlockFromText_(cycle, members, raw) {
+  var t = mpCatKey_(raw), best = null, bestAt = Infinity, i, k;
+  if (!t) return '';
+  for (i = 0; i < cycle.length; i++) {
+    var names = [cycle[i].block].concat(cycle[i].keys || []);
+    for (k = 0; k < names.length; k++) {
+      var key = mpCatKey_(names[k]);
+      var at = key ? t.indexOf(key) : -1;
+      if (at >= 0 && at < bestAt) { best = cycle[i]; bestAt = at; }
+    }
+  }
+  if (best) return best.gkey;
+  var who = routineMemberName_(raw);
+  for (i = 0; who.name && i < members.length; i++) {
+    if (members[i].name === who.name && members[i].blockKey) return members[i].blockKey;
+  }
+  return '';
+}
+
+// fromKey の区分から、人がいる区分だけを数えて steps 回進める。
+// fromKey に今は誰もいないときは、その次の「人がいる区分」が1回目になる。
+function mpAdvance_(cycle, fromKey, steps) {
+  var n = cycle.length, at = -1, live = 0, i;
+  for (i = 0; i < n; i++) {
+    if (cycle[i].gkey === fromKey) at = i;
+    if (cycle[i].count > 0) live++;
+  }
+  if (at < 0 || !live) return '';
+  if (cycle[at].count > 0 && steps <= 0) return fromKey;
+  var left = steps <= 0 ? 1 : ((steps - 1) % live) + 1;
+  for (i = 1; i <= n * 2; i++) {
+    var c = cycle[(at + i) % n];
+    if (c.count > 0 && --left === 0) return c.gkey;
+  }
+  return '';
+}
+
+// a の次の週から b まで（b を含む）に、休会日を除いて何回開催したか
+function mpMeetingsBetween_(a, b, holidays) {
+  var cur = new Date(a.getTime()), n = 0;
+  for (var i = 0; i < 520; i++) {
+    cur.setDate(cur.getDate() + 7);
+    if (cur.getTime() > b.getTime()) break;
+    if (holidays.indexOf(fmtDate_(cur)) === -1) n++;
+  }
+  return n;
+}
+
+// rows … routineRowValues_(ROUTINE_WEEKLY_LABELS_) の結果
+function mpStartFromRoutine_(cycle, members, rows, dateStr, holidays) {
+  var target = parseDate_(dateStr);
+  if (!target || !rows) return null;
+  var key = fmtDate_(target), k;
+  if (rows[key]) {
+    k = mpBlockFromText_(cycle, members, rows[key]);
+    if (k) return { key: mpAdvance_(cycle, k, 0), from: 'routine', raw: rows[key], date: key, steps: 0 };
+  }
+  var dates = Object.keys(rows).filter(function (d) { return d < key; }).sort().reverse();
+  for (var i = 0; i < dates.length && i < 6; i++) {
+    k = mpBlockFromText_(cycle, members, rows[dates[i]]);
+    if (!k) continue;
+    var steps = mpMeetingsBetween_(parseDate_(dates[i]), target, holidays);
+    return { key: mpAdvance_(cycle, k, steps), from: 'previous', raw: rows[dates[i]], date: dates[i], steps: steps };
+  }
+  return null;
+}
+
 // 画面が必要とする情報を一度に返す
 function getMemberPresenContext() {
   try {
@@ -125,9 +203,19 @@ function getMemberPresenContext() {
     }
     var cycle = mpBlocks_(members);          // members[].blockKey がここで決まる
 
-    var cands = getMeetingCandidates();
+    var cands = getMeetingCandidates(), weeklyRows = null, holidays = [];
+    try { weeklyRows = routineRowValues_(ROUTINE_WEEKLY_LABELS_); holidays = getHolidays(); } catch (e) {
+      console.warn('[MPRESEN] ルーティンチェックシートのウィークリープレゼンを読めませんでした: ' + e.message);
+    }
     for (var c = 0; c < cands.length; c++) {
-      cands[c].start = mpStartFor_(cycle, cands[c].dateValue);
+      // 始まりの業種区分（ルーティンチェックシート → 前回の記載から数える → 従来の計算）
+      var st = null;
+      try { st = mpStartFromRoutine_(cycle, members, weeklyRows, cands[c].dateValue, holidays); } catch (e) {}
+      cands[c].start = (st && st.key) || mpStartFor_(cycle, cands[c].dateValue);
+      cands[c].startFrom = (st && st.key) ? st.from : 'calc';
+      cands[c].startRaw = (st && st.key) ? st.raw : '';
+      cands[c].startRawDate = (st && st.key) ? st.date : '';
+      cands[c].startSteps = (st && st.key) ? st.steps : 0;
       // 2分30秒プレゼンの方は、ルーティンチェックシートに書いてある
       var ri = null;
       try { ri = getRoutineInfo(cands[c].dateValue); } catch (e) {}

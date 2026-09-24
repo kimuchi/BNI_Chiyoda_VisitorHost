@@ -139,7 +139,7 @@ function onDate(){
   if(!ok && list.length) startKey=list[0].gkey;
   sel.value=startKey;
   document.getElementById('startNote').textContent =
-    'この日の順番から自動で選んでいます。1つずらしたいときだけ変えてください。';
+    memberPresenStartNote(cand)+' 違うときだけ選び直してください。';
   render();
 }
 

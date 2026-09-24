@@ -75,6 +75,57 @@ function findRoutineColumn_(target) {
   return routineIndex_()[fmtDate_(target)] || null;
 }
 
+// 項目名（B〜E列のどこか）で行を探す。0から数えた行番号（無ければ -1）。
+// まず完全一致で探し、無ければ前方一致で探す。
+// 「メインプレゼン」で前方一致だけにすると「メインプレゼン用スライド画像」の行を
+// 先に拾ってしまうため、この順番が要る。
+function routineFindRow_(grid, labels) {
+  var scan = function (exact) {
+    for (var r = 0; r < grid.length; r++) {
+      for (var c = 1; c < Math.min(ROUTINE_LABEL_COLS_, grid[r].length); c++) {
+        var s = String(grid[r][c] == null ? '' : grid[r][c]).replace(/[\s　]/g, '');
+        if (!s) continue;
+        for (var k = 0; k < labels.length; k++) {
+          if (exact ? (s === labels[k]) : (s.indexOf(labels[k]) === 0)) return r;
+        }
+      }
+    }
+    return -1;
+  };
+  var r = scan(true);
+  return r >= 0 ? r : scan(false);
+}
+
+// ある項目を、すべての開催日について読む → { 'yyyy/MM/dd': 値 }（空欄の日は入れない）。
+// 「ウィークリープレゼン」のように、その日に書かれていなければ
+// 前回までの記載から数えたい項目に使う。シートごとに1回だけ読む。
+var ROUTINE_WEEKLY_LABELS_ = ['ウィークリープレゼン'];
+var ROUTINE_ROWS_CACHE_ = {};
+function routineRowValues_(labels) {
+  var ck = labels.join('|');
+  if (ROUTINE_ROWS_CACHE_[ck]) return ROUTINE_ROWS_CACHE_[ck];
+  var idx = routineIndex_(), bySheet = {}, out = {}, key, name;
+  for (key in idx) {
+    var e = idx[key];
+    if (!bySheet[e.name]) bySheet[e.name] = { sheet: e.sheet, cols: [] };
+    bySheet[e.name].cols.push({ key: key, col: e.col });
+  }
+  for (name in bySheet) {
+    var sh = bySheet[name].sheet;
+    var rows = Math.min(ROUTINE_SCAN_ROWS_, sh.getLastRow()), last = sh.getLastColumn();
+    if (rows < 1 || last < 1) continue;
+    var grid = sh.getRange(1, 1, rows, last).getValues(), r = routineFindRow_(grid, labels);
+    if (r < 0) continue;
+    for (var i = 0; i < bySheet[name].cols.length; i++) {
+      var c = bySheet[name].cols[i], v = grid[r][c.col - 1];
+      v = String(v == null ? '' : v).replace(/[\r\n]+/g, ' ').trim();
+      if (v) out[c.key] = v;
+    }
+  }
+  ROUTINE_ROWS_CACHE_[ck] = out;
+  return out;
+}
+
 // 「なし」「無し」「休会」などは、指定されていないものとして扱う。
 // 「なし（4/2火曜10時時点）」のように但し書きが付くことがあるので、先頭だけ見る。
 function routineIsBlank_(s) {
@@ -211,28 +262,10 @@ function getRoutineInfo(dateStr) {
     var rows = Math.min(ROUTINE_SCAN_ROWS_, hit.sheet.getLastRow());
     var grid = hit.sheet.getRange(1, 1, rows, hit.col).getValues();
 
-    // 項目名（B〜E列のどこか）で行を探し、その開催日の列の値を返す。
-    // まず完全一致で探し、無ければ前方一致で探す。
-    // 「メインプレゼン」で前方一致だけにすると「メインプレゼン用スライド画像」の行を
-    // 先に拾ってしまうため、この順番が要る。
-    var scan = function (labels, exact) {
-      for (var r = 0; r < grid.length; r++) {
-        for (var c = 1; c < Math.min(ROUTINE_LABEL_COLS_, grid[r].length); c++) {
-          var s = String(grid[r][c] == null ? '' : grid[r][c]).replace(/[\s　]/g, '');
-          if (!s) continue;
-          for (var k = 0; k < labels.length; k++) {
-            var ok = exact ? (s === labels[k]) : (s.indexOf(labels[k]) === 0);
-            if (ok) {
-              return { row: r + 1, label: s,
-                       value: String(grid[r][hit.col - 1] == null ? '' : grid[r][hit.col - 1]).trim() };
-            }
-          }
-        }
-      }
-      return null;
-    };
+    // 項目の行を探し、その開催日の列の値を返す
     var pick = function (labels) {
-      return scan(labels, true) || scan(labels, false) || { row: 0, label: '', value: '' };
+      var r = routineFindRow_(grid, labels);
+      return { value: r < 0 ? '' : String(grid[r][hit.col - 1] == null ? '' : grid[r][hit.col - 1]).trim() };
     };
 
     var no = pick(['定例会回数']);
@@ -246,6 +279,8 @@ function getRoutineInfo(dateStr) {
     var reco = pick(['推薦の言葉', '推薦のことば']);
     // アンバサダー・ディレクターなど、その日に来られるリージョンの方（「吉田ED・坂爪アンバサダー」など）
     var region = pick(['リージョン参加者']);
+    // ウィークリープレゼンの始まり（「建築　住まい　22番　熊谷さん」など）
+    var weekly = pick(ROUTINE_WEEKLY_LABELS_);
     var cv = coreValueOf_(core.value);
     var pres = routineMemberName_(long.value);
     var mains = routineMainPresenters_(main.value);
@@ -262,7 +297,8 @@ function getRoutineInfo(dateStr) {
              reviewCategory: routineText_(review.value),
              generalPolicy: routinePolicyNo_(policy.value), generalPolicyRaw: policy.value,
              recommendations: routineRecommendations_(reco.value), recommendationsRaw: reco.value,
-             regionGuestsRaw: routineText_(region.value) };
+             regionGuestsRaw: routineText_(region.value),
+             weeklyStartRaw: routineText_(weekly.value) };
   } catch (e) {
     console.error('[ROUTINE] ' + (e && e.stack ? e.stack : e));
     return { ok: false, found: false, message: 'ルーティンチェックシートの読み取りに失敗しました: '

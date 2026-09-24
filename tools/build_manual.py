@@ -134,6 +134,11 @@ def convert(md):
                 close_list(); body.append("<ol>"); list_type = "ol"
             body.append("<li>%s</li>" % inline(m.group(1)))
             i += 1; continue
+        # 箇条書きの続きの行（字下げされた行）は、直前の項目につなげる。
+        # 別の段落にすると番号付きリストがそこで切れ、次の項目がまた「1.」から始まってしまう。
+        if list_type and re.match(r"^\s{2,}\S", line) and body and body[-1].endswith("</li>"):
+            body[-1] = body[-1][:-len("</li>")] + " " + inline(line.strip()) + "</li>"
+            i += 1; continue
         close_list()
 
         para.append(line.strip())
