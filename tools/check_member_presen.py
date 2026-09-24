@@ -37,6 +37,7 @@ def main():
     out = os.path.join(work, 'out')
     os.makedirs(work, exist_ok=True)
 
+    run(['node', 'tools/mp_check_rotation.js'])                   # 業種区分の巡回
     run(['python3', 'tools/mp_harness_prepare.py', tpl, work])   # テンプレートを展開
     run(['node', 'tools/mp_plan.js', work])                      # 画面の組版を通して指示を作る
     run(['node', 'tools/mp_harness.js', work, out])              # サーバー側の組み立てを実行
