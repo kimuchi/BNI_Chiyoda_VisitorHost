@@ -29,8 +29,12 @@ const sandbox = {
   console,
   document: {
     createElement: (tag) => (tag === 'canvas' ? { getContext: () => fakeCtx() } : { set textContent(v) { this._t = v; }, get innerHTML() { return String(this._t == null ? '' : this._t); } }),
-    // checked は既定でオン（画面の <input type="checkbox" checked> と同じ）
-    getElementById: (id) => (els[id] = els[id] || { style: {}, innerHTML: '', textContent: '', value: '0', innerText: '', checked: true }),
+    // checked は既定でオン（画面の <input type="checkbox" checked> と同じ）。
+    // long は「2分30秒プレゼンの方」の選択。検証のため1人選んだ状態にしておく。
+    getElementById: (id) => (els[id] = els[id] || {
+      style: {}, innerHTML: '', textContent: '', innerText: '', checked: true,
+      value: (id === 'long' ? '佐藤　祐之' : '0'),
+    }),
   },
   google: { script: { run: { withSuccessHandler: () => ({ withFailureHandler: () => ({ getMemberPresenContext() {} }) }) } } },
   window: {},

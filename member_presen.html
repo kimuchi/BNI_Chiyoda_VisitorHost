@@ -35,7 +35,8 @@
  <h3>🎤 メンバープレゼンスライドの作成</h3>
  <div class="hint">
    「メンバー名簿」と「メンバー写真」から、業種区分ごとの扉ページと個人ページを作ります。<br>
-   発表の順番は<b>名簿の行順</b>。業種区分は<b>いつも同じ並び</b>で、<b>始まりの区分だけ</b>が週ごとにずれます。
+   発表の順番は<b>名簿の行順</b>。業種区分は<b>いつも同じ並び</b>で、<b>始まりの区分だけ</b>が週ごとにずれます。<br>
+   個人ページの<b>30秒カウントダウン</b>は、終わると自動で次のスライドへ進みます。
  </div>
  <div class="err"  id="err"  style="display:none;"></div>
  <div class="warn" id="warn" style="display:none;"></div>
@@ -44,10 +45,13 @@
    <span id="count" style="font-size:12px;color:#666;margin-left:8px;"></span></div>
  <div class="row"><label>始まりの業種区分</label><select id="start" onchange="render()"></select>
    <div class="sub" id="startNote"></div></div>
+ <div class="row"><label>2分30秒プレゼンの方</label><select id="long" onchange="render()"></select>
+   <div class="sub">選ぶと、その方の個人ページだけ <b>2:30</b> からのカウントダウンになります（いない日は「（なし）」のまま）。</div>
+ </div>
  <div class="row">
    <label><input type="checkbox" id="auto" checked onchange="render()">
-     個人ページは<b>30秒のカウントダウンが終わったら自動で次へ</b>進む</label>
-   <div class="sub">外すと、テンプレートのまま（クリックで進む）になります。扉ページはいつもクリックで進みます。</div>
+     個人ページは<b>カウントダウンが終わったら自動で次へ</b>進む</label>
+   <div class="sub">外すと、クリックで進む形になります。扉ページはいつもクリックで進みます。</div>
  </div>
 
  <div class="cols">
@@ -208,6 +212,10 @@ function init(c){
   w.style.display = notes.length ? 'block' : 'none';
   w.innerHTML = notes.join('<br>');
 
+  var lh='<option value="">（なし）</option>';
+  c.members.forEach(function(m){ if(m.blockKey) lh+='<option value="'+esc(m.name)+'">'+esc(m.name)+'</option>'; });
+  document.getElementById('long').innerHTML=lh;
+
   var sel=document.getElementById('date'), h='';
   (c.candidates||[]).forEach(function(x,i){ h+='<option value="'+i+'">'+esc(x.display)+'</option>'; });
   sel.innerHTML = h || '<option value="">開催日が計算できません</option>';
@@ -256,6 +264,8 @@ function render(){
     +'<tr><td>業種区分の扉ページ</td><td class="num">'+ov+'枚</td></tr>'
     +'<tr><td>個人ページ</td><td class="num">'+ind+'枚</td></tr>'
     +'<tr><th>合計</th><th class="num">'+items.length+'枚</th></tr>';
+  var lg=items.filter(function(x){ return x.countdownSec; });
+  if(lg.length) sh+='<tr><td>2分30秒プレゼン</td><td class="num">'+esc(lg[0].name)+'</td></tr>';
   var wide=items.filter(function(x){ return x.kind==='individual' && x.companyLines.length>1; });
   if(wide.length){
     sh+='<tr><td colspan="2" style="color:#888;font-size:11px;line-height:1.6;">'
@@ -268,10 +278,11 @@ function render(){
 }
 
 // 業種区分ごとに「扉ページ（7名ずつ）→ 個人ページ」を並べる
+var LONG_SEC=150, NORMAL_SEC=30;     // 2分30秒プレゼン／ふだんの30秒
 function buildItems(){
   var items=[], rows=ctx.rowsPerPage||7;
-  // カウントダウンは1秒ごとに30回。終わってから1秒おいて次のスライドへ。
-  var el=document.getElementById('auto'), advMs=(!el || el.checked) ? 31000 : 0;
+  var el=document.getElementById('auto'), auto=(!el || el.checked);
+  var longName=(document.getElementById('long')||{}).value||'';
   order().forEach(function(b){
     var list=membersOf(b.gkey);
     if(!list.length) return;
@@ -283,7 +294,11 @@ function buildItems(){
     }
     list.forEach(function(m,i){
       var co=layoutCompany(m.company||''), ca=layoutCategory(m.title||'');
-      items.push({ kind:'individual', photoName:m.name, name:m.name, autoAdvanceMs:advMs,
+      var isLong=(m.name===longName), sec=isLong?LONG_SEC:NORMAL_SEC;
+      items.push({ kind:'individual', photoName:m.name, name:m.name,
+        // カウントダウンが終わってから1秒おいて次のスライドへ。
+        // 30秒のときはテンプレートのまま使えるので作り直さない（countdownSec は0）。
+        countdownSec:(isLong?LONG_SEC:0), autoAdvanceMs:(auto?(sec+1)*1000:0),
         companyLines:co.lines, companyPt:co.fontPt, companyGeom:co.geom, categoryTop:co.categoryTop,
         companyTall:(co.geom!==COMPANY_DEFAULT),
         categoryLines:ca.lines, categoryPt:ca.fontPt, categoryTight:ca.tight,
