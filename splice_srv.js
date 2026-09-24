@@ -155,3 +155,58 @@ function weeklyAnchor_(parts) {
   }
   return null;
 }
+
+// --- スライドの並びを組み直すための小さな道具 ---
+// 並び（presentation.xml の sldIdLst）→ [{ id, rid, path }]
+function slideEntries_(parts) {
+  var prs = xmlOf_(parts, 'ppt/presentation.xml') || '';
+  var prsRels = xmlOf_(parts, 'ppt/_rels/presentation.xml.rels') || '';
+  var rid2path = {}, m, re = /<Relationship\b[^>]*\bId="([^"]+)"[^>]*\bTarget="slides\/(slide\d+\.xml)"[^>]*\/>/g;
+  while ((m = re.exec(prsRels)) !== null) rid2path[m[1]] = 'ppt/slides/' + m[2];
+  var out = [], reS = /<p:sldId id="(\d+)" r:id="([^"]+)"\/>/g;
+  while ((m = reS.exec(prs)) !== null) out.push({ id: parseInt(m[1], 10), rid: m[2], path: rid2path[m[2]] || '' });
+  return out;
+}
+
+// スライドを1枚足す（部品・関係・種類の登録まで。並びには setSlideEntries_ で入れる）
+function addSlidePart_(parts, xml, rels) {
+  var maxSlide = 0, maxRid = 0, p, m;
+  for (p in parts) {
+    m = p.match(/^ppt\/slides\/slide(\d+)\.xml$/);
+    if (m) maxSlide = Math.max(maxSlide, parseInt(m[1], 10));
+  }
+  var n = maxSlide + 1, path = 'ppt/slides/slide' + n + '.xml';
+  putXml_(parts, path, xml);
+  putXml_(parts, relsPathOf_(path), rels);
+  var prsRels = xmlOf_(parts, 'ppt/_rels/presentation.xml.rels'), re = /Id="rId(\d+)"/g;
+  while ((m = re.exec(prsRels)) !== null) maxRid = Math.max(maxRid, parseInt(m[1], 10));
+  var rid = 'rId' + (maxRid + 1);
+  putXml_(parts, 'ppt/_rels/presentation.xml.rels', prsRels.replace('</Relationships>',
+    '<Relationship Id="' + rid + '" Type="' + SPLICE_REL_ + 'slide" Target="slides/slide' + n + '.xml"/></Relationships>'));
+  putXml_(parts, '[Content_Types].xml', xmlOf_(parts, '[Content_Types].xml').replace('</Types>',
+    '<Override PartName="/' + path + '" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/></Types>'));
+  return { id: 0, rid: rid, path: path };
+}
+
+// 並びを書き戻す。id が 0 のもの（足したスライド）には、空いている番号を振る
+function setSlideEntries_(parts, entries) {
+  var maxId = 255, i;
+  for (i = 0; i < entries.length; i++) if (entries[i].id) maxId = Math.max(maxId, entries[i].id);
+  var out = '';
+  for (i = 0; i < entries.length; i++) {
+    if (!entries[i].id) entries[i].id = ++maxId;
+    out += '<p:sldId id="' + entries[i].id + '" r:id="' + entries[i].rid + '"/>';
+  }
+  var prs = xmlOf_(parts, 'ppt/presentation.xml');
+  putXml_(parts, 'ppt/presentation.xml', prs.replace(/<p:sldIdLst>[\s\S]*?<\/p:sldIdLst>/, '<p:sldIdLst>' + out + '</p:sldIdLst>'));
+}
+
+// その文字（差し込み口など）が載っているスライド。並びの順で最初のもの
+function findSlideWithText_(parts, text) {
+  var order = slideOrder_(parts);
+  for (var i = 0; i < order.length; i++) {
+    var x = xmlOf_(parts, order[i]);
+    if (x && (x.indexOf(text) >= 0 || slideText_(x).indexOf(text) >= 0)) return order[i];
+  }
+  return null;
+}

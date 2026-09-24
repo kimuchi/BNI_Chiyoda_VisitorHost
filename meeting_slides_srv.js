@@ -341,14 +341,24 @@ function applyGeneralPolicy_(parts, no) {
 // 名前が空・写真が無い方の枠は、テンプレートの元の写真が残らないよう枠ごと消す。
 function applyTwoPersonPhotos_(parts, prefix, names, cache) {
   if (!names || !names.length) return null;
-  var path = null, xml = null, p;
+  var path = null, p;
   for (p in parts) {
     if (!/^ppt\/slides\/slide\d+\.xml$/.test(p)) continue;
     var x = xmlOf_(parts, p);
-    if (x && x.indexOf(prefix + '1氏名') >= 0) { path = p; xml = x; break; }
+    if (x && x.indexOf(prefix + '1氏名') >= 0) { path = p; break; }
   }
   if (!path) return { message: '' };
+  var r = setTwoPersonPhotos_(parts, path, prefix, names, cache);
+  var msg = r.done.length ? (prefix + 'の写真を差し替えました: ' + r.done.join('、')) : '';
+  if (r.missing.length) msg += (msg ? '／' : '') + '写真が見つからない方（写真なし）: ' + r.missing.join('、');
+  if (r.noFrame) msg = prefix + 'のページで写真の枠が見つかりませんでした。';
+  return { message: msg, replaced: r.done.length };
+}
 
+// 1枚のページの写真を差し替える（差し込み口 {{○○1氏名}} がまだ残っている状態で呼ぶこと）。
+// 戻り値 { done: [差し替えた方], missing: [写真が無かった方], noFrame: 枠が無かったか }
+function setTwoPersonPhotos_(parts, path, prefix, names, cache) {
+  var xml = xmlOf_(parts, path), res = { done: [], missing: [], noFrame: false };
   var prs = xmlOf_(parts, 'ppt/presentation.xml') || '';
   var sz = prs.match(/<p:sldSz\s+cx="(\d+)"/);
   var slideW = sz ? parseInt(sz[1], 10) : 12192000;
@@ -367,11 +377,10 @@ function applyTwoPersonPhotos_(parts, prefix, names, cache) {
     pics.push({ id: id, x: parseInt(off[1], 10), y: parseInt(off[2], 10), cx: cx, cy: cy,
                 center: parseInt(off[1], 10) + cx / 2, area: cx * cy });
   }
-  if (!pics.length) return { message: prefix + 'のページで写真の枠が見つかりませんでした。' };
+  if (!pics.length) { res.noFrame = true; return res; }
   var slots = pickPhotoFrames_(xml, prefix, Math.min(names.length, 2), pics);
 
-  var rp = relsPathOf_(path);
-  var rels = xmlOf_(parts, rp), done = [], miss = [];
+  var rp = relsPathOf_(path), rels = xmlOf_(parts, rp);
   cache = cache || { by: {}, seq: 0 };
   for (var k = 0; k < slots.length; k++) {
     var pic = slots[k];
@@ -379,7 +388,7 @@ function applyTwoPersonPhotos_(parts, prefix, names, cache) {
     var photo = names[k] ? mpAddPhoto_(parts, cache, names[k]) : null;
     if (!photo) {
       xml = removeShape_(xml, pic.id);
-      if (names[k]) miss.push(names[k]);
+      if (names[k]) res.missing.push(names[k]);
       continue;
     }
     var box = readShapeGeomEmu_(xml, pic.id);
@@ -388,13 +397,261 @@ function applyTwoPersonPhotos_(parts, prefix, names, cache) {
     }
     var set = setPicImage_(xml, rels, pic.id, '../media/' + photo.path.replace('ppt/media/', ''));
     xml = set.xml; rels = set.rels;
-    done.push(names[k]);
+    res.done.push(names[k]);
   }
   putXml_(parts, path, xml);
   if (rels) putXml_(parts, rp, rels);
-  var msg = done.length ? (prefix + 'の写真を差し替えました: ' + done.join('、')) : '';
-  if (miss.length) msg += (msg ? '／' : '') + '写真が見つからない方（写真なし）: ' + miss.join('、');
-  return { message: msg, replaced: done.length };
+  return res;
+}
+
+// お2人が並ぶページ（メインプレゼン・推薦のことば・抽選）の氏名・会社名・カテゴリーの文字箱は、
+// 幅が決まっていて、すぐ下に次の段がある。長いお名前や会社名が折り返すと下の段に重なるので、
+// 収まらないときだけ文字を小さくする（氏名・会社名は1行、カテゴリーは2行まで）。
+// 文字の幅は全角1文字＝1em・半角スペース＝0.3em・ほかの半角＝0.55em で見積もり、
+// 太字や代わりのフォント（Meiryo UI が無い環境）でも収まるよう、幅は5%ほどゆとりをみる。
+// 差し込み口 {{○○1会社名}} などがまだ残っている状態で呼ぶこと。
+var TWO_PERSON_FIT_ = [
+  { field: '氏名', lines: 1, min: 20 },
+  { field: '会社名', lines: 1, min: 8 },           // 支社・営業所まで入る長い会社名もあるので、小さめまで許す
+  { field: 'カテゴリー', lines: 2, min: 9 }
+];
+function fitTwoPersonText_(xml, prefix, values) {
+  for (var k = 1; k <= 2; k++) {
+    for (var f = 0; f < TWO_PERSON_FIT_.length; f++) {
+      var t = TWO_PERSON_FIT_[f], key = prefix + k + t.field;
+      if (values[key]) xml = fitTokenBox_(xml, '{{' + key + '}}', String(values[key]), t.lines, t.min);
+    }
+  }
+  return xml;
+}
+function fitTwoPersonPage_(parts, prefix, values) {
+  for (var path in parts) {
+    if (!/^ppt\/slides\/slide\d+\.xml$/.test(path)) continue;
+    var xml = xmlOf_(parts, path);
+    if (!xml || xml.indexOf(prefix + '1氏名') < 0) continue;
+    var out = fitTwoPersonText_(xml, prefix, values);
+    if (out !== xml) putXml_(parts, path, out);
+  }
+}
+function textBoxEm_(s) {
+  var em = 0;
+  for (var i = 0; i < s.length; i++) {
+    var c = s.charCodeAt(i);
+    em += c === 32 ? 0.3 : (c < 128 ? 0.55 : 1);
+  }
+  return em;
+}
+function fitTokenBox_(xml, token, text, maxLines, minPt) {
+  var sps = findTagRanges_(xml, 'p:sp');
+  for (var i = 0; i < sps.length; i++) {
+    var seg = xml.substring(sps[i].start, sps[i].end);
+    if (slideText_(seg).indexOf(token) < 0) continue;
+    var ext = seg.match(/<a:ext cx="(\d+)" cy="\d+"\s*\/>/);
+    if (!ext) return xml;
+    var bp = (seg.match(/<a:bodyPr\b[^>]*>/) || [''])[0];
+    var ins = function (k) {                                   // 文字箱の左右の余白（既定は0.1インチ）
+      var m = bp.match(new RegExp('\\s' + k + '="(\\d+)"'));
+      return m ? parseInt(m[1], 10) : 91440;
+    };
+    var widthPt = (parseInt(ext[1], 10) - ins('lIns') - ins('rIns')) / 12700 * 0.95;
+    var pt = parseInt((seg.match(/<a:rPr\b[^>]*\ssz="(\d+)"/) || [0, 1800])[1], 10) / 100;
+    var em = textBoxEm_(text);
+    if (em * pt <= widthPt * maxLines) return xml;
+    var size = Math.max(minPt || 10, Math.floor(widthPt * maxLines / em * 2) / 2);
+    seg = seg.replace(/(<a:(?:rPr|endParaRPr)\b[^>]*?\ssz=")\d+(")/g, '$1' + Math.round(size * 100) + '$2');
+    return xml.substring(0, sps[i].start) + seg + xml.substring(sps[i].end);
+  }
+  return xml;
+}
+
+// --- 書記兼会計による報告（更新状況一覧）---
+// 後半の「書記兼会計による報告」のページは、「90日以内に更新を迎えるメンバー」などの見出しと
+// お名前の2段の表が4つ並ぶ作り。差し込み口を置かなくても、見出しの文字で表を見分けて、
+// 下の段を画面の「更新状況一覧」の値に入れ替える（テンプレートを作り直さずに済むように）。
+// お名前は「、」の区切りで改行し、多いときは文字を小さくして元の2行ぶんの高さに収める（下の表に重ならないように）。
+var RENEWAL_TABLES_ = [
+  { key: '更新90', label: '90日以内', re: /90日以内/ },
+  { key: '更新60', label: '60日以内', re: /60日以内/ },
+  { key: '更新30', label: '30日以内', re: /30日以内/ },
+  { key: '更新超過', label: '期限切れ', re: /期限切れ|期限超過/ }
+];
+function applyRenewalStatus_(parts, map) {
+  var want = false, i;
+  for (i = 0; i < RENEWAL_TABLES_.length; i++) if (map && map[RENEWAL_TABLES_[i].key] !== undefined) want = true;
+  if (!want) return null;
+  var done = [], tight = [], path;
+  for (path in parts) {
+    if (!/^ppt\/slides\/slide\d+\.xml$/.test(path)) continue;
+    var xml = xmlOf_(parts, path);
+    if (!xml || slideText_(xml).indexOf('更新を迎えるメンバー') < 0) continue;
+    var frames = findTagRanges_(xml, 'p:graphicFrame'), todo = [];
+    for (i = 0; i < frames.length; i++) {
+      var seg = xml.substring(frames[i].start, frames[i].end);
+      var id = (seg.match(/<p:cNvPr[^>]*\sid="(\d+)"/) || [])[1];
+      var trs = findTagRanges_(seg, 'a:tr');
+      if (!id || trs.length < 2) continue;
+      var head = slideText_(seg.substring(trs[0].start, trs[0].end));
+      for (var k = 0; k < RENEWAL_TABLES_.length; k++) {
+        var t = RENEWAL_TABLES_[k];
+        if (t.re.test(head) && map[t.key] !== undefined) { todo.push({ id: id, t: t }); break; }
+      }
+    }
+    for (i = 0; i < todo.length; i++) {
+      var text = String(map[todo[i].t.key] == null ? '' : map[todo[i].t.key]).trim() || '該当者なし';
+      var fit = setNamesInTableCell_(xml, todo[i].id, 1, 0, text, 2);
+      xml = fit.xml;
+      if (!fit.fits) tight.push(todo[i].t.label);
+      done.push(todo[i].t.label);
+    }
+    if (todo.length) putXml_(parts, path, xml);
+  }
+  if (!done.length) return { message: '' };
+  var msg = '書記兼会計による報告（更新状況）を書き換えました: ' + done.join('・');
+  if (tight.length) msg += '\n更新状況の「' + tight.join('」「') + '」はお名前が多く、文字を小さくしても枠に収まりきりません。'
+    + '下の表に重なるときは、画面の欄を短くしてください（名字だけにするなど）。';
+  return { message: msg, done: done.length, tight: tight };
+}
+
+// 表のセルに、お名前の一覧（「○○ ○○さん、○○ ○○さん、…」）を入れる。
+// 元の文字の大きさで maxLines 行ぶんの高さに収まるよう、「、」の区切りで改行し（お名前の途中で
+// 折り返さないように）、それでも足りなければ文字を小さくする（小さくすると1行の高さも縮むので、
+// 3行になっても同じ高さに収まることがある）。元の大きさより大きくはせず、10pt より小さくはしない
+// （それでも収まらなければ fits: false）。文字の幅は全角1文字＝1em・半角＝0.5em で見積もる。
+// 戻り値 { xml, pt, lines, fits }
+function setNamesInTableCell_(xml, frameId, rowIdx, colIdx, text, maxLines) {
+  var res = { xml: xml, pt: 0, lines: [text], fits: true };
+  var r = findShapeRange_(xml, frameId);
+  if (!r) return res;
+  var cols = xml.substring(r.start, r.end).match(/<a:gridCol w="\d+"/g) || [];
+  if (!cols[colIdx]) return res;
+  var colW = parseInt(cols[colIdx].replace(/\D+/g, ''), 10);
+  res.xml = mapTableCell_(xml, frameId, rowIdx, colIdx, function (tc) {
+    var pt = parseInt((tc.match(/<a:rPr\b[^>]*\ssz="(\d+)"/) || [0, 1800])[1], 10) / 100;
+    var tcPr = (tc.match(/<a:tcPr\b[^>]*>/) || [''])[0];
+    var mar = function (k) {                                   // セルの左右の余白（既定は0.1インチ）
+      var m = tcPr.match(new RegExp('\\s' + k + '="(\\d+)"'));
+      return m ? parseInt(m[1], 10) : 91440;
+    };
+    // 行末の禁則などで少し余ることがあるので、幅は1割ほどゆとりをみる
+    var widthPt = (colW - mar('marL') - mar('marR')) / 12700 * 0.9;
+    var layout = function (size) {
+      var lines = wrapAtCommas_(text, widthPt / size), h = 0;
+      for (var i = 0; i < lines.length; i++) h += Math.max(1, Math.ceil(textEm_(lines[i]) * size / widthPt)) * size;
+      return { lines: lines, height: h };
+    };
+    var size = pt, lay = layout(size);
+    while (size > 10 && lay.height > pt * maxLines) { size -= 0.5; lay = layout(size); }
+    res.pt = size; res.lines = lay.lines; res.fits = lay.height <= pt * maxLines;
+    var tb = findTagRanges_(tc, 'a:txBody');
+    if (tb.length) {
+      tc = tc.substring(0, tb[0].start) + setTxBodyLines_(tc.substring(tb[0].start, tb[0].end), lay.lines)
+         + tc.substring(tb[0].end);
+    }
+    if (size < pt) tc = tc.replace(/(<a:(?:rPr|endParaRPr)\b[^>]*?\ssz=")\d+(")/g, '$1' + Math.round(size * 100) + '$2');
+    return tc;
+  });
+  return res;
+}
+function textEm_(s) {
+  var em = 0;
+  for (var i = 0; i < s.length; i++) em += s.charCodeAt(i) < 128 ? 0.5 : 1;
+  return em;
+}
+// 「、」の区切りで、1行（widthEm 文字ぶん）に入るだけ詰めて行に分ける
+function wrapAtCommas_(text, widthEm) {
+  var segs = String(text).split('、'), lines = [], cur = '';
+  for (var i = 0; i < segs.length; i++) {
+    var seg = segs[i] + (i < segs.length - 1 ? '、' : '');
+    if (cur && textEm_(cur + seg) > widthEm) { lines.push(cur); cur = seg; }
+    else cur += seg;
+  }
+  if (cur) lines.push(cur);
+  return lines.length ? lines : [''];
+}
+
+// 表のセル（<a:tc>）を関数で書き換える（行・列は0始まり）
+function mapTableCell_(xml, frameId, rowIdx, colIdx, fn) {
+  var r = findShapeRange_(xml, frameId);
+  if (!r) return xml;
+  var seg = xml.substring(r.start, r.end), tbls = findTagRanges_(seg, 'a:tbl');
+  if (!tbls.length) return xml;
+  var tbl = seg.substring(tbls[0].start, tbls[0].end), trs = findTagRanges_(tbl, 'a:tr');
+  if (rowIdx >= trs.length) return xml;
+  var tr = tbl.substring(trs[rowIdx].start, trs[rowIdx].end), tcs = findTagRanges_(tr, 'a:tc');
+  if (colIdx >= tcs.length) return xml;
+  var tc = fn(tr.substring(tcs[colIdx].start, tcs[colIdx].end));
+  tr  = tr.substring(0, tcs[colIdx].start) + tc + tr.substring(tcs[colIdx].end);
+  tbl = tbl.substring(0, trs[rowIdx].start) + tr + tbl.substring(trs[rowIdx].end);
+  seg = seg.substring(0, tbls[0].start) + tbl + seg.substring(tbls[0].end);
+  return xml.substring(0, r.start) + seg + xml.substring(r.end);
+}
+
+// --- 推薦のことば（何組でも）---
+// テンプレートの推薦のことばのページ（{{推薦のことば1氏名}} のあるページ）をひな形に、組の数だけページを作る。
+//   定例会中の組          … ひな形のページの場所に続けて並べる（1組目はひな形のページそのもの）
+//   アフター・定例会後の組 … 抽選コーナーのページのうしろに並べる
+// どのページも、左が推薦する人・右が推薦される人（氏名・会社名・カテゴリー・写真）。
+// 定例会中の組が無い日は、ひな形のページを非表示にする（元のお名前と写真は消しておく）。
+//   pairs … [{ giver: {name, company, category}, receiver: {…}, after: true/false }]
+var RECO_PREFIX_ = '推薦のことば';
+function expandRecommendations_(parts, pairs, cache) {
+  var model = findSlideWithText_(parts, RECO_PREFIX_ + '1氏名');
+  if (!model) {
+    return pairs.length ? { message: '推薦のことばのページ（{{推薦のことば1氏名}} のあるページ）が見つかりませんでした。' } : null;
+  }
+  var during = [], after = [], i;
+  for (i = 0; i < pairs.length; i++) (pairs[i].after ? after : during).push(pairs[i]);
+  var modelXml = setSlideShow_(xmlOf_(parts, model), true);
+  var modelRels = (xmlOf_(parts, relsPathOf_(model)) || '').replace(/<Relationship\b[^>]*notesSlides\/[^>]*\/>/g, '');
+  var lottery = findSlideWithText_(parts, '抽選1氏名');
+  var entries = slideEntries_(parts), missing = [];
+
+  var fill = function (path, pair) {
+    var g = pair.giver || {}, r = pair.receiver || {};
+    var ph = setTwoPersonPhotos_(parts, path, RECO_PREFIX_, [g.name || '', r.name || ''], cache);
+    missing = missing.concat(ph.missing);
+    var vals = {};
+    vals[RECO_PREFIX_ + '1氏名'] = g.name || ''; vals[RECO_PREFIX_ + '1会社名'] = g.company || '';
+    vals[RECO_PREFIX_ + '1カテゴリー'] = g.category || '';
+    vals[RECO_PREFIX_ + '2氏名'] = r.name || ''; vals[RECO_PREFIX_ + '2会社名'] = r.company || '';
+    vals[RECO_PREFIX_ + '2カテゴリー'] = r.category || '';
+    putXml_(parts, path, replaceTokensInXml_(fitTwoPersonText_(xmlOf_(parts, path), RECO_PREFIX_, vals), vals));
+  };
+  // 先に、手を付けていないひな形から2組目以降とアフターの組のページを作る
+  var clone = function (pair) {
+    var add = addSlidePart_(parts, modelXml, modelRels);
+    fill(add.path, pair);
+    return add;
+  };
+  var moreDuring = [], afterPages = [];
+  for (i = 1; i < during.length; i++) moreDuring.push(clone(during[i]));
+  for (i = 0; i < after.length; i++) afterPages.push(clone(after[i]));
+  if (during.length) {
+    putXml_(parts, model, modelXml);
+    fill(model, during[0]);
+  } else {
+    fill(model, { giver: {}, receiver: {} });
+    putXml_(parts, model, setSlideShow_(xmlOf_(parts, model), false));
+  }
+  // 並び：ひな形のうしろに定例会中の2組目以降、抽選コーナーのうしろにアフター・定例会後の組
+  var out = [], placedAfter = false;
+  for (i = 0; i < entries.length; i++) {
+    out.push(entries[i]);
+    if (entries[i].path === model) out = out.concat(moreDuring);
+    if (lottery && entries[i].path === lottery) { out = out.concat(afterPages); placedAfter = true; }
+  }
+  if (!placedAfter) out = out.concat(afterPages);        // 抽選コーナーが無ければ最後に
+  setSlideEntries_(parts, out);
+
+  var msg = during.length
+    ? ('推薦のことばのページを ' + during.length + '枚作りました（定例会中）')
+    : '定例会中の推薦のことばは無いので、そのページは非表示にしました';
+  if (after.length) msg += '。アフター・定例会後の ' + after.length + '枚は、'
+    + (lottery ? '抽選コーナーのあと' : '最後') + 'に入れました';
+  msg += '。';
+  if (missing.length) msg += '\n推薦のことばで写真が見つからない方（写真なし）: ' + missing.join('、');
+  return { message: msg, during: during.length, after: after.length,
+           paths: [model].concat(moreDuring.map(function (x) { return x.path; }), afterPages.map(function (x) { return x.path; })) };
 }
 
 // 氏名の差し込み口（{{○○1氏名}}）の文字箱の位置
@@ -805,14 +1062,20 @@ function editMeetingSlides_(parts, map, rules, o) {
   });
   var stripped = anyAuto ? mpUseTimingsOnly_(parts, ours) : 0;
   // 写真の差し替えは {{ }} を消す前に行う（差し込み口の名前でページを探すため）
+  // 推薦のことば：組の数だけページを作る（定例会中はその場所、アフター・定例会後は抽選コーナーのあと）
+  var reco = (o.recommendPairs && o.recommendPairs.length !== undefined)
+    ? expandRecommendations_(parts, o.recommendPairs, photoCache) : null;
+  // 書記兼会計による報告（更新状況一覧）
+  var renewal = applyRenewalStatus_(parts, map);
   var photoMsgs = [], TWO = [
     { prefix: 'メインプレゼン', names: o.mainPresenters },
-    { prefix: '推薦のことば',   names: o.recommenders },
+    { prefix: '推薦のことば',   names: reco ? null : o.recommenders },
     { prefix: '抽選',           names: o.lottery }
   ];
   for (var w = 0; w < TWO.length; w++) {
     var ph = applyTwoPersonPhotos_(parts, TWO[w].prefix, TWO[w].names || [], photoCache);
     if (ph && ph.message) photoMsgs.push(ph.message);
+    fitTwoPersonPage_(parts, TWO[w].prefix, map);      // 長いお名前・会社名が下の段に重ならないように
   }
   var photos = { message: photoMsgs.join('\n') };
   for (path in parts) {
@@ -830,7 +1093,8 @@ function editMeetingSlides_(parts, map, rules, o) {
   var policy = o.generalPolicy ? applyGeneralPolicy_(parts, o.generalPolicy) : null;
   var audio = o.music ? applyMeetingAudio_(parts, o.music) : null;
   return { touched: touched, byPattern: byPattern, core: core, policy: policy,
-           photos: photos, audio: audio, referral: referral, weekly: weekly, guests: guests };
+           photos: photos, audio: audio, referral: referral, weekly: weekly, guests: guests,
+           reco: reco, renewal: renewal };
 }
 
 // 定例会スライドを生成する。テンプレート内の {{キー}} を置換する方式。
@@ -873,6 +1137,8 @@ function generateMeetingSlides(kind, values, meetingDateVal, opts) {
     if (info.referral && info.referral.message) msg += '\n' + info.referral.message;
     if (info.weekly && info.weekly.message) msg += '\n' + info.weekly.message;
     if (info.guests && info.guests.message) msg += '\n' + info.guests.message;
+    if (info.reco && info.reco.message) msg += '\n' + info.reco.message;
+    if (info.renewal && info.renewal.message) msg += '\n' + info.renewal.message;
     return { ok: true, message: msg, url: r.saved.url, downloadUrl: r.saved.downloadUrl,
              fileName: outName, touched: info.touched, core: info.core, policy: info.policy,
              timing: r.timing };

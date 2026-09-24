@@ -4,6 +4,7 @@
     python3 tools/mtg_zip_check.py <出力ディレクトリ> <保存先.pptx>
 """
 import hashlib
+import html
 import json
 import os
 import re
@@ -58,7 +59,7 @@ order = [rels[r] for r in re.findall(r'<p:sldId id="\d+" r:id="([^"]+)"/>', pres
 
 def text(p):
     s = z.read('ppt/' + p).decode('utf-8')
-    return s, ''.join(re.findall(r'<a:t(?=[\s>])[^>]*>([^<]*)</a:t>', s))
+    return s, html.unescape(''.join(re.findall(r'<a:t(?=[\s>])[^>]*>([^<]*)</a:t>', s)))
 
 
 left = sum(t.count('{{') for _, t in (text(p) for p in order))
@@ -69,10 +70,31 @@ for i, p in enumerate(order, 1):
     s, t = text(p)
     (hidden if 'show="0"' in s[:400] else shown).append((i, t[:46]))
 
+def check_fit(p, label, vals):
+    """お2人のページ：氏名・会社名は1行、カテゴリーは2行に収まる文字の大きさか（全角1em・半角0.55em・空白0.3emで見積もる）"""
+    sx = z.read('ppt/' + p).decode('utf-8')
+    for sp in re.finditer(r'<p:sp>.*?</p:sp>', sx, re.S):
+        seg = sp.group(0)
+        st = html.unescape(''.join(re.findall(r'<a:t(?=[\s>])[^>]*>([^<]*)</a:t>', seg))).strip()
+        for v, lines in vals:
+            if not v or st != v:
+                continue
+            ext = re.search(r'<a:ext cx="(\d+)"', seg)
+            bp = re.search(r'<a:bodyPr\b[^>]*>', seg)
+
+            def ins(k):
+                mm = re.search(r'\s%s="(\d+)"' % k, bp.group(0)) if bp else None
+                return int(mm.group(1)) if mm else 91440
+            w = (int(ext.group(1)) - ins('lIns') - ins('rIns')) / 12700.0 * 0.95  # 字幅のゆとり5%
+            sz = [int(x) / 100.0 for x in re.findall(r'<a:rPr\b[^>]*\ssz="(\d+)"', seg)]
+            em = sum(0.3 if c == ' ' else (0.55 if ord(c) < 128 else 1.0) for c in v)
+            ck(bool(sz) and em * max(sz) <= w * lines + 0.01,
+               '%s の「%s」が %d 行に収まらない（%.1fpt）' % (label, v, lines, max(sz) if sz else 0))
+
+
 m = plan['map']
-# 左右にお2人が並ぶページ（前半＝メインプレゼン／後半＝推薦のことば・抽選コーナー）
+# 左右にお2人が並ぶページ（前半＝メインプレゼン／後半＝抽選コーナー）。推薦のことばは組ごとなので別に確かめる
 for title, prefix in (('Main Presenter', 'メインプレゼン'),
-                      ('Words of Recommendation', '推薦のことば'),
                       ('賞品の抽選', '抽選')):
     found = [p for p in order if title in text(p)[1]]
     if not found:
@@ -84,6 +106,8 @@ for title, prefix in (('Main Presenter', 'メインプレゼン'),
             v = m.get('%s%d%s' % (prefix, n, f))
             if v:
                 ck(v in t, '%s のページに「%s」が無い' % (prefix, v))
+        check_fit(found[0], prefix, [(m.get('%s%d氏名' % (prefix, n)), 1), (m.get('%s%d会社名' % (prefix, n)), 1),
+                                     (m.get('%s%dカテゴリー' % (prefix, n)), 2)])
     print('  %s のページ: %s' % (prefix, t[:110]))
 
 ms = [p for p in order if 'チャプターが求める専門分野' in text(p)[1]]
@@ -281,6 +305,129 @@ def pics_of(p):
     return out
 
 
+def check_two_photos(p, prefix, want):
+    """左右にお2人が並ぶページ：左に1人目、右に2人目。ほかの方の写真や、元の写真が残っていないこと"""
+    pics = pics_of(p)
+    # 写真の枠＝縦長で大きな画像（背景いっぱいの画像と、飾りの小さな画像は除く）
+    frames = [q for q in pics if q[4] >= 2500000 and q[3] <= slide_w * 0.4]
+    for side, nm in enumerate(want[:2]):
+        on_side = [q[5] for q in frames if q[5] and ((q[1] + q[3] / 2) < slide_w / 2) == (side == 0)]
+        exp = [nm] if nm in photo_of else []
+        ck(on_side == exp, '%s の%sの写真が %s（%s のはず）'
+           % (prefix, '左' if side == 0 else '右', on_side or 'なし', exp or '写真なし'))
+    # 写真の枠に、入るはずの方以外（元のテンプレートの写真）が残っていないこと
+    stale = [q[0] for q in frames if q[5] not in [n for n in want if n]]
+    ck(not stale, '%s のページに、元の写真が残っている枠がある（図形ID %s）' % (prefix, stale))
+    # 飾りの画像に、誰かの写真が入っていないこと
+    deco = [(q[0], q[5]) for q in pics if q not in frames and q[5]]
+    ck(not deco, '%s のページで、写真の枠でない画像に写真が入っている: %s' % (prefix, deco))
+
+
+# 推薦のことば（何組でも）：
+#   定例会中の組 … ひな形のページの場所に続けて並ぶ（組が無ければ、ひな形のページは非表示で残る）
+#   アフター・定例会後の組 … 抽選コーナーのページのすぐうしろに並ぶ
+reco_pages = []
+pairs = info.get('recoPairs')
+if pairs is not None:
+    during = [x for x in pairs if not x.get('after')]
+    after = [x for x in pairs if x.get('after')]
+    idx = [i for i, p in enumerate(order) if 'Words of Recommendation' in text(p)[1]]
+    nd = max(len(during), 1)
+    ck(len(idx) == nd + len(after), '推薦のことばのページが %d 枚（%d 枚のはず）' % (len(idx), nd + len(after)))
+    ck(idx[:nd] == list(range(idx[0], idx[0] + nd)) if idx else False,
+       '定例会中の推薦のことばのページが続いていない: %s' % idx[:nd])
+    lot = next((i for i, p in enumerate(order) if '賞品の抽選' in text(p)[1]), None)
+    if after:
+        ck(lot is not None, '抽選コーナーのページが無い')
+        if lot is not None:
+            ck(idx[nd:] == list(range(lot + 1, lot + 1 + len(after))),
+               'アフター・定例会後の推薦のことばが抽選コーナーのすぐあとに無い: %s（抽選=%d）' % (idx[nd:], lot))
+    if lot is not None and idx:
+        ck(idx[nd - 1] < lot, '定例会中の推薦のことばが抽選コーナーより後ろにある')
+    for k, i in enumerate(idx):
+        sx, t = text(order[i])
+        hid = 'show="0"' in sx[:600]
+        if k < nd:
+            pair, label = (during[k], '推薦のことば（定例会中%d組目）' % (k + 1)) if during else (None, '推薦のことば（ひな形）')
+        else:
+            pair, label = after[k - nd], '推薦のことば（アフター%d組目）' % (k - nd + 1)
+        if pair is None:
+            ck(hid, '定例会中の組が無いのに、推薦のことばのページが表示のまま')
+            reco_pages.append((order[i], {'giver': {'name': ''}, 'receiver': {'name': ''}}, label))
+            continue
+        ck(not hid, '%s のページが非表示になっている' % label)
+        for who in ('giver', 'receiver'):
+            for f in ('name', 'company', 'category'):
+                v = pair[who].get(f)
+                if v:
+                    ck(v in t, '%s のページに「%s」が無い' % (label, v))
+            check_fit(order[i], label, [(pair[who].get('name'), 1), (pair[who].get('company'), 1),
+                                        (pair[who].get('category'), 2)])
+        # 左＝推薦する人・右＝推薦される人（氏名の文字の位置で確かめる）
+        gx, rx = [], []
+        for sp in re.finditer(r'<p:sp>.*?</p:sp>', sx, re.S):
+            st = html.unescape(''.join(re.findall(r'<a:t(?=[\s>])[^>]*>([^<]*)</a:t>', sp.group(0))))
+            off = re.search(r'<a:off x="(-?\d+)"', sp.group(0))
+            if not off:
+                continue
+            if pair['giver']['name'] and st.strip() == pair['giver']['name']:
+                gx.append(int(off.group(1)))
+            if pair['receiver']['name'] and st.strip() == pair['receiver']['name']:
+                rx.append(int(off.group(1)))
+        if gx and rx:
+            ck(max(gx) < min(rx), '%s のページで、推薦する人が左・推薦される人が右になっていない' % label)
+        reco_pages.append((order[i], pair, label))
+    print('  推薦のことば: 定例会中 %d 組（%s）／アフター・定例会後 %d 組%s'
+          % (len(during), '、'.join('%s→%s' % (x['giver']['name'] or '空', x['receiver']['name'] or '空') for x in during) or 'ページは非表示',
+             len(after), ('（抽選コーナーのあと: %s）' % '、'.join('%s→%s' % (x['giver']['name'] or '空', x['receiver']['name'] or '空') for x in after)) if after else ''))
+
+# 書記兼会計による報告（更新状況一覧）：表の下の段が、画面の一覧と同じで、2行に収まる大きさか
+RENEW = (('90日以内', '更新90'), ('60日以内', '更新60'), ('30日以内', '更新30'), ('期限切れ', '更新超過'))
+if any(k in m for _, k in RENEW):
+    pg = [p for p in order if '更新を迎えるメンバー' in text(p)[1]]
+    ck(len(pg) == 1, '書記兼会計による報告（更新状況）のページが %d 枚' % len(pg))
+    seen = []
+    for p in pg:
+        sx = z.read('ppt/' + p).decode('utf-8')
+        for fm in re.finditer(r'<p:graphicFrame>.*?</p:graphicFrame>', sx, re.S):
+            seg = fm.group(0)
+            rows = re.findall(r'<a:tr\b.*?</a:tr>', seg, re.S)
+            if len(rows) < 2:
+                continue
+            head = ''.join(re.findall(r'<a:t(?=[\s>])[^>]*>([^<]*)</a:t>', rows[0]))
+            key = next((k for lb, k in RENEW if lb in head), None)
+            if not key or key not in m:
+                continue
+            want = (m[key] or '').strip() or '該当者なし'
+            body = html.unescape(''.join(re.findall(r'<a:t(?=[\s>])[^>]*>([^<]*)</a:t>', rows[1])))
+            ck(body == want, '更新状況「%s」が「%s」（「%s」のはず）' % (head.strip(), body[:40], want[:40]))
+            szs = [int(v) for v in re.findall(r'<a:rPr\b[^>]*\ssz="(\d+)"', rows[1])]
+            hsz = [int(v) for v in re.findall(r'<a:rPr\b[^>]*\ssz="(\d+)"', rows[0])]
+            base = (hsz[0] / 100.0) if hsz else 20.0          # 元の大きさ（見出しの段と同じ）
+            col = int(re.search(r'<a:gridCol w="(\d+)"', seg).group(1))
+            tcpr = re.search(r'<a:tcPr\b[^>]*>', rows[1])
+
+            def mar(k):                           # セルの左右の余白（既定は0.1インチ）
+                mm = re.search(r'\s%s="(\d+)"' % k, tcpr.group(0)) if tcpr else None
+                return int(mm.group(1)) if mm else 91440
+            width_pt = (col - mar('marL') - mar('marR')) / 12700.0
+            pt = (szs[0] / 100.0) if szs else base
+            # 段落（改行）ごとに、何行になるか（切り上げ）
+            paras = [html.unescape(''.join(re.findall(r'<a:t(?=[\s>])[^>]*>([^<]*)</a:t>', q)))
+                     for q in re.findall(r'<a:p>.*?</a:p>|<a:p\b[^>]*>.*?</a:p>', rows[1], re.S)]
+            lines = sum(max(1, -(-sum(0.5 if ord(c) < 128 else 1.0 for c in q) * pt // width_pt)) for q in paras)
+            # 元の大きさで2行ぶんの高さに収まるか（小さくすると1行の高さも縮む）
+            ck(lines * pt <= base * 2 + 0.01, '更新状況「%s」が枠に収まらない（%d行・%.1fpt）' % (head.strip(), lines, pt))
+            ck(pt <= base, '更新状況「%s」の文字が元より大きい（%.1fpt）' % (head.strip(), pt))
+            ck(len(set(szs)) <= 1, '更新状況「%s」の文字の大きさがそろっていない: %s' % (head.strip(), szs))
+            # 改行は「、」のうしろだけ（お名前の途中で改行しない）
+            ck(all(q.endswith('、') for q in paras[:-1]), '更新状況「%s」がお名前の途中で改行されている: %s' % (head.strip(), paras))
+            print('  更新状況 %s: %s（%.1fpt・%d段落・%d行）'
+                  % (head.strip()[:5], want[:30] + ('…' if len(want) > 30 else ''), pt, len(paras), lines))
+            seen.append(key)
+    ck(sorted(seen) == sorted(k for _, k in RENEW if k in m),
+       '更新状況の表が %s しか見つからない' % seen)
+
 if photo_of:
     # リファーラル発表：どのページにも、その方の写真だけ
     for k, it in enumerate(plan_rf):
@@ -291,25 +438,14 @@ if photo_of:
         want = [it['name']] if it['name'] in photo_of else []
         ck(faces == want, 'リファーラル発表 %d枚目（%s）の写真が %s' % (k + 1, it['name'], faces or 'なし'))
     # 左右にお2人が並ぶページ：左に1人目、右に2人目。ほかの方の写真や、元の写真が残っていないこと
-    for title, prefix in (('Main Presenter', 'メインプレゼン'), ('Words of Recommendation', '推薦のことば'), ('賞品の抽選', '抽選')):
+    for title, prefix in (('Main Presenter', 'メインプレゼン'), ('賞品の抽選', '抽選')):
         pg = [p for p in order if title in text(p)[1]]
         if not pg:
             continue
-        want = (info.get('twoPerson') or {}).get(prefix) or []
-        pics = pics_of(pg[0])
-        # 写真の枠＝縦長で大きな画像（背景いっぱいの画像と、飾りの小さな画像は除く）
-        frames = [q for q in pics if q[4] >= 2500000 and q[3] <= slide_w * 0.4]
-        for side, nm in enumerate(want[:2]):
-            on_side = [q[5] for q in frames if q[5] and ((q[1] + q[3] / 2) < slide_w / 2) == (side == 0)]
-            exp = [nm] if nm in photo_of else []
-            ck(on_side == exp, '%s の%sの写真が %s（%s のはず）'
-               % (prefix, '左' if side == 0 else '右', on_side or 'なし', exp or '写真なし'))
-        # 写真の枠に、入るはずの方以外（元のテンプレートの写真）が残っていないこと
-        stale = [q[0] for q in frames if q[5] not in [n for n in want if n]]
-        ck(not stale, '%s のページに、元の写真が残っている枠がある（図形ID %s）' % (prefix, stale))
-        # 飾りの画像に、誰かの写真が入っていないこと
-        deco = [(q[0], q[5]) for q in pics if q not in frames and q[5]]
-        ck(not deco, '%s のページで、写真の枠でない画像に写真が入っている: %s' % (prefix, deco))
+        check_two_photos(pg[0], prefix, (info.get('twoPerson') or {}).get(prefix) or [])
+    # 推薦のことば：組ごとのページに、左＝推薦する人・右＝推薦される人
+    for p, pair, label in reco_pages:
+        check_two_photos(p, label, [pair['giver']['name'], pair['receiver']['name']])
     # 前半に差し込んだメンバーのページ：扉ページは先頭の方、個人ページはその方の写真
     if plan_mp and anchor is not None:
         for k, it in enumerate(plan_mp):

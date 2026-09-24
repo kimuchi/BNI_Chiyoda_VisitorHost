@@ -144,6 +144,8 @@ function routineMemberName_(raw) {
     if (x && tries.indexOf(x) < 0) tries.push(x);
   };
   push(s0);
+  push(s0.replace(/(さん|様|さま|くん|君|ちゃん|氏)?へ$/, '$1'));   // 「山本さんへ」
+  push(s0.replace(/(さん|様|さま|くん|君|ちゃん|氏)?へ?$/, ''));    // 「長見くん」
   push(s0.replace(/^[0-9０-９]+\s*番?/, ''));            // 「３５番船木さん」
   var parts = s0.split(/[\s　]+/);
   if (parts.length > 1) push(parts[parts.length - 1]);   // 「内装業　石渕さん」
@@ -158,7 +160,31 @@ function routineMemberName_(raw) {
       }
     }
   }
+  // 字の違い（「渡辺さん」と名簿の「渡邉 真理子」など）でも、名字が1人に決まるなら合わせる
+  for (k = 0; k < tries.length; k++) {
+    var f = routineFoldName_(tries[k]), hit = [];
+    if (f.length < 2) continue;
+    for (i = 0; i < members.length; i++) {
+      if (routineFoldName_(members[i].name).indexOf(f) === 0) hit.push(members[i].name);
+    }
+    if (hit.length === 1) return { raw: s0, name: hit[0], matched: true };
+  }
   return { raw: s0, name: '', matched: false };
+}
+
+// 名字でよく使い分けられる字をそろえる（照らし合わせるときだけ使う）
+var ROUTINE_NAME_VARIANTS_ = {
+  '邉': '辺', '邊': '辺', '齋': '斉', '齊': '斉', '斎': '斉', '髙': '高', '﨑': '崎', '嵜': '崎',
+  '澤': '沢', '濱': '浜', '濵': '浜', '廣': '広', '嶋': '島', '嶌': '島', '國': '国', '眞': '真',
+  '冨': '富', '瀨': '瀬', '德': '徳', '藏': '蔵', '櫻': '桜', '龍': '竜', '萬': '万', '槇': '槙',
+  '桒': '桑', '淵': '渕', '條': '条', '峯': '峰', '藪': '薮', '籔': '薮', '栁': '柳', '惠': '恵',
+  '實': '実', '壽': '寿', '豐': '豊', '禮': '礼'
+};
+function routineFoldName_(s) {
+  var t = String(s == null ? '' : s).normalize('NFKC').replace(/[\s　]/g, '').replace(/さん$/, '');
+  var out = '';
+  for (var i = 0; i < t.length; i++) out += ROUTINE_NAME_VARIANTS_[t.charAt(i)] || t.charAt(i);
+  return out;
 }
 
 // --- 欄の書き方を、スライドに載せられる形に直す ----------------------------
@@ -222,29 +248,76 @@ function routineList_(v) {
   return out;
 }
 
-// 「25 推薦の言葉」の欄。スライドには「推薦する人 → 推薦される人」が1組だけ載る。
+// 「25 推薦の言葉」の欄。組ごとに「推薦する人 → 推薦される人」のページを作る。
 //   定例会中
 //    ⓵藤田さん⇒金子さん、
 //    ②山口さん⇒山本さん
 //   アフター
 //    ①船木さん→金子さん
-// のように複数書かれることがあるので、矢印のある行を上から順に拾う。
-// 先頭が定例会中の①になる（アフターはその後ろに書かれるため）。
+// のように、見出しで「いつ発表するか」を分けて書かれる。見出しの下の組にその時間を付ける。
+// 「佐藤さん→近藤さん（アフター）」のように、組のうしろの括弧に書かれていることもある（その組だけに付ける）。
+//   during … 定例会中（見出しが無いときもこれ）。推薦のことばのページの場所に並べる
+//   after  … アフター・定例会後。抽選コーナーのあとに並べる
+//   later  … 翌週以降（予定のメモ）。スライドには入れない
+// 1行に「①A→B ②C→D」と続けて書かれていても、丸数字で区切って組に分ける。
+var ROUTINE_RECO_MARK_RE_ = /[①②③④⑤⑥⑦⑧⑨⑩⓵⓶⓷⓸⓹⓺⓻⓼⓽]/;
+var ROUTINE_RECO_SAMPLE_RE_ = /^[\s　]*[○〇◯×✕＊*…]+(さん|様)?[\s　、,]*$/;
+function routineRecoWhen_(text, when) {
+  if (/翌週|来週|次週/.test(text)) return 'later';
+  if (/アフター|定例会後|終了後/.test(text)) return 'after';
+  if (/定例会/.test(text)) return 'during';
+  return when;
+}
 function routineRecommendations_(v) {
   var s = String(v == null ? '' : v);
   if (routineIsBlank_(s.replace(/[\s　]/g, ''))) return [];
-  var lines = s.split(/[\r\n]+/), out = [];
+  var ARROW = /[→⇒➡]/, lines = s.split(/[\r\n]+/), out = [], when = 'during';
   for (var i = 0; i < lines.length; i++) {
-    var line = lines[i].replace(/[（(][^）)]*[）)]/g, '').trim();
-    if (!/[→⇒➡]/.test(line)) continue;
-    // 行頭の丸数字・記号を落とす
-    line = line.replace(/^[\s　]*[①②③④⑤⑥⑦⑧⑨⑩⓵⓶⓷⓸⓹\d]+[.\s　]*/, '');
-    var parts = line.split(/[→⇒➡]/);
-    if (parts.length < 2) continue;
-    var a = routineMemberName_(parts[0].replace(/[、,]$/, ''));
-    var b = routineMemberName_(parts[1].replace(/[、,]$/, ''));
-    if (!a.raw && !b.raw) continue;
-    out.push({ giver: a, receiver: b, raw: line });
+    // 組のうしろの括弧に時間が書いてあれば（「佐藤さん→近藤さん（アフター）」）、その行の組だけに使う
+    var notes = (lines[i].match(/[（(][^）)]*[）)]/g) || []).join(' ');
+    var lineWhen = notes ? routineRecoWhen_(notes, '') : '';
+    // 括弧の但し書き（「（先週繰り越し分）」など）と、※以降のメモは落とす
+    var line = lines[i].replace(/[（(][^）)]*[）)]/g, '').replace(/[※＊].*$/, '').trim();
+    var arrowAt = line.search(ARROW), markAt = line.search(ROUTINE_RECO_MARK_RE_);
+    // 見出し（「定例会中」「アフター」「定例会後」「翌週以降」）で、いつ発表する組かを切り替える。
+    // 見出しと組が同じ行に書かれていたら、組より前の部分だけで判断する。
+    var headEnd = arrowAt < 0 ? line.length : (markAt >= 0 && markAt < arrowAt ? markAt : arrowAt);
+    var head = line.substring(0, headEnd);
+    when = routineRecoWhen_(head, when);
+    if (arrowAt < 0) {
+      if (lineWhen && !head.replace(/[\s　【】\[\]]/g, '')) when = lineWhen;       // 「（アフター）」だけの見出し
+      continue;
+    }
+    var body;
+    if (markAt >= 0 && markAt < arrowAt) body = line.substring(markAt);          // 丸数字から先が組
+    else {
+      // 見出しの語（「定例会後：」「【アフター】」「アフター分」など）だけ落とす。うしろに続くお名前は残す
+      var kw = head.match(/^.*(定例会中|定例会後|終了後|アフター|定例会)(?:の?分|の部|にて|で)?[\s　:：、。.．\-－―)）】」』］\]]*/);
+      body = kw ? line.substring(kw[0].length) : line;
+    }
+    var segs = body.split(ROUTINE_RECO_MARK_RE_);
+    for (var k = 0; k < segs.length; k++) {
+      // 行頭の記号（「・船木さん→…」の・など）と、前後の区切りを落とす
+      var seg = segs[k].replace(/^[\s　.．、,・･•●◆◇■□▪*＊\-－]+/, '').replace(/[\s　、,]+$/, '');
+      if (!ARROW.test(seg)) continue;
+      // 1つの区切りに2組以上続けて書かれていたら（「金子さん→三澤さん 藤田さん→長見さん」）、組ごとに分ける
+      var found = [], mm;
+      if ((seg.match(/[→⇒➡]/g) || []).length > 1) {
+        var re = /([^\s　、,→⇒➡]+)[\s　]*[→⇒➡][\s　]*([^\s　、,→⇒➡]+)/g;
+        while ((mm = re.exec(seg)) !== null) found.push({ a: mm[1], b: mm[2], raw: mm[0] });
+      } else {
+        var parts = seg.split(ARROW);
+        found.push({ a: parts[0], b: parts[1], raw: seg });
+      }
+      for (var f = 0; f < found.length; f++) {
+        // 書き方の見本（「○○さん ⇒○○さん」）は組にしない
+        if (ROUTINE_RECO_SAMPLE_RE_.test(found[f].a) && ROUTINE_RECO_SAMPLE_RE_.test(found[f].b)) continue;
+        var a = routineMemberName_(String(found[f].a).replace(/^[・･•●◆◇■□▪*＊\-－]+/, '').replace(/[、,]\s*$/, ''));
+        var b = routineMemberName_(String(found[f].b).replace(/^[・･•●◆◇■□▪*＊\-－]+/, '').replace(/[、,]\s*$/, ''));
+        if (!a.raw && !b.raw) continue;
+        out.push({ giver: a, receiver: b, raw: found[f].raw, when: lineWhen || when });
+      }
+    }
   }
   return out;
 }

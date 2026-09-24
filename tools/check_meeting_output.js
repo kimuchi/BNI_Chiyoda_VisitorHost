@@ -72,7 +72,10 @@ function pngOf(w, h, rgb) {
 }
 const PHOTO_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'mtg_photos_'));
 const PHOTO_OF = {}, PHOTO_FILE = {};
+// MTG_NOPHOTO で「写真が無い方」を作れる（名簿の並びの番号をカンマ区切りで。例: MTG_NOPHOTO='4,9'）
+const NO_PHOTO = new Set(String(process.env.MTG_NOPHOTO || '').split(',').filter((x) => x !== '').map(Number));
 MEMBERS.forEach((m, i) => {
+  if (NO_PHOTO.has(i)) return;
   const id = 'photo' + i + '.png';
   fs.writeFileSync(path.join(PHOTO_DIR, id), pngOf(30 + (i % 7), 40 + (i % 5), [(i * 37) % 256, (i * 91) % 256, (i * 53) % 256]));
   PHOTO_OF[m.name.replace(/[\s　]/g, '')] = id;
@@ -167,10 +170,8 @@ const byName = {};
 MEMBERS.forEach((m) => { byName[m.name] = m; });
 const map = { 開催回: R.meetingNo, 開催日付: DATE };
 const mainNames = (R.mainPresenters || []).map((m) => m.name || '');
-const reco = (R.recommendations || [])[0];
-const recoNames = reco ? [reco.giver.name || '', reco.receiver.name || ''] : [];
 const lotteryNames = mainNames.slice();          // 抽選はメインプレゼンと同じお2人
-[['メインプレゼン', mainNames], ['推薦のことば', recoNames], ['抽選', lotteryNames]].forEach(([prefix, names]) => {
+[['メインプレゼン', mainNames], ['抽選', lotteryNames]].forEach(([prefix, names]) => {
   names.forEach((nm, i) => {
     const who = byName[nm] || {};
     map[`${prefix}${i + 1}氏名`] = nm || '';
@@ -182,6 +183,27 @@ for (let i = 1; i <= 12; i++) map[`求める専門分野${i}`] = (R.wantedCatego
 map['開放カテゴリー'] = R.openCategory || '';
 map['審査中カテゴリー'] = R.reviewCategory || '';
 
+// 推薦のことば：画面と同じく、定例会中とアフター・定例会後の組に分ける（翌週以降の分は入れない）。
+// MTG_RECO で組を差し替えられる（名簿の並びの番号。d=定例会中・a=アフター・定例会後、x=空）
+//   例: MTG_RECO='d:0-1,d:2-3,a:4-x'   MTG_RECO='' … 組なし
+const personOf = (nm) => {
+  const who = byName[nm] || {};
+  return { name: nm || '', company: who.company || '', category: who.title ? `【${who.title}】` : '' };
+};
+let recoPairs;
+if (process.env.MTG_RECO !== undefined) {
+  const nameAt = (k) => (k === 'x' ? '' : (MEMBERS[parseInt(k, 10)] || {}).name || '');
+  recoPairs = process.env.MTG_RECO.split(',').filter((x) => x.trim()).map((x) => {
+    const mm = x.trim().match(/^([da]):(\w+)-(\w+)$/);
+    if (!mm) throw new Error('MTG_RECO の書き方が違います: ' + x);
+    return { giver: personOf(nameAt(mm[2])), receiver: personOf(nameAt(mm[3])), after: mm[1] === 'a' };
+  });
+} else {
+  recoPairs = (R.recommendations || []).filter((x) => x.when !== 'later').map((x) => ({
+    giver: personOf(x.giver.name || ''), receiver: personOf(x.receiver.name || ''), after: x.when === 'after' }));
+}
+recoPairs = recoPairs.filter((p) => p.giver.name || p.receiver.name);   // 2人とも空の組は渡さない（画面と同じ）
+
 // --- パーツを読み込んで書き換える ---
 const parts = {};
 (function walk(d) {
@@ -191,6 +213,23 @@ const parts = {};
     else parts[path.relative(DIR, p).replace(/\\/g, '/')] = fileBlob(p);
   }
 })(DIR);
+
+// 後半のテンプレートか（画面では、後半だけが推薦のことば・更新状況一覧を渡す）。
+// 前半にも「書記兼会計」の文字はある（役員紹介）ので、後半にしか無いページで見分ける。MTG_KIND=first/second で指定もできる
+const SECOND = process.env.MTG_KIND ? process.env.MTG_KIND === 'second'
+  : !!(F.findSlideWithText_(parts, 'REFERRAL PRESENTATION') || F.findSlideWithText_(parts, '更新を迎えるメンバー'));
+if (SECOND) {
+  console.log(`  推薦のことば: ${recoPairs.map((p) => `${p.after ? '[アフター]' : ''}${p.giver.name || '(空)'}→${p.receiver.name || '(空)'}`).join(' / ') || '(なし)'}`);
+  // 更新状況一覧：画面では名簿の更新期限日から出す一覧（「○○ ○○さん、…」）。ここでは名簿の並びから作る。
+  // 期限切れはわざと多くして、2行に収まるよう文字が小さくなるかを確かめる。MTG_RENEWAL=0 なら渡さない
+  const namesOf = (a, b) => MEMBERS.slice(a, b).map((m) => m.name + 'さん').join('、') || '該当者なし';
+  if (process.env.MTG_RENEWAL !== '0') {
+    map['更新90'] = namesOf(3, 7);
+    map['更新60'] = '';                       // 空 → 「該当者なし」
+    map['更新30'] = namesOf(10, 11);
+    map['更新超過'] = namesOf(12, 26);
+  }
+}
 
 const d = new Date(DATE.replace(/\//g, '-') + 'T00:00:00');
 const rules = F.meetingPatternRules_(R.meetingNo, d);
@@ -272,7 +311,7 @@ const info = F.editMeetingSlides_(parts, map, rules, {
   generalPolicy: R.generalPolicy,
   // 画面と同じく、並び（左・右）はそのまま渡す（名簿に無い方は空）
   mainPresenters: mainNames,
-  recommenders: recoNames,
+  recommendPairs: SECOND ? recoPairs : undefined,
   lottery: lotteryNames,
   music: music,
 });
@@ -286,6 +325,8 @@ if (info.audio && info.audio.message) console.log('  ' + info.audio.message);
 if (info.referral && info.referral.message) console.log('  ' + info.referral.message.split('\n').join('\n  '));
 if (info.weekly && info.weekly.message) console.log('  ' + info.weekly.message.split('\n').join('\n  '));
 if (info.guests && info.guests.message) console.log('  ' + info.guests.message);
+if (info.reco && info.reco.message) console.log('  ' + info.reco.message.split('\n').join('\n  '));
+if (info.renewal && info.renewal.message) console.log('  ' + info.renewal.message);
 
 // --- 書き出し ---
 const OUT = process.env.MTG_OUT || path.join(DIR, '..', 'out');
@@ -313,6 +354,9 @@ fs.writeFileSync(path.join(OUT, 'plan.json'), JSON.stringify({ plan, map, info: 
   guests: info.guests || null, guestPages: guestPages,
   // 写真の取り違いを確かめるため：お名前 → 代わりの写真のファイル、ページごとに入るはずのお2人
   photoOf: PHOTO_FILE,
-  twoPerson: { メインプレゼン: mainNames, 推薦のことば: recoNames, 抽選: lotteryNames },
+  twoPerson: { メインプレゼン: mainNames, 抽選: lotteryNames },
+  // 推薦のことば（組ごとのページ）と、書記兼会計による報告（更新状況一覧）
+  recoPairs: SECOND ? recoPairs : null, reco: info.reco || null,
+  renewal: info.renewal || null,
 } }, null, 1));
 console.log(`\n書き出し: ${Object.keys(plan).length} パーツ → ${OUT}`);
