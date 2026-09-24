@@ -92,6 +92,10 @@ function doGet(e) {
       var t = HtmlService.createTemplateFromFile('webapp_home');
       t.groups = WEBAPP_PAGES_;
       t.status = webAppStatus_();
+      // 画面は googleusercontent.com のiframeの中で動くため、
+      // href="?p=..." のような相対リンクだとiframeのURLを基準にしてしまい、
+      // まったく別の場所へ飛んで真っ白になる。必ず絶対URLを使う。
+      t.appUrl = getWebAppUrl_();
       return t.evaluate()
         .setTitle('Activeチャプター 名簿システム')
         .addMetaTag('viewport', 'width=device-width, initial-scale=1');
@@ -104,7 +108,8 @@ function doGet(e) {
     var bar = '<div style="position:sticky;top:0;z-index:9999;background:#16233f;color:#fff;'
             + 'padding:8px 14px;font-family:sans-serif;font-size:13px;display:flex;'
             + 'align-items:center;gap:12px;">'
-            + '<a href="' + escapeHtmlText_(home) + '" style="color:#ffd200;text-decoration:none;font-weight:bold;">'
+            + '<a href="' + escapeHtmlText_(home) + '" target="_top" '
+            + 'style="color:#ffd200;text-decoration:none;font-weight:bold;">'
             + '← メニューに戻る</a>'
             + '<span style="opacity:.85;">' + escapeHtmlText_(page.label) + '</span></div>';
     content = content.replace(/(<body[^>]*>)/i, '$1' + bar);

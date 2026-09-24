@@ -104,6 +104,31 @@ clasp deployments
 >                                    ~~~~~~~~~~~~~~~ これがデプロイID
 > ```
 
+### 前提：appsscript.json にウェブアプリの宣言が要る
+
+```json
+"webapp": {
+  "executeAs": "USER_DEPLOYING",
+  "access": "MYSELF"
+}
+```
+
+**この宣言が無いと、`clasp deploy` はウェブアプリではなくライブラリとしてデプロイし、
+元のURLでアクセスできなくなります。**
+画面から作ったデプロイはその場の設定を使いますが、claspからのデプロイは
+`appsscript.json` を見るためです。
+
+| 項目 | 値 | 意味 |
+|---|---|---|
+| `executeAs` | `USER_DEPLOYING` | 自分として実行（＝画面の「次のユーザーとして実行：自分」） |
+| | `USER_ACCESSING` | アクセスした人として実行 |
+| `access` | `MYSELF` | 自分だけ |
+| | `DOMAIN` | 同じ組織の人 |
+| | `ANYONE` | Googleアカウントがある人全員 |
+
+他のメンバーにも使ってもらう場合は `access` を変えて、`clasp push` してから
+デプロイし直してください。
+
 ### 2. 同じデプロイを更新する
 
 ```bash
@@ -123,6 +148,18 @@ clasp deploy -i <デプロイID> -d "更新内容のメモ"
 clasp push
 clasp deploy -i AKfycbxeZur-sqvWW_vr3i1A2VPJ8Bd4iJ9QQ_UOlQSrmIa4LSdDsNDogomVsMhxkNQ-TEzXqA -d "更新"
 ```
+
+### うまくいかないとき
+
+- **ライブラリになってしまう / URLで開けない**
+  `appsscript.json` の `webapp` の宣言が抜けています。上記を追加し、
+  `clasp push` してから `clasp deploy -i <ID>` をやり直してください。
+  同じデプロイIDのままウェブアプリに戻ります。
+- **メニューは出るがリンクの先が真っ白**
+  ウェブアプリの画面は `googleusercontent.com` のiframeの中で動くため、
+  `href="?p=..."` のような相対リンクはiframeのURLを基準にしてしまい、
+  別の場所へ飛びます。リンクは必ず絶対URL（`ScriptApp.getService().getUrl()`）で
+  組み立て、`target="_top"` を付けてください。
 
 ### 補足
 

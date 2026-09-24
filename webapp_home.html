@@ -47,11 +47,17 @@
         （このページのログイン： <?= status.user ?>）<? } ?>
       </div>
     <? } ?>
+    <? if (!appUrl) { ?>
+      <div class="note err">
+        <b>ウェブアプリのURLを取得できませんでした。</b><br>
+        下のリンクが正しく動きません。デプロイし直してからお試しください。
+      </div>
+    <? } ?>
     <? for (var g = 0; g < groups.length; g++) { ?>
       <h2><?= groups[g].group ?></h2>
       <div class="grid">
         <? var items = groups[g].items; for (var i = 0; i < items.length; i++) { ?>
-          <a class="card" href="?p=<?= items[i].key ?>">
+          <a class="card" target="_top" href="<?= appUrl ?>?p=<?= items[i].key ?>">
             <b><?= items[i].label ?></b>
             <span><?= items[i].desc ?></span>
           </a>
