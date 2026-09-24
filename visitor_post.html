@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html><head><base target="_top">
+<style>
+ body{font-family:sans-serif;padding:18px;font-size:13px;margin:0;}
+ h3{margin:0 0 4px;color:#0055ff;}
+ .hint{font-size:12px;color:#666;line-height:1.7;margin-bottom:12px;}
+ .warn{background:#fffbe8;border-left:4px solid #ffc107;padding:9px 12px;font-size:12px;border-radius:0 4px 4px 0;margin-bottom:12px;line-height:1.7;}
+ .sec{border:1px solid #ddd;border-radius:6px;padding:12px;margin-bottom:12px;}
+ .sec h4{margin:0 0 8px;font-size:13px;color:#0055ff;}
+ .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:6px;}
+ label{font-size:12px;color:#444;}
+ input[type=text],select{padding:5px;border:1px solid #ccc;border-radius:4px;font-size:13px;}
+ textarea{width:100%;box-sizing:border-box;padding:8px;border:1px solid #ccc;border-radius:4px;
+          font-size:13px;line-height:1.6;font-family:inherit;}
+ button{border:none;padding:9px 16px;border-radius:5px;cursor:pointer;font-weight:bold;font-size:13px;background:#0055ff;color:#fff;}
+ button.sub{background:#fff;color:#0055ff;border:1px solid #0055ff;padding:6px 12px;font-size:12px;}
+ table{border-collapse:collapse;width:100%;font-size:12px;}
+ th,td{border:1px solid #e3e3e3;padding:4px 6px;text-align:left;} th{background:#f7f9fc;}
+ td.grp{background:#eef3ff;font-weight:bold;color:#0055ff;}
+ tr.unknown td{background:#fff8e1;}
+ tr.skip td{color:#aaa;}
+ .raw{color:#888;font-size:11px;}
+ .sum{font-size:12px;color:#333;}
+ .note{font-size:12px;color:#c60;line-height:1.7;margin-top:6px;}
+ .wait{font-size:12px;color:#888;}
+ #msg{margin-top:8px;font-weight:bold;white-space:pre-wrap;}
+</style></head>
+<body>
+ <h3>ビジター情報の投稿文</h3>
+ <div class="hint">
+   「CSVから名簿・PDF作成」で作った<b>参加者シート</b>から、グループに投稿する文章を作ります。
+   入金済み／未入金は、<b>SpreadingのCSVを取り込んだときの状態</b>です。
+   そのあと入金があった方は、下の一覧で切り替えてください（CSVを取り込み直しても反映されます）。
+ </div>
+ <div class="warn" id="warn" style="display:none;"></div>
+
+ <div class="sec">
+   <div class="row">
+     <label>開催日：<select id="sheet" onchange="load()"></select></label>
+     <label>第<input type="text" id="no" size="4" oninput="render()">回</label>
+     <label>見出しの最後：<select id="word" onchange="render()">
+       <option value="確定">確定</option><option value="速報">速報</option><option value="">（なし）</option></select></label>
+   </div>
+   <div id="sum" class="sum"></div>
+ </div>
+
+ <div class="sec">
+   <h4>参加者（入金の状態・載せるかどうか）</h4>
+   <div id="list"><span class="wait">読み込んでいます…</span></div>
+   <div id="note" class="note"></div>
+ </div>
+
+ <div class="sec">
+   <h4>投稿文 <span style="font-size:11px;color:#888;font-weight:normal;">（このまま直してからコピーできます）</span></h4>
+   <textarea id="out" rows="20" oninput="edited=true"></textarea>
+   <div class="row" style="margin-top:8px;">
+     <button onclick="copyText()">📋 コピーする</button>
+     <button class="sub" onclick="render(true)">作り直す</button>
+     <span id="editNote" style="font-size:11px;color:#c60;"></span>
+   </div>
+ </div>
+
+ <div class="sec">
+   <h4>最後に付ける決まり文句</h4>
+   <textarea id="footer" rows="4" oninput="render()"></textarea>
+   <div class="row" style="margin-top:6px;">
+     <button class="sub" onclick="saveFooter()">この文面を保存</button>
+     <span style="font-size:11px;color:#888;">保存すると次回からこの文面が入ります（空にして保存すると初期の文面に戻ります）。</span>
+   </div>
+ </div>
+ <div id="msg"></div>
+
+<script>
+ var data=null, state={}, edited=false;
+ window.onload=function(){
+   google.script.run.withSuccessHandler(init).withFailureHandler(fail).getVisitorPostContext();
+ };
+ function esc(x){var d=document.createElement('span');d.textContent=x==null?'':x;return d.innerHTML;}
+ function show(t,ok){ var m=document.getElementById('msg'); m.innerText=t; m.style.color= ok===true?'green':(ok===false?'#d00':'#0055ff'); }
+ function fail(e){ show('エラー: '+((e&&e.message)?e.message:String(e)),false); }
+
+ function init(c){
+   if(!c.ok){ fail({message:c.message}); return; }
+   document.getElementById('footer').value=(c.settings&&c.settings.footer)||'';
+   var sel=document.getElementById('sheet');
+   if(!(c.sheets||[]).length){
+     sel.innerHTML='<option value="">参加者シートがありません</option>';
+     document.getElementById('list').innerHTML='<span class="wait">先に「1. CSVから名簿・PDF作成」で参加者シートを作ってください。</span>';
+     return;
+   }
+   sel.innerHTML=c.sheets.map(function(s){
+     return '<option value="'+esc(s.name)+'">'+esc(s.label)+'（'+esc(s.name)+'）</option>'; }).join('');
+   sel.value=c.defaultSheet||c.sheets[0].name;
+   load();
+ }
+
+ function load(){
+   var name=document.getElementById('sheet').value; if(!name) return;
+   document.getElementById('list').innerHTML='<span class="wait">読み込んでいます…</span>';
+   google.script.run.withSuccessHandler(function(d){
+     if(!d.ok){ document.getElementById('list').innerHTML=''; fail({message:d.message}); return; }
+     data=d; state={}; edited=false;
+     d.people.forEach(function(p,i){
+       p.key=i;
+       state[i] = p.cancelled ? 'skip' : (p.type==='sub' ? 'show' : (p.paid===true ? 'paid' : 'unpaid'));
+     });
+     document.getElementById('no').value=d.meetingNo||'';
+     renderList(); render(true); show('',null);
+   }).withFailureHandler(fail).getVisitorPostData(name);
+ }
+
+ // --- 一覧（入金の状態・載せるかどうか）---
+ var TYPES=[['visitor','ビジター'],['guest','ゲスト'],['sub','代理']];
+ function renderList(){
+   var h='<table><tr><th>No.</th><th>氏名</th><th>カテゴリー</th><th>招待者</th><th>Spreading</th><th>投稿文では</th></tr>';
+   TYPES.forEach(function(t){
+     var ps=data.people.filter(function(p){ return p.type===t[0]; });
+     h+='<tr><td class="grp" colspan="6">'+t[1]+'（'+ps.length+'名）</td></tr>';
+     ps.forEach(function(p){
+       var opts = t[0]==='sub' ? [['show','載せる'],['skip','載せない']]
+                               : [['paid','入金済み'],['unpaid','未入金'],['skip','載せない']];
+       var raw = p.cancelled ? ('キャンセル'+(p.payRaw?'／'+p.payRaw:'')) : (p.payRaw || (t[0]==='sub'?'':'（読めませんでした）'));
+       var cls = state[p.key]==='skip' ? 'skip' : ((t[0]!=='sub' && p.paid===null && !p.cancelled) ? 'unknown' : '');
+       h+='<tr class="'+cls+'"><td>'+esc(p.no)+'</td><td>'+esc(p.name)+'</td><td>'+esc(p.category)+'</td>'
+         +'<td>'+esc(p.inviter)+'</td><td class="raw">'+esc(raw)+'</td>'
+         +'<td><select onchange="setState('+p.key+',this.value)">'
+         + opts.map(function(o){ return '<option value="'+o[0]+'"'+(state[p.key]===o[0]?' selected':'')+'>'+o[1]+'</option>'; }).join('')
+         +'</select></td></tr>';
+     });
+   });
+   document.getElementById('list').innerHTML=h+'</table>';
+
+   var unknown=data.people.filter(function(p){ return p.type!=='sub' && p.paid===null && !p.cancelled; });
+   var cancelled=data.people.filter(function(p){ return p.cancelled; });
+   var n=[];
+   if(!data.hasPayColumn) n.push('この参加者シートには入金の状態の列がありません（古いシート、またはCSVに「支払いステータス」が無い）。'
+     +'全員を「未入金」にしているので、一覧で切り替えてください。');
+   else if(unknown.length) n.push('入金の状態が読めなかった方：'+unknown.map(function(p){return p.name;}).join('、')
+     +'（「未入金」にしています。確かめて切り替えてください）');
+   if(cancelled.length) n.push('Spreadingでキャンセルになっている方：'+cancelled.map(function(p){return p.name;}).join('、')
+     +'（投稿文には載せていません）');
+   document.getElementById('note').innerHTML=n.map(esc).join('<br>');
+ }
+ function setState(key,v){ state[key]=v; renderList(); render(); }
+
+ // --- 投稿文 ---
+ // 記号はいつもの投稿に合わせる（● 見出し／◾️ ビジター／◽️ ゲスト／• 1人ずつ）
+ var MARK_V='◾️', MARK_G='◽️', BULLET='•';
+ function personLine(p){
+   var s=BULLET+p.name;
+   if(p.kana) s+='（'+p.kana+'）';
+   if(p.category) s+='［'+p.category+'］';
+   if(p.type==='sub'){ if(p.inviter) s+=p.inviter+'さんの代理'; }
+   else if(p.inviter) s+='招待者 '+p.inviter;
+   return s;
+ }
+ // d … getVisitorPostData() の結果／opt … { no, word, footer, state: {key: 'paid'|'unpaid'|'show'|'skip'} }
+ function buildVisitorPost(d, opt){
+   var st=opt.state||{}, L=[];
+   var head='第'+(opt.no||'○')+'回('+(d.month||'○')+'/'+(d.day||'○')+')定例会ビジター情報';
+   if(opt.word) head+=' 　'+opt.word;
+   L.push(head,'');
+   function block(label, type, mark){
+     var ps=d.people.filter(function(p){ return p.type===type && st[p.key]!=='skip'; });
+     L.push('● '+label+'：'+ps.length+'名','');
+     if(!mark){ ps.forEach(function(p){ L.push(personLine(p)); }); if(ps.length) L.push(''); return; }
+     var paid=ps.filter(function(p){ return st[p.key]==='paid'; });
+     var un=ps.filter(function(p){ return st[p.key]!=='paid'; });
+     L.push(mark+'入金済み：'+paid.length+'名'); paid.forEach(function(p){ L.push(personLine(p)); }); L.push('');
+     L.push(mark+'未入金：'+un.length+'名'); un.forEach(function(p){ L.push(personLine(p)); }); L.push('');
+   }
+   block('ビジター','visitor',MARK_V);
+   block('ゲスト','guest',MARK_G);
+   block('代理','sub',null);
+   var foot=String(opt.footer||'').replace(/\s+$/,'');
+   if(foot) L.push('', foot);
+   return L.join('\n').replace(/\n+$/,'');
+ }
+
+ function counts(){
+   var c={}, live=data.people.filter(function(p){ return state[p.key]!=='skip'; });
+   TYPES.forEach(function(t){
+     var ps=live.filter(function(p){ return p.type===t[0]; });
+     c[t[0]]={ all:ps.length, paid:ps.filter(function(p){ return state[p.key]==='paid'; }).length };
+   });
+   return c;
+ }
+ function render(force){
+   if(!data) return;
+   var c=counts();
+   document.getElementById('sum').innerHTML='ビジター <b>'+c.visitor.all+'名</b>（入金済み '+c.visitor.paid+'・未入金 '+(c.visitor.all-c.visitor.paid)+'）'
+     +'　ゲスト <b>'+c.guest.all+'名</b>（入金済み '+c.guest.paid+'・未入金 '+(c.guest.all-c.guest.paid)+'）'
+     +'　代理 <b>'+c.sub.all+'名</b>';
+   var note=document.getElementById('editNote');
+   if(edited && force!==true){
+     note.innerText='手で直した内容があるため、自動では作り直していません。反映するには「作り直す」を押してください。';
+     return;
+   }
+   if(edited && force===true && !confirm('手で直した内容は消えます。作り直しますか？')) return;
+   document.getElementById('out').value=buildVisitorPost(data,{
+     no:document.getElementById('no').value.replace(/[^\d]/g,''),
+     word:document.getElementById('word').value,
+     footer:document.getElementById('footer').value,
+     state:state });
+   edited=false; note.innerText='';
+ }
+
+ // GASの画面は枠の中で動くため、新しいコピーの仕組み（navigator.clipboard）が
+ // 許可されないことがある。選択してコピーする昔ながらの方法を先に試す。
+ function copyText(){
+   var ta=document.getElementById('out');
+   ta.focus(); ta.select();
+   var ok=false;
+   try{ ok=document.execCommand('copy'); }catch(e){}
+   if(ok){ show('コピーしました。LINEなどに貼り付けてください。',true); return; }
+   var manual='自動でコピーできませんでした。文章を選んだ状態にしたので、Ctrl+C（Macは ⌘+C）でコピーしてください。';
+   if(navigator.clipboard && navigator.clipboard.writeText){
+     navigator.clipboard.writeText(ta.value).then(function(){ show('コピーしました。LINEなどに貼り付けてください。',true); },
+                                               function(){ show(manual,false); });
+     return;
+   }
+   show(manual,false);
+ }
+
+ function saveFooter(){
+   google.script.run.withSuccessHandler(function(r){
+     show(r.message, !!r.ok);
+     if(r.ok){ document.getElementById('footer').value=r.footer; render(); }
+   }).withFailureHandler(fail).saveVisitorPostFooter(document.getElementById('footer').value);
+ }
+</script>
+</body></html>

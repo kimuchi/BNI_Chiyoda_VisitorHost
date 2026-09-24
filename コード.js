@@ -2,7 +2,7 @@
 
 // 反映されたか確かめるための版。変更したら日付を更新する。
 // clasp push / デプロイが効いているかは、これを画面で見れば分かる。
-var SYSTEM_VERSION_ = '2026-09-24';
+var SYSTEM_VERSION_ = '2026-09-24b';
 
 function getSystemVersion() { return SYSTEM_VERSION_; }
 
@@ -21,6 +21,7 @@ function onOpen() {
     .addItem('2. メールの確認・一括送信', 'openEmailDialog')
     .addItem('3. ルーム・オリエン割り振り表', 'openAllocationDialog')
     .addItem('4. 作成済みPDFの確認', 'openPdfLinksDialog')
+    .addItem('5. ビジター情報の投稿文', 'openVisitorPostDialog')
     .addSeparator()
     .addSubMenu(ui.createMenu('📊 スライド・冊子をつくる')
       .addItem('ビジター・代理スライド作成', 'openVisitorSlideDialog')
@@ -270,8 +271,11 @@ function saveHolidays(holidaysArray) {
   if(data.length > 0) sheet.getRange(1, 1, data.length, 1).setValues(data);
   return "休会日を保存しました";
 }
+// 開催回の数え方の基準（2026/3/18 が第509回。休会日の週は数えない）
+var MEETING_BASE_DATE_ = "2026/03/18", MEETING_BASE_COUNT_ = 509;
+
 function getMeetingCandidates() {
-  var baseDate = new Date("2026/03/18 00:00:00"), baseCount = 509, holidays = getHolidays(), candidates = [], today = new Date(); today.setHours(0,0,0,0);
+  var baseDate = new Date(MEETING_BASE_DATE_ + " 00:00:00"), baseCount = MEETING_BASE_COUNT_, holidays = getHolidays(), candidates = [], today = new Date(); today.setHours(0,0,0,0);
   var currDate = new Date(baseDate.getTime()), currCount = baseCount, found = 0, limit = 0;
   while(found < 4 && limit < 100) {
     var dateStr = Utilities.formatDate(currDate, "Asia/Tokyo", "yyyy/MM/dd");
@@ -280,6 +284,19 @@ function getMeetingCandidates() {
     currDate.setDate(currDate.getDate() + 7); limit++;
   }
   return candidates;
+}
+
+// 指定の開催日が第何回か（getMeetingCandidates と同じ数え方）。休会日や基準より前なら 0
+function meetingCountOf_(dateObj) {
+  var target = new Date(dateObj.getTime()); target.setHours(0,0,0,0);
+  var cur = new Date(MEETING_BASE_DATE_ + " 00:00:00"), count = MEETING_BASE_COUNT_, holidays = getHolidays();
+  for (var i = 0; i < 2000 && cur.getTime() <= target.getTime(); i++) {
+    var ds = Utilities.formatDate(cur, "Asia/Tokyo", "yyyy/MM/dd");
+    if (cur.getTime() === target.getTime()) return holidays.indexOf(ds) === -1 ? count : 0;
+    if (holidays.indexOf(ds) === -1) count++;
+    cur.setDate(cur.getDate() + 7);
+  }
+  return 0;
 }
 
 function zenkakuToHankaku(str) { return str ? str.toString().replace(/[Ａ-Ｚａ-ｚ０-９]/g, function(ch) { return String.fromCharCode(ch.charCodeAt(0) - 0xFEE0); }).replace(/　/g, ' ') : ""; }

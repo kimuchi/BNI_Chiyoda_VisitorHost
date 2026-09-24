@@ -40,6 +40,8 @@ BNI_Chiyoda_VisitorHost/
 ├── allocation.html           # ルーム・オリエン割り振り表
 ├── email.html                # 案内メールの確認・一括送信
 ├── pdf_links.html            # 作成済みPDFの確認
+├── visitor_post_srv.js       # ビジター情報の投稿文（入金済み／未入金つきの一覧）
+│   └ visitor_post.html
 ├── archive.html              # シートの整理（アーカイブ）
 │
 │  ── スライド・冊子 ──
@@ -96,6 +98,8 @@ BNI_Chiyoda_VisitorHost/
     ├── check_meeting_output.js  # 前半・後半スライドを実際に生成してみる
     ├── mtg_zip_check.py      #   ↑の出力をpptxに固めて中身を確かめる
     ├── check_meeting_dialog.js  # 定例会スライドの画面を簡易DOMで動かしてみる
+    ├── check_visitor_post.js #   ビジター情報の投稿文（入金の読み方・文面・画面）
+    ├── lib_minidom.js        #   画面をNodeで動かすための簡易DOM
     ├── build_member_presen_template.py  # メンバープレゼンのテンプレートを作り直す
     ├── build_meeting_first_template.py  # 前半スライドの出力に差し込み口を入れる
     ├── build_meeting_second_template.py # 後半スライドの出力に差し込み口を入れる
