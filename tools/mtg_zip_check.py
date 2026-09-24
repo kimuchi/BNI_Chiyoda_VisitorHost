@@ -115,6 +115,38 @@ for a in info.get('audioList', []):
                 tgt = os.path.normpath(os.path.join('ppt/slides', mm.group(1))).replace('\\', '/')
                 ck(tgt in names, '%s の音楽の参照先がない: %s' % (n, tgt))
 
+# リファーラル発表：人数ぶんのページが、ひな形のあった場所に並んでいるか
+plan_rf = plan['info'].get('referralPlan') or []
+if plan_rf:
+    idx = [i for i, p in enumerate(order) if 'REFERRAL PRESENTATION' in text(p)[1]]
+    ck(len(idx) == len(plan_rf),
+       'リファーラル発表のページが %d 枚（%d 枚のはず）' % (len(idx), len(plan_rf)))
+    ck(idx == list(range(idx[0], idx[0] + len(idx))) if idx else False,
+       'リファーラル発表のページが連続していない')
+    for k, it in enumerate(plan_rf):
+        if k >= len(idx):
+            break
+        sx, t = text(order[idx[k]])
+        ck(it['name'] in t, '%d人目のページに「%s」が無い' % (k + 1, it['name']))
+        for line in it['companyLines']:
+            if line:
+                ck(line in t, '%d人目のページに会社名「%s」が無い' % (k + 1, line))
+        if it['nextName']:
+            ck(it['nextName'] in t, '%d人目のページにNEXT「%s」が無い' % (k + 1, it['nextName']))
+        adv = set(re.findall(r'advTm="(\d+)"', sx))
+        ck(adv == {str((it['seconds'] + 1) * 1000)},
+           '%d人目の自動送りが %s（%d のはず）' % (k + 1, adv or 'なし', (it['seconds'] + 1) * 1000))
+        ck('<p:cond delay="indefinite"/>' not in sx, '%d人目のカウントダウンがクリック待ち' % (k + 1))
+        ck(len(re.findall(r'<p:spTgt spid="\d+"/>', sx)) == it['seconds'],
+           '%d人目のカウントダウンの手順が %d 回（%d 回のはず）'
+           % (k + 1, len(re.findall(r'<p:spTgt spid="\d+"/>', sx)), it['seconds']))
+    # 最後の人だけ NEXT が消えていること
+    if idx:
+        _, tl = text(order[idx[-1]])
+        ck('NEXT' not in tl, '最後の方のページに NEXT が残っている')
+    print('  リファーラル発表: %d枚（%s → … → %s）'
+          % (len(idx), plan_rf[0]['name'], plan_rf[-1]['name']))
+
 # 一般規定・コアバリューは前半スライドだけにあるページ。
 # そのページが見つかったときにだけ「1枚だけ表示」になっていることを確かめる。
 if info.get('policy') and info['policy'].get('found', 0) >= 6:

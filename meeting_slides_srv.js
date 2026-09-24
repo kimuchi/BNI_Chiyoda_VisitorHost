@@ -4,7 +4,7 @@
 
 function openMeetingSlideDialog() {
   SpreadsheetApp.getUi().showModalDialog(
-    HtmlService.createHtmlOutputFromFile('slides_meeting').setWidth(900).setHeight(760),
+    HtmlService.createTemplateFromFile('slides_meeting').evaluate().setWidth(900).setHeight(760),
     '定例会スライドの自動更新');
 }
 
@@ -151,7 +151,8 @@ function getMeetingSlideContext() {
              memberCount: members.length,
              memberNames: members.map(function (m) { return m.name; }),
              members: members.map(function (m) {
-               return { name: m.name, company: m.company, title: m.title };
+               return { no: m.no, name: m.name, company: m.company, title: m.title,
+                        hasPhoto: !!findPhotoIdForName_(m.name) };
              }) };
   } catch (e) {
     console.error('[MEETING] ' + (e && e.stack ? e.stack : e));
@@ -496,9 +497,11 @@ function applyMeetingAudio_(parts, music) {
   return { message: msg, done: done.length };
 }
 
-// 画面用：登録してあるテンプレートに入っている音楽・動画を一覧する。
+// 画面用：登録してあるテンプレートの中を調べる。
+//   ・入っている音楽・動画（差し替えと音量の一覧に使う）
+//   ・リファーラル発表のひな形ページの枠の位置（会社名の収め方を画面で決めるのに使う）
 // テンプレートを開くので少し時間がかかる（ボタンを押したときだけ読む）。
-function getMeetingAudioList(kind) {
+function getMeetingTemplateInfo(kind) {
   try {
     if (!BIG_TEMPLATE_KINDS_[kind]) return { ok: false, message: 'スライドの種類が不正です。' };
     var parts = unzipToMap_(getBigTemplateFile_(kind).getBlob());
@@ -506,9 +509,13 @@ function getMeetingAudioList(kind) {
     for (var i = 0; i < list.length; i++) {
       list[i].slideNo = parseInt(String(list[i].slide).replace(/\D+/g, ''), 10);
     }
-    return { ok: true, list: list,
-             message: list.length ? (list.length + '件の音楽・動画が入っています。')
-                                  : 'このテンプレートに音楽は入っていません。' };
+    var boxes = null;
+    try { boxes = rfLayoutBoxes_(parts); } catch (e) {}
+    var msg = list.length ? (list.length + '件の音楽・動画が入っています。')
+                          : 'このテンプレートに音楽は入っていません。';
+    msg += boxes ? '／リファーラル発表のひな形が見つかりました。'
+                 : '／リファーラル発表のひな形は見つかりませんでした。';
+    return { ok: true, list: list, referralBoxes: boxes, message: msg };
   } catch (e) {
     console.error('[MEETING] ' + (e && e.stack ? e.stack : e));
     return { ok: false, message: '読み取りに失敗しました: ' + (e && e.message ? e.message : e) };
@@ -572,6 +579,8 @@ function removeMeetingMusicFile(id) {
 // 手元で同じ処理を走らせて確かめられる（tools/check_meeting_output.js）。
 function editMeetingSlides_(parts, map, rules, o) {
   var touched = 0, byPattern = 0, path;
+  // リファーラル発表のページを人数ぶんに増やす（先にページを増やしてから文字を差し替える）
+  var referral = o.referral && o.referral.length ? expandReferralSlides_(parts, o.referral) : null;
   // 写真の差し替えは {{ }} を消す前に行う（差し込み口の名前でページを探すため）
   var photoMsgs = [], TWO = [
     { prefix: 'メインプレゼン', names: o.mainPresenters },
@@ -598,7 +607,7 @@ function editMeetingSlides_(parts, map, rules, o) {
   var policy = o.generalPolicy ? applyGeneralPolicy_(parts, o.generalPolicy) : null;
   var audio = o.music ? applyMeetingAudio_(parts, o.music) : null;
   return { touched: touched, byPattern: byPattern, core: core, policy: policy,
-           photos: photos, audio: audio };
+           photos: photos, audio: audio, referral: referral };
 }
 
 // 定例会スライドを生成する。テンプレート内の {{キー}} を置換する方式。
@@ -635,6 +644,7 @@ function generateMeetingSlides(kind, values, meetingDateVal, opts) {
     if (info.policy) msg += '\n' + info.policy.message;
     if (info.photos && info.photos.message) msg += '\n' + info.photos.message;
     if (info.audio && info.audio.message) msg += '\n' + info.audio.message;
+    if (info.referral && info.referral.message) msg += '\n' + info.referral.message;
     return { ok: true, message: msg, url: r.saved.url, downloadUrl: r.saved.downloadUrl,
              fileName: outName, touched: info.touched, core: info.core, policy: info.policy,
              timing: r.timing };

@@ -49,7 +49,9 @@ BNI_Chiyoda_VisitorHost/
 │   └ member_presen.html
 ├── meeting_slides_srv.js     # 定例会スライドの自動更新
 │   └ slides_meeting.html
+├── referral_srv.js           # リファーラル発表のページを人数ぶんに増やす
 ├── routine_srv.js            # ルーティンチェックシートから、その日の決めごとを読む
+├── slides_layout.html        # 会社名・カテゴリーの組版（2つの画面で共通）
 ├── memberbook_srv.js         # メンバーブック（配布PDFの登録）
 │   ├ memberbook.html
 │   ├ memberbook_editor.html  #   冊子の編集画面
