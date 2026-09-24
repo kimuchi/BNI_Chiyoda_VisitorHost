@@ -125,4 +125,64 @@ function layoutCategory(rawTitle){
   if(lines.length<=1) return { lines:lines, fontPt:(pt!==BASE_PT?pt:0), tight:false };
   return { lines:mergeOrphan(lines), fontPt:pt, tight:true };
 }
+
+// ===== 枠の位置を一時的に切り替える =====
+// 1つの画面でメンバープレゼン（既定の枠）とリファーラル発表（別の枠）の両方を
+// 組むことがあるので、切り替えたら必ず元に戻す。
+var LAYOUT_DEFAULTS_ = { cd: COMPANY_DEFAULT, ct: COMPANY_TALL, top: CATEGORY_TOP,
+                         low: CATEGORY_TOP_LOW, w: CATEGORY_W_PT };
+function withLayoutBoxes(box, fn){
+  var saved = { cd: COMPANY_DEFAULT, ct: COMPANY_TALL, top: CATEGORY_TOP, low: CATEGORY_TOP_LOW, w: CATEGORY_W_PT };
+  try{
+    COMPANY_DEFAULT = LAYOUT_DEFAULTS_.cd; COMPANY_TALL = LAYOUT_DEFAULTS_.ct;
+    CATEGORY_TOP = LAYOUT_DEFAULTS_.top; CATEGORY_TOP_LOW = LAYOUT_DEFAULTS_.low; CATEGORY_W_PT = LAYOUT_DEFAULTS_.w;
+    if (box) setLayoutBoxes(box);
+    return fn();
+  } finally {
+    COMPANY_DEFAULT = saved.cd; COMPANY_TALL = saved.ct;
+    CATEGORY_TOP = saved.top; CATEGORY_TOP_LOW = saved.low; CATEGORY_W_PT = saved.w;
+  }
+}
+
+// ===== メンバープレゼンのページの並び =====
+// 業種区分ごとに「扉ページ（7名ずつ）→ 個人ページ」を並べる。
+// メンバープレゼンの画面と、定例会スライド（前半に差し込むとき）の両方から使う。
+//   mctx     … getMemberPresenContext() の結果
+//   startKey … 始まりの業種区分
+//   longName … 2分30秒プレゼンの方（いなければ空）
+//   auto     … カウントダウンが終わったら自動で次へ進むか
+var MP_LONG_SEC = 150, MP_NORMAL_SEC = 30;
+function memberPresenOrder(mctx, startKey){
+  var live = (mctx.blocks||[]).filter(function(b){ return b.count>0; }), at = 0;
+  for (var i=0;i<live.length;i++) if (live[i].gkey===startKey) { at=i; break; }
+  return live.slice(at).concat(live.slice(0,at));
+}
+function memberPresenItems(mctx, startKey, longName, auto){
+  return withLayoutBoxes(null, function(){
+    var items=[], rows=mctx.rowsPerPage||7;
+    memberPresenOrder(mctx, startKey).forEach(function(b){
+      var list=(mctx.members||[]).filter(function(m){ return m.blockKey===b.gkey; });
+      if(!list.length) return;
+      var pages=Math.ceil(list.length/rows);
+      for(var p=0;p<pages;p++){
+        items.push({ kind:'overview', block:b.block, photoName:list[0].name, nextName:list[0].name,
+          rows:list.slice(p*rows,(p+1)*rows).map(function(m){
+            return { title:normParens(m.title||''), name:m.name }; }) });
+      }
+      list.forEach(function(m,i){
+        var co=layoutCompany(m.company||''), ca=layoutCategory(m.title||'');
+        var isLong=(!!longName && m.name===longName), sec=isLong?MP_LONG_SEC:MP_NORMAL_SEC;
+        items.push({ kind:'individual', photoName:m.name, name:m.name,
+          // カウントダウンが終わってから1秒おいて次のスライドへ。
+          // 30秒のときはテンプレートのまま使えるので作り直さない（countdownSec は0）。
+          countdownSec:(isLong?MP_LONG_SEC:0), autoAdvanceMs:(auto?(sec+1)*1000:0),
+          companyLines:co.lines, companyPt:co.fontPt, companyGeom:co.geom, categoryTop:co.categoryTop,
+          companyTall:(co.geom!==COMPANY_DEFAULT),
+          categoryLines:ca.lines, categoryPt:ca.fontPt, categoryTight:ca.tight,
+          nextName:(list[i+1]?list[i+1].name:'') });
+      });
+    });
+    return items;
+  });
+}
 </script>

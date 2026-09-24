@@ -298,6 +298,20 @@ function mpIndividualSlide_(tplXml, tplRels, item, photo) {
 
 // 「スライドショーの設定 ＞ 保存済みのタイミングを使用」を有効にする。
 // プレゼンテーション全体の設定なので、スライドごとではなくここで1回だけ。
+function mpUseTimingsOnly_(map, ours) {
+  var mine = {}, i, p, n = 0;
+  for (i = 0; i < (ours || []).length; i++) mine[ours[i]] = true;
+  for (p in map) {
+    if (!/^ppt\/slides\/slide\d+\.xml$/.test(p) || mine[p]) continue;
+    var xml = xmlOf_(map, p);
+    if (!xml || xml.indexOf('advTm="') < 0) continue;
+    putXml_(map, p, mpNoAutoAdvance_(xml));
+    n++;
+  }
+  mpUseTimings_(map);
+  return n;
+}
+
 function mpUseTimings_(map) {
   var path = 'ppt/presProps.xml', xml = xmlOf_(map, path);
   if (!xml) return false;
@@ -313,6 +327,12 @@ function mpUseTimings_(map) {
   return false;
 }
 
+// 自動送りを外す（クリックで次へ進む）。
+// 「保存済みのタイミングを使用」がファイル全体で有効になっていても、このページは止まる。
+function mpNoAutoAdvance_(xml) {
+  return xml.replace(/\sadvTm="\d+"/g, '');
+}
+
 function mpAutoAdvance_(xml, ms) {
   // 開始条件（クリック待ち → すぐ開始）。dur="indefinite" には触らないこと。
   var before = xml;
@@ -325,6 +345,12 @@ function mpAutoAdvance_(xml, ms) {
     xml = xml.replace(/advTm="\d+"/g, 'advTm="' + ms + '"');
   } else if (/<p:transition\b/.test(xml)) {
     xml = xml.replace(/<p:transition\b([^>]*?)(\/?)>/g, '<p:transition$1 advTm="' + ms + '"$2>');
+  } else {
+    // 画面切り替えの無いページには、自動で進むだけの切り替えを足す。
+    // 置き場所は決まっていて、<p:clrMapOvr>（無ければ <p:cSld>）の直後、<p:timing> より前。
+    var tr = '<p:transition advTm="' + ms + '"/>';
+    if (xml.indexOf('</p:clrMapOvr>') >= 0) xml = xml.replace('</p:clrMapOvr>', '</p:clrMapOvr>' + tr);
+    else xml = xml.replace('</p:cSld>', '</p:cSld>' + tr);
   }
   return xml;
 }
@@ -382,7 +408,8 @@ function mpNumberBox_(model, id, text, color, sizePt) {
 }
 
 // 1秒ごとに1枚ずつ消していくアニメーション。テンプレートと同じ形で組み立てる。
-function mpCountdownTiming_(spids) {
+// clickStart が true なら、カウントダウンはクリックで始まる（元のテンプレートと同じ動き）。
+function mpCountdownTiming_(spids, clickStart) {
   var steps = '', id = 4, i;
   for (i = 0; i < spids.length; i++) {
     var a = id++, b = id++, c = id++;
@@ -403,7 +430,10 @@ function mpCountdownTiming_(spids) {
   return '<p:timing><p:tnLst><p:par><p:cTn id="1" dur="indefinite" restart="never" nodeType="tmRoot">'
        + '<p:childTnLst><p:seq concurrent="1" nextAc="seek">'
        + '<p:cTn id="2" dur="indefinite" nodeType="mainSeq"><p:childTnLst>'
-       + '<p:par><p:cTn id="3" fill="hold"><p:stCondLst><p:cond delay="0"/></p:stCondLst>'
+       + '<p:par><p:cTn id="3" fill="hold"><p:stCondLst>'
+       + (clickStart ? '<p:cond delay="indefinite"/><p:cond evt="onBegin" delay="0"><p:tn val="2"/></p:cond>'
+                     : '<p:cond delay="0"/>')
+       + '</p:stCondLst>'
        + '<p:childTnLst>' + steps + '</p:childTnLst></p:cTn></p:par>'
        + '</p:childTnLst></p:cTn>'
        + '<p:prevCondLst><p:cond evt="onPrev" delay="0"><p:tgtEl><p:sldTgt/></p:tgtEl></p:cond></p:prevCondLst>'
@@ -413,7 +443,7 @@ function mpCountdownTiming_(spids) {
 }
 
 // カウントダウンを指定の秒数で作り直す
-function mpSetCountdown_(xml, sec) {
+function mpSetCountdown_(xml, sec, clickStart) {
   var boxes = mpCountdownShapes_(xml);
   if (boxes.length < 5) {
     throw new Error('テンプレートにカウントダウンの数字が見つかりません（' + boxes.length + '枚）。');
@@ -458,7 +488,7 @@ function mpSetCountdown_(xml, sec) {
   for (var i = boxes.length - 1; i >= 0; i--) out = out.substring(0, boxes[i].start) + out.substring(boxes[i].end);
   out = out.substring(0, at) + shapes + out.substring(at);
 
-  var timing = mpCountdownTiming_(spids);
+  var timing = mpCountdownTiming_(spids, clickStart);
   if (/<p:timing>/.test(out)) out = out.replace(/<p:timing>[\s\S]*?<\/p:timing>/, timing);
   else out = out.replace('</p:sld>', timing + '</p:sld>');
   return out;

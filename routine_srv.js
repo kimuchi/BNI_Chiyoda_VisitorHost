@@ -244,6 +244,8 @@ function getRoutineInfo(dateStr) {
     var review = pick(['審査中カテゴリー', '審査中の申込み']);
     var policy = pick(['一般規定']);
     var reco = pick(['推薦の言葉', '推薦のことば']);
+    // アンバサダー・ディレクターなど、その日に来られるリージョンの方（「吉田ED・坂爪アンバサダー」など）
+    var region = pick(['リージョン参加者']);
     var cv = coreValueOf_(core.value);
     var pres = routineMemberName_(long.value);
     var mains = routineMainPresenters_(main.value);
@@ -259,7 +261,8 @@ function getRoutineInfo(dateStr) {
              openCategory: routineText_(open.value),
              reviewCategory: routineText_(review.value),
              generalPolicy: routinePolicyNo_(policy.value), generalPolicyRaw: policy.value,
-             recommendations: routineRecommendations_(reco.value), recommendationsRaw: reco.value };
+             recommendations: routineRecommendations_(reco.value), recommendationsRaw: reco.value,
+             regionGuestsRaw: routineText_(region.value) };
   } catch (e) {
     console.error('[ROUTINE] ' + (e && e.stack ? e.stack : e));
     return { ok: false, found: false, message: 'ルーティンチェックシートの読み取りに失敗しました: '

@@ -125,7 +125,14 @@ for (const d of ['2026/04/01', '2026/07/29', '2026/09/23', '2026/09/30']) {
   const rc = (r.recommendations || []).map((x) =>
     `${x.giver.name || x.giver.raw || '?'}→${x.receiver.name || x.receiver.raw || '?'}`).join(' / ');
   console.log(`     推薦のことば   : ${rc || '(なし)'}`);
+  console.log(`     リージョン参加者: ${r.regionGuestsRaw || '(空欄)'}`);
 }
+
+// --- リージョン参加者（アンバサダー・ディレクターのページの初期値に使う）---
+const region = dates.map((d) => [d, (sandbox.getRoutineInfo(d) || {}).regionGuestsRaw || ''])
+  .filter(([, v]) => v && !/^(なし|無し)/.test(v));
+console.log(`\nリージョン参加者の記載がある日: ${region.length} 件`);
+region.slice(0, 10).forEach(([d, v]) => console.log(`  ${d}  ${v}`));
 
 // --- 決まった日で中身を確かめる ---
 const samples = ['2026/04/01', '2026/04/08', '2026/09/30', '2026/10/07'];

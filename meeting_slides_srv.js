@@ -509,13 +509,16 @@ function getMeetingTemplateInfo(kind) {
     for (var i = 0; i < list.length; i++) {
       list[i].slideNo = parseInt(String(list[i].slide).replace(/\D+/g, ''), 10);
     }
-    var boxes = null;
-    try { boxes = rfLayoutBoxes_(parts); } catch (e) {}
+    var boxes = null, weeklyBoxes = null;
+    try { boxes = rfLayoutBoxes_(parts, RF_TITLE_); } catch (e) {}
+    try { weeklyBoxes = rfLayoutBoxes_(parts, WEEKLY_TITLE_); } catch (e) {}
     var msg = list.length ? (list.length + '件の音楽・動画が入っています。')
                           : 'このテンプレートに音楽は入っていません。';
-    msg += boxes ? '／リファーラル発表のひな形が見つかりました。'
-                 : '／リファーラル発表のひな形は見つかりませんでした。';
-    return { ok: true, list: list, referralBoxes: boxes, message: msg };
+    if (boxes) msg += '／リファーラル発表のひな形が見つかりました。';
+    if (weeklyBoxes) msg += '／ウィークリープレゼンのひな形が見つかりました'
+      + (weeklyBoxes.hasNext ? '。' : '（NEXT➡の枠はありません）。');
+    if (!boxes && !weeklyBoxes) msg += '／発表ページのひな形は見つかりませんでした。';
+    return { ok: true, list: list, referralBoxes: boxes, weeklyBoxes: weeklyBoxes, message: msg };
   } catch (e) {
     console.error('[MEETING] ' + (e && e.stack ? e.stack : e));
     return { ok: false, message: '読み取りに失敗しました: ' + (e && e.message ? e.message : e) };
@@ -575,12 +578,138 @@ function removeMeetingMusicFile(id) {
   }
 }
 
+// --- アンバサダー・ディレクターのページ ---
+// 前半テンプレートには、メンバー以外の方（アンバサダー・エグゼクティブディレクター）の
+// ウィークリープレゼンのページが非表示で入っている。来られる日だけ表示にする。
+// どのページかは番号ではなく中身で見分ける：「ウィークリープレゼンテーション」の見出しから
+// 「全員終わりましたか？」までの間にある、氏名入りの WEEKLY PRESENTATION のページ。
+// メンバープレゼンのページも同じ作りなので、差し込む前に探すこと。
+function weeklyGuestPages_(parts) {
+  var order = slideOrder_(parts), at = order.indexOf(weeklyAnchor_(parts));
+  if (at < 0) return [];
+  var sz = (xmlOf_(parts, 'ppt/presentation.xml') || '').match(/<p:sldSz\s+cx="(\d+)"/);
+  var slideW = sz ? parseInt(sz[1], 10) : 12192000, out = [];
+  for (var i = at + 1; i < order.length; i++) {
+    var xml = xmlOf_(parts, order[i]) || '', flat = slideText_(xml).replace(/[\s　]/g, '');
+    if (flat.indexOf('終わりましたか') >= 0) break;
+    if (flat.toUpperCase().indexOf('WEEKLYPRESENTATION') < 0) continue;
+    var sh = presenterShapes_(xml, slideW), name = shapeTextOf_(xml, sh.nameBox);
+    // 「苗字　名前」「〇〇　〇〇」のままの下書き（2分30秒のページなど）は人のページではない
+    if (!name || /苗字|名前|氏名/.test(name) || /^[〇○◯\s　]+$/.test(name)) continue;
+    out.push({ key: order[i].replace(/^.*\//, ''), path: order[i], name: name,
+               role: shapeTextOf_(xml, sh.category), hidden: /<p:sld\b[^>]*\sshow="0"/.test(xml) });
+  }
+  return out;
+}
+
+function shapeTextOf_(xml, id) {
+  var r = id ? findShapeRange_(xml, id) : null;
+  return r ? slideText_(xml.substring(r.start, r.end)).replace(/^[\s　]+|[\s　]+$/g, '') : '';
+}
+
+// names … 表示にする方の氏名（画面のチェック）。入っていない方のページは非表示にする。
+// auto  … メンバーのページと同じく、カウントダウンが終わったら自動で次へ進めるか
+function applyWeeklyGuests_(parts, names, auto) {
+  var pages = weeklyGuestPages_(parts), want = {}, shown = [], hidden = [], paths = [], i;
+  for (i = 0; i < names.length; i++) want[normName_(names[i])] = true;
+  for (i = 0; i < pages.length; i++) {
+    var g = pages[i], xml = xmlOf_(parts, g.path), on = !!want[normName_(g.name)];
+    xml = setSlideShow_(xml, on);
+    if (on) {
+      try {
+        xml = mpSetCountdown_(xml, WEEKLY_SECONDS_, !auto);
+        xml = auto ? mpAutoAdvance_(xml, (WEEKLY_SECONDS_ + 1) * 1000) : mpNoAutoAdvance_(xml);
+      } catch (e) {
+        console.warn('[MEETING] ' + g.name + 'さんのページのカウントダウンを作り直せませんでした: ' + e.message);
+      }
+      shown.push(g.name); paths.push(g.path);
+    } else {
+      hidden.push(g.name);
+    }
+    putXml_(parts, g.path, xml);
+  }
+  var msg = '';
+  if (!pages.length) {
+    if (names.length) msg = '前半スライドにアンバサダー・ディレクターのページが見つかりませんでした。';
+  } else if (shown.length) {
+    msg = shown.join('さん・') + 'さんのウィークリープレゼンを入れました（メンバーの後／'
+        + (auto ? '自動で次へ' : 'クリックで次へ') + '）。'
+        + (hidden.length ? hidden.join('さん・') + 'さんのページは非表示です。' : '');
+  } else {
+    msg = hidden.join('さん・') + 'さんのウィークリープレゼンのページは非表示です。';
+  }
+  return { message: msg, paths: paths, auto: auto && paths.length > 0, shown: shown, hidden: hidden };
+}
+
+// 画面用：前半テンプレートに入っているアンバサダー・ディレクターのページ。
+// 27MBほどのファイルを開くので、テンプレートが同じ間は結果を覚えておく。
+var WEEKLY_GUEST_CACHE_KEY_ = 'BNI_WEEKLY_GUESTS';
+function getWeeklyGuests() {
+  try {
+    var file = getBigTemplateFile_('meetingFirst');
+    var stamp = file.getId() + ':' + file.getLastUpdated().getTime();
+    var props = PropertiesService.getScriptProperties();
+    try {
+      var memo = JSON.parse(props.getProperty(WEEKLY_GUEST_CACHE_KEY_) || 'null');
+      if (memo && memo.stamp === stamp) return { ok: true, guests: memo.guests };
+    } catch (e) {}
+    var guests = weeklyGuestPages_(unzipToMap_(file.getBlob())).map(function (g) {
+      return { name: g.name, role: g.role, hidden: g.hidden };
+    });
+    props.setProperty(WEEKLY_GUEST_CACHE_KEY_, JSON.stringify({ stamp: stamp, guests: guests }));
+    return { ok: true, guests: guests };
+  } catch (e) {
+    console.error('[MEETING] ' + (e && e.stack ? e.stack : e));
+    return { ok: false, message: 'アンバサダー・ディレクターのページを調べられませんでした: '
+             + (e && e.message ? e.message : e), guests: [] };
+  }
+}
+
+// --- メンバープレゼンのページを前半に差し込む ---
+// メンバープレゼンのテンプレートで人数ぶんのページを作り、それを前半スライドの
+// 「ウィークリープレゼンテーション」の見出しページの直後へ差し込む。
+// アンバサダー・ディレクター・2分30秒の下書きのページは、差し込んだページの後ろに残る
+// （アンバサダー・ディレクターは applyWeeklyGuests_ で表示を切り替える）。
+function insertMemberPresen_(parts, items) {
+  var anchor = weeklyAnchor_(parts);
+  if (!anchor) return { message: '前半スライドに「ウィークリープレゼンテーション」の見出しページが見つかりませんでした。' };
+  var file = getBigTemplateFile_(MP_TEMPLATE_KIND_);
+  var src = unzipToMap_(file.getBlob());
+  var built = buildMemberPresenSlides_(src, items);
+  var sp = spliceSlides_(parts, src, slideOrder_(src), anchor);
+  var auto = false;
+  for (var i = 0; i < items.length; i++) if (items[i].autoAdvanceMs) auto = true;
+  var msg = 'メンバープレゼンのページを ' + sp.paths.length + '枚 差し込みました（'
+          + (auto ? '自動で次へ' : 'クリックで次へ') + '）。';
+  if (built.noPhoto && built.noPhoto.length) msg += '\n写真が見つからない方: ' + built.noPhoto.join('、');
+  if (sp.missingLayout.length) msg += '\n※ 同じ名前のレイアウトが無いページがありました（見た目が変わる可能性があります）。';
+  return { message: msg, paths: sp.paths, auto: auto };
+}
+
 // pptxの中身を書き換える本体。Driveの読み書きから切り離してあるので、
 // 手元で同じ処理を走らせて確かめられる（tools/check_meeting_output.js）。
 function editMeetingSlides_(parts, map, rules, o) {
   var touched = 0, byPattern = 0, path;
-  // リファーラル発表のページを人数ぶんに増やす（先にページを増やしてから文字を差し替える）
-  var referral = o.referral && o.referral.length ? expandReferralSlides_(parts, o.referral) : null;
+  // 発表のページを人数ぶんに増やす（先にページを増やしてから文字を差し替える）
+  //   前半 … ウィークリープレゼン（メンバープレゼンと同じ内容）
+  //   後半 … リファーラル発表
+  var referral = (o.referral && o.referral.length)
+    ? expandPresenterSlides_(parts, o.referral,
+        { title: RF_TITLE_, label: 'リファーラル発表', seconds: RF_SECONDS_ }) : null;
+  // 前半：アンバサダー・ディレクターのページの表示を切り替える（差し込みより先に。同じ作りのため）
+  var guests = o.weeklyGuests ? applyWeeklyGuests_(parts, o.weeklyGuests, o.weeklyAuto !== false) : null;
+  // 前半：メンバープレゼンのページを差し込む（メンバープレゼンのテンプレートから作る）
+  var weekly = (o.memberPresen && o.memberPresen.length) ? insertMemberPresen_(parts, o.memberPresen) : null;
+  // 自動で進むページを作ったときだけ「保存済みのタイミングを使用」を入れる。
+  // そのとき、自分で作っていないページに残っている自動送り（0.4秒など）は外す。
+  // 元は全部無視されていた値なので、外しても元の動きのまま。
+  var ours = [], anyAuto = false;
+  [referral, weekly, guests].forEach(function (r) {
+    if (!r) return;
+    if (r.auto) anyAuto = true;
+    ours = ours.concat(r.paths || []);
+  });
+  var stripped = anyAuto ? mpUseTimingsOnly_(parts, ours) : 0;
   // 写真の差し替えは {{ }} を消す前に行う（差し込み口の名前でページを探すため）
   var photoMsgs = [], TWO = [
     { prefix: 'メインプレゼン', names: o.mainPresenters },
@@ -607,13 +736,16 @@ function editMeetingSlides_(parts, map, rules, o) {
   var policy = o.generalPolicy ? applyGeneralPolicy_(parts, o.generalPolicy) : null;
   var audio = o.music ? applyMeetingAudio_(parts, o.music) : null;
   return { touched: touched, byPattern: byPattern, core: core, policy: policy,
-           photos: photos, audio: audio, referral: referral };
+           photos: photos, audio: audio, referral: referral, weekly: weekly, guests: guests };
 }
 
 // 定例会スライドを生成する。テンプレート内の {{キー}} を置換する方式。
 // pptxのままサーバー側で加工し、Driveへ保存してURLを返す。
 // opts: { patterns: true/false（差し込み口が無いページの第○回・日付も直す）,
-//         coreValue: 'Givers Gain' など }
+//         coreValue: 'Givers Gain' など,
+//         memberPresen: [...]（前半に差し込むメンバープレゼンのページ）,
+//         weeklyGuests: ['坂爪　達也', …]（表示にするアンバサダー・ディレクター。null なら触らない）,
+//         weeklyAuto: true/false（ウィークリープレゼンを自動で次へ進めるか） }
 function generateMeetingSlides(kind, values, meetingDateVal, opts) {
   try {
     if (!BIG_TEMPLATE_KINDS_[kind]) return { ok: false, message: 'スライドの種類が不正です。' };
@@ -645,6 +777,8 @@ function generateMeetingSlides(kind, values, meetingDateVal, opts) {
     if (info.photos && info.photos.message) msg += '\n' + info.photos.message;
     if (info.audio && info.audio.message) msg += '\n' + info.audio.message;
     if (info.referral && info.referral.message) msg += '\n' + info.referral.message;
+    if (info.weekly && info.weekly.message) msg += '\n' + info.weekly.message;
+    if (info.guests && info.guests.message) msg += '\n' + info.guests.message;
     return { ok: true, message: msg, url: r.saved.url, downloadUrl: r.saved.downloadUrl,
              fileName: outName, touched: info.touched, core: info.core, policy: info.policy,
              timing: r.timing };
