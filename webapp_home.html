@@ -22,6 +22,8 @@
     .note { border-radius: 7px; padding: 11px 14px; font-size: 12px;
             line-height: 1.7; margin-bottom: 4px; }
     .note.ok  { background: #eef6ee; border: 1px solid #c4dcc4; color: #2f5d2f; }
+    .ssLink { color: #1a6b1a; font-weight: bold; text-decoration: underline; }
+    .ssLink:hover { color: #0d4d0d; }
     .note.err { background: #fdecea; border: 1px solid #f3b6b0; color: #8a2119; }
     footer { text-align: center; font-size: 11px; color: #9aa3b2; padding: 20px; }
   </style>
@@ -35,7 +37,7 @@
   <main>
     <? if (status.ok) { ?>
       <div class="note ok">
-        接続先： <b><?= status.name ?></b><? if (status.user) { ?> ／ ログイン中： <?= status.user ?><? } ?><br>
+        接続先： <? if (status.url) { ?><a class="ssLink" href="<?= status.url ?>" target="_blank" rel="noopener"><?= status.name ?></a><? } else { ?><b><?= status.name ?></b><? } ?><? if (status.user) { ?> ／ ログイン中： <?= status.user ?><? } ?><br>
         このページは通常のタブで開いているため、ダイアログが真っ白になる環境でも使えます。ブックマークしておくと便利です。
       </div>
     <? } else { ?>
