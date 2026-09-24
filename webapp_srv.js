@@ -38,7 +38,8 @@ var WEBAPP_PAGES_ = [
     { key: 'dialog',            label: 'CSVから名簿・PDF作成',   desc: '参加者のCSVを取り込んで名簿とPDFを作ります' },
     { key: 'email',             label: 'メールの確認・一括送信', desc: '案内メールをまとめて送ります' },
     { key: 'allocation',        label: 'ルーム・オリエン割り振り表', desc: 'ビジターごとの担当を決めます' },
-    { key: 'pdf_links',         label: '作成済みPDFの確認',      desc: '作ったPDFをもう一度開きます' }
+    { key: 'pdf_links',         label: '作成済みPDFの確認',      desc: '作ったPDFをもう一度開きます' },
+    { key: 'visitor_post',      label: 'ビジター情報の投稿文',   desc: '入金状況つきの参加者一覧を作ってコピーします' }
   ]},
   { group: 'スライド・冊子', items: [
     { key: 'slides_visitor',    label: 'ビジター・代理スライド作成', desc: '紹介・プレゼンのPowerPointを作ります' },
