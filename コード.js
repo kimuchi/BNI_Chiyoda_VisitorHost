@@ -26,7 +26,8 @@ function onOpen() {
       .addItem('シートにボタンを置く', 'setupRouletteButton'))
     .addSubMenu(ui.createMenu('🗂 シートの整理')
       .addItem('アーカイブして整理する', 'openArchiveDialog')
-      .addItem('アーカイブを全て表示に戻す', 'menuUnarchiveAll'))
+      .addItem('アーカイブを全て表示に戻す', 'menuUnarchiveAll')
+      .addItem('シート名に年を付ける（0930→20260930）', 'renameSheetsToFullDate'))
     .addSubMenu(ui.createMenu('⚙️ 設定')
       .addItem('BNI 素材フォルダ', 'openAssetSettingsDialog')
       .addItem('メンバー名簿', 'openMemberMasterDialog')
@@ -397,7 +398,7 @@ function getExistingVisitorSheets() {
   var ss = getSS_(), sheets = ss.getSheets(), result = [];
   for (var i = 0; i < sheets.length; i++) {
     var name = sheets[i].getName();
-    if (/^\d{4}参加者$/.test(name)) result.push(name);
+    if (/^\d{8}参加者$/.test(name) || /^\d{4}参加者$/.test(name)) result.push(name);
   }
   result.sort(); result.reverse();
   return result;
@@ -406,7 +407,69 @@ function getExistingVisitorSheets() {
 // === シートの整理（アーカイブ）===
 // アーカイブ＝シートを非表示にする方式。データは消えず、再編集・PDF再作成・
 // 割り振りは getSheetByName で引き続き動作する（タブ表示だけ減る）。
-var ARCHIVE_SHEET_PATTERN_ = /^(\d{4})(参加者_印刷用|参加者|割り振り表|オリエン|オープンネット)$/;
+// 開催日は yyyyMMdd。移行前の MMdd（4桁）も読めるようにしてある。
+var ARCHIVE_SHEET_PATTERN_ = /^(\d{8}|\d{4})(参加者_印刷用|参加者|割り振り表|オリエン|オープンネット)$/;
+
+// === 旧いシート名（MMdd）を yyyyMMdd に直す ===
+// 手作業だと、1つの開催日につき最大5枚（参加者／参加者_印刷用／割り振り表／
+// オリエン／オープンネット）を直すことになり間違いやすいので、まとめて行う。
+// 既に8桁のシートには触らない。同じ名前が既にある場合は、そのシートを飛ばす。
+function renameSheetsToFullDate() {
+  var ui = SpreadsheetApp.getUi(), ss = getSS_();
+  var res = ui.prompt('シート名に年を付ける',
+    '「0930参加者」のような4桁のシート名を「20260930参加者」に直します。\n\n'
+    + '付ける年を4桁で入力してください（例: 2026）。',
+    ui.ButtonSet.OK_CANCEL);
+  if (res.getSelectedButton() !== ui.Button.OK) return;
+  var year = String(res.getResponseText() || '').trim();
+  if (!/^\d{4}$/.test(year)) { ui.alert('シート名に年を付ける', '年は4桁の数字で入力してください。', ui.ButtonSet.OK); return; }
+
+  var sheets = ss.getSheets(), plan = [], skip = [];
+  for (var i = 0; i < sheets.length; i++) {
+    var name = sheets[i].getName();
+    var m = name.match(/^(\d{4})(参加者_印刷用|参加者|割り振り表|オリエン|オープンネット)$/);
+    if (!m) continue;                                   // 8桁や対象外はそのまま
+    var next = year + m[1] + m[2];
+    if (ss.getSheetByName(next)) { skip.push(name + ' →（' + next + ' が既にあります）'); continue; }
+    plan.push({ sheet: sheets[i], from: name, to: next });
+  }
+  if (!plan.length) {
+    ui.alert('シート名に年を付ける',
+      (skip.length ? '直せるシートがありませんでした。\n\n' + skip.join('\n')
+                   : '4桁のシート名は見つかりませんでした。すべて年が付いています。'),
+      ui.ButtonSet.OK);
+    return;
+  }
+  var preview = plan.slice(0, 20).map(function (x) { return x.from + ' → ' + x.to; }).join('\n');
+  if (plan.length > 20) preview += '\n…ほか ' + (plan.length - 20) + ' 枚';
+  var ok = ui.alert('シート名に年を付ける',
+    plan.length + ' 枚のシート名を次のように変更します。よろしいですか？\n\n' + preview,
+    ui.ButtonSet.OK_CANCEL);
+  if (ok !== ui.Button.OK) return;
+
+  var props = PropertiesService.getScriptProperties(), done = 0;
+  for (var j = 0; j < plan.length; j++) {
+    plan[j].sheet.setName(plan[j].to);
+    // PDFの控え（同じファイルを上書きするための記録）も付け替える
+    var keys = [['VISITOR_PDF_ID_', ''], ['ALLOC_PDF_ID_', '割り振り']];
+    for (var k = 0; k < keys.length; k++) {
+      var oldKey = keys[k][0] + plan[j].from + keys[k][1];
+      var v = props.getProperty(oldKey);
+      if (v) { props.setProperty(keys[k][0] + plan[j].to + keys[k][1], v); props.deleteProperty(oldKey); }
+    }
+    done++;
+  }
+  ui.alert('シート名に年を付ける',
+    '✅ ' + done + ' 枚のシート名を変更しました。'
+    + (skip.length ? '\n\n次のシートは飛ばしました:\n' + skip.join('\n') : ''),
+    ui.ButtonSet.OK);
+}
+
+// 「20260930」→「2026/09/30」、移行前の「0930」→「09/30」
+function archiveLabel_(key) {
+  if (/^\d{8}$/.test(key)) return key.slice(0,4) + "/" + key.slice(4,6) + "/" + key.slice(6);
+  return key.slice(0,2) + "/" + key.slice(2);
+}
 
 function getSheetArchiveStatus() {
   var ss = getSS_(), sheets = ss.getSheets();
@@ -418,7 +481,7 @@ function getSheetArchiveStatus() {
     var m = name.match(ARCHIVE_SHEET_PATTERN_);
     if (!m) { if (!hidden) otherVisible++; continue; }
     var key = m[1];
-    if (!groups[key]) groups[key] = { key: key, label: key.slice(0,2) + "/" + key.slice(2), sheets: [], visibleCount: 0 };
+    if (!groups[key]) groups[key] = { key: key, label: archiveLabel_(key), sheets: [], visibleCount: 0 };
     groups[key].sheets.push({ name: name, hidden: hidden, kind: m[2] });
     if (!hidden) groups[key].visibleCount++;
   }
@@ -587,13 +650,7 @@ function loadSheetData(sheetName) {
 }
 
 function createFinalSheet(meetingDateVal, meetingDisplay, finalRows, originalHeader) {
-  var ss = getSS_(), dateObj = new Date(meetingDateVal), baseSheetName = Utilities.formatDate(dateObj, "Asia/Tokyo", "MMdd") + "参加者";
-  // シート名は MMdd しか持たないので、開催日を控えておく（年をまたぐと判別できないため）
-  try {
-    PropertiesService.getScriptProperties()
-      .setProperty('MEETING_DATE_' + Utilities.formatDate(dateObj, "Asia/Tokyo", "MMdd"),
-                   Utilities.formatDate(dateObj, "Asia/Tokyo", "yyyy/MM/dd"));
-  } catch (e) {}
+  var ss = getSS_(), dateObj = new Date(meetingDateVal), baseSheetName = sheetKeyOf_(dateObj) + "参加者";
   var dataSheetName = baseSheetName, dataSheet = ss.getSheetByName(dataSheetName);
   if (!dataSheet) dataSheet = ss.insertSheet(dataSheetName); else dataSheet.clear();
   var printSheetName = baseSheetName + "_印刷用", printSheet = ss.getSheetByName(printSheetName);
@@ -914,15 +971,31 @@ function saveTemplates(data) {
   return "テンプレートを保存しました。";
 }
 
-// 「MMdd参加者」シートの MMdd から開催日を求める。
-// 作成時に控えた値があればそれを使い、無ければ今日から前後6か月の範囲で年を推定する。
-function meetingDateFromMmdd_(mmdd) {
-  var saved = PropertiesService.getScriptProperties().getProperty('MEETING_DATE_' + mmdd);
+// === 開催日ごとのシート名 ===
+// 「20260930参加者」のように yyyyMMdd を頭に付ける。
+// 以前は MMdd（4桁）だったが、年が分からないため「3/25」が翌年と判定されて
+// 次回の候補に出てしまうなどの誤りが起きていた。
+// 既存シートの移行漏れに備えて、読み取りは4桁も受け付ける。
+function sheetKeyOf_(dateObj) {
+  return Utilities.formatDate(dateObj, "Asia/Tokyo", "yyyyMMdd");
+}
+
+// シート名の先頭（8桁または4桁）から開催日を求める
+function meetingDateFromKey_(key) {
+  key = String(key || '');
+  if (/^\d{8}$/.test(key)) {
+    var d = new Date(parseInt(key.substring(0, 4), 10),
+                     parseInt(key.substring(4, 6), 10) - 1,
+                     parseInt(key.substring(6, 8), 10));
+    return isNaN(d.getTime()) ? null : d;
+  }
+  if (!/^\d{4}$/.test(key)) return null;
+  // 以下は移行前の4桁名のための推定。作成時に控えた値があればそれを優先する。
+  var saved = PropertiesService.getScriptProperties().getProperty('MEETING_DATE_' + key);
   if (saved) { var sd = new Date(saved); if (!isNaN(sd.getTime())) return sd; }
-  var mm = parseInt(mmdd.substring(0, 2), 10), dd = parseInt(mmdd.substring(2, 4), 10);
+  var mm = parseInt(key.substring(0, 2), 10), dd = parseInt(key.substring(2, 4), 10);
   if (!mm || !dd) return null;
-  var today = new Date(), y = today.getFullYear();
-  var best = null;
+  var today = new Date(), y = today.getFullYear(), best = null;
   for (var k = -1; k <= 1; k++) {
     var cand = new Date(y + k, mm - 1, dd);
     if (!best || Math.abs(cand - today) < Math.abs(best - today)) best = cand;
@@ -930,17 +1003,19 @@ function meetingDateFromMmdd_(mmdd) {
   return best;
 }
 
-// メール画面の初期表示。対象にできる「MMdd参加者」シートと、既定の開催日を返す。
-// 既定は「今日以降でいちばん近い開催日」。無ければ直近の過去。
+// メール画面の初期表示。対象にできる参加者シートと、既定の開催日を返す。
+// 既定は「今日以降でいちばん近い開催日」＝次回の定例会。
+// 次回のシートがまだ無ければ、直近の最新（いちばん新しい過去）を選ぶ。
 function getEmailContext() {
   try {
-    var names = getExistingVisitorSheets();     // 新しい順（名前順）
+    var names = getExistingVisitorSheets();
     var list = [];
     for (var i = 0; i < names.length; i++) {
-      var mmdd = names[i].substring(0, 4), d = meetingDateFromMmdd_(mmdd);
-      list.push({ sheet: names[i], mmdd: mmdd,
+      var key = (names[i].match(/^(\d{8}|\d{4})/) || [''])[0];
+      var d = meetingDateFromKey_(key);
+      list.push({ sheet: names[i], key: key,
                   label: d ? (d.getFullYear() + '年' + (d.getMonth() + 1) + '月' + d.getDate() + '日')
-                           : (mmdd.slice(0, 2) + '/' + mmdd.slice(2)),
+                           : names[i],
                   time: d ? d.getTime() : 0 });
     }
     // 開催日の新しい順に並べる
@@ -977,8 +1052,8 @@ function generateEmailDrafts(sheetName) {
   // 日付は選ばれたシートから求める（以前は最後に作った開催日を使っていたため、
   // 過去の回を選んでも最新の日付が入ってしまっていた）
   var dateFormatted = "";
-  var m = sheet.getName().match(/^(\d{4})参加者$/);
-  var d = m ? meetingDateFromMmdd_(m[1]) : null;
+  var m = sheet.getName().match(/^(\d{8}|\d{4})参加者$/);
+  var d = m ? meetingDateFromKey_(m[1]) : null;
   if (!d) { var raw = props.getProperty('LATEST_MEETING_DATE') || ""; if (raw) d = new Date(raw); }
   if (d && !isNaN(d.getTime())) dateFormatted = d.getFullYear() + "年" + (d.getMonth() + 1) + "月" + d.getDate() + "日";
   
@@ -1053,8 +1128,13 @@ function saveMemberPriorities(priorities) {
 }
 
 function getAllocationData(meetingDateVal) {
-  var ss = getSS_(), dateObj = new Date(meetingDateVal), mmdd = Utilities.formatDate(dateObj, "Asia/Tokyo", "MMdd");
-  var sheetName = mmdd + "参加者", allocSheetName = mmdd + "割り振り表", dataSheet = ss.getSheetByName(sheetName);
+  var ss = getSS_(), dateObj = new Date(meetingDateVal), key = sheetKeyOf_(dateObj);
+  var sheetName = key + "参加者", allocSheetName = key + "割り振り表", dataSheet = ss.getSheetByName(sheetName);
+  // 移行前の4桁名しか無い場合はそちらを使う
+  if (!dataSheet) {
+    var old = Utilities.formatDate(dateObj, "Asia/Tokyo", "MMdd");
+    if (ss.getSheetByName(old + "参加者")) { key = old; sheetName = old + "参加者"; allocSheetName = old + "割り振り表"; dataSheet = ss.getSheetByName(sheetName); }
+  }
   if(!dataSheet) throw new Error("対象のデータシートがありません。");
   var data = dataSheet.getDataRange().getValues(), headerRowIdx = -1;
   for(var i=0; i<Math.min(10, data.length); i++){ if(data[i].indexOf("No.") !== -1) { headerRowIdx = i; break; } }
@@ -1149,7 +1229,7 @@ function getAllocationData(meetingDateVal) {
 }
 
 function saveAllocationSheet(meetingDateVal, displayVal, visitors, pool, facilAlloc, orienAlloc, roomAlloc, connectReq, mergedWith) {
-  var ss = getSS_(), dateObj = new Date(meetingDateVal), mmdd = Utilities.formatDate(dateObj, "Asia/Tokyo", "MMdd");
+  var ss = getSS_(), dateObj = new Date(meetingDateVal), mmdd = sheetKeyOf_(dateObj);
   var sheetName = mmdd + "割り振り表", sheet = ss.getSheetByName(sheetName);
   if (!sheet) sheet = ss.insertSheet(sheetName); else sheet.clear();
   

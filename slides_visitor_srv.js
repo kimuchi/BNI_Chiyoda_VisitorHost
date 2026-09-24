@@ -1,5 +1,5 @@
 // === ビジター・代理スライド作成（BNI SLIDE GENERATOR の移植）===
-// 入力は「MMdd参加者」シートそのもの。Excelのアップロードは不要。
+// 入力は「yyyyMMdd参加者」シートそのもの。Excelのアップロードは不要。
 // テンプレートpptxは ⚙️PowerPointテンプレートの登録 で Drive に常設したものを使う。
 
 // 紹介／代理紹介スライド（3人1枚）のシェイプID。※2人目の氏名は 27 ではなく 28
@@ -153,7 +153,7 @@ function generateAllIntroSlides(sheetName) {
     }
     if (!slides.length) return { ok: false, message: 'このシートにビジター・ゲスト・代理のいずれもいません。' };
 
-    var mmdd = (sheetName.match(/^\d{4}/) || [''])[0];
+    var mmdd = (sheetName.match(/^\d{8}|^\d{4}/) || [''])[0];
     var outName = mmdd + '_BNI_紹介スライド_一括.pptx';
     var blob = buildPptxFromTemplate_(baseBlob, slides, function (xml, item) {
       xml = setTextInShape_(xml, INTRO_TITLE_SHAPE_ID_, item.title);
@@ -185,7 +185,7 @@ function generateVisitorSlides(sheetName, type) {
     if (!parsed) return { ok: false, message: 'シート「' + sheetName + '」が見つかりません。' };
 
     var dataList, builder, outName, countLabel;
-    var mmdd = (sheetName.match(/^\d{4}/) || [''])[0];
+    var mmdd = (sheetName.match(/^\d{8}|^\d{4}/) || [''])[0];
     if (type === 'presen') {
       if (!parsed.visitors.length) return { ok: false, message: 'このシートにビジターがいません。' };
       dataList = parsed.visitors;
