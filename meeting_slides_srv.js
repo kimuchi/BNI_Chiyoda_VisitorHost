@@ -176,7 +176,7 @@ function generateMeetingSlides(kind, values, meetingDateVal) {
     var map = values || {};
     var mmdd = '';
     var d = parseDate_(meetingDateVal);
-    if (d) mmdd = Utilities.formatDate(d, 'Asia/Tokyo', 'MMdd');
+    if (d) mmdd = Utilities.formatDate(d, 'Asia/Tokyo', 'yyyyMMdd');
     var label = BIG_TEMPLATE_KINDS_[kind].label;
     var outName = (mmdd ? mmdd + '_' : '') + label + '.pptx';
 

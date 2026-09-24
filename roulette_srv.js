@@ -23,11 +23,11 @@ function rouletteKey_(name) {
 
 // 当日の参加者シートを探す。
 // 新しい開催日を作ると他の開催日は自動で非表示になるため、表示されているものを優先する。
-// 名前は MMDD なので年をまたぐと単純な並べ替えでは誤るが、表示中のものを先に見ることで避けている。
+// シート名は yyyyMMdd なので、名前順の並べ替えがそのまま日付順になる。
 function findCurrentVisitorSheet_() {
   var sheets = getSS_().getSheets(), visible = [], all = [];
   for (var i = 0; i < sheets.length; i++) {
-    if (!/^\d{4}参加者$/.test(sheets[i].getName())) continue;
+    if (!/^\d{8}参加者$/.test(sheets[i].getName()) && !/^\d{4}参加者$/.test(sheets[i].getName())) continue;
     all.push(sheets[i]);
     if (!sheets[i].isSheetHidden()) visible.push(sheets[i]);
   }
