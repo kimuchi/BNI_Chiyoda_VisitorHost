@@ -6,6 +6,7 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { textOf, tokenizeTwoPerson } = require('./lib_meeting_tokens.js');
 
 const DIR = process.argv[2];
 const sandbox = { console };
@@ -19,46 +20,17 @@ const slides = fs.readdirSync(slideDir).filter((n) => /^slide\d+\.xml$/.test(n))
   .sort((a, b) => parseInt(a.match(/\d+/)[0], 10) - parseInt(b.match(/\d+/)[0], 10));
 const read = (n) => fs.readFileSync(path.join(slideDir, n), 'utf8');
 const write = (n, x) => fs.writeFileSync(path.join(slideDir, n), x, 'utf8');
-// <a:t[^>]*> は <a:tbl> <a:tc> にも当たってしまうので、直後が記号であることを求める
-const textOf = (x) => (x.match(/<a:t(?=[\s>])[^>]*>([\s\S]*?)<\/a:t>/g) || [])
-  .map((t) => t.replace(/<\/?a:t(?=[\s>])[^>]*>/g, '')).join('');
+
 
 let report = [];
 
 // ===== メインプレゼンのページ =====
-// 写真の下に並ぶ文字箱を、左右2人ぶん・上から［氏名／会社名／カテゴリー］に割り当てる。
 const mpName = slides.find((n) => textOf(read(n)).indexOf('Main Presenter of the Week') >= 0);
 if (!mpName) throw new Error('「Main Presenter of the Week」のページが見つかりません');
 {
-  let xml = read(mpName);
-  const boxes = [];
-  for (const r of F.findTagRanges_(xml, 'p:sp')) {
-    const seg = xml.substring(r.start, r.end);
-    const id = (seg.match(/<p:cNvPr[^>]*\sid="(\d+)"/) || [])[1];
-    const off = seg.match(/<a:off\s+x="(-?\d+)"\s+y="(-?\d+)"\s*\/>/);
-    const ext = seg.match(/<a:ext\s+cx="(\d+)"\s+cy="(\d+)"\s*\/>/);
-    const t = textOf(seg).trim();
-    if (!id || !off || !ext || !t) continue;
-    const y = parseInt(off[2], 10);
-    if (y < 4400000) continue;                       // 写真より上（見出しなど）は対象外
-    boxes.push({ id, y, center: parseInt(off[1], 10) + parseInt(ext[1], 10) / 2, text: t });
-  }
-  const mid = 12192000 / 2;
-  const left = boxes.filter((b) => b.center < mid).sort((a, b) => a.y - b.y);
-  const right = boxes.filter((b) => b.center >= mid).sort((a, b) => a.y - b.y);
-  const FIELDS = ['氏名', '会社名', 'カテゴリー'];
-  [left, right].forEach((group, gi) => {
-    if (group.length !== 3) {
-      throw new Error(`メインプレゼン${gi + 1}人目の文字箱が${group.length}個です（3個のはず）: `
-        + JSON.stringify(group.map((b) => b.text)));
-    }
-    group.forEach((b, i) => {
-      const token = `{{メインプレゼン${gi + 1}${FIELDS[i]}}}`;
-      xml = F.setParagraphsInShape_(xml, b.id, [token]);
-      report.push(`  ${mpName} id=${b.id} 「${b.text}」 → ${token}`);
-    });
-  });
-  write(mpName, xml);
+  const r = tokenizeTwoPerson(F, read(mpName), 'メインプレゼン');
+  write(mpName, r.xml);
+  r.report.forEach((x) => report.push(`  ${mpName} ${x}`));
 }
 
 // ===== メンバーシップ委員会による報告のページ =====

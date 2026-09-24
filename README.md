@@ -92,7 +92,9 @@ BNI_Chiyoda_VisitorHost/
     ├── check_routine.js      #   ルーティンチェックシートの読み取り
     ├── check_meeting_output.js  # 前半スライドを実際に生成してみる
     ├── build_member_presen_template.py  # メンバープレゼンのテンプレートを作り直す
-    └── build_meeting_first_template.py  # 前半スライドの出力に差し込み口を入れる
+    ├── build_meeting_first_template.py  # 前半スライドの出力に差し込み口を入れる
+    ├── build_meeting_second_template.py # 後半スライドの出力に差し込み口を入れる
+    └── extract_slide_media.py #   スライドの音楽・動画を曲名で取り出す
 ```
 
 ## セットアップ

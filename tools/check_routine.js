@@ -32,7 +32,8 @@ function fakeSheet(name, grid) {
 const sheets = Object.keys(DATA).map((n) => fakeSheet(n, DATA[n]));
 
 // --- 名簿（検証用。実際の氏名は使わない）---
-const MEMBERS = ['谷村 大輔', '竹田 明日翔', '本田 圭吾', '竹中 直人', '桒原 美穂',
+const MEMBERS = ['谷村 大輔', '竹田 明日翔', '本田 圭吾', '竹中 公', '桒原 美穂',
+                 '山口 由美子', '田中 浩子', '藤田 礼恵', '金子 美緒', '細田 哲雄',
                  '野崎 佳子', '豊田 恵', '高瀬 舟', '平井 成美', '舩山 ちひろ', '杉浦 太郎',
                  '山本 登一郎', '金子 高志', '瞳 ゆり', '田中 秀一', '小池 美咲',
                  '木村 光範', '若林 勇貴', '石渕 裕介', '分銅 雅一', '三澤 浩三', '上野 誠']
@@ -111,7 +112,7 @@ if (unmatched.length) {
 
 // --- スライドに載せる項目 ---
 console.log('\nスライドに載せる項目:');
-for (const d of ['2026/09/09', '2026/09/16', '2026/09/23', '2026/09/30']) {
+for (const d of ['2026/04/01', '2026/07/29', '2026/09/23', '2026/09/30']) {
   const r = sandbox.getRoutineInfo(d);
   if (!r.found) { console.log(`  ${d} (該当なし)`); continue; }
   const mp = (r.mainPresenters || []).map((m) => `${m.raw}→${m.name || '(未一致)'}`).join(' / ');
@@ -121,6 +122,9 @@ for (const d of ['2026/09/09', '2026/09/16', '2026/09/23', '2026/09/30']) {
   console.log(`     求める専門分野 : ${JSON.stringify(r.wantedCategories)}`);
   console.log(`     開放カテゴリー : ${r.openCategory || '(空欄)'}`);
   console.log(`     審査中         : ${r.reviewCategory || '(空欄)'}`);
+  const rc = (r.recommendations || []).map((x) =>
+    `${x.giver.name || x.giver.raw || '?'}→${x.receiver.name || x.receiver.raw || '?'}`).join(' / ');
+  console.log(`     推薦のことば   : ${rc || '(なし)'}`);
 }
 
 // --- 決まった日で中身を確かめる ---

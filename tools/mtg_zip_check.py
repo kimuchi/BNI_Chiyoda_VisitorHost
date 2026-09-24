@@ -69,20 +69,25 @@ for i, p in enumerate(order, 1):
     (hidden if 'show="0"' in s[:400] else shown).append((i, t[:46]))
 
 m = plan['map']
-mp = [m.get('メインプレゼン1氏名', ''), m.get('メインプレゼン2氏名', '')]
-found = [p for p in order if 'Main Presenter' in text(p)[1]]
-ck(len(found) == 1, 'メインプレゼンのページが %d 枚' % len(found))
-if found:
+# 左右にお2人が並ぶページ（前半＝メインプレゼン／後半＝推薦のことば・抽選コーナー）
+for title, prefix in (('Main Presenter', 'メインプレゼン'),
+                      ('Words of Recommendation', '推薦のことば'),
+                      ('賞品の抽選', '抽選')):
+    found = [p for p in order if title in text(p)[1]]
+    if not found:
+        continue
+    ck(len(found) == 1, '%s のページが %d 枚' % (prefix, len(found)))
     _, t = text(found[0])
-    for v in [m.get('メインプレゼン1氏名'), m.get('メインプレゼン1会社名'), m.get('メインプレゼン1カテゴリー'),
-              m.get('メインプレゼン2氏名'), m.get('メインプレゼン2会社名'), m.get('メインプレゼン2カテゴリー')]:
-        if v:
-            ck(v in t, 'メインプレゼンのページに「%s」が無い' % v)
-    print('  メインプレゼンのページ: %s' % t[:110])
+    for n in (1, 2):
+        for f in ('氏名', '会社名', 'カテゴリー'):
+            v = m.get('%s%d%s' % (prefix, n, f))
+            if v:
+                ck(v in t, '%s のページに「%s」が無い' % (prefix, v))
+    print('  %s のページ: %s' % (prefix, t[:110]))
 
 ms = [p for p in order if 'チャプターが求める専門分野' in text(p)[1]]
-ck(len(ms) == 1, 'メンバーシップ委員会のページが %d 枚' % len(ms))
 if ms:
+    ck(len(ms) == 1, 'メンバーシップ委員会のページが %d 枚' % len(ms))
     _, t = text(ms[0])
     for i in range(1, 13):
         v = m.get('求める専門分野%d' % i)
@@ -95,9 +100,26 @@ if ms:
     print('  メンバーシップ委員会のページ: %s' % t[:130])
 
 info = plan['info']
-if info.get('policy'):
+# 音楽・動画（差し替えたものは中身も入れ替わっているか）
+for a in info.get('audioList', []):
+    n = a['slide'].replace('ppt/slides/', '')
+    rp = 'ppt/slides/_rels/%s.rels' % n
+    if rp in names:
+        r = z.read(rp).decode('utf-8')
+        for rid in (a['linkRid'], a.get('embedRid')):
+            if not rid:
+                continue
+            mm = re.search(r'Id="%s"[^>]*Target="([^"]+)"[^>]*/>' % rid, r)
+            ck(mm is not None, '%s の音楽の関係 %s が無い' % (n, rid))
+            if mm and 'External' not in mm.group(0):
+                tgt = os.path.normpath(os.path.join('ppt/slides', mm.group(1))).replace('\\', '/')
+                ck(tgt in names, '%s の音楽の参照先がない: %s' % (n, tgt))
+
+# 一般規定・コアバリューは前半スライドだけにあるページ。
+# そのページが見つかったときにだけ「1枚だけ表示」になっていることを確かめる。
+if info.get('policy') and info['policy'].get('found', 0) >= 6:
     ck(info['policy'].get('shown') == 1, '一般規定の表示が %s 枚' % info['policy'].get('shown'))
-if info.get('core'):
+if info.get('core') and info['core'].get('kinds', 0) >= 3:
     ck(info['core'].get('shown') == 1, 'コアバリューの表示が %s 枚' % info['core'].get('shown'))
 
 print('%s  %.1fMB  %d枚（表示 %d／非表示 %d）'

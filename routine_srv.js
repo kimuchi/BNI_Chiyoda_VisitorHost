@@ -171,6 +171,33 @@ function routineList_(v) {
   return out;
 }
 
+// 「25 推薦の言葉」の欄。スライドには「推薦する人 → 推薦される人」が1組だけ載る。
+//   定例会中
+//    ⓵藤田さん⇒金子さん、
+//    ②山口さん⇒山本さん
+//   アフター
+//    ①船木さん→金子さん
+// のように複数書かれることがあるので、矢印のある行を上から順に拾う。
+// 先頭が定例会中の①になる（アフターはその後ろに書かれるため）。
+function routineRecommendations_(v) {
+  var s = String(v == null ? '' : v);
+  if (routineIsBlank_(s.replace(/[\s　]/g, ''))) return [];
+  var lines = s.split(/[\r\n]+/), out = [];
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].replace(/[（(][^）)]*[）)]/g, '').trim();
+    if (!/[→⇒➡]/.test(line)) continue;
+    // 行頭の丸数字・記号を落とす
+    line = line.replace(/^[\s　]*[①②③④⑤⑥⑦⑧⑨⑩⓵⓶⓷⓸⓹\d]+[.\s　]*/, '');
+    var parts = line.split(/[→⇒➡]/);
+    if (parts.length < 2) continue;
+    var a = routineMemberName_(parts[0].replace(/[、,]$/, ''));
+    var b = routineMemberName_(parts[1].replace(/[、,]$/, ''));
+    if (!a.raw && !b.raw) continue;
+    out.push({ giver: a, receiver: b, raw: line });
+  }
+  return out;
+}
+
 // 開催日の欄を読む。画面から直接呼べる。
 function getRoutineInfo(dateStr) {
   try {
@@ -216,6 +243,7 @@ function getRoutineInfo(dateStr) {
     var open = pick(['開放カテゴリー']);
     var review = pick(['審査中カテゴリー', '審査中の申込み']);
     var policy = pick(['一般規定']);
+    var reco = pick(['推薦の言葉', '推薦のことば']);
     var cv = coreValueOf_(core.value);
     var pres = routineMemberName_(long.value);
     var mains = routineMainPresenters_(main.value);
@@ -230,7 +258,8 @@ function getRoutineInfo(dateStr) {
              wantedCategories: routineList_(wanted.value), wantedCategoriesRaw: wanted.value,
              openCategory: routineText_(open.value),
              reviewCategory: routineText_(review.value),
-             generalPolicy: routinePolicyNo_(policy.value), generalPolicyRaw: policy.value };
+             generalPolicy: routinePolicyNo_(policy.value), generalPolicyRaw: policy.value,
+             recommendations: routineRecommendations_(reco.value), recommendationsRaw: reco.value };
   } catch (e) {
     console.error('[ROUTINE] ' + (e && e.stack ? e.stack : e));
     return { ok: false, found: false, message: 'ルーティンチェックシートの読み取りに失敗しました: '
