@@ -61,6 +61,11 @@ const SERVER = {
   saveMeetingStats: () => ({ ok: true, message: '保存しました' }),
   setRenewalMark: () => ({ ok: true }),
   getSystemVersion: () => 'test',
+  // 役職のメンバー紹介（その開催日の期の役職・チーム。メンターコーディネーターは未登録）
+  getRoleIntroPreview: (d) => ({ ok: true, term: 24, label: '2026年10月〜2027年3月', holdersOk: true, holdersFrom: 24, teamsOk: true,
+    holders: [{ label: 'プレジデント', name: MEMBERS[0].name }, { label: 'バイスプレジデント', name: MEMBERS[1].name },
+              { label: 'メンターコーディネーター', name: '' }],
+    teams: [{ name: 'メンバーシップ委員会', count: 4 }, { name: 'ビジターホスト', count: 12 }] }),
   generateMeetingSlides: (...args) => { sent.push(args); return { ok: true, message: '作成しました', url: 'u' }; },
   // スピーカーローテーション（その日から5回ぶん。1回目はローテーションの予定＝ルーティンにメインプレゼンが無い日）
   getSpeakerRotationWeeks: (d) => ({ ok: true, header: 'メインプレゼンテーション（各４分45秒）', notes: ['注意書き'],
@@ -105,9 +110,20 @@ const shown = (el) => !!el && el.style.display !== 'none' && el.style.display !=
   ck(els.t_新メンバー.value === '該当者なし', '新メンバーが入っていない');
   ck(!els.t_更新90, '前半に更新状況一覧（後半のページ）が出ている');
 
+  // 役職のメンバー紹介：その期の方と、未登録の役職を出す。既定で入れる
+  ck(els.roleOn.checked === true && /24期（2026年10月〜2027年3月）/.test(els.rolePreview.innerHTML)
+     && els.rolePreview.innerHTML.includes('プレジデント：' + MEMBERS[0].name) && /未登録の役職：メンターコーディネーター/.test(els.rolePreview.innerHTML)
+     && /メンバーシップ委員会 4名、ビジターホスト 12名/.test(els.rolePreview.innerHTML),
+     '前半：役職のメンバー紹介の表示: ' + els.rolePreview.innerHTML.slice(0, 200));
   step('前半を作る', () => run('gen()'));
   let o = lastOpts();
   ck(lastCall()[0] === 'meetingFirst', '前半の作成で種類が ' + lastCall()[0]);
+  ck(o.roleIntro === true, '前半：役職のメンバー紹介を入れる指定が渡らない: ' + o.roleIntro);
+  step('前半：役職のメンバー紹介を外して作る', () => { els.roleOn.checked = false; run('gen()'); });
+  ck(lastOpts().roleIntro === false, '前半：役職のメンバー紹介を外しても渡る: ' + lastOpts().roleIntro);
+  els.roleOn.checked = true;
+  step('前半を作り直す', () => run('gen()'));
+  o = lastOpts();
   ck(JSON.stringify(o.weeklyGuests) === JSON.stringify(['大庭　まり子']), 'weeklyGuests が ' + JSON.stringify(o.weeklyGuests));
   ck(o.weeklyAuto === true, '自動送りが渡っていない');
   ck(pagesOf(o).length > 40, 'メンバーのページが ' + pagesOf(o).length);

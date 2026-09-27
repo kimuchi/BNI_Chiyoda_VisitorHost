@@ -67,7 +67,7 @@ const sb = Object.assign({}, gas.globals, {
 vm.createContext(sb);
 for (const f of ['ooxml.js', 'chapter_srv.js', 'assets.js', 'big_templates_srv.js', 'member_presen_srv.js', 'referral_srv.js',
                  'splice_srv.js', 'meeting_slides_srv.js', 'speaker_rotation_srv.js', 'slides_visitor_srv.js',
-                 'official_srv.js', 'official_build_srv.js']) {
+                 'role_input_srv.js', 'role_intro_srv.js', 'official_srv.js', 'official_build_srv.js']) {
   vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), sb, { filename: f });
 }
 sb.getBigTemplateFile_ = (kind) => ({ getBlob: () => mpBlob, getName: () => kind, getId: () => kind });
@@ -225,8 +225,22 @@ if (made.meetingFirst && made.memberPresen) {
   const rules = sb.meetingPatternRules_('42', new Date(2026, 9, 13));
   const weeks = [0, 1, 2, 3, 4].map((i) => ({ date: '2026/10/' + (13 + 7 * i), no: String(42 + i), md: '10/' + (13 + 7 * i), label: (i + 1) + '回目',
     source: 'rotation', people: [{ name: '見本　一郎', title: '税理士', collab: '' }, { name: '見本　花子', title: '社労士', collab: '' }] }));
+  // 役職のメンバー紹介：雛形のリーダーシップチーム・サポートチームのページに、差し込み口と写真の枠の名前が入っている
+  const tpl = sb.slideOrder_(parts).map((p) => sb.xmlOf_(parts, p));
+  ck(tpl.some((x) => sb.slideText_(x).includes('{{プレジデント氏名}}') && x.includes('name="{{プレジデント写真}}"')
+     && x.includes('name="{{書記兼会計写真}}"'))
+     && tpl.some((x) => ['{{メンバーシップ委員会1氏名}}', '{{エデュケーションコーディネーター氏名}}', '{{ビジターホストコーディネーター氏名}}',
+       '{{ビジターホストの一覧}}'].every((k) => sb.slideText_(x).includes(k))),
+     '前半の雛形：役職のメンバー紹介の差し込み口が無い');
+  // その期の役職・チーム（架空）。見本　三郎さんは写真が無い、メンターコーディネーターは空
+  const roleData = sb.riDataFrom_(24, '2026年10月〜2027年3月',
+    { president: '見本　一郎', vice: '見本　花子', secretary: '見本　三郎', ec: '見本　四郎', mentor: '', vhc: '見本　一郎' }, 24,
+    [{ key: 'membership', name: 'メンバーシップ委員会', members: [{ name: '見本　花子' }, { name: '見本　三郎' }] },
+     { key: 'role:vhc', name: 'ビジターホスト', members: [{ name: '見本　三郎' }, { name: '見本　四郎' }, { name: '見本　五郎' }] }],
+    true, members.concat([{ name: '見本　五郎', company: '', title: '' }]));
   const res = sb.editMeetingSlides_(parts, map, rules, { memberPresen: items, weeklyGuests: [], weeklyAuto: true,
-    mainPresenters: ['見本　一郎', '見本　花子'], speakerRotation: { weeks, header: 'メインプレゼンテーション', notes: ['注意書き'] } });
+    mainPresenters: ['見本　一郎', '見本　花子'], speakerRotation: { weeks, header: 'メインプレゼンテーション', notes: ['注意書き'] },
+    roleIntro: true, roleIntroData: roleData });
   const out = sb.zipFromMap_(parts, 'first.pptx');
   fs.writeFileSync(path.join(OUT, 'meetingFirst_out.pptx'), out._buf);
   integrity([path.join(OUT, 'meetingFirst_out.pptx')], '前半の出来上がり');
@@ -245,6 +259,16 @@ if (made.meetingFirst && made.memberPresen) {
   const done = all.findIndex((t) => t.includes('終わりましたか'));
   ck(head >= 0 && done === head + 1 + items.length && all[head + 1].includes('企業サポート') && all[head + 2].includes('見本　一郎'),
      '前半：メンバーのページの差し込み位置: 見出し ' + head + '・終わりましたか ' + done + '（' + items.length + '枚）');
+  const lead = ss.map((p) => f[p].toString('utf8')).find((x) => text(x).includes('リーダーシップチーム')) || '';
+  ck(['見本　一郎', '見本　花子', '見本　三郎'].every((n) => text(lead).includes(n))
+     && /name="\{\{プレジデント写真\}\}"/.test(lead) && /name="\{\{バイスプレジデント写真\}\}"/.test(lead)
+     && !/name="\{\{書記兼会計写真\}\}"/.test(lead) && /見本　三郎/.test(res.roles.message),
+     '前半：リーダーシップチーム（お名前・写真・写真の無い方の枠を外す）: ' + text(lead).slice(0, 80) + ' / ' + res.roles.message);
+  const sup = text(ss.map((p) => f[p].toString('utf8')).find((x) => text(x).includes('サポートチーム')) || '');
+  ck(sup.includes('見本　花子') && sup.includes('見本　四郎') && sup.includes('見本　一郎')
+     && sup.includes('見本　三郎、見本　四郎、見本　五郎') && !sup.includes('氏名'),
+     '前半：サポートチーム（メンバーシップ委員会・コーディネーター・ビジターホスト）: ' + sup.slice(0, 160));
+  ck(/24期/.test(res.roles.message) && res.roles.pages.length === 2, '前半：役職のメンバー紹介の知らせ: ' + res.roles.message);
   const rot = ss.map((p) => f[p].toString('utf8')).find((x) => text(x).includes('スピーカーローテーション')) || '';
   ck(/第42回/.test(text(rot)) && /見本　花子/.test(text(rot)) && (rot.match(/<a:tbl>/g) || []).length === 1, '前半：スピーカーローテーションの表: ' + text(rot).slice(0, 120));
   ck(!all.some((t) => t.includes('{{')), '前半：差し込み口が残っている: ' + all.filter((t) => t.includes('{{')).map((t) => t.slice(0, 40)));

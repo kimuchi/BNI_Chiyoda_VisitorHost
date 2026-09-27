@@ -115,7 +115,7 @@ sandbox.global = sandbox;
 vm.createContext(sandbox);
 // member_presen_srv.js は写真の取り込み（mpAddPhoto_）を使うため読み込む
 for (const f of ['ooxml.js', 'chapter_srv.js', 'routine_srv.js', 'member_presen_srv.js', 'referral_srv.js',
-                 'splice_srv.js', 'meeting_slides_srv.js', 'speaker_rotation_srv.js']) {
+                 'splice_srv.js', 'meeting_slides_srv.js', 'speaker_rotation_srv.js', 'role_input_srv.js', 'role_intro_srv.js']) {
   vm.runInContext(fs.readFileSync(path.join(__dirname, '..', f), 'utf8'), sandbox, { filename: f });
 }
 const F = sandbox;
@@ -341,6 +341,24 @@ if (!SECOND && process.env.MTG_ROTATION !== '0') {
   } else console.log('\nスピーカーローテーション: ' + rw.message);
 }
 
+// --- 役職のメンバー紹介（前半）：名簿の並びで、架空の担当者・チームを決める（MTG_ROLES=0 なら入れない）---
+//   13の役職 … 名簿の1〜13番目の方。ただしメンターコーディネーターは空（1人のページが非表示になる）
+//   メンバーシップ委員会 … 14〜16番目の3名（枠が4つあれば、4つ目は空になる）
+//   ビジターホスト … 17〜31番目の15名
+//   1番目の方にだけ、ふりがな（架空）を付ける → ローマ字
+const ROLE_KEYS = ['president', 'vice', 'secretary', 'vhc', 'mentor', 'ec', 'web', 'support', 'training', 'event', 'bcp', 'spreading', 'gbc'];
+let roleIntroData = null;
+if (!SECOND && process.env.MTG_ROLES !== '0') {
+  const holders = {};
+  ROLE_KEYS.forEach((k, i) => { holders[k] = k === 'mentor' ? '' : ((MEMBERS[i] || {}).name || ''); });
+  const teams = [
+    { key: 'membership', name: 'メンバーシップ委員会', members: MEMBERS.slice(13, 16).map((m) => ({ name: m.name })) },
+    { key: 'role:vhc', name: 'ビジターホスト', members: MEMBERS.slice(16, 31).map((m) => ({ name: m.name })) },
+  ];
+  const withKana = MEMBERS.map((m, i) => (i === 0 ? Object.assign({ kana: 'みほん いちろう' }, m) : m));
+  roleIntroData = F.riDataFrom_(24, '2026年10月〜2027年3月', holders, 24, teams, true, withKana);
+}
+
 const info = F.editMeetingSlides_(parts, map, rules, {
   memberPresen: memberPresen,
   weeklyGuests: weeklyGuests,
@@ -354,6 +372,8 @@ const info = F.editMeetingSlides_(parts, map, rules, {
   speakerRotation: speakerRotation,
   lottery: lotteryNames,
   music: music,
+  roleIntro: !!roleIntroData,
+  roleIntroData: roleIntroData,
 });
 
 console.log('\n書き換え結果:');
@@ -368,6 +388,58 @@ if (info.guests && info.guests.message) console.log('  ' + info.guests.message);
 if (info.reco && info.reco.message) console.log('  ' + info.reco.message.split('\n').join('\n  '));
 if (info.renewal && info.renewal.message) console.log('  ' + info.renewal.message);
 if (info.rotation && info.rotation.message) console.log('  ' + info.rotation.message);
+if (info.roles && info.roles.message) console.log('  ' + info.roles.message.split('\n').join('\n  '));
+
+// --- 役職のメンバー紹介の中身を確かめる ---
+// 入れたお名前がそのページにあること・写真の枠の写真がその方のものであること・写真の無い方の枠は外したこと・
+// 差し込み口が残っていないこと・空の役職の1人のページが非表示になったこと・ローマ字
+let roleChecks = 0;
+const roleFails = [];
+if (roleIntroData && info.roles) {
+  const rck = (ok, msg) => { roleChecks++; if (!ok) roleFails.push(msg); };
+  const txt = (p) => F.slideText_(F.xmlOf_(parts, p) || '');
+  const filled = info.roles.filled || [];
+  rck(filled.length > 0, '役職のメンバー紹介：入れたところが無い');
+  filled.forEach((f) => {
+    if (f.name) rck(txt(f.path).includes(f.name), `${f.path}：${f.base}に「${f.name}」が無い`);
+  });
+  const vals = F.riValues_(roleIntroData);
+  const noPhoto = new Set(MEMBERS.filter((m, i) => NO_PHOTO.has(i)).map((m) => m.name));
+  for (const p of F.slideOrder_(parts)) {
+    const x = F.xmlOf_(parts, p) || '', t = F.slideText_(x);
+    const left = [...t.matchAll(/\{\{([^{}]{1,60})\}\}/g)].map((m) => m[1]).filter((k) => k in vals.map);
+    rck(!left.length, p + '：役職の差し込み口が残っている: ' + left.join('、'));
+    const rels = F.xmlOf_(parts, p.replace(/^(ppt\/slides\/)(slide\d+\.xml)$/, '$1_rels/$2.rels')) || '';
+    for (const m of x.matchAll(/<p:pic>[\s\S]*?<\/p:pic>/g)) {
+      const nm = (m[0].match(/<p:cNvPr\b[^>]*\sname="\{\{([^"{}]+)写真\}\}"/) || [])[1];
+      if (!nm) continue;
+      const who = vals.persons[nm];
+      rck(!!who && !noPhoto.has(who.name), `${p}：${nm}の写真の枠が残っている（入る方がいない・写真が無い）`);
+      if (!who) continue;
+      const rid = (m[0].match(/r:embed="(rId\d+)"/) || [])[1];
+      const rel = (rels.match(new RegExp('<Relationship\\b[^>]*\\bId="' + rid + '"[^>]*>')) || [''])[0];
+      const tgt = ((rel.match(/Target="([^"]+)"/) || [])[1] || '').replace('../', 'ppt/');
+      const blob = parts[tgt];
+      rck(blob && blob._src === PHOTO_FILE[who.name], `${p}：${nm}（${who.name}）の写真が違う: ${tgt}`);
+    }
+  }
+  // 写真の無い方（MTG_NOPHOTO）は、写真の枠を外して知らせる
+  filled.filter((f) => noPhoto.has(f.name) && vals.persons[f.base]).forEach((f) => {
+    rck(info.roles.noPhoto.includes(f.name) || !(F.xmlOf_(parts, f.path) || '').includes('{{' + f.base + '写真}}'),
+        `${f.name}さん（写真なし）が知らせに無い`);
+  });
+  // 担当者の居ない役職（メンターコーディネーター）の1人のページは非表示
+  if (info.roles.hidden.includes('メンターコーディネーター')) {
+    rck(F.slideOrder_(parts).some((p) => /メンターコーディネーター/.test(txt(p)) && /<p:sld\b[^>]*\sshow="0"/.test(F.xmlOf_(parts, p))),
+        'メンターコーディネーターのページが非表示になっていない');
+  }
+  // ローマ字（1人目の方：みほん いちろう → ICHIRO MIHON）。英語の役職名のある1人のページがある雛形だけ
+  rck(roleIntroData.roles.president.romaji === 'ICHIRO MIHON', 'ローマ字: ' + roleIntroData.roles.president.romaji);
+  const presSingle = filled.find((f) => f.base === 'プレジデント' && /President/.test(txt(f.path)));
+  if (presSingle) rck(/ICHIRO MIHON/.test(txt(presSingle.path)), 'プレジデントの1人のページにローマ字が入っていない');
+  console.log(`  役職のメンバー紹介の中身: 検査 ${roleChecks} 件` + (roleFails.length ? `　NG ${roleFails.length} 件` : '　OK'));
+  roleFails.slice(0, 20).forEach((f) => console.log('    NG ' + f));
+}
 
 // --- 書き出し ---
 const OUT = process.env.MTG_OUT || path.join(DIR, '..', 'out');
@@ -401,5 +473,8 @@ fs.writeFileSync(path.join(OUT, 'plan.json'), JSON.stringify({ plan, map, info: 
   renewal: info.renewal || null,
   // スピーカーローテーションの表（前半）
   rotation: info.rotation || null, rotationPlan: speakerRotation,
+  // 役職のメンバー紹介（前半）
+  roles: info.roles ? { message: info.roles.message, hidden: info.roles.hidden, filled: info.roles.filled } : null,
 } }, null, 1));
 console.log(`\n書き出し: ${Object.keys(plan).length} パーツ → ${OUT}`);
+if (roleFails.length) process.exitCode = 1;

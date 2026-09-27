@@ -65,6 +65,11 @@ const TEAMS_24 = [
   { key: 'role:event', name: 'イベント委員＆1to1促進委員', members: [{ name: N(25) }] },
   { key: 'role:training', name: 'トレーニング促進委員', members: [{ name: N(20) }] },
 ];
+// 23期のチーム（期が替わると顔ぶれは引き継がないので、期ごとに登録する）
+const TEAMS_23 = [
+  { key: 'membership', name: 'メンバーシップ委員会', members: [{ name: N(19) }, { name: N(22) }, { name: N(29) }, { name: N(30) }] },
+  { key: 'role:vhc', name: 'ビジターホスト', members: [N(12), N(14), N(21), N(23), N(24), N(26), N(27), N(28)].map((name) => ({ name })) },
+];
 
 // ===================== ルーティンチェックシート（項目の並びだけ使う）=====================
 function scrubRoutine(src) {
@@ -133,8 +138,9 @@ vm.createContext(WEB);
 vm.runInContext(fs.readFileSync(path.join(ROOT, 'webapp_srv.js'), 'utf8'), WEB, { filename: 'webapp_srv.js' });
 const WEBAPP_PAGES = vm.runInContext('WEBAPP_PAGES_', WEB);
 
-// 担当者・チーム・ローテーション（架空）
-F.saveRoleHolders(HOLDERS_23, 23, NEXT);
+// 担当者・チーム・ローテーション（架空）。役職のメンバー紹介（定例会スライド（前半）の画面）も読む
+vm.runInContext(fs.readFileSync(path.join(ROOT, 'role_intro_srv.js'), 'utf8'), S.sandbox, { filename: 'role_intro_srv.js' });
+F.saveRoleHolders(HOLDERS_23, 23, NEXT, TEAMS_23);
 F.saveRoleHolders(HOLDERS_24, 24, '2026/10/07', TEAMS_24);
 S.props.BNI_SPEAKER_ROTATION = JSON.stringify({
   order: FAKE_MEMBERS.map((m) => m.name), excluded: [N(0), N(1), N(2)], anchor: { date: '2026/10/07', pointer: 5 },
@@ -270,6 +276,7 @@ const answersSlides = {
   getRoutineInfo: { any: F.getRoutineInfo(NEXT) },
   computeRenewalLists: { any: F.computeRenewalLists(NEXT) },
   getSpeakerRotationWeeks: { any: F.getSpeakerRotationWeeks(NEXT) },
+  getRoleIntroPreview: { any: F.getRoleIntroPreview(NEXT) },
   getMeetingTemplateInfo: { any: { ok: true, message: '',
     list: [{ slide: 'ppt/slides/slide1.xml', slideNo: 1, spid: '3', name: '入場曲', volume: 25, video: false, key: 'slide1.xml#3' },
            { slide: 'ppt/slides/slide21.xml', slideNo: 21, spid: '3', name: '抽選BGM', volume: 60, video: false, key: 'slide21.xml#3' }],
@@ -393,6 +400,8 @@ const SHOTS = [
   { name: 'visitor_post', file: () => writePage('visitor_post', readHtml('visitor_post.html'), answersWeekly), width: 960, height: 820, wait: 900 },
   // 定例会スライド
   { name: 'slides_first', file: () => writePage('first', evalTemplate('slides_meeting_first.html', {}), answersSlides), width: 1000, height: 900, wait: 1200 },
+  { name: 'slides_first_roles', file: () => writePage('first_roles', evalTemplate('slides_meeting_first.html', {}), answersSlides), width: 1000, height: 1400,
+    wait: 1200, element: '#roleBox' },
   { name: 'slides_second', file: () => writePage('second', evalTemplate('slides_meeting_second.html', {}), answersSlides), width: 1000, height: 900, wait: 1200 },
   // トークスクリプト（中身を確かめたところ・ひな形の編集）
   { name: 'talk_script', file: () => writePage('talk_script', readHtml('talk_script.html'), answersTalk), width: 1100, height: 900,

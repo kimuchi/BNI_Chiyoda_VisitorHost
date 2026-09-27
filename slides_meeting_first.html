@@ -61,6 +61,14 @@
      <div style="font-size:11px;color:#888;">並び順は「役職ごとの入力」＞ 書記兼会計 ＞ スピーカーローテーションの管理 で直せます。
        1回目は上のメインプレゼン①②のお2人です。</div>
    </div>
+   <div class="mk" id="roleBox">
+     <h5>役職のメンバー紹介（リーダーシップチーム・コーディネーター・チームのページ）</h5>
+     <label><input type="checkbox" id="roleOn" checked>
+       お名前と写真を、<b>この開催日の期の「役職・チーム（半期ごと）」</b>の方にする</label>
+     <div id="rolePreview" style="font-size:11.5px;margin-top:4px;line-height:1.7;"></div>
+     <div style="font-size:11px;color:#888;">役職・チームは「役職ごとの入力」の一覧のいちばん下で登録します。
+       お名前が替わった枠だけ、お名前・写真・会社名・カテゴリーを入れ替えます（同じ方の枠はテンプレートのまま）。</div>
+   </div>
  </div>
 
  <div class="sec">
@@ -144,6 +152,7 @@
    // 前半テンプレート（アンバサダー・ディレクターのページ）と、メンバーのページの材料を読む
    if(tplOk) loadGuests(); else document.getElementById('gsList').innerHTML='<span style="color:#888;">前半テンプレートを登録すると選べます。</span>';
    loadRotation();
+   loadRoles();
    toggleMP();
    refreshGen();
  }
@@ -195,6 +204,7 @@
    loadFrom('routine','ルーティンチェックシート','getRoutineInfo',[d],applyRoutine);
    mpForDate();
    loadRotation();
+   loadRoles();
    loadFrom('lists','新メンバー・更新メンバー','computeRenewalLists',[d],function(L){
      if(L.ok){ applyLists(L); show('開催日にあわせて更新しました。',true); }
      else show(L.message,false);
@@ -373,6 +383,28 @@
        +(w.source==='routine'?' <span style="color:#188038;">（ルーティンチェックシート）</span>':'');
    }).join('<br>');
  }
+ // --- 役職のメンバー紹介（リーダーシップチーム・コーディネーター・チームのページ）---
+ // その開催日の期の「役職・チーム（半期ごと）」に登録してある方を出す（作るときにページへ入れる）
+ function loadRoles(){
+   var d=get('meeting'); if(!d) return;
+   loadFrom('roles','役職・チーム','getRoleIntroPreview',[d],renderRoles);
+ }
+ function renderRoles(r){
+   var el=document.getElementById('rolePreview');
+   if(!r || !r.ok){ el.innerHTML='<span style="color:#c60;">'+esc((r&&r.message)||'役職・チームを読めませんでした。')+'</span>'; return; }
+   var head='<b>'+r.term+'期（'+esc(r.label)+'）</b>';
+   if(!r.holdersOk && !r.teamsOk){
+     el.innerHTML=head+'<br><span style="color:#c60;">役職・チームが未登録です。役職紹介のページはテンプレートのままにします。</span>'; return;
+   }
+   var hs=r.holders.filter(function(h){ return h.name; }).map(function(h){ return esc(h.label)+'：'+esc(h.name); });
+   var miss=r.holders.filter(function(h){ return !h.name; }).map(function(h){ return esc(h.label); });
+   el.innerHTML=head
+     +(r.holdersOk ? '<br>担当者 … '+hs.join('、')+(r.holdersFrom && r.holdersFrom!==r.term ? '（'+r.holdersFrom+'期の登録を使います）' : '')
+        +(miss.length ? '<br><span style="color:#c60;">未登録の役職：'+miss.join('・')+'（その役職の1人のページがあれば非表示にします）</span>' : '')
+       : '<br><span style="color:#c60;">担当者が未登録です（担当者のページはテンプレートのまま）。</span>')
+     +(r.teamsOk ? '<br>チーム … '+r.teams.map(function(t){ return esc(t.name)+' '+t.count+'名'; }).join('、')
+       : '<br><span style="color:#888;">チームのメンバーは未登録です（チームのページはテンプレートのまま）。</span>');
+ }
  // ルーティンチェックシートにメインプレゼンが無い日は、スピーカーローテーションのお2人を入れる
  function mpFromRotation(){
    if(!rotData || !rotData.weeks.length || get('mp1') || get('mp2')) return;
@@ -405,7 +437,8 @@
      // 表示にするアンバサダー・ディレクター（読み込めていなければ null＝テンプレートのまま）
      weeklyGuests: guests ? pickedGuests().map(function(g){ return g.name; }) : null,
      weeklyAuto: document.getElementById('mpAuto').checked,
-     speakerRotation: rotationForSlides()
+     speakerRotation: rotationForSlides(),
+     roleIntro: document.getElementById('roleOn').checked
    });
  }
 </script>
