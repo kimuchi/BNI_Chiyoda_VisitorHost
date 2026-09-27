@@ -9,6 +9,7 @@ manual.html を作り直し、両方をコミットする。
 
 画像は MANUAL.md に 1行で ![説明](docs/images/名前.webp) と書く。manual.html には画像を埋め込む
 （Apps Script の画面は、別に置いた画像ファイルを読めないため）。画像は tools/make_manual_shots.js で撮る。
+ただし Google認証の画面（docs/images/auth*.webp）だけは実際の画面の写真で、メールアドレスと顔写真を見本に置き換えてある。
 """
 import base64
 import html
