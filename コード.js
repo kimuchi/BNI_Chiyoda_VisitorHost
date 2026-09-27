@@ -2,7 +2,7 @@
 
 // 反映されたか確かめるための版。変更したら日付を更新する。
 // clasp push / デプロイが効いているかは、これを画面で見れば分かる。
-var SYSTEM_VERSION_ = '2026-09-24e';
+var SYSTEM_VERSION_ = '2026-09-27a';
 
 function getSystemVersion() { return SYSTEM_VERSION_; }
 
@@ -21,6 +21,23 @@ function onOpen() {
     .addItem('3. ルーム・オリエン割り振り表', 'openAllocationDialog')
     .addItem('4. 作成済みPDFの確認', 'openPdfLinksDialog')
     .addItem('5. ビジター情報の投稿文', 'openVisitorPostDialog')
+    .addSubMenu(ui.createMenu('📝 役職ごとの入力（定例会の準備）')
+      .addItem('入力状況の一覧', 'openRoleStatusDialog')
+      .addItem('スピーカーローテーション（書記兼会計）', 'openSpeakerRotationDialog')
+      .addSeparator()
+      .addItem('プレジデント', 'openRoleInputPresident')
+      .addItem('バイスプレジデント', 'openRoleInputVice')
+      .addItem('書記兼会計', 'openRoleInputSecretary')
+      .addItem('ビジターホストコーディネーター', 'openRoleInputVhc')
+      .addItem('メンターコーディネーター', 'openRoleInputMentor')
+      .addItem('エデュケーションコーディネーター', 'openRoleInputEc')
+      .addItem('webマスター', 'openRoleInputWeb')
+      .addItem('メンバーサポート委員', 'openRoleInputSupport')
+      .addItem('トレーニング委員', 'openRoleInputTraining')
+      .addItem('イベント委員＆1to1促進委員', 'openRoleInputEvent')
+      .addItem('BCP委員', 'openRoleInputBcp')
+      .addItem('スプレディング委員', 'openRoleInputSpreading')
+      .addItem('グローバルビジネスコーディネーター', 'openRoleInputGbc'))
     .addSeparator()
     .addSubMenu(ui.createMenu('📊 スライド・冊子をつくる')
       .addItem('ビジター・代理スライド作成', 'openVisitorSlideDialog')
@@ -127,7 +144,7 @@ function diagnoseDialogFiles() {
   var ui = SpreadsheetApp.getUi();
   var files = ['pdf', 'dialog', 'allocation', 'email', 'pdf_links', 'member_master',
                'memberbook_editor', 'memberbook_render', 'slides_visitor', 'slides_meeting_first', 'slides_meeting_second',
-               'menu_home', 'manual', 'spreading', 'zoom_guide', 'archive'];
+               'menu_home', 'manual', 'spreading', 'zoom_guide', 'archive', 'role_input'];
   var lines = [], ng = 0;
   for (var i = 0; i < files.length; i++) {
     try {

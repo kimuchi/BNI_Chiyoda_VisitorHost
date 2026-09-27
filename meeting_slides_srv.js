@@ -174,7 +174,7 @@ function getMeetingSlideContext() {
              memberCount: members.length,
              memberNames: members.map(function (m) { return m.name; }),
              members: members.map(function (m) {
-               return { no: m.no, name: m.name, company: m.company, title: m.title,
+               return { no: m.no, name: m.name, company: m.company, title: m.title, collab: m.collab || '',
                         hasPhoto: !!findPhotoIdForName_(m.name) };
              }) };
   } catch (e) {
@@ -1089,12 +1089,15 @@ function editMeetingSlides_(parts, map, rules, o) {
     }
     if (xml !== before) { putXml_(parts, path, xml); touched++; }
   }
+  // 前半：スピーカーローテーションの表（以前は書記兼会計が作った画像）。
+  // 「第○回」の書き換えのあとに入れる（表の中の先の回の番号まで、今回の番号にしないように）
+  var rotation = o.speakerRotation ? applySpeakerRotation_(parts, o.speakerRotation) : null;
   var core = o.coreValue ? applyCoreValue_(parts, o.coreValue) : null;
   var policy = o.generalPolicy ? applyGeneralPolicy_(parts, o.generalPolicy) : null;
   var audio = o.music ? applyMeetingAudio_(parts, o.music) : null;
   return { touched: touched, byPattern: byPattern, core: core, policy: policy,
            photos: photos, audio: audio, referral: referral, weekly: weekly, guests: guests,
-           reco: reco, renewal: renewal };
+           reco: reco, renewal: renewal, rotation: rotation };
 }
 
 // 定例会スライドを生成する。テンプレート内の {{キー}} を置換する方式。
@@ -1139,6 +1142,7 @@ function generateMeetingSlides(kind, values, meetingDateVal, opts) {
     if (info.guests && info.guests.message) msg += '\n' + info.guests.message;
     if (info.reco && info.reco.message) msg += '\n' + info.reco.message;
     if (info.renewal && info.renewal.message) msg += '\n' + info.renewal.message;
+    if (info.rotation && info.rotation.message) msg += '\n' + info.rotation.message;
     return { ok: true, message: msg, url: r.saved.url, downloadUrl: r.saved.downloadUrl,
              fileName: outName, touched: info.touched, core: info.core, policy: info.policy,
              timing: r.timing };

@@ -53,6 +53,14 @@
          <span style="font-size:11px;color:#888;">選んだ番号のページだけを表示にします</span></td></tr>
    </table>
    <div id="mpNote" style="font-size:11px;color:#888;margin-top:6px;"></div>
+   <div class="mk">
+     <h5>スピーカーローテーション（78枚目の表）</h5>
+     <label><input type="checkbox" id="rotOn" checked>
+       書記兼会計の画像の代わりに、<b>5回分の表</b>を作る</label>
+     <div id="rotPreview" style="font-size:11.5px;margin-top:4px;line-height:1.7;"></div>
+     <div style="font-size:11px;color:#888;">並び順は「役職ごとの入力」＞ 書記兼会計 ＞ スピーカーローテーションの管理 で直せます。
+       1回目は上のメインプレゼン①②のお2人です。</div>
+   </div>
  </div>
 
  <div class="sec">
@@ -135,6 +143,7 @@
    applyLists(c.lists);
    // 前半テンプレート（アンバサダー・ディレクターのページ）と、メンバーのページの材料を読む
    if(tplOk) loadGuests(); else document.getElementById('gsList').innerHTML='<span style="color:#888;">前半テンプレートを登録すると選べます。</span>';
+   loadRotation();
    toggleMP();
    refreshGen();
  }
@@ -165,6 +174,7 @@
    var mp=R.mainPresenters||[];
    document.getElementById('mp1').value = (mp[0] && mp[0].name) || '';
    document.getElementById('mp2').value = (mp[1] && mp[1].name) || '';
+   mpFromRotation();
    val('t_求める専門分野', (R.wantedCategories||[]).join('、'));
    val('t_開放カテゴリー', R.openCategory||'');
    val('t_審査中カテゴリー', R.reviewCategory||'');
@@ -184,6 +194,7 @@
    meetingNoFromList();
    loadFrom('routine','ルーティンチェックシート','getRoutineInfo',[d],applyRoutine);
    mpForDate();
+   loadRotation();
    loadFrom('lists','新メンバー・更新メンバー','computeRenewalLists',[d],function(L){
      if(L.ok){ applyLists(L); show('開催日にあわせて更新しました。',true); }
      else show(L.message,false);
@@ -341,6 +352,43 @@
    var s={}; STAT_KEYS.forEach(function(k){ var e=document.getElementById('s_'+k); if(e) s[k]=e.value; });
    google.script.run.withSuccessHandler(function(r){ show(r.message, !!r.ok); }).withFailureHandler(fail).saveMeetingStats(s);
  }
+ // --- スピーカーローテーション（78枚目の表）---
+ var rotData=null;
+ function loadRotation(){
+   var d=get('meeting'); if(!d) return;
+   loadFrom('rot','スピーカーローテーション','getSpeakerRotationWeeks',[d],function(r){
+     rotData = (r && r.ok) ? r : null;
+     renderRotation(r);
+     mpFromRotation();
+   });
+ }
+ function renderRotation(r){
+   var el=document.getElementById('rotPreview');
+   if(!r || !r.ok){ el.innerHTML='<span style="color:#c60;">'+esc((r&&r.message)||'スピーカーローテーションを読めませんでした。')+'</span>'; return; }
+   el.innerHTML = r.weeks.map(function(w){
+     return (w.no?'第'+esc(w.no)+'回 ':'')+esc(w.md)+'：'+esc(w.people.map(function(p){ return p.name; }).join('・'))
+       +(w.source==='routine'?' <span style="color:#188038;">（ルーティンチェックシート）</span>':'');
+   }).join('<br>');
+ }
+ // ルーティンチェックシートにメインプレゼンが無い日は、スピーカーローテーションのお2人を入れる
+ function mpFromRotation(){
+   if(!rotData || !rotData.weeks.length || get('mp1') || get('mp2')) return;
+   var w=rotData.weeks[0];
+   if(w.source!=='rotation' || w.date!==get('meeting')) return;
+   val('mp1', (w.people[0]||{}).name||''); val('mp2', (w.people[1]||{}).name||'');
+   document.getElementById('mpNote').innerHTML='ルーティンチェックシートにメインプレゼンが無いので、スピーカーローテーションのお2人を入れました。';
+ }
+ // 表のデータ（1回目は画面で選んだメインプレゼンのお2人）
+ function rotationForSlides(){
+   if(!document.getElementById('rotOn').checked || !rotData) return null;
+   var r=JSON.parse(JSON.stringify(rotData)), sel=[get('mp1'), get('mp2')];
+   if(r.weeks.length && (sel[0]||sel[1])){
+     r.weeks[0].people = sel.map(function(n){
+       var who=memberOf(n); return { name:n||'', title:who.title||'', collab:who.collab||'' };
+     });
+   }
+   return { weeks:r.weeks, header:r.header, notes:r.notes };
+ }
  function gen(){
    if(document.getElementById('mpOn').checked && !buildMP().length){
      show('メンバーのページを作れません（メンバーと写真の読み込みが終わっていないか、名簿が空です）。',false); return;
@@ -353,7 +401,8 @@
      memberPresen: buildMP(),
      // 表示にするアンバサダー・ディレクター（読み込めていなければ null＝テンプレートのまま）
      weeklyGuests: guests ? pickedGuests().map(function(g){ return g.name; }) : null,
-     weeklyAuto: document.getElementById('mpAuto').checked
+     weeklyAuto: document.getElementById('mpAuto').checked,
+     speakerRotation: rotationForSlides()
    });
  }
 </script>

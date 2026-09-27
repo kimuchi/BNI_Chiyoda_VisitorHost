@@ -35,6 +35,7 @@ function getSS_() {
 // ウェブアプリに出す機能の一覧。キーは表示するHTMLファイル名。
 var WEBAPP_PAGES_ = [
   { group: '毎週の作業', items: [
+    { key: 'role_input',        label: '役職ごとの入力（定例会の準備）', desc: '次回の定例会について役職ごとに入力します。入力状況も一目で分かります' },
     { key: 'dialog',            label: 'CSVから名簿・PDF作成',   desc: '参加者のCSVを取り込んで名簿とPDFを作ります' },
     { key: 'email',             label: 'メールの確認・一括送信', desc: '案内メールをまとめて送ります' },
     { key: 'allocation',        label: 'ルーム・オリエン割り振り表', desc: 'ビジターごとの担当を決めます' },
@@ -106,7 +107,10 @@ function doGet(e) {
 
     // 既存のダイアログHTMLをそのまま表示する。
     // ダイアログ用に作られているので、上に「メニューに戻る」の帯だけ足す。
-    var content = HtmlService.createTemplateFromFile(page.key).evaluate().getContent();
+    var tpl = HtmlService.createTemplateFromFile(page.key);
+    // URLの続き（?p=role_input&role=vice の role など）を画面に渡す
+    tpl.params = (e && e.parameter) || {};
+    var content = tpl.evaluate().getContent();
     var home = getWebAppUrl_() || '?';
     var bar = '<div style="position:sticky;top:0;z-index:9999;background:#16233f;color:#fff;'
             + 'padding:8px 14px;font-family:sans-serif;font-size:13px;display:flex;'
