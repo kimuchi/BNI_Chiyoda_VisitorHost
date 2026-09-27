@@ -23,6 +23,7 @@
   <input type="text" id="apiKey" placeholder="AIzaSy...">
 
   <button onclick="save()">設定を保存する</button>
+  <div id="saveNote" style="margin-top:14px;font-weight:bold;white-space:pre-wrap;line-height:1.7;"></div>
 
   <script>
     window.onload = function() {
@@ -38,11 +39,27 @@
         modelName: document.getElementById('modelName').value
       };
       
-      document.body.innerHTML = "<h3 style='color:#0055ff; text-align:center; margin-top:50px;'>保存中...</h3>";
+      saveNote('保存しています...');
       google.script.run.withSuccessHandler(function(msg){
-        document.body.innerHTML = "<h3 style='color:green; text-align:center; margin-top:50px;'>" + msg + "</h3><p style='text-align:center;'>画面を閉じてください。</p>";
+        saveNote(msg, 'green');
+      }).withFailureHandler(function(e){
+        saveNote('保存できませんでした: ' + (e && e.message ? e.message : e), '#c00');
       }).saveApiSettings(data);
     }
+    // 保存の結果は画面の下に出す（画面は消さない。ウェブアプリでは上の帯と同じ「← メニューに戻る」も出す）
+    function saveNote(text, color) {
+      var m = document.getElementById('saveNote');
+      if (!m) {
+        m = document.createElement('div'); m.id = 'saveNote';
+        m.style.cssText = 'margin-top:14px;font-weight:bold;white-space:pre-wrap;line-height:1.7;';
+        document.body.appendChild(m);
+      }
+      var back = (color === 'green' && typeof WEBAPP_URL === 'string' && WEBAPP_URL)
+        ? '<br><a href="' + WEBAPP_URL + '" target="_top" style="font-size:13px;">← メニューに戻る</a>' : '';
+      m.style.color = color || '#0055ff';
+      m.innerHTML = String(text == null ? '' : text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/\n/g, '<br>') + back;
+    }
+
   </script>
 </body>
 </html>

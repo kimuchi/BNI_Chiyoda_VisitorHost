@@ -957,6 +957,45 @@ function weeklyGuestPages_(parts) {
   return out;
 }
 
+// 同じ方のウィークリープレゼンのページが、氏名の枠では見分けられない作りになっていても拾う：
+// 見出しから「全員終わりましたか？」までの WEEKLY PRESENTATION のページで、見分けた方の氏名の文字があるもの
+function weeklyGuestNamePages_(parts, guests) {
+  var order = slideOrder_(parts), at = order.indexOf(weeklyAnchor_(parts)), got = {}, out = [], i, k;
+  if (at < 0) return out;
+  for (k = 0; k < guests.length; k++) got[guests[k].path] = true;
+  for (i = at + 1; i < order.length; i++) {
+    var xml = xmlOf_(parts, order[i]) || '', text = slideText_(xml), flat = normName_(text);
+    if (flat.indexOf('終わりましたか') >= 0) break;
+    if (got[order[i]] || flat.toUpperCase().indexOf('WEEKLYPRESENTATION') < 0) continue;
+    for (k = 0; k < guests.length; k++) {
+      if (normName_(guests[k].name) && flat.indexOf(normName_(guests[k].name)) >= 0) {
+        out.push({ path: order[i], name: guests[k].name });
+        break;
+      }
+    }
+  }
+  return out;
+}
+
+// アンバサダー・ディレクターの紹介のページ（「ウィークリープレゼンテーション」の見出しより前）。
+// その方の氏名と、「アンバサダー」「ディレクター」「リージョン」の文字があるページ
+var GUEST_INTRO_RE_ = /アンバサダー|ディレクター|リージョン|ambassador|director/i;
+function weeklyGuestIntroPages_(parts, guests) {
+  var order = slideOrder_(parts), at = order.indexOf(weeklyAnchor_(parts)), out = [];
+  if (at < 0) at = order.length;
+  for (var i = 0; i < at; i++) {
+    var xml = xmlOf_(parts, order[i]) || '', text = slideText_(xml), flat = normName_(text);
+    if (!GUEST_INTRO_RE_.test(text)) continue;
+    for (var k = 0; k < guests.length; k++) {
+      if (normName_(guests[k].name) && flat.indexOf(normName_(guests[k].name)) >= 0) {
+        out.push({ path: order[i], name: guests[k].name, hidden: /<p:sld\b[^>]*\sshow="0"/.test(xml) });
+        break;
+      }
+    }
+  }
+  return out;
+}
+
 function shapeTextOf_(xml, id) {
   var r = id ? findShapeRange_(xml, id) : null;
   return r ? slideText_(xml.substring(r.start, r.end)).replace(/^[\s　]+|[\s　]+$/g, '') : '';
@@ -965,10 +1004,19 @@ function shapeTextOf_(xml, id) {
 // names … 表示にする方の氏名（画面のチェック）。入っていない方のページは非表示にする。
 // auto  … メンバーのページと同じく、カウントダウンが終わったら自動で次へ進めるか
 // カウントダウンは、メンバーと同じウィークリープレゼンテーションの秒数（チャプターの設定）
+// その方の紹介のページ（見出しより前）も、同じように表示・非表示にする
 function applyWeeklyGuests_(parts, names, auto) {
   var pages = weeklyGuestPages_(parts), want = {}, shown = [], hidden = [], paths = [], i;
   var sec = chapterPresenSeconds_().weekly;
   for (i = 0; i < names.length; i++) want[normName_(names[i])] = true;
+  pages = pages.concat(weeklyGuestNamePages_(parts, pages));
+  var intros = weeklyGuestIntroPages_(parts, pages), introShown = [], introHidden = [], introPages = [];
+  for (i = 0; i < intros.length; i++) {
+    var on0 = !!want[normName_(intros[i].name)];
+    putXml_(parts, intros[i].path, setSlideShow_(xmlOf_(parts, intros[i].path), on0));
+    (on0 ? introShown : introHidden).push(intros[i].name);
+    introPages.push({ path: intros[i].path, name: intros[i].name, shown: on0 });
+  }
   for (i = 0; i < pages.length; i++) {
     var g = pages[i], xml = xmlOf_(parts, g.path), on = !!want[normName_(g.name)];
     xml = setSlideShow_(xml, on);
@@ -979,8 +1027,9 @@ function applyWeeklyGuests_(parts, names, auto) {
       } catch (e) {
         console.warn('[MEETING] ' + g.name + 'さんのページのカウントダウンを作り直せませんでした: ' + e.message);
       }
-      shown.push(g.name); paths.push(g.path);
-    } else {
+      if (shown.indexOf(g.name) < 0) shown.push(g.name);
+      paths.push(g.path);
+    } else if (hidden.indexOf(g.name) < 0) {
       hidden.push(g.name);
     }
     putXml_(parts, g.path, xml);
@@ -995,16 +1044,21 @@ function applyWeeklyGuests_(parts, names, auto) {
   } else {
     msg = hidden.join('さん・') + 'さんのウィークリープレゼンのページは非表示です。';
   }
-  return { message: msg, paths: paths, auto: auto && paths.length > 0, shown: shown, hidden: hidden };
+  if (introShown.length) msg += (msg ? '\n' : '') + introShown.join('さん・') + 'さんの紹介のページを表示しました。';
+  if (introHidden.length) msg += (msg ? '\n' : '') + introHidden.join('さん・') + 'さんの紹介のページは非表示です。';
+  return { message: msg, paths: paths, auto: auto && paths.length > 0, shown: shown, hidden: hidden,
+           introShown: introShown, introHidden: introHidden, introPages: introPages };
 }
 
 // 画面用：前半テンプレートに入っているアンバサダー・ディレクターのページ。
 // 27MBほどのファイルを開くので、テンプレートが同じ間は結果を覚えておく。
 function getWeeklyGuests() {
   try {
-    var guests = templateMemo_('meetingFirst', 'guests', function (parts) {
-      return weeklyGuestPages_(parts).map(function (g) {
-        return { name: g.name, role: g.role, hidden: g.hidden };
+    var guests = templateMemo_('meetingFirst', 'guests2', function (parts) {
+      var pages = weeklyGuestPages_(parts), intro = {};
+      weeklyGuestIntroPages_(parts, pages).forEach(function (p) { intro[normName_(p.name)] = true; });
+      return pages.map(function (g) {
+        return { name: g.name, role: g.role, hidden: g.hidden, intro: !!intro[normName_(g.name)] };
       });
     });
     return { ok: true, guests: guests };
