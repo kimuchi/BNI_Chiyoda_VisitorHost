@@ -431,11 +431,15 @@ function mpNoAutoAdvance_(xml) {
 }
 
 function mpAutoAdvance_(xml, ms) {
-  // 開始条件（クリック待ち → すぐ開始）。dur="indefinite" には触らないこと。
-  var before = xml;
-  xml = xml.replace(/<p:cond delay="indefinite"\/><p:cond evt="onBegin" delay="0"><p:tn val="\d+"\/><\/p:cond>/,
-                    '<p:cond delay="0"/>');
-  if (xml === before) xml = xml.replace('<p:cond delay="indefinite"/>', '<p:cond delay="0"/>');
+  // 開始条件（クリック待ち → すぐ開始）。直すのはメインの順番の最初のまとまりだけ。
+  // 動画・音声の登録（p:video・p:audio）も delay="indefinite" を持つが、そちらに触ると再生の仕方が変わる。
+  var main = xml.indexOf('nodeType="mainSeq"');
+  if (main >= 0) {
+    var cs = xml.indexOf('<p:stCondLst>', main), ce = cs < 0 ? -1 : xml.indexOf('</p:stCondLst>', cs);
+    if (ce > cs && /delay="indefinite"/.test(xml.substring(cs, ce))) {
+      xml = xml.substring(0, cs) + '<p:stCondLst><p:cond delay="0"/>' + xml.substring(ce);
+    }
+  }
 
   // 自動で次へ進む時間
   if (/advTm="\d+"/.test(xml)) {
@@ -585,9 +589,193 @@ function mpSetCountdown_(xml, sec, clickStart) {
   for (var i = boxes.length - 1; i >= 0; i--) out = out.substring(0, boxes[i].start) + out.substring(boxes[i].end);
   out = out.substring(0, at) + shapes + out.substring(at);
 
-  var timing = mpCountdownTiming_(spids, clickStart);
+  // 数字の箱を消す指示だけを作り直す。ほかの指示（ベルの音・卵時計の動画など）は残す
+  var olds = boxes.map(function (b) { return b.id; });
+  var timing = mpRebuildTiming_(out, olds, spids, clickStart);
   if (/<p:timing>/.test(out)) out = out.replace(/<p:timing>[\s\S]*?<\/p:timing>/, timing);
   else out = out.replace('</p:sld>', timing + '</p:sld>');
+  return out;
+}
+
+// いまのカウントダウンの秒数（数字の箱の最大の数）。見つからなければ 0
+function mpCountdownSeconds_(xml) {
+  var boxes = mpCountdownShapes_(xml), max = 0;
+  if (boxes.length < 5) return 0;
+  for (var i = 0; i < boxes.length; i++) max = Math.max(max, boxes[i].num);
+  return max;
+}
+
+// === アニメーションの指示（p:timing）を、音を残したまま作り直す ===
+// カウントダウンの秒数を変えるとき、消すのは「数字の箱を1枚ずつ消す指示」だけ。
+// それ以外（最後に鳴るベル・最初に流れる卵時計の動画・動画のクリックでの一時停止・
+// 動画と音声の登録 p:video / p:audio など）は残す。残さないと音が鳴らなくなる。
+//   ・カウントダウンより前の指示 … 同じ時刻のまま（卵時計の動画のあとにカウントダウンが始まる）
+//   ・カウントダウンより後の指示 … 新しいカウントダウンの最後から、元と同じ間隔
+//   ・カウントダウンの途中の指示 … 同じ時刻のまま
+// olds … 消した数字の箱のID、spids … 新しい数字の箱を消す順のID
+// clickStart … true: クリックで始める、false: すぐ始める、undefined: 元の雛形のまま
+function mpRebuildTiming_(slideXml, olds, spids, clickStart) {
+  var ts = slideXml.indexOf('<p:timing>');
+  var parsed = ts < 0 ? null : mpParseTiming_(slideXml.substring(ts, slideXml.indexOf('</p:timing>', ts) + 11), olds);
+  if (!parsed || !parsed.cd) {
+    // 元の指示が読めない・カウントダウンの指示が無い … 新しく作る（動画・音声の登録だけは残す）
+    var fresh = mpCountdownTiming_(spids, clickStart === undefined ? false : clickStart);
+    if (parsed && parsed.others.length) {
+      fresh = fresh.replace('</p:seq></p:childTnLst></p:cTn></p:par></p:tnLst>',
+        '</p:seq>' + parsed.others.map(mpTokenIds_).join('') + '</p:childTnLst></p:cTn></p:par></p:tnLst>');
+      fresh = mpRenumberTiming_(fresh, {});
+    }
+    return fresh;
+  }
+  var cd = parsed.cd, first = cd.first, last = cd.last, n = spids.length;
+  var newLast = first + (n - 1) * 1000, steps = [], k = 3;          // N1〜N3 は下の root・mainSeq・まとまりで使う
+  var tok = function () { return 'N' + (++k); };
+  for (var i = 0; i < cd.keep.length; i++) {
+    var e = cd.keep[i], d = e.delay;
+    if (d > last) d = newLast + (d - last);
+    steps.push({ delay: d, order: i, xml: '<p:par><p:cTn id="' + tok() + '" fill="hold"><p:stCondLst><p:cond delay="' + d
+      + '"/></p:stCondLst><p:childTnLst>' + mpTokenIds_(e.xml) + '</p:childTnLst></p:cTn></p:par>' });
+  }
+  for (var j = 0; j < n; j++) {
+    var a = tok(), b = tok(), c = tok();
+    steps.push({ delay: first + j * 1000, order: 100000 + j, xml:
+      '<p:par><p:cTn id="' + a + '" fill="hold"><p:stCondLst><p:cond delay="' + (first + j * 1000) + '"/></p:stCondLst><p:childTnLst>'
+      + '<p:par><p:cTn id="' + b + '" presetID="1" presetClass="exit" presetSubtype="0" fill="hold" grpId="0" nodeType="afterEffect">'
+      + '<p:stCondLst><p:cond delay="1000"/></p:stCondLst><p:childTnLst>'
+      + '<p:set><p:cBhvr><p:cTn id="' + c + '" dur="1" fill="hold"><p:stCondLst><p:cond delay="0"/></p:stCondLst></p:cTn>'
+      + '<p:tgtEl><p:spTgt spid="' + spids[j] + '"/></p:tgtEl>'
+      + '<p:attrNameLst><p:attrName>style.visibility</p:attrName></p:attrNameLst></p:cBhvr>'
+      + '<p:to><p:strVal val="hidden"/></p:to></p:set>'
+      + '</p:childTnLst></p:cTn></p:par></p:childTnLst></p:cTn></p:par>' });
+  }
+  steps.sort(function (x, y) { return x.delay - y.delay || x.order - y.order; });
+  var start = clickStart === true ? '<p:cond delay="indefinite"/><p:cond evt="onBegin" delay="0"><p:tn val="N2"/></p:cond>'
+            : clickStart === false ? '<p:cond delay="0"/>'
+            : mpTokenIds_(cd.startCond).replace('val="O' + parsed.mainId + '"', 'val="N2"');
+  var group = '<p:par><p:cTn id="N3" fill="hold"><p:stCondLst>' + start + '</p:stCondLst><p:childTnLst>'
+            + steps.map(function (x) { return x.xml; }).join('') + '</p:childTnLst></p:cTn></p:par>';
+  var groups = parsed.groups.map(function (g) { return g.cd ? group : mpTokenIds_(g.xml); }).join('');
+  var mainSeq = '<p:seq concurrent="1" nextAc="seek"><p:cTn id="N2" dur="indefinite" nodeType="mainSeq"><p:childTnLst>'
+              + groups + '</p:childTnLst></p:cTn>' + mpTokenIds_(parsed.seqTail) + '</p:seq>';
+  var bld = parsed.bld.replace(/<p:bldP\b[^>]*\bspid="(\d+)"[^>]*\/>/g, function (m0, id) {
+    return olds.indexOf(id) >= 0 ? '' : m0;
+  });
+  for (var q = 0; q < n; q++) bld += '<p:bldP spid="' + spids[q] + '" grpId="0" animBg="1"/>';
+  var timing = '<p:timing><p:tnLst><p:par><p:cTn id="N1" dur="indefinite" restart="never" nodeType="tmRoot"><p:childTnLst>'
+             + mainSeq + parsed.others.map(mpTokenIds_).join('') + '</p:childTnLst></p:cTn></p:par></p:tnLst>'
+             + (bld ? '<p:bldLst>' + bld + '</p:bldLst>' : '') + '</p:timing>';
+  var alias = {};
+  alias['O' + parsed.mainId] = 'N2';
+  return mpRenumberTiming_(timing, alias);
+}
+
+// 残す指示のIDを、作り直した指示と重ならない目印にする（最後に通し番号へ振り直す）
+function mpTokenIds_(frag) {
+  return String(frag || '').replace(/<p:cTn id="(\d+)"/g, '<p:cTn id="O$1"').replace(/<p:tn val="(\d+)"\/>/g, '<p:tn val="O$1"/>');
+}
+// <p:cTn id> を出てくる順に 1 から振り直し、<p:tn val>（ほかの指示を指すもの）も合わせる
+function mpRenumberTiming_(timing, alias) {
+  var map = {}, n = 0;
+  timing = timing.replace(/<p:cTn id="([A-Z]?\d+)"/g, function (m0, t) { map[t] = String(++n); return '<p:cTn id="' + n + '"'; });
+  return timing.replace(/<p:tn val="([A-Z]?\d+)"\/>/g, function (m0, t) {
+    var to = map[t] || map[alias[t]] || '';
+    return to ? '<p:tn val="' + to + '"/>' : m0;
+  });
+}
+
+// 要素の終わり（入れ子を数える）。start は '<' の位置
+function mpElemEnd_(xml, start) {
+  var tag = (/^<([\w:]+)/.exec(xml.substring(start, start + 80)) || [])[1], gt = xml.indexOf('>', start);
+  if (!tag || gt < 0) return xml.length;
+  if (xml.charAt(gt - 1) === '/') return gt + 1;
+  var re = new RegExp('<(\\/?)' + tag.replace(':', '\\:') + '(?=[\\s>/])', 'g'), depth = 1, m;
+  re.lastIndex = gt + 1;
+  while ((m = re.exec(xml)) !== null) {
+    var g = xml.indexOf('>', m.index);
+    if (m[1] === '/') { if (--depth === 0) return g + 1; }
+    else if (xml.charAt(g - 1) !== '/') depth++;
+    re.lastIndex = g + 1;
+  }
+  return xml.length;
+}
+// from〜to の間の、いちばん外側の要素の並び
+function mpChildren_(xml, from, to) {
+  var out = [], i = from;
+  while (i < to) {
+    var lt = xml.indexOf('<', i);
+    if (lt < 0 || lt >= to || xml.charAt(lt + 1) === '/') break;
+    var end = mpElemEnd_(xml, lt);
+    out.push(xml.substring(lt, end));
+    i = end;
+  }
+  return out;
+}
+// 要素 el の最初の <tag>…</tag> の中身の範囲（el の中での位置）
+function mpInnerOf_(el, tag) {
+  var s = el.indexOf('<' + tag + '>');
+  if (s < 0) return null;
+  var end = mpElemEnd_(el, s);
+  return { from: s + tag.length + 2, to: end - tag.length - 3 };
+}
+
+// p:timing を読む → { mainId, groups: [{ xml, cd }], seqTail, others: [xml], bld, cd }
+//   groups … メインの順番の、クリックごとのまとまり。cd はカウントダウンが入っているまとまりの中身
+//            { startCond, first（最初の消す指示の時刻）, last, keep: [{ xml, delay }]（残す指示）}
+//   others … メインの順番以外（動画・音声の登録、クリックで動く指示など）
+function mpParseTiming_(t, olds) {
+  var root = t.indexOf('nodeType="tmRoot"');
+  if (root < 0) return null;
+  var rootCtn = t.lastIndexOf('<p:cTn', root), rootIn = mpInnerOf_(t.substring(rootCtn, mpElemEnd_(t, rootCtn)), 'p:childTnLst');
+  if (!rootIn) return null;
+  var kids = mpChildren_(t, rootCtn + rootIn.from, rootCtn + rootIn.to);
+  var main = null, others = [];
+  for (var i = 0; i < kids.length; i++) {
+    if (!main && /^<p:seq\b/.test(kids[i]) && /nodeType="mainSeq"/.test(kids[i].substring(0, 400))) main = kids[i];
+    else others.push(kids[i]);
+  }
+  var bldM = t.match(/<p:bldLst>([\s\S]*?)<\/p:bldLst>/);
+  var out = { mainId: '', groups: [], seqTail: '', others: others, bld: bldM ? bldM[1] : '', cd: null };
+  if (!main) return out;
+  out.mainId = (main.match(/<p:cTn id="(\d+)"/) || [])[1] || '';
+  var mcS = main.indexOf('<p:cTn'), mcE = mpElemEnd_(main, mcS), mc = main.substring(mcS, mcE);
+  out.seqTail = main.substring(mcE, main.length - '</p:seq>'.length);
+  var gIn = mpInnerOf_(mc, 'p:childTnLst');
+  var groups = gIn ? mpChildren_(mc, gIn.from, gIn.to) : [];
+  var isCd = function (effect) {
+    if (!/presetClass="exit"/.test(effect.substring(0, 300))) return false;
+    var ids = effect.match(/<p:spTgt spid="\d+"\/>/g) || [];
+    for (var z = 0; z < ids.length; z++) if (olds.indexOf(ids[z].replace(/\D/g, '')) >= 0) return true;
+    return false;
+  };
+  for (var g = 0; g < groups.length; g++) {
+    var gx = groups[g], gc = gx.substring(gx.indexOf('<p:cTn'), mpElemEnd_(gx, gx.indexOf('<p:cTn')));
+    var cond = mpInnerOf_(gc, 'p:stCondLst'), steps = mpInnerOf_(gc, 'p:childTnLst');
+    var entry = { xml: gx, cd: null };
+    if (steps) {
+      var keep = [], first = null, last = null;
+      mpChildren_(gc, steps.from, steps.to).forEach(function (step) {
+        var sc = step.substring(step.indexOf('<p:cTn'), mpElemEnd_(step, step.indexOf('<p:cTn')));
+        var dm = (sc.match(/^<p:cTn\b[^>]*>\s*<p:stCondLst>\s*<p:cond delay="(\d+)"\/>/) || [])[1];
+        var d = dm === undefined ? 0 : parseInt(dm, 10), inner = mpInnerOf_(sc, 'p:childTnLst');
+        (inner ? mpChildren_(sc, inner.from, inner.to) : []).forEach(function (effect) {
+          if (isCd(effect)) {
+            first = first === null ? d : Math.min(first, d);
+            last = last === null ? d : Math.max(last, d);
+          } else {
+            keep.push({ xml: effect, delay: d });
+          }
+        });
+      });
+      if (first !== null) {
+        entry.cd = { startCond: cond ? gc.substring(cond.from, cond.to) : '<p:cond delay="0"/>', first: first, last: last, keep: keep };
+        if (!out.cd) out.cd = entry.cd;
+      }
+    }
+    out.groups.push(entry);
+  }
+  // カウントダウンの入ったまとまりは1つだけ作り直す（2つ目以降はそのまま残す）
+  var seen = false;
+  out.groups.forEach(function (e) { if (e.cd) { if (seen) e.cd = null; seen = true; } });
   return out;
 }
 

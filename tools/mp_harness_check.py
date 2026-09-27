@@ -31,6 +31,21 @@ with zipfile.ZipFile(dst, 'w', zipfile.ZIP_DEFLATED) as z:
 fails, checks = [], 0
 
 
+
+def countdown_steps(sx):
+    """カウントダウンで数字の箱を消す指示の数（音・動画の指示は数えない）"""
+    return len(re.findall(r'presetClass="exit"', sx))
+
+
+def click_wait(sx):
+    """メインの順番の最初のまとまりがクリック待ちか（動画・音声の登録の delay="indefinite" は見ない）"""
+    i = sx.find('nodeType="mainSeq"')
+    if i < 0:
+        return False
+    s = sx.find('<p:stCondLst>', i)
+    e = sx.find('</p:stCondLst>', s)
+    return s >= 0 and 'delay="indefinite"' in sx[s:e]
+
 def ck(cond, msg):
     global checks
     checks += 1
@@ -222,14 +237,14 @@ for i, it in enumerate(items):
         # カウントダウンが自動で始まり、終わったら次のスライドへ進むこと
         sx = z.read('ppt/slides/slide%d.xml' % n).decode('utf-8')
         sec = it.get('countdownSec') or 30
-        ck('<p:cond delay="indefinite"/>' not in sx,
+        ck(not click_wait(sx),
            '%d %s カウントダウンがクリック待ちのまま' % (n, tag))
         adv = set(re.findall(r'advTm="(\d+)"', sx))
         ck(adv == {str((sec + 1) * 1000)},
            '%d %s 自動で次へ進む時間が %s（%d のはず）' % (n, tag, adv or 'なし', (sec + 1) * 1000))
-        ck(len(re.findall(r'<p:spTgt spid="\d+"/>', sx)) == sec,
+        ck(countdown_steps(sx) == sec,
            '%d %s カウントダウンの手順が %d 回（%d 回のはず）'
-           % (n, tag, len(re.findall(r'<p:spTgt spid="\d+"/>', sx)), sec))
+           % (n, tag, countdown_steps(sx), sec))
         # 数字の箱が「残り最大」から「0」まで揃っていること
         want = ['%d:%02d' % (t // 60, t % 60) if sec >= 60 else str(t) for t in range(sec, -1, -1)]
         doc = minidom.parseString(sx)

@@ -25,6 +25,21 @@ names = set(z.namelist())
 fails, checks = [], 0
 
 
+
+def countdown_steps(sx):
+    """カウントダウンで数字の箱を消す指示の数（音・動画の指示は数えない）"""
+    return len(re.findall(r'presetClass="exit"', sx))
+
+
+def click_wait(sx):
+    """メインの順番の最初のまとまりがクリック待ちか（動画・音声の登録の delay="indefinite" は見ない）"""
+    i = sx.find('nodeType="mainSeq"')
+    if i < 0:
+        return False
+    s = sx.find('<p:stCondLst>', i)
+    e = sx.find('</p:stCondLst>', s)
+    return s >= 0 and 'delay="indefinite"' in sx[s:e]
+
 def ck(c, m):
     global checks
     checks += 1
@@ -162,14 +177,14 @@ if plan_rf:
         if it.get('auto'):
             ck(adv == {str((it['seconds'] + 1) * 1000)},
                '%d人目の自動送りが %s（%d のはず）' % (k + 1, adv or 'なし', (it['seconds'] + 1) * 1000))
-            ck('<p:cond delay="indefinite"/>' not in sx, '%d人目のカウントダウンがクリック待ち' % (k + 1))
+            ck(not click_wait(sx), '%d人目のカウントダウンがクリック待ち' % (k + 1))
         else:
             # 自動で進まない：自動送りが無く、カウントダウンはクリックで始まる
             ck(not adv, '%d人目に自動送りが残っている: %s' % (k + 1, adv))
-            ck('<p:cond delay="indefinite"/>' in sx, '%d人目のカウントダウンがクリックで始まらない' % (k + 1))
-        ck(len(re.findall(r'<p:spTgt spid="\d+"/>', sx)) == it['seconds'],
+            ck(click_wait(sx), '%d人目のカウントダウンがクリックで始まらない' % (k + 1))
+        ck(countdown_steps(sx) == it['seconds'],
            '%d人目のカウントダウンの手順が %d 回（%d 回のはず）'
-           % (k + 1, len(re.findall(r'<p:spTgt spid="\d+"/>', sx)), it['seconds']))
+           % (k + 1, countdown_steps(sx), it['seconds']))
     # 最後の人だけ NEXT が消えていること
     if idx:
         _, tl = text(order[idx[-1]])
@@ -220,10 +235,10 @@ if guest_pages and guest_res is not None:
         if on:
             guest_auto.add(gp)
             ck(adv == {'31000'}, '%sさんのページの自動送りが %s（31000 のはず）' % (g['name'], adv or 'なし'))
-            ck('<p:cond delay="indefinite"/>' not in sx, '%sさんのカウントダウンがクリック待ち' % g['name'])
-            ck(len(re.findall(r'<p:spTgt spid="\d+"/>', sx)) == 30,
+            ck(not click_wait(sx), '%sさんのカウントダウンがクリック待ち' % g['name'])
+            ck(countdown_steps(sx) == 30,
                '%sさんのカウントダウンの手順が %d 回（30 回のはず）'
-               % (g['name'], len(re.findall(r'<p:spTgt spid="\d+"/>', sx))))
+               % (g['name'], countdown_steps(sx)))
         else:
             ck(not adv, '非表示の%sさんのページに自動送りが残っている: %s' % (g['name'], adv))
     print('  アンバサダー・ディレクター: 表示 %s／非表示 %s'
@@ -251,7 +266,7 @@ if plan_mp:
                 adv = set(re.findall(r'advTm="(\d+)"', sx))
                 ck(adv == {str((sec + 1) * 1000)},
                    '%d枚目（%s）の自動送りが %s（%d のはず）' % (k + 1, it['name'], adv or 'なし', (sec + 1) * 1000))
-                ck('<p:cond delay="indefinite"/>' not in sx, '%d枚目のカウントダウンがクリック待ち' % (k + 1))
+                ck(not click_wait(sx), '%d枚目のカウントダウンがクリック待ち' % (k + 1))
         # 差し込んだページの後ろに、2分30秒の下書き（非表示）が残っているか
         rest = [text(p)[1] for p in order[anchor + 1 + len(plan_mp):]]
         ck(any('１分' in t for t in rest), '2分30秒の下書きのページが消えている')

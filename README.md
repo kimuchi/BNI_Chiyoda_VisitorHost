@@ -143,6 +143,7 @@ BNI_Chiyoda_VisitorHost/
     ├── check_premtg.js       #   事前MTGのパワポ（人数の数え方・まとめ・役職のページ・写真・帯の色・登録したひな形）
     ├── check_talk_script.js  #   トークスクリプト（差し込みの中身・敬称・シート・ひな形の保存・画面）
     ├── lib_zip.js            #   ↑で使う、pptxの展開・再梱包
+    ├── check_countdown.js    #   カウントダウンの秒数を変えても、ベル・動画（音）の指示が残る
     ├── build_premtg_template.py # 事前MTGの見本pptxから既定のひな形（と premtg_template.html）を作る
     │  ── メンバープレゼン ──
     ├── check_member_presen.py#   テンプレートに対する通し検査（巡回の検査と↓の4つを順に呼ぶ）
