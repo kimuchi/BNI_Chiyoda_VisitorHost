@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html><head><base target="_top">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+ *{box-sizing:border-box;}
+ body{font-family:sans-serif;margin:0;padding:14px;font-size:13px;background:#f4f6f9;color:#222;}
+ h3{margin:0 0 4px;font-size:17px;color:#0055ff;}
+ .sub{font-size:12px;color:#666;margin-bottom:10px;line-height:1.6;}
+ .bar{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;background:#fff;border:1px solid #e2e6ec;
+      border-radius:8px;padding:9px 12px;margin-bottom:10px;}
+ .bar select{font-size:13px;padding:3px;}
+ .muted{font-size:11px;color:#888;}
+ .loading{background:#eef4ff;border:1px solid #c9dafc;color:#0047d6;border-radius:6px;padding:8px 11px;margin-bottom:10px;font-size:12px;}
+ .warn{background:#fff4e5;border:1px solid #ffc98a;color:#8a4b00;border-radius:6px;padding:8px 11px;margin-bottom:10px;font-size:12px;line-height:1.6;}
+ .summary{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;}
+ .pill{border-radius:14px;padding:4px 11px;font-size:12px;font-weight:bold;border:1px solid transparent;}
+ .pill.done{background:#e6f4ea;color:#137333;border-color:#b7dfc2;}
+ .pill.todo{background:#fff4e5;color:#a05a00;border-color:#ffd59e;}
+ .pill.late{background:#fce8e6;color:#b3261e;border-color:#f5b7b1;}
+ .pill.none{background:#f1f3f4;color:#666;border-color:#dfe1e5;}
+ .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:9px;}
+ .card{background:#fff;border:1px solid #e2e6ec;border-left:6px solid #dfe1e5;border-radius:8px;padding:10px 11px;
+       display:flex;flex-direction:column;gap:5px;}
+ .card.done{border-left-color:#1e8e3e;} .card.todo{border-left-color:#f29900;} .card.late{border-left-color:#d93025;}
+ .card .nm{font-weight:bold;font-size:13.5px;}
+ .card .who{font-size:11px;color:#777;}
+ .card .st{font-size:12px;font-weight:bold;}
+ .card.done .st{color:#137333;} .card.todo .st{color:#a05a00;} .card.late .st{color:#b3261e;} .card.none .st{color:#888;}
+ .card ul{margin:0;padding-left:17px;font-size:11.5px;color:#555;line-height:1.55;}
+ .card li.late{color:#b3261e;}
+ .card button{align-self:flex-start;margin-top:auto;}
+ button{font-family:inherit;font-size:12.5px;border:1px solid #c8d0db;background:#fff;border-radius:6px;padding:5px 11px;cursor:pointer;}
+ button:hover{border-color:#0055ff;}
+ button.primary{background:#0055ff;color:#fff;border-color:#0055ff;font-weight:bold;}
+ button.primary:disabled{background:#9db8f2;border-color:#9db8f2;cursor:default;}
+ button.chip{font-size:11px;padding:2px 8px;border-radius:11px;margin:2px 4px 0 0;color:#0047d6;border-color:#c9dafc;background:#f5f9ff;}
+ .box{background:#fff;border:1px solid #e2e6ec;border-radius:8px;padding:10px 12px;margin-top:10px;}
+ .rolehead{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin-bottom:8px;}
+ .rolehead .rn{font-size:16px;font-weight:bold;color:#16233f;}
+ .progress{font-size:12px;margin-bottom:8px;}
+ .grp{font-size:12px;font-weight:bold;color:#0055ff;margin:14px 0 5px;padding-bottom:3px;border-bottom:1px solid #dbe3ef;}
+ .item{background:#fff;border:1px solid #e2e6ec;border-radius:8px;padding:9px 11px;margin-bottom:7px;}
+ .item.need{border-left:5px solid #f29900;}
+ .item.need.late{border-left-color:#d93025;}
+ .item.ok{border-left:5px solid #1e8e3e;}
+ .ihead{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px;margin-bottom:5px;}
+ .ititle{font-weight:bold;font-size:13px;}
+ .ipar{font-weight:normal;color:#888;font-size:11.5px;}
+ .badge{font-size:10.5px;border-radius:9px;padding:1px 7px;border:1px solid #dfe1e5;color:#555;background:#f8f9fa;white-space:nowrap;}
+ .badge.req{border-color:#ffd59e;background:#fff8ec;color:#a05a00;}
+ .badge.req.late{border-color:#f5b7b1;background:#fdecea;color:#b3261e;}
+ .badge.saved{border-color:#b7dfc2;background:#e6f4ea;color:#137333;}
+ .badge.unsaved{border-color:#c9dafc;background:#eef4ff;color:#0047d6;}
+ .item input[type=text],.item textarea{width:100%;font-family:inherit;font-size:13px;padding:6px 7px;border:1px solid #c8d0db;border-radius:5px;}
+ .item textarea{min-height:58px;resize:vertical;line-height:1.5;}
+ .item input.changed,.item textarea.changed{background:#f5f9ff;border-color:#8fb0f5;}
+ .ro{white-space:pre-wrap;background:#f8f9fa;border:1px dashed #d5dce6;border-radius:5px;padding:6px 7px;color:#555;min-height:28px;}
+ .hint{font-size:11.5px;color:#666;margin-top:4px;line-height:1.55;word-break:break-all;}
+ .hint b{color:#444;}
+ .hint .v{white-space:pre-wrap;}
+ .note{font-size:10.5px;color:#999;margin-top:3px;white-space:pre-wrap;}
+ .savebar{position:sticky;bottom:0;background:rgba(244,246,249,.96);padding:9px 0 3px;margin-top:8px;display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;}
+ #msg{font-size:12px;white-space:pre-wrap;line-height:1.55;flex-basis:100%;}
+ table.holders{border-collapse:collapse;width:100%;font-size:12px;margin:6px 0;}
+ table.holders td{padding:3px 5px;border-bottom:1px solid #f0f2f5;}
+ table.holders select{font-size:12px;max-width:100%;}
+</style></head>
+<body>
+<? var roleParam = (typeof params !== 'undefined' && params && params.role) ? String(params.role).replace(/[^a-z]/g, '') : '';
+   var viewParam = (typeof params !== 'undefined' && params && params.view) ? String(params.view).replace(/[^a-z]/g, '') : ''; ?>
+ <h3>役職ごとの入力（定例会の準備）</h3>
+ <div class="sub">次回の定例会について、役職ごとに必要なことを入力します。保存先は<b>ルーティンチェックシート</b>（その開催日の列）です。
+   入力欄には、前回の内容や名簿などから<b>推定した初期値</b>が入っています。確かめて直してから「保存する」を押してください。</div>
+ <div class="bar">
+   <label>定例会：<select id="meeting" onchange="changeMeeting()"></select></label>
+   <span class="muted" id="sheetNote"></span>
+   <span class="muted" style="margin-left:auto;" id="ver"></span>
+ </div>
+ <div class="loading" id="loading">⏳ 読み込み中…（ルーティンチェックシートと名簿を読んでいます）</div>
+ <div class="warn" id="warn" style="display:none;"></div>
+
+ <div id="overview" style="display:none;">
+   <div class="summary" id="summary"></div>
+   <div class="cards" id="cards"></div>
+   <div id="unknownNote"></div>
+   <div class="box">
+     <div style="font-weight:bold;font-size:12.5px;">担当者</div>
+     <div class="muted">役職の担当者（期が替わったとき）を直せます。一覧のカードに出ます。</div>
+     <div id="holderTable"></div>
+     <button onclick="saveHolders()">担当者を保存</button> <span id="holderMsg" class="muted"></span>
+   </div>
+ </div>
+
+ <div id="roleView" style="display:none;">
+   <div class="rolehead">
+     <button onclick="showOverview()">← 入力状況の一覧</button>
+     <span class="rn" id="roleName"></span><span class="muted" id="roleHolder"></span>
+     <button id="rotOpenBtn" style="display:none;" onclick="openRotation()">🔁 スピーカーローテーションの管理</button>
+   </div>
+   <div class="progress" id="progress"></div>
+   <div id="items"></div>
+   <div class="savebar">
+     <button class="primary" id="saveBtn" onclick="save()">保存する</button>
+     <span class="muted" id="dirty"></span>
+     <div id="msg"></div>
+   </div>
+ </div>
+
+ <div id="rotView" style="display:none;">
+   <div class="rolehead">
+     <button onclick="closeRotation()">← 書記兼会計の入力</button>
+     <span class="rn">スピーカーローテーション</span><span class="muted">（書記兼会計）</span>
+   </div>
+   <div class="sub" style="margin-bottom:6px;">メインプレゼンの順番です。開催ごとに、並び順の次の2名を割り当てます
+     （対象外の方と、⚙️ 設定 &gt; 休会日 の週は飛ばします）。ルーティンチェックシートにメインプレゼンが書いてある回は
+     <b>確定</b>として、そちらを出します。定例会スライド（前半）の「スピーカーローテーション」の表もここから作られます。</div>
+   <div class="box">
+     <div style="font-weight:bold;font-size:12.5px;">これからの予定</div>
+     <div id="rotWeeks"></div>
+   </div>
+   <div class="box">
+     <div style="font-weight:bold;font-size:12.5px;">次回のメインプレゼンターのご案内（Facebookに投稿する文）</div>
+     <textarea id="rotFb" rows="12" style="width:100%;font-family:inherit;font-size:12.5px;margin-top:5px;"></textarea>
+     <button onclick="copyFb()">📋 コピーする</button> <span class="muted" id="rotFbMsg"></span>
+   </div>
+   <div class="box">
+     <div style="font-weight:bold;font-size:12.5px;">並び順</div>
+     <div class="muted" id="rotAnchorNote" style="line-height:1.6;"></div>
+     <div id="rotMissing"></div>
+     <div id="rotOrder"></div>
+     <div style="margin-top:8px;font-size:12px;line-height:2;">
+       並びに入っていない方：<select id="rotAddName"></select> を <select id="rotAddPos"></select>
+       <button onclick="rotAdd()">並びに入れる</button><br>
+       入れ替え：<select id="rotSwapA"></select> と <select id="rotSwapB"></select>
+       <button onclick="rotSwap()">入れ替える</button>
+       <span class="muted">（ほかの方の順番はそのまま）</span>
+     </div>
+   </div>
+   <div class="box">
+     <div style="font-weight:bold;font-size:12.5px;">定例会スライド（前半）の表</div>
+     <div style="font-size:12px;margin:5px 0;">見出し：<input type="text" id="rotHeader" style="width:60%;"></div>
+     <div style="font-size:12px;">表の下の注意書き（1行に1つ。先頭に「※」が付きます）：</div>
+     <textarea id="rotNotes" rows="4" style="width:100%;font-family:inherit;font-size:12px;"></textarea>
+   </div>
+   <div class="box">
+     <div style="font-weight:bold;font-size:12.5px;">MP選出・ローテーション管理ツールから取り込む</div>
+     <div class="muted">ツールで保存したHTMLファイルを選ぶと、並び順・対象外・次回の開催日の位置をそのまま取り込みます（いまの並び順は置き換わります）。</div>
+     <input type="file" id="rotFile" accept=".html,.htm" onchange="rotImport(this)">
+   </div>
+   <div class="savebar">
+     <button class="primary" id="rotSaveBtn" onclick="rotSave()">並び順を保存</button>
+     <span class="muted" id="rotDirty"></span>
+     <div id="rotMsg" style="font-size:12px;white-space:pre-wrap;line-height:1.55;flex-basis:100%;"></div>
+   </div>
+ </div>
+
+<script>
+ var ROLE_PARAM = '<?= roleParam ?>';
+ var VIEW_PARAM = '<?= viewParam ?>';
+ var ctx = null, view = '', ids = [], fields = {}, busy = false;
+
+ function esc(x){ var d=document.createElement('span'); d.textContent = x==null?'':String(x); return d.innerHTML; }
+ function el(id){ return document.getElementById(id); }
+ function show(id, on){ var e=el(id); if(e) e.style.display = on ? '' : 'none'; }
+ function norm(s){ return String(s==null?'':s).replace(/\s+$/,''); }
+ function fail(e){
+   busy=false; show('loading', false);
+   var w=el('warn'); w.style.display='block';
+   w.innerHTML='エラー: '+esc((e&&e.message)?e.message:e);
+ }
+
+ window.onload = function(){
+   google.script.run.withSuccessHandler(function(v){ if(v) el('ver').innerText='版 '+v; }).getSystemVersion();
+   view = ROLE_PARAM || '';
+   load('');
+ };
+
+ // 開催日の内容を読み込む（読み込み中は保存できない）。
+ // 役職の画面を開くときは、その役職の初期値の推定もいっしょに受け取る
+ function load(date){
+   busy=true; el('saveBtn').disabled=true;
+   el('loading').innerHTML = view
+     ? '⏳ 読み込み中…（ルーティンチェックシート・名簿・参加者シートから初期値を推定しています）'
+     : '⏳ 読み込み中…（ルーティンチェックシートを読んでいます）';
+   show('loading', true);
+   google.script.run.withSuccessHandler(function(c){
+     busy=false; show('loading', false);
+     if(!c || !c.ok){ fail({message:(c&&c.message)||'読み込めませんでした。'}); return; }
+     setContext(c);
+   }).withFailureHandler(fail).getRoleInputContext(date, view || '');
+ }
+
+ function setContext(c){
+   ctx = c;
+   var sel = el('meeting');
+   sel.innerHTML = (c.meetings||[]).map(function(m){
+     return '<option value="'+esc(m.dateValue)+'"'+(m.dateValue===c.date?' selected':'')+'>'+esc(m.display)+'</option>';
+   }).join('');
+   if(!(c.meetings||[]).some(function(m){ return m.dateValue===c.date; })){
+     sel.innerHTML = '<option value="'+esc(c.date)+'" selected>'+esc(c.display)+'</option>' + sel.innerHTML;
+   }
+   el('sheetNote').innerText = c.found ? (c.sheetName+(c.meetingNo?'　第'+c.meetingNo+'回':'')) : '';
+   var w = el('warn');
+   if(c.message){ w.style.display='block'; w.innerHTML=esc(c.message); } else { w.style.display='none'; w.innerHTML=''; }
+   if(view && roleOf(view)) openRole(view); else { view=''; showOverview(true); }
+   if(VIEW_PARAM==='rotation' && view==='secretary' && !rotOpened){ rotOpened=true; openRotation(); }
+ }
+
+ function roleOf(key){ return ctx ? (ctx.roles||[]).filter(function(r){ return r.key===key; })[0] : null; }
+ function isDirty(){
+   for(var i=0;i<ids.length;i++){ var it=ctx.items[ids[i]]; if(it && !it.readOnly && norm(fields[ids[i]])!==norm(it.orig)) return true; }
+   return false;
+ }
+ function leaveOk(){
+   if(view && isDirty()) return confirm('保存していない入力があります。ほかの画面に移ると消えます。よろしいですか？');
+   return true;
+ }
+ function changeMeeting(){
+   var d = el('meeting').value;
+   if(!leaveOk()){ el('meeting').value = ctx.date; return; }
+   fields={}; ids=[];
+   load(d);
+ }
+
+ // --- 入力状況の一覧 ---
+ var STATE = { done:['✅','入力済み'], todo:['⚠️','未入力あり'], late:['⛔','期日を過ぎた未入力あり'], none:['—','必須の項目なし'] };
+ function showOverview(force){
+   if(!force && !leaveOk()) return;
+   view=''; ids=[]; fields={};
+   show('roleView', false); show('rotView', false); show('overview', true);
+   var roles = ctx.roles||[], n={done:0,todo:0,late:0,none:0};
+   roles.forEach(function(r){ n[r.status.state]++; });
+   el('summary').innerHTML =
+     '<span class="pill done">✅ 入力済み '+n.done+'</span>'
+     +'<span class="pill todo">⚠️ 未入力あり '+n.todo+'</span>'
+     +(n.late?'<span class="pill late">⛔ 期日を過ぎた未入力 '+n.late+'</span>':'')
+     +(n.none?'<span class="pill none">必須の項目なし '+n.none+'</span>':'')
+     +'<span class="muted" style="align-self:center;">'+esc(ctx.display)+' の定例会・'+roles.length+'役職</span>';
+   el('cards').innerHTML = roles.map(function(r, i){
+     var st=r.status, s=STATE[st.state]||STATE.none;
+     var miss = st.missing.slice(0,5).map(function(m){
+       var t = (m.parent?m.parent+' › ':'')+m.title.replace('（'+r.label+'）','');     // 「今週の共有事項（役職名）」は役職名を省く
+       return '<li class="'+(m.late?'late':'')+'">'+esc(t)+(m.dueLabel?'（'+esc(m.dueLabel)+'まで）':'')+'</li>';
+     }).join('') + (st.missing.length>5?'<li>ほか '+(st.missing.length-5)+'件</li>':'');
+     return '<div class="card '+st.state+'" id="card_'+i+'">'
+       +'<div><span class="nm">'+esc(r.label)+'</span><div class="who">'+esc(r.holder||'担当者 未設定')+'</div></div>'
+       +'<div class="st">'+s[0]+' '+s[1]+(st.required?'（必須 '+st.filled+'／'+st.required+'）':'')+'</div>'
+       +(miss?'<ul>'+miss+'</ul>':'')
+       +'<button onclick="openRole(\''+r.key+'\')">入力する →</button></div>';
+   }).join('');
+   var un = ctx.unknown||[];
+   el('unknownNote').innerHTML = un.length
+     ? '<div class="warn" style="margin-top:10px;">ルーティンチェックシートの「担当」が、どの役職か分からない項目があります（その役職の画面には出ません）：'
+       + un.map(function(u){ return esc((u.parent?u.parent+' › ':'')+u.title)+'（担当「'+esc(u.roleRaw)+'」）'; }).join('、')
+       + '<br>シートの「担当」を、プレジ・バイス・書記兼会計・VH・EC・WEB などの書き方に直してください。</div>'
+     : '';
+   renderHolders();
+ }
+
+ function renderHolders(){
+   var names = (ctx.members||[]).slice();
+   el('holderTable').innerHTML = '<table class="holders">' + (ctx.roles||[]).map(function(r, i){
+     var opts = ['<option value="">（未設定）</option>'], has=false;
+     names.forEach(function(n){ if(n===r.holder) has=true; opts.push('<option value="'+esc(n)+'"'+(n===r.holder?' selected':'')+'>'+esc(n)+'</option>'); });
+     if(r.holder && !has) opts.splice(1,0,'<option value="'+esc(r.holder)+'" selected>'+esc(r.holder)+'</option>');
+     return '<tr><td>'+esc(r.label)+'</td><td><select id="hd_'+i+'">'+opts.join('')+'</select></td></tr>';
+   }).join('') + '</table>';
+ }
+ function saveHolders(){
+   var map={};
+   (ctx.roles||[]).forEach(function(r, i){ var s=el('hd_'+i); if(s) map[r.key]=s.value; });
+   el('holderMsg').innerText='保存しています…';
+   google.script.run.withSuccessHandler(function(res){
+     el('holderMsg').innerText = res.message || '';
+     if(res.ok){ (ctx.roles||[]).forEach(function(r){ r.holder = res.holders[r.key]||''; }); showOverview(true); el('holderMsg').innerText=res.message; }
+   }).withFailureHandler(fail).saveRoleHolders(map);
+ }
+
+ // --- 役職ごとの入力 ---
+ // 入力欄の初期値：シートに値があればそれ、無ければ推定（prefill）
+ function initialValue(it){
+   if(it.readOnly) return it.value||'';
+   if(norm(it.value)) return it.value;
+   return (it.estimate && it.estimate.mode==='prefill') ? it.estimate.value : '';
+ }
+ function openRole(key){
+   var r = roleOf(key);
+   if(!r || busy) return;
+   view = key;
+   // 初期値の推定がまだなら、その役職の分を読み込んでから開く
+   if(ctx.estimatedFor !== key && ctx.estimatedFor !== '*'){ load(ctx.date); return; }
+   ids = r.items.slice(); fields = {};
+   ids.forEach(function(id){ fields[id] = initialValue(ctx.items[id]); });
+   show('overview', false); show('roleView', true);
+   el('roleName').innerText = r.label;
+   show('rotOpenBtn', key==='secretary');
+   show('rotView', false);
+   el('roleHolder').innerText = r.holder ? '（'+r.holder+'）' : '';
+   el('msg').innerText = '';
+   renderItems();
+   el('saveBtn').disabled = busy || !ctx.found;
+ }
+
+ // 「代理・欠席」の欄はお名前の数も出す（フォームの「欠席人数」などの代わり）
+ function countNames(v){
+   var s=String(v||'').replace(/[（(][^）)]*[）)]/g,'').trim();
+   if(!s || /^(なし|無し|ー|-|―)/.test(s)) return 0;
+   return s.split(/[、,，・\/／\s　]+/).filter(function(x){ return x; }).length;
+ }
+
+ function renderItems(){
+   var html=[], lastGroup=null;
+   ids.forEach(function(id, i){
+     var it = ctx.items[id], g = it.group || '';
+     if(g!==lastGroup){ html.push('<div class="grp">'+esc(g||'定例会の準備')+'</div>'); lastGroup=g; }
+     html.push('<div class="item" id="it_'+i+'"></div>');
+   });
+   el('items').innerHTML = html.join('') || '<div class="muted">この役職の項目はありません。</div>';
+   ids.forEach(function(id, i){ renderItem(i); });
+   updateProgress();
+ }
+
+ function renderItem(i){
+   var id=ids[i], it=ctx.items[id], v=fields[id], box=el('it_'+i);
+   if(!box) return;
+   var saved = !!norm(it.value), changed = !it.readOnly && norm(v)!==norm(it.orig);
+   var late = it.required && !saved && it.dueDate && it.dueDate < ctx.today;
+   box.className = 'item' + (it.required ? (saved && !changed ? ' ok' : ' need'+(late?' late':'')) : '');
+   var h = '<div class="ihead"><span class="ititle">'+(it.parent?'<span class="ipar">'+esc(it.parent)+' › </span>':'')+esc(it.title)+'</span>';
+   if(it.required) h += '<span class="badge req'+(late?' late':'')+'">必須'+(it.dueLabel?'・'+esc(it.dueLabel)+'まで':'')+(it.weekday?'（'+esc(it.weekday)+'）':'')+'</span>';
+   if(it.readOnly) h += '<span class="badge">自動</span>';
+   else if(changed) h += '<span class="badge unsaved">未保存</span>';
+   else if(saved) h += '<span class="badge saved">入力済み</span>';
+   else h += '<span class="badge">未入力</span>';
+   h += '</div>';
+   if(it.readOnly){
+     h += '<div class="ro">'+esc(it.value||'（空欄）')+'</div><div class="hint">'+esc(it.readOnlyWhy)+'</div>';
+   } else if(it.multiline){
+     h += '<textarea id="f_'+i+'" oninput="edit('+i+')" class="'+(changed?'changed':'')+'" rows="'+Math.min(8,Math.max(3,String(v||'').split('\n').length+1))+'">'+esc(v)+'</textarea>';
+   } else {
+     h += '<input type="text" id="f_'+i+'" oninput="edit('+i+')" class="'+(changed?'changed':'')+'" value="'+esc(v)+'"'
+       +(it.kind==='count'?' inputmode="numeric" style="width:90px;"':'')+'>';
+   }
+   if(!it.readOnly){
+     var hints=[];
+     if(/代理・?欠席/.test(it.parent)) hints.push('<b>'+countNames(v)+'名</b>');
+     var e = it.estimate;
+     // 推定：入力欄と違うときだけ出す。シートにもう値がある項目は、前回の引き継ぎ（carry）なら出さない
+     if(e && norm(e.value)!==norm(v) && !(saved && e.basis==='carry')){
+       hints.push('推定：<span class="v">'+esc(e.value)+'</span>（'+esc(e.source)+'） <button class="chip" onclick="useEst('+i+')">これにする</button>');
+     } else if(e && norm(e.value)===norm(v) && !saved){
+       hints.push('<span class="muted">推定で入れています（'+esc(e.source)+'）</span>');
+     }
+     if(it.prev && norm(it.prev.value)!==norm(v)){
+       hints.push('前回（'+esc(md(it.prev.date))+'）：<span class="v">'+esc(it.prev.value)+'</span> <button class="chip" onclick="usePrev('+i+')">前回と同じ</button>');
+     } else if(!it.prev){
+       hints.push('<span class="muted">前回の記載はありません</span>');
+     }
+     var chips = '<button class="chip" onclick="setVal('+i+',\'なし\')">なし</button>';
+     if(it.kind==='check' || !it.history || !it.history.length) chips += '<button class="chip" onclick="setVal('+i+',\'済\')">済</button>';
+     if(changed) chips += '<button class="chip" onclick="setVal('+i+',null)">元に戻す</button>';
+     hints.push(chips);
+     h += '<div class="hint">'+hints.join('<br>')+'</div>';
+   }
+   if(it.note) h += '<div class="note">備考：'+esc(it.note)+'</div>';
+   box.innerHTML = h;
+ }
+
+ function md(d){ var p=String(d||'').split('/'); return p.length===3 ? (parseInt(p[1],10)+'/'+parseInt(p[2],10)) : d; }
+ function edit(i){
+   var f=el('f_'+i); if(!f) return;
+   fields[ids[i]] = f.value;
+   var it=ctx.items[ids[i]], changed = norm(f.value)!==norm(it.orig);
+   f.className = changed ? 'changed' : '';
+   updateProgress();
+ }
+ // 値を入れて描き直す（null は元の値に戻す）
+ function setVal(i, v){
+   var it=ctx.items[ids[i]];
+   fields[ids[i]] = (v===null) ? (it.value||'') : v;
+   renderItem(i); updateProgress();
+ }
+ function useEst(i){ var e=ctx.items[ids[i]].estimate; if(e) setVal(i, e.value); }
+ function usePrev(i){ var p=ctx.items[ids[i]].prev; if(p) setVal(i, p.value); }
+
+ function updateProgress(){
+   var req=0, filled=0, pend=0, changed=0;
+   ids.forEach(function(id){
+     var it=ctx.items[id];
+     if(!it.readOnly && norm(fields[id])!==norm(it.orig)) changed++;
+     if(!it.required) return;
+     req++;
+     if(norm(it.value)) filled++;
+     else if(norm(fields[id])) pend++;
+   });
+   el('progress').innerHTML = req
+     ? '必須 <b>'+req+'</b> 項目のうち、シートに入っているもの <b>'+filled+'</b>'
+       + (pend ? '・この画面で入れたもの（未保存）<b>'+pend+'</b>' : '')
+       + (req-filled-pend>0 ? '・<span style="color:#b3261e;">まだ空欄 <b>'+(req-filled-pend)+'</b></span>' : '')
+     : '<span class="muted">この役職には必須の項目がありません。</span>';
+   el('dirty').innerText = changed ? ('保存していない変更 '+changed+'件') : '変更はありません';
+ }
+
+ function save(){
+   if(busy || !view) return;
+   var entries=[];
+   ids.forEach(function(id){
+     var it=ctx.items[id];
+     if(it.readOnly) return;
+     if(norm(fields[id])===norm(it.orig)) return;
+     entries.push({ id:id, value:fields[id], orig:it.orig });
+   });
+   if(!entries.length){ el('msg').innerHTML='<span style="color:#666;">変更はありません。</span>'; return; }
+   busy=true; el('saveBtn').disabled=true;
+   el('msg').innerHTML='<span style="color:#0055ff;">保存しています…（'+entries.length+'件）</span>';
+   var keep=view;
+   google.script.run.withSuccessHandler(function(res){
+     busy=false; el('saveBtn').disabled=false;
+     if(!res || !res.ok){ el('msg').innerHTML='<span style="color:#d00;">'+esc((res&&res.message)||'保存できませんでした。')+'</span>'; return; }
+     ctx = res.context; view = keep;
+     // 保存しなかった項目は、入力した値を残す
+     var left = {};
+     (res.skipped||[]).forEach(function(s){ if(s.id) left[s.id]=true; });
+     var before = fields;
+     openRole(keep);
+     ids.forEach(function(id, i){
+       if(left[id] && before[id]!==undefined){ fields[id]=before[id]; renderItem(i); }
+     });
+     updateProgress();
+     el('msg').innerHTML='<span style="color:'+((res.skipped||[]).length?'#a05a00':'#188038')+';">'+esc(res.message)+'</span>';
+   }).withFailureHandler(function(e){ busy=false; el('saveBtn').disabled=false; el('msg').innerHTML='<span style="color:#d00;">'+esc((e&&e.message)?e.message:e)+'</span>'; })
+     .saveRoleInput(ctx.date, view, entries);
+ }
+ // ===================== スピーカーローテーション =====================
+ // 並び順は位置（何番目か）で考える。起点（anchor）の日は、並びの pointer 番目から2名。
+ // 並びを直すときは、ツールと同じく pointer がずれないように合わせる（前に入れたら+1、前を消したら-1）。
+ var rot=null, rOrder=[], rExcluded=[], rAnchor=null, rDirty=false, rotOpened=false;
+ function nm(s){ return String(s==null?'':s).replace(/[\s　]+/g,''); }
+ function openRotation(){
+   if(busy) return;
+   show('roleView', false); show('overview', false); show('rotView', true);
+   busy=true; el('rotSaveBtn').disabled=true;
+   el('loading').innerHTML='⏳ 読み込み中…（スピーカーローテーション）'; show('loading', true);
+   google.script.run.withSuccessHandler(function(r){
+     busy=false; show('loading', false); el('rotSaveBtn').disabled=false;
+     if(!r || !r.ok){ fail({message:(r&&r.message)||'読み込めませんでした。'}); return; }
+     setRot(r, '');
+   }).withFailureHandler(fail).getSpeakerRotation();
+ }
+ function closeRotation(){
+   if(rDirty && !confirm('保存していない並び順の変更があります。戻ると消えます。よろしいですか？')) return;
+   rDirty=false;
+   show('rotView', false);
+   if(ctx && roleOf('secretary')){ view='secretary'; show('roleView', true); }
+   else showOverview(true);
+ }
+ function setRot(r, msg){
+   rot=r; rOrder=r.order.slice(); rExcluded=r.excluded.slice(); rAnchor={ date:r.anchor.date, pointer:r.anchor.pointer };
+   rDirty=false;
+   el('rotHeader').value = r.header||'';
+   el('rotNotes').value = (r.notes||[]).join('\n');
+   el('rotFb').value = r.fbText||'';
+   renderRot();
+   el('rotMsg').innerHTML = msg ? '<span style="color:#188038;">'+esc(msg)+'</span>' : '';
+ }
+ function isEx(n){ return rExcluded.some(function(x){ return nm(x)===nm(n); }); }
+ // 並びの start 番目から count 組（対象外は飛ばす）
+ function rPairs(start, count){
+   var n=rOrder.length, pairs=[]; if(!n) return { pairs:[], next:0 };
+   var idx=((start%n)+n)%n, guard=0, limit=n*4+10;
+   while(pairs.length<count && guard<limit){
+     var picked=[];
+     while(picked.length<2 && guard<limit){ if(!isEx(rOrder[idx])) picked.push(rOrder[idx]); idx=(idx+1)%n; guard++; }
+     if(picked.length===2) pairs.push(picked); else break;
+   }
+   return { pairs:pairs, next:idx };
+ }
+ function rPrev(p){
+   var n=rOrder.length; if(!n) return p;
+   var idx=((p%n)+n)%n, found=[], guard=0;
+   while(found.length<2 && guard<n*4+10){ idx=(idx-1+n)%n; if(!isEx(rOrder[idx])) found.push(idx); guard++; }
+   return found.length===2 ? found[1] : p;
+ }
+ function dOf(s){ var p=String(s).split('/'); return new Date(+p[0], +p[1]-1, +p[2]); }
+ function ymd(d){ return d.getFullYear()+'/'+('0'+(d.getMonth()+1)).slice(-2)+'/'+('0'+d.getDate()).slice(-2); }
+ // a の次の週から b まで（b を含む）の、休会日を除いた開催の回数
+ function between(a, b){
+   var cur=new Date(a.getTime()), n=0, hol=rot.holidays||[];
+   for(var i=0;i<520;i++){ cur.setDate(cur.getDate()+7); if(cur.getTime()>b.getTime()) break; if(hol.indexOf(ymd(cur))<0) n++; }
+   return n;
+ }
+ function rPointerAt(dateStr){
+   var a=dOf(rAnchor.date), hol=rot.holidays||[], p=rAnchor.pointer, d=dOf(dateStr), k, i;
+   for(i=0;i<60 && hol.indexOf(ymd(a))>=0;i++) a.setDate(a.getDate()+7);
+   if(d.getTime()>=a.getTime()){ k=between(a,d); return k ? rPairs(p,k).next : p; }
+   k=between(d,a); for(i=0;i<k;i++) p=rPrev(p); return p;
+ }
+ function renderRot(){
+   var byName={};
+   (rot.members||[]).forEach(function(m){ byName[nm(m.name)]=m; });
+   // これからの予定（確定の回はルーティンチェックシートのまま。予定の回は、いまの並び順で計算し直す）
+   el('rotWeeks').innerHTML = '<table class="holders"><tr><td class="muted">回</td><td class="muted">日付</td><td class="muted">1人目</td><td class="muted">2人目</td><td></td></tr>'
+     + (rot.weeks||[]).map(function(w, i){
+         var names = w.source==='routine' ? w.people.map(function(p){ return p.name; }) : (rPairs(rPointerAt(w.date),1).pairs[0]||[]);
+         var cell=function(n){ var m=byName[nm(n)]; return n ? esc(n)+(m?'':' <span style="color:#b3261e;font-size:10.5px;">名簿にいない</span>') : ''; };
+         return '<tr'+(i===0?' style="background:#eef4ff;"':'')+'><td>'+(w.no?'第'+esc(w.no)+'回':'')+'</td><td>'+esc(w.md)+(i===0?' <b>次回</b>':'')+'</td>'
+           +'<td>'+cell(names[0])+'</td><td>'+cell(names[1])+'</td>'
+           +'<td>'+(w.source==='routine'?'<span class="badge saved">確定</span>':'<span class="badge">予定</span>')+'</td></tr>';
+       }).join('') + '</table>';
+   var ad=dOf(rAnchor.date), first=rPairs(rAnchor.pointer,1).pairs[0]||[];
+   el('rotAnchorNote').innerHTML = (ad.getMonth()+1)+'/'+ad.getDate()+' の回から、この並び順どおりに割り当てます（その回は '
+     + esc(first.join('さん・'))+(first.length?'さん':'')+'）。これより前の回と「確定」の回は、並び順を直しても変わりません。'
+     + (rot.rebased ? '<br><span style="color:#0047d6;">ルーティンチェックシートで確定した回のあとへ、起点を進めました（保存すると記録されます）。</span>' : '');
+   el('rotMissing').innerHTML = ((rot.holidayHints||[]).length
+       ? '<div class="warn" style="margin:6px 0;">ルーティンチェックシートで開催回が空欄の日（'+esc(rot.holidayHints.join('、'))
+         + '）が、休会日に入っていません。お休みなら ⚙️ 設定 &gt; 休会日 に登録してください（登録しないと、その週にも割り当てます）。</div>' : '')
+     + ((rot.missing||[]).length
+     ? '<div class="warn" style="margin:6px 0;">メンバー名簿にいない方が並びに入っています：'+esc(rot.missing.join('、'))
+       + '（退会された方なら「外す」で並びから外してください。名簿の登録漏れなら名簿に登録してください）</div>' : '');
+   var weekOf={}, k=0, seen={};
+   // 起点から数えて何回目に当たるか（入れ替えの選択肢に出す）
+   var res=rPairs(rAnchor.pointer, rOrder.length);
+   res.pairs.forEach(function(pr){ k++; pr.forEach(function(n){ if(!seen[nm(n)]){ seen[nm(n)]=1; weekOf[nm(n)]=k; } }); });
+   // 起点の回の1人目の位置（対象外の方は飛ばす）
+   var startIdx=((rAnchor.pointer%rOrder.length)+rOrder.length)%rOrder.length;
+   for(var s0=0; s0<rOrder.length && isEx(rOrder[startIdx]); s0++) startIdx=(startIdx+1)%rOrder.length;
+   el('rotOrder').innerHTML = '<table class="holders">' + rOrder.map(function(n, i){
+     var ex=isEx(n), cur=(i===startIdx);
+     return '<tr style="'+(ex?'color:#999;':'')+(cur?'background:#fff8ec;':'')+'"><td class="muted">'+(i+1)+'</td>'
+       +'<td>'+esc(n)+(cur?' <span class="badge req">'+(ad.getMonth()+1)+'/'+ad.getDate()+'の回はここから</span>':'')
+       +(byName[nm(n)]?'':' <span style="color:#b3261e;font-size:10.5px;">名簿にいない</span>')+'</td>'
+       +'<td><label><input type="checkbox" id="rx_'+i+'" onchange="rotToggle('+i+')"'+(ex?'':' checked')+'> 含める</label></td>'
+       +'<td class="muted">'+(ex?'':(weekOf[nm(n)]?weekOf[nm(n)]+'回目':''))+'</td>'
+       +'<td><button class="chip" onclick="rotMove('+i+',-1)">↑</button><button class="chip" onclick="rotMove('+i+',1)">↓</button>'
+       +'<button class="chip" onclick="rotDel('+i+')">外す</button></td></tr>';
+   }).join('') + '</table>';
+   var inOrd={}; rOrder.forEach(function(n){ inOrd[nm(n)]=1; });
+   var cands=(rot.members||[]).filter(function(m){ return !inOrd[nm(m.name)]; });
+   el('rotAddName').innerHTML = cands.length ? cands.map(function(m){ return '<option value="'+esc(m.name)+'">'+esc(m.name)+'</option>'; }).join('')
+     : '<option value="">（名簿の方は全員並びに入っています）</option>';
+   el('rotAddPos').innerHTML = '<option value="0">先頭</option>' + rOrder.map(function(n, i){
+     return '<option value="'+(i+1)+'"'+(i===rOrder.length-1?' selected':'')+'>'+(i+1)+'. '+esc(n)+' のうしろ</option>'; }).join('');
+   var sw = rOrder.filter(function(n){ return !isEx(n); }).map(function(n){
+     return '<option value="'+esc(n)+'">'+(weekOf[nm(n)]?weekOf[nm(n)]+'回目：':'')+esc(n)+'</option>'; }).join('');
+   el('rotSwapA').innerHTML = sw; el('rotSwapB').innerHTML = sw;
+   el('rotDirty').innerText = rDirty ? '保存していない変更があります' : '';
+ }
+ function rChanged(){ rDirty=true; renderRot(); }
+ function rotToggle(i){
+   var n=rOrder[i], on=el('rx_'+i) ? el('rx_'+i).checked : !isEx(n);
+   rExcluded = rExcluded.filter(function(x){ return nm(x)!==nm(n); });
+   if(!on) rExcluded.push(n);
+   rChanged();
+ }
+ function rotMove(i, d){
+   var j=i+d; if(j<0 || j>=rOrder.length) return;
+   var t=rOrder[i]; rOrder[i]=rOrder[j]; rOrder[j]=t;          // 位置で考えるので、起点の位置はそのまま
+   rChanged();
+ }
+ function rotDel(i){
+   var n=rOrder[i];
+   if(!confirm('「'+n+'」を並びから外しますか？（「並び順を保存」を押すまでは元に戻せます）')) return;
+   rOrder.splice(i,1);
+   if(i<rAnchor.pointer) rAnchor.pointer--;
+   if(rAnchor.pointer>=rOrder.length) rAnchor.pointer=0;
+   rExcluded = rExcluded.filter(function(x){ return nm(x)!==nm(n); });
+   rChanged();
+ }
+ function rotAdd(){
+   var n=el('rotAddName').value; if(!n) return;
+   var pos=parseInt(el('rotAddPos').value,10); if(!(pos>=0)) pos=rOrder.length;
+   rOrder.splice(pos,0,n);
+   if(pos<=rAnchor.pointer) rAnchor.pointer++;
+   rChanged();
+ }
+ function rotSwap(){
+   var a=el('rotSwapA').value, b=el('rotSwapB').value;
+   if(!a || !b || nm(a)===nm(b)){ el('rotMsg').innerHTML='<span style="color:#b3261e;">別の2人を選んでください。</span>'; return; }
+   var ia=-1, ib=-1;
+   rOrder.forEach(function(n,i){ if(nm(n)===nm(a)) ia=i; if(nm(n)===nm(b)) ib=i; });
+   if(ia<0 || ib<0) return;
+   var t=rOrder[ia]; rOrder[ia]=rOrder[ib]; rOrder[ib]=t;
+   rChanged();
+   el('rotMsg').innerHTML='<span style="color:#188038;">'+esc(a)+'さんと'+esc(b)+'さんの順番を入れ替えました（まだ保存していません）。</span>';
+ }
+ function rotSave(){
+   if(busy) return;
+   busy=true; el('rotSaveBtn').disabled=true;
+   el('rotMsg').innerHTML='<span style="color:#0055ff;">保存しています…</span>';
+   google.script.run.withSuccessHandler(function(r){
+     busy=false; el('rotSaveBtn').disabled=false;
+     if(!r || !r.ok){ el('rotMsg').innerHTML='<span style="color:#d00;">'+esc((r&&r.message)||'保存できませんでした。')+'</span>'; return; }
+     setRot(r, r.message);
+   }).withFailureHandler(function(e){ busy=false; el('rotSaveBtn').disabled=false; el('rotMsg').innerHTML='<span style="color:#d00;">'+esc((e&&e.message)?e.message:e)+'</span>'; })
+     .saveSpeakerRotation({ order:rOrder, excluded:rExcluded, anchor:rAnchor, base:rot.updated,
+                            header:el('rotHeader').value, notes:el('rotNotes').value.split('\n') });
+ }
+ function copyFb(){
+   var t=el('rotFb');
+   try { t.select(); document.execCommand('copy'); el('rotFbMsg').innerText='コピーしました'; }
+   catch(e){ el('rotFbMsg').innerText='Ctrl+C（Macは ⌘+C）でコピーしてください'; }
+ }
+ // ツールのHTMLから、ROTATION_STORE（並び順などのJSON）の部分だけを取り出して送る
+ function rotImport(input){
+   var f=input.files && input.files[0]; if(!f) return;
+   if(!confirm('いまの並び順を、「'+f.name+'」の内容で置き換えます。よろしいですか？')){ input.value=''; return; }
+   var rd=new FileReader();
+   rd.onload=function(){
+     var m=String(rd.result).match(/<script id="ROTATION_STORE" type="application\/json">([\s\S]*?)<\/script>/);
+     input.value='';
+     if(!m){ el('rotMsg').innerHTML='<span style="color:#d00;">このファイルにローテーションのデータ（ROTATION_STORE）が見つかりません。</span>'; return; }
+     el('rotMsg').innerHTML='<span style="color:#0055ff;">取り込んでいます…</span>';
+     google.script.run.withSuccessHandler(function(r){
+       if(!r || !r.ok){ el('rotMsg').innerHTML='<span style="color:#d00;">'+esc((r&&r.message)||'取り込めませんでした。')+'</span>'; return; }
+       setRot(r, r.message);
+     }).withFailureHandler(fail).importSpeakerRotation(m[1]);
+   };
+   rd.readAsText(f, 'UTF-8');
+ }
+</script>
+</body></html>

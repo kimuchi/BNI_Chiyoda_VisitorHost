@@ -162,6 +162,7 @@ const { loadPage } = require('./lib_minidom');
 const meetings = [last, next].map((d) => ({ dateValue: d, display: d }));
 const page = loadPage('slides_meeting_first.html', { fails, server: {
   getSystemVersion: () => 'test',
+  getSpeakerRotationWeeks: () => ({ ok: true, weeks: [], header: '', notes: [] }),
   getMeetingSlideContext: () => ({ ok: true, meetings, defaultMeeting: meetings[0], lists: null, stats: {},
     templates: { meetingFirst: true, memberPresen: true }, routine: null, coreValues: [], memberCount: MEMBERS.length,
     members: MEMBERS.map((m) => ({ no: m.no, name: m.name, company: m.company, title: m.title, hasPhoto: true })) }),

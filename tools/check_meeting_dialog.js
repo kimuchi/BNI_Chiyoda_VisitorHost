@@ -60,6 +60,11 @@ const SERVER = {
   setRenewalMark: () => ({ ok: true }),
   getSystemVersion: () => 'test',
   generateMeetingSlides: (...args) => { sent.push(args); return { ok: true, message: '作成しました', url: 'u' }; },
+  // スピーカーローテーション（その日から5回ぶん。1回目はローテーションの予定＝ルーティンにメインプレゼンが無い日）
+  getSpeakerRotationWeeks: (d) => ({ ok: true, header: 'メインプレゼンテーション（各４分45秒）', notes: ['注意書き'],
+    weeks: [0, 1, 2, 3, 4].map((i) => ({ date: i ? '2026/10/0' + (i + 1) : d, no: String(534 + i), md: 'M/D', label: (i + 1) + '月',
+      source: i ? 'rotation' : 'rotation',
+      people: [MEMBERS[2 * i], MEMBERS[2 * i + 1]].map((m) => ({ name: m.name, title: m.title, collab: '協業' + i })) })) }),
 };
 const lastCall = () => (sent.length ? sent[sent.length - 1] : []);
 const lastOpts = () => lastCall()[3] || {};
@@ -108,10 +113,22 @@ const shown = (el) => !!el && el.style.display !== 'none' && el.style.display !=
   ck(last.kind === 'individual' && last.nextName === '吉田　まり子', '最後の方の NEXT が ' + last.nextName);
   ck((pagesOf(o)[0] || {}).block === '建築・住まい', '最初のページが「建築・住まい」の扉ではない');
   ck(o.referral === undefined && o.music === undefined, '前半なのにリファーラル発表・音楽が渡っている');
+  // スピーカーローテーション：ルーティンにメインプレゼンが無い日は、ローテーションの2名が入り、表も渡る
+  ck(els.mp1.value === MEMBERS[0].name && els.mp2.value === MEMBERS[1].name && /スピーカーローテーションのお2人/.test(els.mpNote.innerHTML),
+     'ローテーションの2名が入っていない: ' + els.mp1.value + ' / ' + els.mp2.value);
+  ck(/第534回/.test(els.rotPreview.innerHTML) && (els.rotPreview.innerHTML.match(/<br>/g) || []).length === 4, 'ローテーションの予定が出ていない');
+  ck(o.speakerRotation && o.speakerRotation.weeks.length === 5 && o.speakerRotation.header && o.speakerRotation.notes.length === 1,
+     'ローテーションの表のデータが渡っていない: ' + JSON.stringify(o.speakerRotation).slice(0, 120));
   ck(lastCall()[1]['新メンバー'] === '該当者なし' && lastCall()[1]['更新90'] === undefined, '前半の差し込む値がおかしい');
 
   step('坂爪さんも入れる', () => { els.gs_0.checked = true; els.mpAuto.checked = false; run('renderMP()'); run('gen()'); });
   o = lastOpts();
+  // メインプレゼンを選び直すと、表の1回目もその2名になる。表を作らないチェックなら渡さない
+  step('メインプレゼンを選び直す', () => { els.mp1.value = MEMBERS[5].name; run('gen()'); });
+  ck(lastOpts().speakerRotation.weeks[0].people[0].name === MEMBERS[5].name, '表の1回目が画面のメインプレゼンになっていない');
+  step('表を作らない', () => { els.rotOn.checked = false; run('gen()'); });
+  ck(lastOpts().speakerRotation === null, '表を作らないのにデータが渡っている');
+  step('表を作る・元に戻す', () => { els.rotOn.checked = true; els.mp1.value = MEMBERS[0].name; });
   ck(JSON.stringify(o.weeklyGuests) === JSON.stringify(['坂爪　達也', '吉田　まり子']), 'weeklyGuests が ' + JSON.stringify(o.weeklyGuests));
   ck(o.weeklyAuto === false && pagesOf(o).every((x) => !x.autoAdvanceMs), '自動送りを外したのに自動で進む');
   ck((pagesOf(o)[pagesOf(o).length - 1] || {}).nextName === '坂爪　達也', 'NEXT が先頭の方（坂爪さん）になっていない');

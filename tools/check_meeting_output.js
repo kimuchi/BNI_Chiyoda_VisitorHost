@@ -94,7 +94,9 @@ const sandbox = {
   DriveApp: { getFileById: (id) => ({ getBlob: () => fileBlob(path.join(PHOTO_DIR, id), 'image/png') }) },
   getSS_: () => ({ getSheets: () => sheets }),
   getMembersList: () => MEMBERS.map((m) => ({ no: m.no, name: m.name })),
-  getMemberMaster: () => ({ ok: true, members: MEMBERS }),
+  // 名簿の「つながりたい人（協業）」は検査用の値（長いものは表で文字が小さくなるか確かめる）
+  getMemberMaster: () => ({ ok: true, members: MEMBERS.map((m, i) => Object.assign({
+    collab: i % 3 === 0 ? '税理士・社会保険労務士・司法書士・創業支援者・金融機関の融資担当' : '不動産賃貸管理' }, m)) }),
   normName_: (s) => String(s == null ? '' : s).replace(/[\s　]/g, ''),
   findPhotoIdForName_: (n) => PHOTO_OF[String(n).replace(/[\s　]/g, '')] || '',
   matchInviterToMember(inviterName, list) {
@@ -113,10 +115,31 @@ sandbox.global = sandbox;
 vm.createContext(sandbox);
 // member_presen_srv.js は写真の取り込み（mpAddPhoto_）を使うため読み込む
 for (const f of ['ooxml.js', 'routine_srv.js', 'member_presen_srv.js', 'referral_srv.js',
-                 'splice_srv.js', 'meeting_slides_srv.js']) {
+                 'splice_srv.js', 'meeting_slides_srv.js', 'speaker_rotation_srv.js']) {
   vm.runInContext(fs.readFileSync(path.join(__dirname, '..', f), 'utf8'), sandbox, { filename: f });
 }
 const F = sandbox;
+// 休会日：ルーティンチェックシートで、列はあっても「定例会回数」が空の週（これまでの分）
+const HOLIDAYS = [];
+for (const n of Object.keys(ROUTINE)) {
+  const g = ROUTINE[n];
+  (g[0] || []).forEach((v, c) => {
+    if (/^\d{4}\/\d{2}\/\d{2}$/.test(String(v)) && String(v) < '2026/10/01' && !String((g[1] || [])[c] || '').trim()) HOLIDAYS.push(String(v));
+  });
+}
+sandbox.getHolidays = () => HOLIDAYS;
+// 開催回（2026/3/18 が第509回。休会日の週は数えない）
+sandbox.meetingCountOf_ = (d) => {
+  const cur = new Date('2026-03-18T00:00:00'); let n = 509;
+  const f = (x) => x.getFullYear() + '/' + ('0' + (x.getMonth() + 1)).slice(-2) + '/' + ('0' + x.getDate()).slice(-2);
+  for (let i = 0; i < 2000 && cur.getTime() <= d.getTime(); i++) {
+    if (cur.getTime() === d.getTime()) return HOLIDAYS.indexOf(f(cur)) < 0 ? n : 0;
+    if (HOLIDAYS.indexOf(f(cur)) < 0) n++;
+    cur.setDate(cur.getDate() + 7);
+  }
+  return 0;
+};
+sandbox.getMeetingCandidates = () => [];
 
 // メンバープレゼンのテンプレート（前半に差し込むときに使う）。展開済みのフォルダを渡す。
 const MP_DIR = process.env.MTG_MP_DIR || '';
@@ -302,6 +325,22 @@ if (MP_DIR && F.weeklyAnchor_(parts)) {
     + `／2分30秒=${longName || 'なし'}／差し込み先=${F.weeklyAnchor_(parts)}`);
 }
 
+// --- スピーカーローテーションの表（前半。画面と同じく、1回目はメインプレゼンのお2人）---
+let speakerRotation = null;
+if (!SECOND && process.env.MTG_ROTATION !== '0') {
+  const rw = F.getSpeakerRotationWeeks(DATE);
+  if (rw.ok) {
+    speakerRotation = { weeks: rw.weeks, header: rw.header, notes: rw.notes };
+    if (mainNames.some((n) => n)) {
+      speakerRotation.weeks[0].people = mainNames.map((n) => {
+        const who = F.getMemberMaster().members.find((m) => m.name === n) || {};
+        return { name: n || '', title: who.title || '', collab: who.collab || '' };
+      });
+    }
+    console.log('\nスピーカーローテーション: ' + speakerRotation.weeks.map((w) => `第${w.no}回 ${w.md} ${w.people.map((p) => p.name).join('・')}${w.source === 'routine' ? '（ルーティン）' : ''}`).join(' ／ '));
+  } else console.log('\nスピーカーローテーション: ' + rw.message);
+}
+
 const info = F.editMeetingSlides_(parts, map, rules, {
   memberPresen: memberPresen,
   weeklyGuests: weeklyGuests,
@@ -312,6 +351,7 @@ const info = F.editMeetingSlides_(parts, map, rules, {
   // 画面と同じく、並び（左・右）はそのまま渡す（名簿に無い方は空）
   mainPresenters: mainNames,
   recommendPairs: SECOND ? recoPairs : undefined,
+  speakerRotation: speakerRotation,
   lottery: lotteryNames,
   music: music,
 });
@@ -327,6 +367,7 @@ if (info.weekly && info.weekly.message) console.log('  ' + info.weekly.message.s
 if (info.guests && info.guests.message) console.log('  ' + info.guests.message);
 if (info.reco && info.reco.message) console.log('  ' + info.reco.message.split('\n').join('\n  '));
 if (info.renewal && info.renewal.message) console.log('  ' + info.renewal.message);
+if (info.rotation && info.rotation.message) console.log('  ' + info.rotation.message);
 
 // --- 書き出し ---
 const OUT = process.env.MTG_OUT || path.join(DIR, '..', 'out');
@@ -358,5 +399,7 @@ fs.writeFileSync(path.join(OUT, 'plan.json'), JSON.stringify({ plan, map, info: 
   // 推薦のことば（組ごとのページ）と、書記兼会計による報告（更新状況一覧）
   recoPairs: SECOND ? recoPairs : null, reco: info.reco || null,
   renewal: info.renewal || null,
+  // スピーカーローテーションの表（前半）
+  rotation: info.rotation || null, rotationPlan: speakerRotation,
 } }, null, 1));
 console.log(`\n書き出し: ${Object.keys(plan).length} パーツ → ${OUT}`);

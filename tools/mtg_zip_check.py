@@ -428,6 +428,49 @@ if any(k in m for _, k in RENEW):
     ck(sorted(seen) == sorted(k for _, k in RENEW if k in m),
        '更新状況の表が %s しか見つからない' % seen)
 
+# スピーカーローテーション（前半）：書記兼会計の画像の代わりに、5回分の表と注意書き
+rot = info.get('rotationPlan')
+if rot:
+    pg = [p for p in order if 'スピーカーローテーション' in re.sub(r'[\s\u3000]', '', text(p)[1])]
+    ck(len(pg) == 1, 'スピーカーローテーションのページが %d 枚' % len(pg))
+    for p in pg:
+        sx, t = text(p)
+        slide_h = int((re.search(r'<p:sldSz\s+cx="\d+"\s+cy="(\d+)"', pres) or [0, 6858000])[1])
+        big = [q for q in pics_of(p) if q[3] * q[4] > slide_w * slide_h * 0.3]
+        ck(not big, 'スピーカーローテーションのページに、元の表の画像が残っている: %s' % [q[0] for q in big])
+        frames = re.findall(r'<p:graphicFrame>.*?</p:graphicFrame>', sx, re.S)
+        tbl = [f for f in frames if 'スピーカーローテーションの表' in f]
+        ck(len(tbl) == 1, 'スピーカーローテーションの表が %d 個' % len(tbl))
+        if tbl:
+            rows = re.findall(r'<a:tr\b.*?</a:tr>', tbl[0], re.S)
+            ck(len(rows) == 1 + 3 * len(rot['weeks']), '表の行が %d 行（%d 行のはず）' % (len(rows), 1 + 3 * len(rot['weeks'])))
+            tt = html.unescape(''.join(re.findall(r'<a:t(?=[\s>])[^>]*>([^<]*)</a:t>', tbl[0])))
+            ck(rot['header'] in tt, '表の見出し「%s」が無い' % rot['header'])
+            for w in rot['weeks']:
+                ck(('第%s回' % w['no']) in tt, '表に「第%s回」が無い（「第○回」の書き換えで番号が変わった？）' % w['no'])
+                ck(w['label'] in tt, '表に「%s」が無い' % w['label'])
+                for pp in w['people']:
+                    for f in ('name', 'title', 'collab'):
+                        if pp.get(f):
+                            ck(pp[f] in tt, '表に「%s」が無い（%s）' % (pp[f], w['label']))
+            # 表と注意書きがページに収まっているか
+            off = re.search(r'<p:xfrm><a:off x="(\d+)" y="(\d+)"/><a:ext cx="(\d+)" cy="(\d+)"/>', tbl[0])
+            ck(off and int(off.group(2)) + int(off.group(4)) <= slide_h, '表がページの下にはみ出している')
+            # 文字が1行に収まる大きさか（全角1em・半角0.55em・空白0.3em、5%のゆとり）
+            cols = [int(v) for v in re.findall(r'<a:gridCol w="(\d+)"', tbl[0])]
+            for r in rows[1:]:
+                for ci, tc in enumerate(re.findall(r'<a:tc\b.*?</a:tc>', r, re.S)):
+                    v = html.unescape(''.join(re.findall(r'<a:t(?=[\s>])[^>]*>([^<]*)</a:t>', tc)))
+                    szs = [int(x) / 100.0 for x in re.findall(r'<a:rPr\b[^>]*\ssz="(\d+)"', tc)]
+                    if not v or not szs or ci >= len(cols):
+                        continue
+                    em = sum(0.3 if c == ' ' else (0.55 if ord(c) < 128 else 1.0) for c in v)
+                    ck(em * szs[0] <= (cols[ci] - 91440) / 12700.0 * 0.95 + 0.01 or szs[0] <= 7,
+                       '表の「%s」が1行に収まらない（%.1fpt）' % (v, szs[0]))
+        for n in rot.get('notes') or []:
+            ck(n in t, '注意書き「%s」が無い' % n[:20])
+    print('  スピーカーローテーション: %s' % '／'.join('第%s回 %s %s' % (w['no'], w['md'], '・'.join(pp['name'] for pp in w['people'])) for w in rot['weeks']))
+
 if photo_of:
     # リファーラル発表：どのページにも、その方の写真だけ
     for k, it in enumerate(plan_rf):
