@@ -59,7 +59,7 @@
       <h2><?= groups[g].group ?></h2>
       <div class="grid">
         <? var items = groups[g].items; for (var i = 0; i < items.length; i++) { ?>
-          <a class="card" target="_top" href="<?= appUrl ?>?p=<?= items[i].key ?>">
+          <a class="card" target="_top" href="<?= appUrl ?>?p=<?= items[i].key ?><?= items[i].query ? '&' + items[i].query : '' ?>">
             <b><?= items[i].label ?></b>
             <span><?= items[i].desc ?></span>
           </a>

@@ -60,10 +60,15 @@ function getHomeStatus() {
 
   // 大きなスライド
   try {
-    var bs = getBigTemplateStatus().templates, bd = 0;
-    for (var j = 0; j < bs.length; j++) if (bs[j].registered) bd++;
-    add('bigtpl', '大きなスライド（定例会など）', bd > 0,
-        bd + ' / ' + bs.length + ' 件 登録済み', '登録する', 'openBigTemplateDialog');
+    // 事前MTGのように、登録しなくても同梱の既定のひな形で作れるものは、登録済みと同じに数える
+    var bs = getBigTemplateStatus().templates, bd = 0, builtin = [];
+    for (var j = 0; j < bs.length; j++) {
+      if (bs[j].registered) bd++;
+      else if (bs[j].builtin) { bd++; builtin.push(bs[j].label); }
+    }
+    add('bigtpl', '大きなスライド（定例会など）', bd > builtin.length,
+        bd + ' / ' + bs.length + ' 件 登録済み' + (builtin.length ? '（' + builtin.join('・') + 'は既定のひな形）' : ''),
+        '登録する', 'openBigTemplateDialog');
   } catch (e) { add('bigtpl', '大きなスライド（定例会など）', false, '確認できませんでした', '登録する', 'openBigTemplateDialog'); }
 
   // Gemini

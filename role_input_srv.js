@@ -128,6 +128,7 @@ function openRoleInputDialog_(roleKey, view) {
   t.params = { role: def ? def.key : '', view: view || '' };
   SpreadsheetApp.getUi().showModalDialog(t.evaluate().setWidth(960).setHeight(780),
     view === 'rotation' ? 'スピーカーローテーション（書記兼会計）'
+      : view === 'premtg' ? '事前MTG（朝イチMTG）のパワポ（役職ごとの入力）'
       : (def ? def.label + 'の入力（次回の定例会）' : '役職ごとの入力（定例会の準備）'));
 }
 

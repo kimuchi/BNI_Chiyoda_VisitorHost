@@ -51,14 +51,19 @@
       +'<div style="font-size:11px;color:#888;margin:4px 0 6px;">Driveの共有リンク、またはファイルIDを貼り付けてください</div>'
       +'<input type="text" id="i_'+t.kind+'" placeholder="https://drive.google.com/file/d/xxxx/view">'
       +'<button onclick="reg(\''+t.kind+'\')">登録する</button> '
-      +'<button class="sub" onclick="bench(\''+t.kind+'\')">動作確認（所要時間を実測）</button> '
-      +'<button class="sub" onclick="ana(\''+t.kind+'\')">中身の内訳を見る</button> '
+      +((t.builtin && !t.registered) ? '' :                    // 既定のひな形（小さい）は、時間や内訳を測らなくてよい
+        '<button class="sub" onclick="bench(\''+t.kind+'\')">動作確認（所要時間を実測）</button> '
+        +'<button class="sub" onclick="ana(\''+t.kind+'\')">中身の内訳を見る</button> ')
       +'<button class="sub" onclick="tok(\''+t.kind+'\')">差し込み口を調べる</button>'
+      +(t.builtin?' <button class="sub" onclick="exportBuiltin()">既定のひな形をダウンロード</button>':'')
       +'<div class="state" id="s_'+t.kind+'">'
       +(t.registered
         ? '<span class="ok">✓ 登録済み</span> <a href="'+t.url+'" target="_blank">'+esc(t.fileName)+'</a>'
           +' <span style="color:#888;">'+(t.sizeMB?t.sizeMB+'MB':'')+'</span>'
-        : '<span class="ng">未登録</span>')
+        : (t.builtin
+          ? '<span class="ok">登録なし（同梱の既定のひな形で作ります）</span>'
+            +'<div style="font-size:11px;color:#666;margin-top:3px;">デザインを変えたいときは、既定のひな形をダウンロードしてPowerPointで直し、Driveに置いてリンクを登録してください。</div>'
+          : '<span class="ng">未登録</span>'))
       +'</div></div>';
    });
    document.getElementById('list').innerHTML=h;
@@ -81,6 +86,15 @@
      document.getElementById('msg').innerHTML='<span style="color:green;">'+esc(r.message).replace(/\n/g,'<br>')+'</span>'
        +'<br><a href="'+(r.downloadUrl||r.url)+'" target="_blank">⬇ 出力されたPowerPointをダウンロードして、崩れていないか確認する</a>';
    }).withFailureHandler(fail).benchmarkPptxRoundTrip(kind);
+ }
+ function exportBuiltin(){
+   setBusy(true,'既定のひな形を書き出しています...');
+   google.script.run.withSuccessHandler(function(r){
+     setBusy(false);
+     if(!r.ok){ document.getElementById('msg').innerText=r.message; document.getElementById('msg').style.color='#d00'; return; }
+     document.getElementById('msg').innerHTML='<span style="color:green;">'+esc(r.message)+'</span>'
+       +'<br><a href="'+(r.downloadUrl||r.url)+'" target="_blank">⬇ '+esc(r.fileName)+' をダウンロード</a>';
+   }).withFailureHandler(fail).exportPreMeetingTemplate();
  }
  function tok(kind){
    setBusy(true,'テンプレート内の差し込み口を探しています...');

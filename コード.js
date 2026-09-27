@@ -2,7 +2,7 @@
 
 // 反映されたか確かめるための版。変更したら日付を更新する。
 // clasp push / デプロイが効いているかは、これを画面で見れば分かる。
-var SYSTEM_VERSION_ = '2026-09-27a';
+var SYSTEM_VERSION_ = '2026-09-27b';
 
 function getSystemVersion() { return SYSTEM_VERSION_; }
 
@@ -24,6 +24,7 @@ function onOpen() {
     .addSubMenu(ui.createMenu('📝 役職ごとの入力（定例会の準備）')
       .addItem('入力状況の一覧', 'openRoleStatusDialog')
       .addItem('スピーカーローテーション（書記兼会計）', 'openSpeakerRotationDialog')
+      .addItem('事前MTG（朝イチMTG）のパワポ', 'openPreMeetingDialog')
       .addSeparator()
       .addItem('プレジデント', 'openRoleInputPresident')
       .addItem('バイスプレジデント', 'openRoleInputVice')
@@ -144,7 +145,7 @@ function diagnoseDialogFiles() {
   var ui = SpreadsheetApp.getUi();
   var files = ['pdf', 'dialog', 'allocation', 'email', 'pdf_links', 'member_master',
                'memberbook_editor', 'memberbook_render', 'slides_visitor', 'slides_meeting_first', 'slides_meeting_second',
-               'menu_home', 'manual', 'spreading', 'zoom_guide', 'archive', 'role_input'];
+               'menu_home', 'manual', 'spreading', 'zoom_guide', 'archive', 'role_input', 'premtg_template'];
   var lines = [], ng = 0;
   for (var i = 0; i < files.length; i++) {
     try {
