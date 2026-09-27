@@ -50,9 +50,9 @@ var ROLE_DEFS_ = [
 ];
 var ROLE_HOLDERS_KEY_ = 'BNI_ROLE_HOLDERS';              // 期ごとにする前の保存先（24期の担当者として読む）
 var ROLE_HOLDERS_TERMS_KEY_ = 'BNI_ROLE_HOLDERS_TERMS';   // 期ごとの担当者 { '24': { president: '…', … }, … }
-var ROLE_HOLDERS_BASE_TERM_ = 24;                         // ROLE_DEFS_ の holder と、前の保存先の担当者の期
+var ROLE_HOLDERS_BASE_TERM_ = 24;                         // ROLE_DEFS_ の holder と、前の保存先の担当者の期（Activeチャプターの数え方）
 var ROLE_HOLDERS_KEEP_TERMS_ = 10;                        // 保存しておく期の数（新しい方から）
-var ROLE_TERM_BASE_ = { year: 2026, term: 23 };           // 2026年4月〜9月が23期
+// 期の番号は、チャプターの設定（chapter_srv.js）の「いまの期」から数える（Activeチャプターは 2026年4月〜9月が23期）
 
 // 事前MTGのフォームにあって、ルーティンチェックシートに無い項目。
 // 初めて保存するときに、シートの項目の下へ「事前MTG 共有事項」のまとまりとして行を足す。
@@ -141,7 +141,8 @@ function roleDefOf_(key) {
 }
 
 // --- 担当者（半期ごと）---
-// 役職の担当者は半期ごとに変わる。期は 4月〜9月・10月〜3月（2026年9月までが23期、10月からが24期）。
+// 役職の担当者は半期ごとに変わる。期は 4月〜9月・10月〜3月（Activeチャプターは 2026年9月までが23期、10月からが24期。
+// 期の番号はチャプターの設定で変えられる）。
 // 担当者は期ごとに保存する。まだ登録していない期は、いちばん近い前の期（無ければ次の期）の担当者を使う。
 // 期ごとにする前の担当者（ROLE_DEFS_ の holder と、画面で直して保存したもの）は、24期の担当者として読む
 // （24期の事前MTGフォームの担当者。24期は 9/23 の定例会から引き継いでいる）。
@@ -150,11 +151,11 @@ function roleDefOf_(key) {
 function roleTermOf_(d) {
   var y = d.getFullYear(), m = d.getMonth() + 1;
   var half = y * 2 + (m >= 10 ? 1 : (m >= 4 ? 0 : -1));   // 1〜3月は前の年の10月からの期
-  return half - ROLE_TERM_BASE_.year * 2 + ROLE_TERM_BASE_.term;
+  return half - CHAPTER_TERM_YEAR_ * 2 + chapterTermBase_();
 }
 // 期の月（「2026年10月〜2027年3月」）
 function roleTermLabel_(term) {
-  var half = term - ROLE_TERM_BASE_.term + ROLE_TERM_BASE_.year * 2, y = Math.floor(half / 2);
+  var half = term - chapterTermBase_() + CHAPTER_TERM_YEAR_ * 2, y = Math.floor(half / 2);
   return (half % 2 === 0) ? (y + '年4月〜9月') : (y + '年10月〜' + (y + 1) + '年3月');
 }
 
@@ -164,14 +165,55 @@ function roleHolderTerms_() {
   try { all = JSON.parse(props.getProperty(ROLE_HOLDERS_TERMS_KEY_) || 'null'); } catch (e) { all = null; }
   if (all && typeof all === 'object') return all;
   try { old = JSON.parse(props.getProperty(ROLE_HOLDERS_KEY_) || 'null'); } catch (e) { old = null; }
-  var base = {};
+  // ROLE_DEFS_ の holder は Activeチャプターの担当者。空のスプレッドシートから始めたチャプターでは使わない
+  var base = {}, fresh = chapterFresh_();
   for (i = 0; i < ROLE_DEFS_.length; i++) {
     var k = ROLE_DEFS_[i].key;
-    base[k] = (old && typeof old[k] === 'string') ? old[k] : ROLE_DEFS_[i].holder;
+    base[k] = (old && typeof old[k] === 'string') ? old[k] : (fresh ? '' : ROLE_DEFS_[i].holder);
   }
   all = {};
-  all[ROLE_HOLDERS_BASE_TERM_] = base;
+  all[roleHoldersBaseTerm_()] = base;
   return all;
+}
+// 前の保存先の担当者の期（2026年10月〜2027年3月。期の番号を付け直しても同じ半期を指す）
+function roleHoldersBaseTerm_() {
+  return ROLE_HOLDERS_BASE_TERM_ - CHAPTER_DEFAULTS_.termBase + chapterTermBase_();
+}
+
+// 期の番号を付け直したとき（チャプターの設定）、期ごとに保存してあるものを同じだけずらす。
+// 担当者（{ 期: … }）・チーム（期ごとのプロパティ）・名簿へ反映した期の記録
+function roleShiftTerms_(delta) {
+  delta = parseInt(delta, 10);
+  if (!delta) return;
+  var props = PropertiesService.getScriptProperties(), all = props.getProperties() || {}, k;
+  var raw = all[ROLE_HOLDERS_TERMS_KEY_], holders = null;
+  try { holders = raw ? JSON.parse(raw) : null; } catch (e) { holders = null; }
+  if (holders && typeof holders === 'object') {
+    var out = {};
+    for (k in holders) {
+      var n = parseInt(k, 10);
+      if (n > 0 && n + delta > 0) out[n + delta] = holders[k];
+    }
+    props.setProperty(ROLE_HOLDERS_TERMS_KEY_, JSON.stringify(out));
+  }
+  var teams = {};
+  for (k in all) {
+    if (k.indexOf(ROLE_TEAMS_KEY_) !== 0) continue;
+    var t = parseInt(k.slice(ROLE_TEAMS_KEY_.length), 10);
+    if (t > 0 && String(t) === k.slice(ROLE_TEAMS_KEY_.length)) teams[t] = all[k];
+  }
+  var olds = Object.keys(teams);
+  olds.forEach(function (t) { props.deleteProperty(ROLE_TEAMS_KEY_ + t); });   // 先に消す（ずらした先と重ならないように）
+  olds.forEach(function (t) {
+    var n = parseInt(t, 10) + delta;
+    if (n > 0) props.setProperty(ROLE_TEAMS_KEY_ + n, teams[t]);
+  });
+  var st = roleRosterState_(), moved = false;
+  ['applied', 'seen'].forEach(function (f) {
+    var v = parseInt(st[f], 10);
+    if (v > 0) { st[f] = (v + delta > 0) ? v + delta : null; moved = true; }
+  });
+  if (moved) roleRosterSaveState_(st);
 }
 
 // ある期の担当者 → { term, label, registered（その期として保存してある）, from（使った期）, holders }

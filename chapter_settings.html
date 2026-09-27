@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    body { font-family: sans-serif; padding: 20px; color: #222; }
+    h3 { margin-top: 0; color: #0055ff; }
+    label { display: block; font-weight: bold; margin: 16px 0 5px; color: #333; }
+    input[type="text"] { width: 100%; box-sizing: border-box; padding: 9px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
+    input[type="number"], input[type="date"] { padding: 7px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
+    .row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 14px; }
+    .hint { font-size: 12px; color: #666; margin-bottom: 6px; line-height: 1.5; }
+    .warn { font-size: 12px; color: #8a5a00; background: #fff6df; border-left: 4px solid #ffc107; padding: 6px 9px; margin-top: 6px; border-radius: 0 4px 4px 0; }
+    button { background: #4caf50; color: white; padding: 12px; width: 100%; border: none; font-weight: bold; font-size: 15px; border-radius: 4px; cursor: pointer; margin-top: 22px; }
+    button:disabled { background: #9ccc9f; cursor: default; }
+    #msg { margin-top: 12px; font-size: 13px; white-space: pre-wrap; line-height: 1.6; }
+    #msg.ok { color: #1a7f37; } #msg.err { color: #c00; }
+    b.pv { color: #0055ff; }
+  </style>
+</head>
+<body>
+  <h3>チャプターの設定</h3>
+  <div class="hint">画面の題名・メールの件名・参加者一覧や割り振り表の見出し・メンバーブック・トークスクリプトに出る名前と、
+    期・定例会の回数の数え方です。</div>
+  <div class="warn" id="freshNote" hidden>新しく始めたスプレッドシートです。まずチャプター名・いまの期・定例会の回数を入れて保存してください。</div>
+
+  <label for="name">チャプター名</label>
+  <div class="hint">「チャプター」を付けずに入れます。画面には <b class="pv" id="pvLabel">…</b> と出ます。</div>
+  <input type="text" id="name" placeholder="例: Active" oninput="preview()">
+
+  <label for="region">リージョン</label>
+  <div class="hint">ウェブアプリのいちばん下と、トークスクリプトの {リージョン} に出ます。空欄でもかまいません。</div>
+  <input type="text" id="region" placeholder="例: BNI東京千代田リージョン">
+
+  <label for="term">いまの期</label>
+  <div class="hint">期は 4月〜9月・10月〜3月 の半期ごとに1つ進みます。いまは <b id="termLabel">…</b> です
+    （次の期は <span id="nextTermLabel">…</span>）。</div>
+  <div class="row">第 <input type="number" id="term" min="1" max="999" style="width:90px;" oninput="preview()"> 期</div>
+  <div class="warn" id="termWarn" hidden>期の番号を変えると、登録してある役職・チーム（半期ごと）の期も同じだけずらします。</div>
+
+  <label for="baseDate">定例会の回数と曜日</label>
+  <div class="hint">ある開催日と、その日が第何回かを入れます。その曜日に毎週開催として数えます（休会日の週は数えません）。
+    次回の定例会の日と回数を入れると分かりやすいです。</div>
+  <div class="row"><input type="date" id="baseDate" onchange="preview()"> <span id="wd"></span> が 第
+    <input type="number" id="baseCount" min="1" style="width:100px;"> 回</div>
+  <div class="hint" id="nextNote" style="margin-top:6px;"></div>
+
+  <button id="saveBtn" onclick="save()">設定を保存する</button>
+  <div id="msg"></div>
+
+  <script>
+    var W = ['日', '月', '火', '水', '木', '金', '土'], cur = null;
+    function el(id) { return document.getElementById(id); }
+    function show(text, ok) { var m = el('msg'); m.className = ok ? 'ok' : 'err'; m.textContent = text || ''; }
+    window.onload = function () {
+      google.script.run.withSuccessHandler(fill).withFailureHandler(function (e) { show('読み込めませんでした: ' + (e && e.message ? e.message : e)); })
+        .getChapterSettings();
+    };
+    function fill(s) {
+      if (!s || !s.ok) { show(s && s.message ? s.message : '読み込めませんでした。'); return; }
+      cur = s;
+      el('name').value = s.name || '';
+      el('region').value = s.region || '';
+      el('term').value = s.term || '';
+      el('termLabel').textContent = s.termLabel || '';
+      el('nextTermLabel').textContent = s.nextTermLabel || '';
+      el('baseDate').value = String(s.meetingBaseDate || '').replace(/\//g, '-');
+      el('baseCount').value = s.meetingBaseCount || '';
+      el('nextNote').textContent = s.next ? '今の設定での次回: ' + s.next : '';
+      el('freshNote').hidden = !(s.fresh && !s.saved);
+      preview();
+    }
+    function preview() {
+      var n = el('name').value.trim().replace(/^BNI\s*/i, '').replace(/\s*(チャプター|chapter)$/i, '');
+      el('pvLabel').textContent = (n || '（未入力）') + 'チャプター';
+      var v = el('baseDate').value, d = v ? new Date(v + 'T00:00:00') : null;
+      el('wd').textContent = d && !isNaN(d.getTime()) ? '（' + W[d.getDay()] + '曜日）' : '';
+      el('termWarn').hidden = !(cur && String(el('term').value) !== String(cur.term));
+    }
+    function save() {
+      var data = { name: el('name').value, region: el('region').value, term: el('term').value,
+                   meetingBaseDate: el('baseDate').value, meetingBaseCount: el('baseCount').value };
+      if (cur && String(data.term) !== String(cur.term)
+          && !confirm('いまの期を ' + cur.term + '期 から ' + data.term + '期 に変えます。\n登録してある役職・チーム（半期ごと）の期も同じだけずらします。よろしいですか？')) return;
+      el('saveBtn').disabled = true;
+      show('保存中...', true);
+      google.script.run.withSuccessHandler(function (r) {
+        el('saveBtn').disabled = false;
+        if (!r || !r.ok) { show(r && r.message ? r.message : '保存できませんでした。'); return; }
+        fill(r.settings);
+        show(r.message, true);
+      }).withFailureHandler(function (e) {
+        el('saveBtn').disabled = false;
+        show('保存できませんでした: ' + (e && e.message ? e.message : e));
+      }).saveChapterSettings(data);
+    }
+  </script>
+</body>
+</html>

@@ -136,13 +136,13 @@ function rotMeetingDates_(from, count, holidays) {
 // 休会日は呼ぶ側で読んだものを使う（休会日のシートを何度も読まないように）
 function rotNextMeeting_(holidays) {
   var today = new Date(); today.setHours(0, 0, 0, 0);
-  var d = new Date(MEETING_BASE_DATE_ + ' 00:00:00');
-  for (var i = 0; i < 2000; i++) {
+  var d = chapterMeetingBase_().date;                         // チャプターの設定の基準の開催日（その曜日に毎週）
+  for (var i = 0; i < 3000; i++) {
     if (d.getTime() >= today.getTime() && holidays.indexOf(fmtDate_(d)) < 0) return d;
     d.setDate(d.getDate() + 7);
   }
   d = new Date(today.getTime());
-  while (d.getDay() !== 3) d.setDate(d.getDate() + 1);
+  while (d.getDay() !== chapterWeekday_()) d.setDate(d.getDate() + 1);
   return rotMeetingDates_(d, 1, holidays)[0];
 }
 

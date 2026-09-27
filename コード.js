@@ -2,7 +2,7 @@
 
 // 反映されたか確かめるための版。変更したら日付を更新する。
 // clasp push / デプロイが効いているかは、これを画面で見れば分かる。
-var SYSTEM_VERSION_ = '2026-09-27o';
+var SYSTEM_VERSION_ = '2026-09-27p';
 
 function getSystemVersion() { return SYSTEM_VERSION_; }
 
@@ -52,6 +52,8 @@ function onOpen() {
       .addItem('アーカイブして整理する', 'openArchiveDialog')
       .addItem('アーカイブを全て表示に戻す', 'menuUnarchiveAll'))
     .addSubMenu(ui.createMenu('⚙️ 設定')
+      .addItem('チャプター（名前・期・定例会の回数）', 'openChapterSettingsDialog')
+      .addSeparator()
       .addItem('BNI 素材フォルダ', 'openAssetSettingsDialog')
       .addItem('メンバー名簿', 'openMemberMasterDialog')
       .addItem('メンバー写真', 'openMemberPhotoDialog')
@@ -287,15 +289,15 @@ function saveHolidays(holidaysArray) {
   if(data.length > 0) sheet.getRange(1, 1, data.length, 1).setValues(data);
   return "休会日を保存しました";
 }
-// 開催回の数え方の基準（2026/3/18 が第509回。休会日の週は数えない）
-var MEETING_BASE_DATE_ = "2026/03/18", MEETING_BASE_COUNT_ = 509;
-
+// 開催回の数え方の基準は、チャプターの設定（chapter_srv.js）にある
+// （Activeチャプターは 2026/3/18(水) が第509回。その曜日に毎週開催として数え、休会日の週は数えない）
 function getMeetingCandidates() {
-  var baseDate = new Date(MEETING_BASE_DATE_ + " 00:00:00"), baseCount = MEETING_BASE_COUNT_, holidays = getHolidays(), candidates = [], today = new Date(); today.setHours(0,0,0,0);
-  var currDate = new Date(baseDate.getTime()), currCount = baseCount, found = 0, limit = 0;
-  while(found < 4 && limit < 100) {
-    var dateStr = Utilities.formatDate(currDate, "Asia/Tokyo", "yyyy/MM/dd");
-    if (currDate >= today && holidays.indexOf(dateStr) === -1) { candidates.push({ dateValue: dateStr, display: Utilities.formatDate(currDate, "Asia/Tokyo", "yyyy/M/d") + "(水) 第" + currCount + "回" }); found++; }
+  var base = chapterMeetingBase_(), holidays = getHolidays(), candidates = [], today = new Date(); today.setHours(0,0,0,0);
+  var currDate = new Date(base.date.getTime()), currCount = base.count, found = 0, limit = 0;
+  // 基準が前の日なら、1週ずつ数えて今日まで進める（休会日の週は数えない。日付の字は chapter_srv.js の道具で作る）
+  while (found < 4 && limit < 3000) {
+    var dateStr = chapterFmt_(currDate);
+    if (currDate >= today && holidays.indexOf(dateStr) === -1) { candidates.push({ dateValue: dateStr, display: Utilities.formatDate(currDate, "Asia/Tokyo", "yyyy/M/d") + "(" + CHAPTER_WEEK_[currDate.getDay()] + ") 第" + currCount + "回" }); found++; }
     if (holidays.indexOf(dateStr) === -1) currCount++;
     currDate.setDate(currDate.getDate() + 7); limit++;
   }
@@ -305,9 +307,9 @@ function getMeetingCandidates() {
 // 指定の開催日が第何回か（getMeetingCandidates と同じ数え方）。休会日や基準より前なら 0
 function meetingCountOf_(dateObj) {
   var target = new Date(dateObj.getTime()); target.setHours(0,0,0,0);
-  var cur = new Date(MEETING_BASE_DATE_ + " 00:00:00"), count = MEETING_BASE_COUNT_, holidays = getHolidays();
-  for (var i = 0; i < 2000 && cur.getTime() <= target.getTime(); i++) {
-    var ds = Utilities.formatDate(cur, "Asia/Tokyo", "yyyy/MM/dd");
+  var base = chapterMeetingBase_(), cur = base.date, count = base.count, holidays = getHolidays();
+  for (var i = 0; i < 3000 && cur.getTime() <= target.getTime(); i++) {
+    var ds = chapterFmt_(cur);
     if (cur.getTime() === target.getTime()) return holidays.indexOf(ds) === -1 ? count : 0;
     if (holidays.indexOf(ds) === -1) count++;
     cur.setDate(cur.getDate() + 7);
@@ -646,7 +648,7 @@ function createFinalSheet(meetingDateVal, meetingDisplay, finalRows, originalHea
   if (dataHeaders.indexOf("種別") === -1) { dataHeaders.push("種別"); otherKeys.push("種別"); }
   if (dataHeaders.indexOf("メール") === -1) { dataHeaders.push("メール"); otherKeys.push("メール"); }
   var dataOutput = [dataHeaders], printOutput = [
-    ["Activeチャプターの定例会へようこそ", "", "", "", "", "", ""], ["", "", "", "", "", "", ""], [meetingDisplay, "", "", "", "", "", ""], ["", "", "", "", "", "", ""], fixedHeaders
+    [chapterLabel_() + "の定例会へようこそ", "", "", "", "", "", ""], ["", "", "", "", "", "", ""], [meetingDisplay, "", "", "", "", "", ""], ["", "", "", "", "", "", ""], fixedHeaders
   ];
   for (var i = 0; i < finalRows.length; i++) {
     var r = finalRows[i], baseRow = [ r["_No"]||"", r["参加者氏名"]||"", r["ふりがな"]||"", r["カテゴリー"]||"", r["会社名"]||"", r["招待者"]||"", r["メモ（ビジターリストに表示）"]||"" ];
@@ -938,11 +940,11 @@ function getTemplates() {
   var props = PropertiesService.getScriptProperties();
   return {
     cc: props.getProperty('MAIL_TPL_CC') || "", bcc: props.getProperty('MAIL_TPL_BCC') || "",
-    visitorSubj: props.getProperty('MAIL_TPL_VISITOR_SUBJ') || "【Activeチャプター】{{date}} 定例会のご案内",
+    visitorSubj: props.getProperty('MAIL_TPL_VISITOR_SUBJ') || "【" + chapterLabel_() + "】{{date}} 定例会のご案内",
     visitorBody: props.getProperty('MAIL_TPL_VISITOR_BODY') || "{{name}} 様\n\nご参加ありがとうございます。\n\n定例会開催日: {{date}}\n\nビジターリスト:\n{{visitorlist}}\n\nメンバーブック:\n{{memberbook}}",
-    guestSubj: props.getProperty('MAIL_TPL_GUEST_SUBJ') || "【Activeチャプター】{{date}} ゲスト様へのご案内",
+    guestSubj: props.getProperty('MAIL_TPL_GUEST_SUBJ') || "【" + chapterLabel_() + "】{{date}} ゲスト様へのご案内",
     guestBody: props.getProperty('MAIL_TPL_GUEST_BODY') || "{{name}} 様\n\nご参加ありがとうございます。\n\n...",
-    substituteSubj: props.getProperty('MAIL_TPL_SUBSTITUTE_SUBJ') || "【Activeチャプター】{{date}} 代理参加のご案内",
+    substituteSubj: props.getProperty('MAIL_TPL_SUBSTITUTE_SUBJ') || "【" + chapterLabel_() + "】{{date}} 代理参加のご案内",
     substituteBody: props.getProperty('MAIL_TPL_SUBSTITUTE_BODY') || "{{name}} 様\n\n代理でのご参加ありがとうございます。\n\n..."
   };
 }
@@ -1064,7 +1066,7 @@ function generateEmailDrafts(sheetName) {
 
 function sendSingleEmail(e, cc, bcc) {
   try {
-    var options = { name: "Activeチャプター" };
+    var options = { name: chapterLabel_() };
     if (cc && cc.trim() !== "") options.cc = cc.trim();
     if (bcc && bcc.trim() !== "") options.bcc = bcc.trim();
     var toEmail = e.email ? e.email.toString().trim() : "";
@@ -1248,7 +1250,7 @@ function saveAllocationSheet(meetingDateVal, displayVal, visitors, pool, facilAl
   var avgMembers = roomCount > 0 ? (totalPeopleInRooms / roomCount).toFixed(1) : "0.0";
 
   var outputData = [
-    ["Activeチャプター " + displayVal + " 定例会 ビジター・見学者・代理様 割り振り表", "", "", "", "", "", "", ""],
+    [chapterLabel_() + " " + displayVal + " 定例会 ビジター・見学者・代理様 割り振り表", "", "", "", "", "", "", ""],
     ["【ダッシュボード】 ビジター: " + visCount + "名 / ゲスト: " + guestCount + "名 / 代理: " + subCount + "名 / ルーム数: " + roomCount + " / 1ルーム平均総人数: " + avgMembers + "名", "", "", "", "", "", "", ""],
     ["", "", "", "", "", "", "", ""],
     ["No.", "お名前", "カテゴリー", "招待者", "つなげたいメンバー", "ファシリテーター", "ルームメンバー", "オリエンテーション"]

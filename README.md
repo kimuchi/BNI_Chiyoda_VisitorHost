@@ -1,6 +1,9 @@
-# BNI Chiyoda VisitorHost - Activeチャプター 名簿・割り振りシステム
+# BNI Chiyoda VisitorHost - BNIチャプター 名簿・割り振りシステム
 
-BNI Activeチャプターの定例会運営を支援する、Google スプレッドシート上で動作する Google Apps Script (GAS) アプリケーションです。
+BNIチャプターの定例会運営を支援する、Google スプレッドシート上で動作する Google Apps Script (GAS) アプリケーションです。
+もとは Activeチャプター用に作ったもので、何も設定しなければ Activeチャプターの値で動きます。
+チャプター名・リージョン・期の番号・定例会の曜日と回数は `⚙️ 設定` > `チャプター（名前・期・定例会の回数）` で変えられます
+（`chapter_srv.js`）。
 
 ## 概要
 
@@ -43,6 +46,8 @@ BNI_Chiyoda_VisitorHost/
 │   └ webapp_home.html        #   トップページ
 ├── home_srv.js               # メニュー代わりのホーム画面
 │   └ menu_home.html
+├── chapter_srv.js            # チャプターの設定（名前・リージョン・期の番号・定例会の曜日と回数）
+│   └ chapter_settings.html
 │
 │  ── 毎週の作業 ──
 ├── dialog.html               # CSV取込・名簿作成
@@ -117,6 +122,7 @@ BNI_Chiyoda_VisitorHost/
     ├── check_visitor_post.js #   ビジター情報の投稿文（入金の読み方・文面・画面）
     ├── check_role_input_dialog.js # 役職ごとの入力の画面（一覧・入力・保存までサーバーとつないで通す）
     ├── check_webapp_pages.js #   ウェブアプリの画面一覧（?p= での開き方・トップページのリンク）
+    ├── check_chapter.js      #   チャプターの設定（名前・期の付け直し・定例会の曜日と回数・初回の準備）
     │  ── ルーティンチェックシート（実物をExcelに書き出したもので確かめる）──
     ├── routine_dump.py       #   xlsx → routine.json
     ├── check_routine.js      #   開催回・コアバリュー・メインプレゼンなどの読み取り
@@ -366,7 +372,7 @@ clasp deployments
 
 ### 更新が反映されたかの確かめ方
 
-`コード.js` の `SYSTEM_VERSION_`（例: `2026-09-27o`）が、ウェブアプリのトップページの下と
+`コード.js` の `SYSTEM_VERSION_`（例: `2026-09-27p`）が、ウェブアプリのトップページの下と
 「定例会スライド（前半）」「定例会スライド（後半）」の画面の右上に **「版 …」** として出ます。
 機能を変えたらこの値を変え、`clasp push`・`clasp version`・`clasp deploy` のあとに画面で確かめてください。
 

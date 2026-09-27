@@ -289,9 +289,11 @@ const bigStatus = F.getBigTemplateStatus();
   t.registered = true; t.fileName = ['BNI_定例会前半.pptx', 'BNI_定例会後半.pptx', 'BNI_メンバープレゼン.pptx'][i] || (t.label + '.pptx');
   t.sizeMB = [34.2, 31.8, 2.4][i] || 1; t.url = 'https://drive.google.com/';
 });
-const answersSettings = { getMemberMaster: { any: masterAnswer }, getHolidays: { any: F.getHolidays() }, getBigTemplateStatus: { any: bigStatus } };
+const answersSettings = { getMemberMaster: { any: masterAnswer }, getHolidays: { any: F.getHolidays() }, getBigTemplateStatus: { any: bigStatus },
+                          getChapterSettings: { any: F.getChapterSettings() } };
 
-const homeStatus = { ok: true, latest: { date: NEXT }, checks: [
+const homeStatus = { ok: true, latest: { date: NEXT }, title: F.chapterSystemTitle_(), checks: [
+  { label: 'チャプター', ready: true, detail: F.chapterLabel_() + '・いまの期 ' + F.roleTermOf_(new F.Date()) + '期・次回 ' + F.getMeetingCandidates()[0].display },
   { label: '素材フォルダ', ready: true, detail: 'BNI素材（見本）' }, { label: 'メンバーリスト（割り振り用）', ready: true, detail: FAKE_MEMBERS.length + '名' },
   { label: 'メンバー名簿（冊子・スライド用）', ready: true, detail: FAKE_MEMBERS.length + '名' },
   { label: 'メンバー写真', ready: false, detail: '30枚（未照合 6名）', fixLabel: '管理する', fixFn: 'openMemberPhotoDialog' },
@@ -301,7 +303,8 @@ const homeStatus = { ok: true, latest: { date: NEXT }, checks: [
 const SHOTS = [
   { name: 'webapp_home', file: () => writePage('webapp_home', evalTemplate('webapp_home.html', {
       groups: WEBAPP_PAGES, status: { ok: true, name: 'BNI名簿システム（見本）', url: '', user: '' },
-      appUrl: 'https://script.google.com/macros/s/xxxx/exec', version: '' })), width: 900, height: 760 },
+      appUrl: 'https://script.google.com/macros/s/xxxx/exec', version: '',
+      title: 'Activeチャプター 名簿システム', footer: 'BNI東京千代田リージョン ｜ Activeチャプター' })), width: 900, height: 760 },
   { name: 'menu_home', file: () => writePage('menu_home', fs.readFileSync(path.join(ROOT, 'menu_home.html'), 'utf8'), { getHomeStatus: { any: homeStatus } }),
     width: 980, height: 760 },
   { name: 'role_overview', file: () => writePage('role_overview', rolePage(), answersRole), width: 960,
@@ -340,6 +343,7 @@ const SHOTS = [
   // 設定
   { name: 'member_master', file: () => writePage('member_master', readHtml('member_master.html'), answersSettings), width: 1280, height: 640, wait: 700 },
   { name: 'holiday', file: () => writePage('holiday', readHtml('holiday.html'), answersSettings), width: 520, height: 560 },
+  { name: 'chapter_settings', file: () => writePage('chapter_settings', readHtml('chapter_settings.html'), answersSettings), width: 580, height: 740 },
   { name: 'big_templates', file: () => writePage('big_templates', readHtml('big_templates.html'), answersSettings), width: 900, height: 700, wait: 700 },
 ];
 function readHtml(f) { return fs.readFileSync(path.join(ROOT, f), 'utf8'); }

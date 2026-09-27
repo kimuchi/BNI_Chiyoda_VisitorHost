@@ -273,13 +273,11 @@ function saveCategoryMaster(rows) {
 // 項目が増えてもプロパティを増やさずに済む。
 var COVER_KEY_ = 'BNI_MB_COVER';
 
+// チャプター名・期が入る項目（title・term・aboutTitle・prole）は defaultCover_() で、チャプターの設定から作る
 var DEFAULT_COVER_ = {
-  title: 'BNI Active chapter Member Book',
-  term: '23期',
   philosophyTitle: 'BNIの理念　Givers Gain®（ギバーズゲイン）',
   philosophy: '他の人におしみなくビジネスを提供することで、自分も他の人からビジネスを提供してもらえる、「与えるものは与えられる」という考え方に基づいて運営されています。',
-  aboutTitle: 'BNI Activeチャプターとは？',
-  about: '2015年9月に発足し、23期を迎えました。\n個性豊かなメンバーが、様々な分野のプロフェッショナルとして、お互いのビジネス発展、売上UP、人脈の拡大のためにサポートし合うビジネスチームです。',
+  about: '個性豊かなメンバーが、様々な分野のプロフェッショナルとして、お互いのビジネス発展、売上UP、人脈の拡大のためにサポートし合うビジネスチームです。',
   benefitsTitle: 'BNIに参加するメリット（BNIを活用する５つのベネフィット＋1）',
   benefits: '１.大きなマーケティングチーム　２.競合のいないビジネス環境　３.継続的な新規顧客の紹介\n４.国内外に広がる人脈　５.長く続く有意義な信頼関係　＋１.生涯学習',
   scheduleFrom: '7:15',
@@ -312,14 +310,25 @@ var DEFAULT_COVER_ = {
        + 'サンキュー\nそのリファーラルによって発生した売上金額のことで、感謝の意を込めて、サンキューと呼んでいます。\n'
        + 'カテゴリー\n専門業種のことで、BNIでは1つの専門分野に対して加入できるのは1名のみであるという規定があります。',
   pname: '',
-  prole: 'Activeチャプター\n第23期プレジデント',
   ptext: '',
   photoFile: ''
 };
 
+// 表紙の初期値（チャプター名・いまの期を入れる）
+function defaultCover_() {
+  var c = {}, k, term = roleTermOf_(new Date()), name = chapterInfo_().name;
+  for (k in DEFAULT_COVER_) c[k] = DEFAULT_COVER_[k];
+  c.title = 'BNI ' + name + ' chapter Member Book';
+  c.term = term + '期';
+  c.aboutTitle = 'BNI ' + chapterLabel_() + 'とは？';
+  c.prole = chapterLabel_() + '\n第' + term + '期プレジデント';
+  return c;
+}
+
 function getCoverInfo_() {
   var props = PropertiesService.getScriptProperties(), cover = {};
-  for (var k in DEFAULT_COVER_) cover[k] = DEFAULT_COVER_[k];
+  var def = defaultCover_();
+  for (var k in def) cover[k] = def[k];
   try {
     var raw = props.getProperty(COVER_KEY_);
     if (raw) { var saved = JSON.parse(raw); for (var j in saved) cover[j] = saved[j]; }
@@ -357,7 +366,8 @@ function resetMemberBookCoverText() {
   try {
     var cur = getCoverInfo_(), keep = ['term', 'pname', 'prole', 'ptext', 'photoFile'];
     var next = {};
-    for (var k in DEFAULT_COVER_) next[k] = DEFAULT_COVER_[k];
+    var def = defaultCover_();
+    for (var k in def) next[k] = def[k];
     for (var i = 0; i < keep.length; i++) next[keep[i]] = cur[keep[i]];
     PropertiesService.getScriptProperties().setProperty(COVER_KEY_, JSON.stringify(next));
     return { ok: true, message: '定型文を初期値に戻しました（プレジデントの設定はそのままです）。', cover: next };
