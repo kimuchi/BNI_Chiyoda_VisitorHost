@@ -10,8 +10,8 @@
 //   ・いまの期を変えると、期の番号と、期ごとに保存してある担当者・チーム・名簿へ反映した期の記録が同じだけずれる
 //     （同じ半期の担当者がそのまま出る）。戻すと元どおり
 //   ・入力の誤り（名前が空・期が数字でない・日付が読めない・回数が0）は保存しない
-//   ・空のスプレッドシートから始めたとき（初回の準備の記録が fresh）は、Activeチャプターの担当者を初期値にせず、
-//     メニュー画面の「準備の状況」でチャプターの設定を促す
+//   ・役職の担当者の初期値はコードに持たない（何も保存していなければ空欄）
+//   ・空のスプレッドシートから始めたとき（初回の準備の記録が fresh）は、メニュー画面の「準備の状況」でチャプターの設定を促す
 
 const fs = require('fs');
 const path = require('path');
@@ -151,12 +151,10 @@ ck(!/ずらしました/.test(F.saveChapterSettings({ name: 'Active', region: 'B
 
 // ===== 6. 空のスプレッドシートから始めたとき =====
 delete props.BNI_CHAPTER; delete props.BNI_ROLE_HOLDERS_TERMS; delete props.BNI_ROLE_HOLDERS; resetCache();
-const defs = vm.runInContext('ROLE_DEFS_', sandbox);
 let all = F.roleHolderTerms_();
-ck(all[24] && all[24].president === defs.find((d) => d.key === 'president').holder, 'Activeチャプター（初回の準備の記録なし）は、担当者の初期値を使う');
+ck(all[24] && Object.values(all[24]).every((v) => v === '') && vm.runInContext('ROLE_DEFS_', sandbox).every((d) => !('holder' in d)),
+   '何も保存していないのに担当者が入る（担当者の初期値はコードに持たない）: ' + J(all[24]));
 props.BNI_SETUP = J({ mode: 'fresh', at: '2026/09/26' }); resetCache();
-all = F.roleHolderTerms_();
-ck(all[24] && Object.values(all[24]).every((v) => v === ''), '空のスプレッドシートから始めたのに、Activeチャプターの担当者が初期値に入る: ' + J(all[24]));
 home = F.getHomeStatus();
 chk = (home.checks || []).find((c) => c.key === 'chapter');
 ck(chk && !chk.ready && chk.fixFn === 'openChapterSettingsDialog', 'メニュー画面でチャプターの設定を促さない（初回）: ' + J(chk));

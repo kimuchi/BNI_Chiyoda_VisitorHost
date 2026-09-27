@@ -24,9 +24,9 @@ const blocks = ORDER.map((b, i) => ({ gkey: gk(b), block: b, order: i + 1, known
 const DATE = '2026/09/23';
 let routine = { ok: true, found: true, sheetName: '【23期】ルーティンチェックシート', meetingNo: '534',
                 coreValue: 'Accountability', mainPresenters: [], wantedCategories: [],
-                recommendations: [], regionGuestsRaw: '吉田ED' };
-const GUESTS = [{ name: '坂爪　達也', role: 'Activeチャプター担当アンバサダー', hidden: true },
-                { name: '吉田　まり子', role: 'エクゼティブディレクター', hidden: true }];
+                recommendations: [], regionGuestsRaw: '大庭ED' };
+const GUESTS = [{ name: '坂上　達彦', role: 'Activeチャプター担当アンバサダー', hidden: true },
+                { name: '大庭　まり子', role: 'エクゼティブディレクター', hidden: true }];
 const LISTS = { ok: true, text: { newMembers: '該当者なし', renewMembers: '該当者なし',
                                   d90: 'Aさん', d60: '該当者なし', d30: 'Bさん', overdue: '該当者なし' },
                 newMembers: [], renewMembers: [], d90: [{ name: 'A', date: '2026/12/01', left: 70 }], d60: [],
@@ -45,7 +45,7 @@ const SERVER = {
   getMemberPresenContext: () => ({
     ok: true, members: mm, blocks, rowsPerPage: 7, unusedCategories: ['研修・教育'],
     candidates: [{ dateValue: DATE, start: gk('建築・住まい'), longPresenter: '', longPresenterRaw: '',
-                   startFrom: 'routine', startRaw: '建築　住まい　２２番　熊谷さん', startRawDate: DATE, startSteps: 0 }],
+                   startFrom: 'routine', startRaw: '建築　住まい　２２番　熊田さん', startRawDate: DATE, startSteps: 0 }],
   }),
   getMeetingTemplateInfo: () => ({
     ok: true, message: '',
@@ -89,14 +89,14 @@ const shown = (el) => !!el && el.style.display !== 'none' && el.style.display !=
   ck(!shown(els.loading), '前半：読み込みが終わっても「読み込み中」が消えない');
   ck(els.genBtn.disabled === false, '前半：読み込みが終わっても作成ボタンが押せない');
 
-  // アンバサダー・ディレクター（リージョン参加者は「吉田ED」）
-  ck(els.gs_0 && !els.gs_0.checked, '坂爪さんにチェックが入っている');
-  ck(els.gs_1 && els.gs_1.checked, '吉田さんにチェックが入っていない');
-  ck(/吉田ED/.test(els.gsNote.innerHTML), 'リージョン参加者の記載が表示されていない');
+  // アンバサダー・ディレクター（リージョン参加者は「大庭ED」）
+  ck(els.gs_0 && !els.gs_0.checked, '坂上さんにチェックが入っている');
+  ck(els.gs_1 && els.gs_1.checked, '大庭さんにチェックが入っていない');
+  ck(/大庭ED/.test(els.gsNote.innerHTML), 'リージョン参加者の記載が表示されていない');
   // メンバーのページ（既定で入れる）
   ck(els.mpOn.checked === true, 'メンバーのページを入れるチェックが既定で入っていない');
   ck(els.mpStart.value === gk('建築・住まい'), '始まりの業種区分: ' + els.mpStart.value);
-  ck(/ルーティンチェックシートの記載（建築　住まい　２２番　熊谷さん）/.test(els.mpStartNote.textContent),
+  ck(/ルーティンチェックシートの記載（建築　住まい　２２番　熊田さん）/.test(els.mpStartNote.textContent),
      '始まりの業種区分の出どころが表示されていない: ' + els.mpStartNote.textContent);
   ck(/建築・住まい/.test(els.mpOrder.innerHTML) && /first/.test(els.mpOrder.innerHTML), '順番の一覧が出ていない');
   ck(/研修・教育/.test(els.mpWarn.innerHTML) && /tidy\(\)/.test(els.mpWarn.innerHTML), '使われていない業種区分の案内が出ていない');
@@ -106,11 +106,11 @@ const shown = (el) => !!el && el.style.display !== 'none' && el.style.display !=
   step('前半を作る', () => run('gen()'));
   let o = lastOpts();
   ck(lastCall()[0] === 'meetingFirst', '前半の作成で種類が ' + lastCall()[0]);
-  ck(JSON.stringify(o.weeklyGuests) === JSON.stringify(['吉田　まり子']), 'weeklyGuests が ' + JSON.stringify(o.weeklyGuests));
+  ck(JSON.stringify(o.weeklyGuests) === JSON.stringify(['大庭　まり子']), 'weeklyGuests が ' + JSON.stringify(o.weeklyGuests));
   ck(o.weeklyAuto === true, '自動送りが渡っていない');
   ck(pagesOf(o).length > 40, 'メンバーのページが ' + pagesOf(o).length);
   const last = pagesOf(o)[pagesOf(o).length - 1] || {};
-  ck(last.kind === 'individual' && last.nextName === '吉田　まり子', '最後の方の NEXT が ' + last.nextName);
+  ck(last.kind === 'individual' && last.nextName === '大庭　まり子', '最後の方の NEXT が ' + last.nextName);
   ck((pagesOf(o)[0] || {}).block === '建築・住まい', '最初のページが「建築・住まい」の扉ではない');
   ck(o.referral === undefined && o.music === undefined, '前半なのにリファーラル発表・音楽が渡っている');
   // スピーカーローテーション：ルーティンにメインプレゼンが無い日は、ローテーションの2名が入り、表も渡る
@@ -121,7 +121,7 @@ const shown = (el) => !!el && el.style.display !== 'none' && el.style.display !=
      'ローテーションの表のデータが渡っていない: ' + JSON.stringify(o.speakerRotation).slice(0, 120));
   ck(lastCall()[1]['新メンバー'] === '該当者なし' && lastCall()[1]['更新90'] === undefined, '前半の差し込む値がおかしい');
 
-  step('坂爪さんも入れる', () => { els.gs_0.checked = true; els.mpAuto.checked = false; run('renderMP()'); run('gen()'); });
+  step('坂上さんも入れる', () => { els.gs_0.checked = true; els.mpAuto.checked = false; run('renderMP()'); run('gen()'); });
   o = lastOpts();
   // メインプレゼンを選び直すと、表の1回目もその2名になる。表を作らないチェックなら渡さない
   step('メインプレゼンを選び直す', () => { els.mp1.value = MEMBERS[5].name; run('gen()'); });
@@ -129,9 +129,9 @@ const shown = (el) => !!el && el.style.display !== 'none' && el.style.display !=
   step('表を作らない', () => { els.rotOn.checked = false; run('gen()'); });
   ck(lastOpts().speakerRotation === null, '表を作らないのにデータが渡っている');
   step('表を作る・元に戻す', () => { els.rotOn.checked = true; els.mp1.value = MEMBERS[0].name; });
-  ck(JSON.stringify(o.weeklyGuests) === JSON.stringify(['坂爪　達也', '吉田　まり子']), 'weeklyGuests が ' + JSON.stringify(o.weeklyGuests));
+  ck(JSON.stringify(o.weeklyGuests) === JSON.stringify(['坂上　達彦', '大庭　まり子']), 'weeklyGuests が ' + JSON.stringify(o.weeklyGuests));
   ck(o.weeklyAuto === false && pagesOf(o).every((x) => !x.autoAdvanceMs), '自動送りを外したのに自動で進む');
-  ck((pagesOf(o)[pagesOf(o).length - 1] || {}).nextName === '坂爪　達也', 'NEXT が先頭の方（坂爪さん）になっていない');
+  ck((pagesOf(o)[pagesOf(o).length - 1] || {}).nextName === '坂上　達彦', 'NEXT が先頭の方（坂上さん）になっていない');
 
   // 開催日を選び直すと、読み込み中の間は作成できない
   routine = Object.assign({}, routine, { regionGuestsRaw: 'なし' });
@@ -154,11 +154,11 @@ const shown = (el) => !!el && el.style.display !== 'none' && el.style.display !=
   const N = (i) => MEMBERS[i].name;
   const who = (i) => ({ raw: N(i).split(' ')[0] + 'さん', name: N(i), matched: true });
   routine = Object.assign({}, routine, {
-    recommendationsRaw: '定例会中\n①A→B\n②C→D\nアフター\nE→大野さん\n翌週以降\nF→G',
+    recommendationsRaw: '定例会中\n①A→B\n②C→D\nアフター\nE→大森さん\n翌週以降\nF→G',
     recommendations: [
       { giver: who(0), receiver: who(1), raw: 'A→B', when: 'during' },
       { giver: who(2), receiver: who(3), raw: 'C→D', when: 'during' },
-      { giver: who(4), receiver: { raw: '大野さん', name: '', matched: false }, raw: 'E→大野さん', when: 'after' },
+      { giver: who(4), receiver: { raw: '大森さん', name: '', matched: false }, raw: 'E→大森さん', when: 'after' },
       { giver: who(5), receiver: who(6), raw: 'F→G', when: 'later' },
     ] });
   const page = loadPage('slides_meeting_second.html', { server: SERVER, fails });
@@ -197,7 +197,7 @@ const shown = (el) => !!el && el.style.display !== 'none' && el.style.display !=
   ck(els.rp_during_g_0.value === N(0) && els.rp_during_r_0.value === N(1) && els.rp_during_g_1.value === N(2)
      && els.rp_during_r_1.value === N(3), '定例会中の組が入っていない');
   ck(els.rp_after_g_0.value === N(4) && els.rp_after_r_0.value === '', 'アフターの組が入っていない');
-  ck(/名簿の氏名と一致しなかった方：大野さん/.test(els.rcNote.innerHTML), '名簿に無い方の案内が出ていない: ' + els.rcNote.innerHTML);
+  ck(/名簿の氏名と一致しなかった方：大森さん/.test(els.rcNote.innerHTML), '名簿に無い方の案内が出ていない: ' + els.rcNote.innerHTML);
   ck(/翌週以降の分（F→G）は入れていません/.test(els.rcNote.innerHTML), '翌週以降の分の案内が出ていない');
   const pairsOf = (x) => (x.recommendPairs || []).map((q) => (q.after ? 'A:' : 'D:') + q.giver.name + '>' + q.receiver.name).join(',');
   ck(pairsOf(o) === `D:${N(0)}>${N(1)},D:${N(2)}>${N(3)},A:${N(4)}>`, '渡した組: ' + pairsOf(o));

@@ -19,38 +19,38 @@
 // 役職（24期の事前MTGフォームの並び）。
 //   sheet … 足した行の「担当」の欄に書く名前
 //   alias … シートの「担当」の欄で、この役職を指す書き方（空白・大文字小文字は無視）
-//   holder … 担当者の初期値（24期の担当者。担当者は半期ごとに画面で登録する。下の「担当者（半期ごと）」）
+// 担当者はコードに書かない（半期ごとに画面で登録する。下の「担当者（半期ごと）」）
 var ROLE_DEFS_ = [
   { key: 'president', label: 'プレジデント', sheet: 'プレジ',
-    alias: ['プレジ', 'プレジデント', 'P'], holder: '熊谷 龍威' },
+    alias: ['プレジ', 'プレジデント', 'P'] },
   { key: 'vice', label: 'バイスプレジデント', sheet: 'バイス',
-    alias: ['バイス', 'バイスプレジデント', 'VP'], holder: '船木 雄大' },
+    alias: ['バイス', 'バイスプレジデント', 'VP'] },
   { key: 'secretary', label: '書記兼会計', sheet: '書記兼会計',
-    alias: ['書記兼会計', '書記', '会計'], holder: '原田 雅人' },
+    alias: ['書記兼会計', '書記', '会計'] },
   { key: 'vhc', label: 'ビジターホストコーディネーター', sheet: 'VH',
-    alias: ['VH', 'VHC', 'ビジターホスト', 'ビジターホストコーディネーター'], holder: '藤田 礼恵' },
+    alias: ['VH', 'VHC', 'ビジターホスト', 'ビジターホストコーディネーター'] },
   { key: 'mentor', label: 'メンターコーディネーター', sheet: 'メンターコーディネーター',
-    alias: ['メンター', 'メンターコーディネーター', 'MC'], holder: '伊五澤 潤' },
+    alias: ['メンター', 'メンターコーディネーター', 'MC'] },
   { key: 'ec', label: 'エデュケーションコーディネーター', sheet: 'EC',
-    alias: ['EC', 'エデュケーション', 'エデュケーションコーディネーター'], holder: '伊東 良之' },
+    alias: ['EC', 'エデュケーション', 'エデュケーションコーディネーター'] },
   { key: 'web', label: 'webマスター', sheet: 'WEB',
-    alias: ['WEB', 'webマスター', 'ウェブマスター'], holder: '合川 周平' },
+    alias: ['WEB', 'webマスター', 'ウェブマスター'] },
   { key: 'support', label: 'メンバーサポート委員', sheet: 'メンバーサポート委員',
-    alias: ['メンバーサポート', 'メンバーサポート委員'], holder: '山本 登一郎' },
+    alias: ['メンバーサポート', 'メンバーサポート委員'] },
   { key: 'training', label: 'トレーニング委員', sheet: 'トレーニング委員',
-    alias: ['トレーニング', 'トレーニング委員'], holder: '溝口 懸' },
+    alias: ['トレーニング', 'トレーニング委員'] },
   { key: 'event', label: 'イベント委員＆1to1促進委員', sheet: 'イベント委員＆1to1促進委員',
-    alias: ['イベント', 'イベント委員', '1to1促進委員', 'イベント委員＆1to1促進委員'], holder: '田中 浩子' },
+    alias: ['イベント', 'イベント委員', '1to1促進委員', 'イベント委員＆1to1促進委員'] },
   { key: 'bcp', label: 'BCP委員', sheet: 'BCP委員',
-    alias: ['BCP', 'BCP委員'], holder: '竹中 公基' },
+    alias: ['BCP', 'BCP委員'] },
   { key: 'spreading', label: 'スプレディング委員', sheet: 'スプレディング委員',
-    alias: ['スプレディング', 'スプレディング委員', 'Spreading委員'], holder: '金子 美緒' },
+    alias: ['スプレディング', 'スプレディング委員', 'Spreading委員'] },
   { key: 'gbc', label: 'グローバルビジネスコーディネーター', sheet: 'GBC',
-    alias: ['GBC', 'グローバルビジネス', 'グローバルビジネスコーディネーター'], holder: '中込 渉' }
+    alias: ['GBC', 'グローバルビジネス', 'グローバルビジネスコーディネーター'] }
 ];
 var ROLE_HOLDERS_KEY_ = 'BNI_ROLE_HOLDERS';              // 期ごとにする前の保存先（24期の担当者として読む）
 var ROLE_HOLDERS_TERMS_KEY_ = 'BNI_ROLE_HOLDERS_TERMS';   // 期ごとの担当者 { '24': { president: '…', … }, … }
-var ROLE_HOLDERS_BASE_TERM_ = 24;                         // ROLE_DEFS_ の holder と、前の保存先の担当者の期（Activeチャプターの数え方）
+var ROLE_HOLDERS_BASE_TERM_ = 24;                         // 前の保存先の担当者の期（Activeチャプターの数え方）
 var ROLE_HOLDERS_KEEP_TERMS_ = 10;                        // 保存しておく期の数（新しい方から）
 // 期の番号は、チャプターの設定（chapter_srv.js）の「いまの期」から数える（Activeチャプターは 2026年4月〜9月が23期）
 
@@ -144,8 +144,8 @@ function roleDefOf_(key) {
 // 役職の担当者は半期ごとに変わる。期は 4月〜9月・10月〜3月（Activeチャプターは 2026年9月までが23期、10月からが24期。
 // 期の番号はチャプターの設定で変えられる）。
 // 担当者は期ごとに保存する。まだ登録していない期は、いちばん近い前の期（無ければ次の期）の担当者を使う。
-// 期ごとにする前の担当者（ROLE_DEFS_ の holder と、画面で直して保存したもの）は、24期の担当者として読む
-// （24期の事前MTGフォームの担当者。24期は 9/23 の定例会から引き継いでいる）。
+// 期ごとにする前の保存先（BNI_ROLE_HOLDERS。画面で直して保存したもの）は、24期の担当者として読む
+// （24期は 9/23 の定例会から引き継いでいる）。どこにも無ければ空欄。
 
 // その日の期
 function roleTermOf_(d) {
@@ -165,11 +165,10 @@ function roleHolderTerms_() {
   try { all = JSON.parse(props.getProperty(ROLE_HOLDERS_TERMS_KEY_) || 'null'); } catch (e) { all = null; }
   if (all && typeof all === 'object') return all;
   try { old = JSON.parse(props.getProperty(ROLE_HOLDERS_KEY_) || 'null'); } catch (e) { old = null; }
-  // ROLE_DEFS_ の holder は Activeチャプターの担当者。空のスプレッドシートから始めたチャプターでは使わない
-  var base = {}, fresh = chapterFresh_();
+  var base = {};
   for (i = 0; i < ROLE_DEFS_.length; i++) {
     var k = ROLE_DEFS_[i].key;
-    base[k] = (old && typeof old[k] === 'string') ? old[k] : (fresh ? '' : ROLE_DEFS_[i].holder);
+    base[k] = (old && typeof old[k] === 'string') ? old[k] : '';
   }
   all = {};
   all[roleHoldersBaseTerm_()] = base;
@@ -384,7 +383,7 @@ function getVisitorHostsFromRoles() {
   }
 }
 
-// map … { president: '熊谷 龍威', … }。空文字は「未設定」。null なら担当者は変えない
+// map … { president: '熊田 龍平', … }。空文字は「未設定」。null なら担当者は変えない
 // term … 期（数字。無ければ今日の期）。dateStr … 画面の開催日（返す一覧をその期に合わせる）
 // teams … チーム [{ key, name, leader, members: [{ name, note }] }]。渡したときだけ、その期のチームとして保存する
 function saveRoleHolders(map, term, dateStr, teams) {
@@ -917,7 +916,7 @@ function roleEstimateEnv_(target, prevDates, ctx) {
   };
 }
 
-// 氏名 → 「名字さん」（同じ名字の方がいれば「田中秀一さん」）
+// 氏名 → 「名字さん」（同じ名字の方がいれば「田村秀二さん」）
 function roleShortName_(name, members) {
   var full = String(name || '').replace(/[\s　]+/g, ' ').trim();
   if (!full) return '';

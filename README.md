@@ -124,6 +124,8 @@ BNI_Chiyoda_VisitorHost/
     ├── check_webapp_pages.js #   ウェブアプリの画面一覧（?p= での開き方・トップページのリンク）
     ├── check_chapter.js      #   チャプターの設定（名前・期の付け直し・定例会の曜日と回数・初回の準備）
     │  ── ルーティンチェックシート（実物をExcelに書き出したもので確かめる）──
+    │     書き出した routine.json・members.json はリポジトリに入れない（名簿にあたるため）。
+    │     検査の中の氏名は架空のもの（実物を使うときは、書き出したものの氏名も同じ架空の氏名に置き換えてから使う）
     ├── routine_dump.py       #   xlsx → routine.json
     ├── check_routine.js      #   開催回・コアバリュー・メインプレゼンなどの読み取り
     ├── check_weekly_start.js #   ウィークリープレゼンの始まりの業種区分（記載・前回からの繰り上げ）
@@ -372,7 +374,7 @@ clasp deployments
 
 ### 更新が反映されたかの確かめ方
 
-`コード.js` の `SYSTEM_VERSION_`（例: `2026-09-27p`）が、ウェブアプリのトップページの下と
+`コード.js` の `SYSTEM_VERSION_`（例: `2026-09-27q`）が、ウェブアプリのトップページの下と
 「定例会スライド（前半）」「定例会スライド（後半）」の画面の右上に **「版 …」** として出ます。
 機能を変えたらこの値を変え、`clasp push`・`clasp version`・`clasp deploy` のあとに画面で確かめてください。
 

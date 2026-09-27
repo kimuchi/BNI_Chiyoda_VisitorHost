@@ -288,7 +288,7 @@ if (rfBoxes && process.env.MTG_REFERRAL !== '0') {
 }
 
 // --- アンバサダー・ディレクターのページ（画面と同じく「リージョン参加者」の名字で選ぶ）---
-// MTG_REGION で「リージョン参加者」の記載を差し替えられる（例: MTG_REGION='坂爪アンバサダー'）
+// MTG_REGION で「リージョン参加者」の記載を差し替えられる（例: MTG_REGION='坂上アンバサダー'）
 let weeklyGuests = null;
 const guestPages = F.weeklyGuestPages_(parts);
 if (guestPages.length) {
