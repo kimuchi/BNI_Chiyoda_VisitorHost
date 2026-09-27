@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html>
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<style>
+ body{font-family:sans-serif;margin:0;padding:14px 18px 30px;color:#222;font-size:13px;background:#fff;}
+ h3{margin:0 0 4px;color:#0055ff;}
+ h4{margin:14px 0 6px;font-size:13px;color:#0f3d91;}
+ .sub{font-size:12px;color:#666;margin-bottom:8px;line-height:1.6;}
+ .tabs{display:flex;gap:6px;border-bottom:2px solid #dde3ea;margin:8px 0 10px;}
+ .tab{padding:7px 14px;border:1px solid #dde3ea;border-bottom:none;border-radius:6px 6px 0 0;background:#f5f7fa;cursor:pointer;font-weight:bold;color:#556;}
+ .tab.on{background:#fff;color:#0055ff;border-color:#b9c7e6;}
+ .bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0 10px;}
+ select,input[type=text]{padding:6px;border:1px solid #c8ced8;border-radius:4px;font-size:13px;font-family:inherit;}
+ button{padding:7px 12px;border:1px solid #cfd6e2;border-radius:5px;font-weight:bold;cursor:pointer;background:#f3f6fb;color:#223;font-size:12.5px;}
+ button.go{background:#4caf50;border-color:#4caf50;color:#fff;}
+ button:disabled{opacity:.5;cursor:default;}
+ #msg{margin:6px 0;font-size:13px;white-space:pre-wrap;line-height:1.6;}
+ #msg.ok{color:#1a7f37;} #msg.err{color:#c00;}
+ .num{color:#889;font-size:11px;}
+ a{color:#0f3d91;}
+ /* 台本を作る */
+ #vals{max-height:300px;overflow:auto;border:1px solid #e1e6ee;border-radius:4px;margin-bottom:8px;}
+ #vals:empty{display:none;}
+ table.vals{border-collapse:collapse;width:100%;font-size:12px;}
+ table.vals th,table.vals td{border:1px solid #e1e6ee;padding:4px 6px;vertical-align:top;text-align:left;}
+ table.vals th{background:#f2f6ff;position:sticky;top:0;z-index:1;}
+ table.vals td.k{width:230px;word-break:break-all;}
+ tr.missing td{background:#fff4cc;} tr.none td{color:#8a8f98;} tr.unknown td{background:#fdecea;}
+ textarea.v{width:100%;box-sizing:border-box;font-size:12px;font-family:inherit;padding:3px;border:1px solid #d4dae4;border-radius:3px;}
+ .pv .row{display:grid;grid-template-columns:48px 120px 150px 1fr;gap:8px;padding:6px 4px;border-bottom:1px solid #eef1f5;}
+ .pv .row.missing{background:#fff8e1;} .pv .row.none{color:#8a8f98;}
+ .pv .t{white-space:pre-wrap;line-height:1.55;}
+ .pv .m{white-space:pre-wrap;color:#667;font-size:11.5px;margin-top:3px;}
+ .blank{background:#ffd34d;padding:0 2px;border-radius:2px;}
+ /* ひな形の編集 */
+ .ed{display:grid;grid-template-columns:minmax(0,1fr) 270px;gap:12px;align-items:start;}
+ .rowcard{border:1px solid #dde3ea;border-radius:6px;padding:7px 8px;margin-bottom:7px;background:#fff;}
+ .rowcard .top{display:grid;grid-template-columns:28px 64px 150px minmax(0,1fr) auto;gap:6px;align-items:center;margin-bottom:5px;}
+ .rowcard .top input{width:100%;box-sizing:border-box;padding:4px 6px;}
+ .rowcard textarea{width:100%;box-sizing:border-box;font-size:12.5px;line-height:1.5;font-family:inherit;padding:4px 6px;border:1px solid #c8ced8;border-radius:4px;}
+ .rowcard textarea.memo{margin-top:4px;background:#fafbfc;color:#556;font-size:12px;}
+ .rowcard .ops button{padding:3px 7px;font-size:12px;font-weight:normal;}
+ #edit .bar{position:sticky;top:0;z-index:2;background:#fff;margin:0 0 6px;padding:6px 0;border-bottom:1px solid #eef1f5;}
+ .pal{position:sticky;top:52px;max-height:calc(100vh - 70px);overflow:auto;border:1px solid #dde3ea;border-radius:6px;padding:8px;background:#fafbfd;}
+ .pal h5{margin:10px 0 4px;font-size:12px;color:#0f3d91;}
+ .pal button{display:block;width:100%;text-align:left;font-weight:normal;padding:4px 6px;margin:2px 0;background:#fff;border:1px solid #e1e6ee;font-size:12px;}
+ .pal button small{color:#889;display:block;font-size:10.5px;margin-top:1px;}
+</style>
+</head>
+<body>
+<h3>トークスクリプト（台本）</h3>
+<div class="sub">ひな形の <b>{…}</b> に、その回の担当者・参加者・チェックシートの内容を入れて、「20261007トークスクリプト」のようなシートを作ります。
+  入らなかった所は「〇〇」になり、シートでは黄色になります。</div>
+<div class="tabs">
+  <div class="tab on" id="tabMake" onclick="showTab('make')">台本を作る</div>
+  <div class="tab" id="tabEdit" onclick="showTab('edit')">ひな形の編集</div>
+</div>
+<div id="msg"></div>
+
+<div id="make">
+  <div class="bar">開催日 <select id="date" onchange="clearPreview()"></select>
+    <button id="btnPreview" onclick="preview()">中身を確かめる</button>
+    <button id="btnCreate" class="go" onclick="create()">シートに作る</button>
+    <span id="made"></span></div>
+  <div id="sum" class="sub"></div>
+  <div id="vals"></div>
+  <div id="pv" class="pv"></div>
+</div>
+
+<div id="edit" hidden>
+  <div class="bar">
+    <button id="btnSave" class="go" onclick="saveTpl()">ひな形を保存する</button>
+    <button id="btnReload" onclick="reloadTpl()">元に戻す（保存した内容を読み直す）</button>
+    <button id="btnReset" onclick="resetTpl()">既定のひな形に戻す</button>
+    <span id="tplNote" class="num"></span>
+  </div>
+  <div class="ed"><div id="rows"></div><div class="pal" id="pal"></div></div>
+</div>
+
+<script>
+ var S = { ctx: null, rows: [], dirty: false, last: null, pv: null };
+ var FIELDS = ['time', 'speaker', 'slide', 'talk', 'memo'];
+ function el(id){ return document.getElementById(id); }
+ function esc(x){ return String(x==null?'':x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+ function msg(t, ok){ var m=el('msg'); m.className=ok?'ok':'err'; m.textContent=t||''; }
+ function fail(e){ busy(false); msg('エラー: '+(e&&e.message?e.message:e)); }
+ var BUTTONS = ['btnPreview', 'btnCreate', 'btnSave', 'btnReload', 'btnReset'];
+ function busy(on){ BUTTONS.forEach(function(id){ if(el(id)) el(id).disabled=!!on; }); }
+ function copyRow(r){ var o={}; FIELDS.forEach(function(f){ o[f]=String((r&&r[f])==null?'':r[f]); }); return o; }
+ function lines(s){ return String(s||'').split('\n').length; }
+
+ window.onload = load;
+ function load(){
+   msg('読み込み中...', true);
+   google.script.run.withSuccessHandler(function(c){
+     if(!c || !c.ok){ msg(c && c.message ? c.message : '読み込めませんでした。'); return; }
+     S.ctx = c; S.rows = (c.template||[]).map(copyRow); S.dirty = false;
+     fillDates(c.meetings || {});
+     renderRows(); renderPal(c.catalog || []); tplNote();
+     msg('', true);
+   }).withFailureHandler(fail).getTalkScriptContext();
+ }
+ function fillDates(m){
+   el('date').innerHTML = (m.list||[]).map(function(o){
+     return '<option value="'+esc(o.dateValue)+'"'+(o.dateValue===m.next?' selected':'')+'>'+esc(o.display)+'</option>';
+   }).join('');
+ }
+ function showTab(t){
+   el('make').hidden = t!=='make'; el('edit').hidden = t!=='edit';
+   el('tabMake').className = 'tab'+(t==='make'?' on':''); el('tabEdit').className = 'tab'+(t==='edit'?' on':'');
+   if(t==='make' && S.dirty) msg('ひな形に保存していない変更があります。台本は、保存してあるひな形で作ります。');
+ }
+
+ // ---- 台本を作る ----
+ function clearPreview(){ el('sum').innerHTML=''; el('vals').innerHTML=''; el('pv').innerHTML=''; el('made').innerHTML=''; S.pv=null; S.vals=[]; }
+ // 表で直した値（この回だけ使う）。表の並び（S.vals）と入力欄 v_0, v_1 … が対応する
+ function overrides(){
+   var o={};
+   (S.vals||[]).forEach(function(v, i){ var t=el('v_'+i); if(t && t.value!==(v.manual?'':v.value)) o[v.key]=t.value; });
+   (S.vals||[]).forEach(function(v, i){ var t=el('v_'+i); if(v.manual && t && t.value===v.value) o[v.key]=v.value; });   // 前に直した値は続けて使う
+   return o;
+ }
+ function preview(){
+   var d=el('date').value; if(!d){ msg('開催日がありません。'); return; }
+   busy(true); msg('作っています...', true);
+   google.script.run.withSuccessHandler(function(r){
+     busy(false);
+     if(!r || !r.ok){ msg(r && r.message ? r.message : '作れませんでした。'); return; }
+     S.pv=r; renderPreview(r); msg('', true);
+   }).withFailureHandler(fail).previewTalkScript(d, overrides());
+ }
+ function create(){
+   var d=el('date').value; if(!d){ msg('開催日がありません。'); return; }
+   busy(true); msg('シートを作っています...', true);
+   google.script.run.withSuccessHandler(function(r){
+     busy(false);
+     msg(r && r.message ? r.message : '作れませんでした。', r && r.ok);
+     el('made').innerHTML = (r && r.ok && r.url) ? '<a href="'+esc(r.url)+'" target="_blank" rel="noopener">「'+esc(r.sheetName)+'」を開く</a>' : '';
+   }).withFailureHandler(fail).createTalkScript(d, overrides());
+ }
+ function stateNote(s){
+   return s==='missing' ? '見つかりません（「〇〇」になります）' : s==='none' ? 'チェックシートで「なし」' : s==='unknown' ? 'この名前の差し込みはありません' : '';
+ }
+ function renderPreview(r){
+   el('sum').innerHTML = '<b>'+esc(r.label)+'</b>　差し込み '+r.values.length+' 個'
+     + (r.missing.length ? '／<span class="blank">入らなかった '+r.missing.length+' 個</span>' : '')
+     + (r.none.length ? '／チェックシートで「なし」 '+r.none.length+' 個' : '')
+     + (r.unknown.length ? '／<b style="color:#c00">書き方の違う差し込み '+r.unknown.length+' 個</b>' : '')
+     + '<br>下の表で直した値は、この回の台本だけに使います（ひな形や元のシートは変わりません）。';
+   var rank={unknown:0,missing:1,ok:2,none:3};   // 直すもの・確かめるものを先に（「なし」は最後）
+   var vs=r.values.slice().sort(function(a,b){ return rank[a.state]-rank[b.state]; });
+   S.vals = vs;
+   el('vals').innerHTML = '<table class="vals" id="valsTable"><tr><th>差し込み</th><th>入る内容</th></tr>' + vs.map(function(v, i){
+     return '<tr class="'+v.state+'"><td class="k">{'+esc(v.key)+'}'+(stateNote(v.state)?'<br><span class="num">'+stateNote(v.state)+'</span>':'')+(v.manual?'<br><span class="num">手で直した値</span>':'')+'</td>'
+       + '<td><textarea class="v" id="v_'+i+'" rows="'+Math.min(6, lines(v.value))+'">'+esc(v.value)+'</textarea></td></tr>';
+   }).join('') + '</table>';
+   var hi=function(s){ return esc(s).replace(/〇〇/g,'<span class="blank">〇〇</span>'); };
+   el('pv').innerHTML = '<h4>できあがりの見本（'+r.rows.length+'行）</h4>' + r.rows.map(function(x, i){
+     var mk = (r.marks||[])[i], cls = mk==='missing' ? ' missing' : (mk==='none' ? ' none' : '');
+     return '<div class="row'+cls+'"><div class="num">'+esc(x.time)+'</div><div>'+hi(x.speaker)+'</div><div>'+hi(x.slide)+'</div>'
+       + '<div><div class="t">'+hi(x.talk)+'</div>'+(x.memo?'<div class="m">'+hi(x.memo)+'</div>':'')+'</div></div>';
+   }).join('');
+ }
+
+ // ---- ひな形の編集 ----
+ function renderRows(){
+   var field = function(i, f, ph, v, tag, extra){
+     var ev = ' id="r'+i+'_'+f+'" oninput="onField('+i+',\''+f+'\')" onfocus="S.last=\'r'+i+'_'+f+'\'"';
+     return tag==='input' ? '<input type="text" placeholder="'+ph+'"'+ev+' value="'+esc(v)+'">'
+                          : '<textarea placeholder="'+ph+'"'+ev+(extra||'')+'>'+esc(v)+'</textarea>';
+   };
+   el('rows').innerHTML = S.rows.map(function(r, i){
+     return '<div class="rowcard"><div class="top"><span class="num">'+(i+1)+'</span>'
+       + field(i, 'time', '時間', r.time, 'input') + field(i, 'speaker', '発言者', r.speaker, 'input') + field(i, 'slide', 'スライド', r.slide, 'input')
+       + '<span class="ops"><button title="上へ" onclick="moveRow('+i+',-1)">↑</button><button title="下へ" onclick="moveRow('+i+',1)">↓</button>'
+       + '<button title="この下に行を足す" onclick="addRow('+i+')">＋</button><button title="この行を消す" onclick="delRow('+i+')">✕</button></span></div>'
+       + field(i, 'talk', 'トーク', r.talk, 'textarea', ' rows="'+Math.max(2, Math.min(12, lines(r.talk)))+'"')
+       + field(i, 'memo', 'メモ', r.memo, 'textarea', ' class="memo" rows="'+Math.min(4, lines(r.memo))+'"') + '</div>';
+   }).join('') + '<button onclick="addRow('+(S.rows.length-1)+')">＋ いちばん下に行を足す</button>';
+ }
+ function onField(i, f){ var t=el('r'+i+'_'+f); if(!t || !S.rows[i]) return; S.rows[i][f]=t.value; S.dirty=true; tplNote(); }
+ function moveRow(i, d){ var j=i+d; if(j<0 || j>=S.rows.length) return; var t=S.rows[i]; S.rows[i]=S.rows[j]; S.rows[j]=t; S.last=''; S.dirty=true; renderRows(); tplNote(); }
+ function addRow(i){ S.rows.splice(i+1, 0, copyRow({})); S.last=''; S.dirty=true; renderRows(); tplNote(); }
+ function delRow(i){ if(!confirm((i+1)+'行目を消します。よろしいですか？')) return; S.rows.splice(i, 1); S.last=''; S.dirty=true; renderRows(); tplNote(); }
+ function renderPal(cat){
+   S.catalog = cat;
+   el('pal').innerHTML = '<div class="num">差し込みを入れたい欄をクリックしてから、下のボタンを押すと、その場所に入ります。</div>' + cat.map(function(g, gi){
+     return '<h5>'+esc(g.group)+'</h5>' + (g.items||[]).map(function(it, ii){
+       return '<button onclick="insertKey('+gi+','+ii+')">{'+esc(it.key)+'}<small>'+esc(it.desc)+'</small></button>';
+     }).join('');
+   }).join('');
+ }
+ // 最後にクリックした欄（S.last … 欄の id）の、カーソルの場所に {…} を入れる
+ function insertKey(gi, ii){
+   var it = ((S.catalog||[])[gi]||{items:[]}).items[ii], t = S.last ? el(S.last) : null;
+   if(!it) return;
+   if(!t){ msg('先に、差し込みを入れたい欄（トークなど）をクリックしてください。'); return; }
+   var k = '{'+it.key+'}', v = String(t.value||''), s = t.selectionStart==null ? v.length : t.selectionStart, e = t.selectionEnd==null ? s : t.selectionEnd;
+   t.value = v.slice(0, s) + k + v.slice(e);
+   try { t.focus(); t.selectionStart = t.selectionEnd = s + k.length; } catch(err) {}
+   var m = /^r(\d+)_(\w+)$/.exec(S.last); if(m) onField(+m[1], m[2]);
+ }
+ function tplNote(){
+   var c = S.ctx || {};
+   el('tplNote').innerHTML = (c.fromSheet
+     ? 'シート「'+esc(c.templateSheet)+'」のひな形です'+(c.templateUrl ? '（<a href="'+esc(c.templateUrl)+'" target="_blank" rel="noopener">シートを開く</a>）' : '')
+     : 'まだひな形のシートが無いので、既定のひな形を出しています（保存するとシートを作ります）')
+     + '・'+S.rows.length+'行' + (S.dirty ? '・<b style="color:#c60;">保存していない変更があります</b>' : '');
+ }
+ function saveTpl(){
+   busy(true); msg('保存しています...', true);
+   google.script.run.withSuccessHandler(function(r){
+     busy(false); msg(r && r.message ? r.message : '保存できませんでした。', r && r.ok);
+     if(r && r.ok){ S.dirty=false; S.ctx.fromSheet=true; S.ctx.templateUrl=r.templateUrl||S.ctx.templateUrl; tplNote(); }
+   }).withFailureHandler(fail).saveTalkTemplate(S.rows);
+ }
+ function reloadTpl(){ if(S.dirty && !confirm('保存していない変更を捨てて、保存してあるひな形を読み直します。よろしいですか？')) return; clearPreview(); load(); }
+ function resetTpl(){
+   if(!confirm('ひな形を既定の内容に戻して、シートに保存します。いまのひな形は上書きされます。よろしいですか？')) return;
+   busy(true); msg('戻しています...', true);
+   google.script.run.withSuccessHandler(function(r){
+     busy(false); msg(r && r.message ? r.message : '戻せませんでした。', r && r.ok);
+     if(r && r.ok){ S.rows=(r.template||[]).map(copyRow); S.dirty=false; S.ctx.fromSheet=true; S.ctx.templateUrl=r.templateUrl||''; S.last=''; renderRows(); tplNote(); }
+   }).withFailureHandler(fail).resetTalkTemplate();
+ }
+</script>
+</body>
+</html>

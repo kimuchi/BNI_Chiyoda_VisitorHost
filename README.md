@@ -79,6 +79,9 @@ BNI_Chiyoda_VisitorHost/
 │   ├ memberbook.html
 │   ├ memberbook_editor.html  #   冊子の編集画面
 │   └ memberbook_render.html  #   冊子の組版
+├── talk_script_srv.js        # トークスクリプト（台本）：ひな形の {…} にその回の担当者・参加者・チェックシートの内容を入れてシートに作る
+│   ├ talk_script.html        #   台本を作る／ひな形の編集
+│   └ talk_script_default.js  #   既定のひな形（docs/samples/トークスクリプトのひな形.tsv と同じ内容）
 ├── zoom_guide.html           # Zoom入室案内
 ├── ooxml.js                  # pptx(OOXML)を文字列で書き換える共通処理
 │
@@ -108,6 +111,7 @@ BNI_Chiyoda_VisitorHost/
 ├── manual.html               # ↑から生成。画面に出すもの（画像も埋め込む）
 ├── docs/images/              # マニュアルのスクリーンショット（WebP。架空のデータで撮ったもの。
 │                             #   Google認証の auth*.webp は実際の画面で、メールアドレスと顔写真を見本に置き換えたもの）
+├── docs/samples/             # 見本（チャプター名を {チャプター} にしたトークスクリプトのひな形など）
 ├── templates/                # ビジター用・事前MTGのpptxテンプレート（大きなテンプレートはDriveに置く。templates/README.md）
 └── tools/                    # 検査・生成スクリプト（GASには送らない）
     │  ── 毎回走らせる検査 ──
@@ -133,6 +137,7 @@ BNI_Chiyoda_VisitorHost/
     ├── lib_role_fixture.js   #   役職ごとの入力・ローテーション・事前MTGの検査で使う、書き込める偽のシートと参加者シート
     ├── check_speaker_rotation.js # スピーカーローテーション（ツールと同じ割り当て・休会日・確定した回・取り込み）
     ├── check_premtg.js       #   事前MTGのパワポ（人数の数え方・まとめ・役職のページ・写真・帯の色・登録したひな形）
+    ├── check_talk_script.js  #   トークスクリプト（差し込みの中身・敬称・シート・ひな形の保存・画面）
     ├── lib_zip.js            #   ↑で使う、pptxの展開・再梱包
     ├── build_premtg_template.py # 事前MTGの見本pptxから既定のひな形（と premtg_template.html）を作る
     │  ── メンバープレゼン ──
@@ -374,7 +379,7 @@ clasp deployments
 
 ### 更新が反映されたかの確かめ方
 
-`コード.js` の `SYSTEM_VERSION_`（例: `2026-09-27q`）が、ウェブアプリのトップページの下と
+`コード.js` の `SYSTEM_VERSION_`（例: `2026-09-27r`）が、ウェブアプリのトップページの下と
 「定例会スライド（前半）」「定例会スライド（後半）」の画面の右上に **「版 …」** として出ます。
 機能を変えたらこの値を変え、`clasp push`・`clasp version`・`clasp deploy` のあとに画面で確かめてください。
 
