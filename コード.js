@@ -2,7 +2,7 @@
 
 // 反映されたか確かめるための版。変更したら日付を更新する。
 // clasp push / デプロイが効いているかは、これを画面で見れば分かる。
-var SYSTEM_VERSION_ = '2026-09-27g';
+var SYSTEM_VERSION_ = '2026-09-27h';
 
 function getSystemVersion() { return SYSTEM_VERSION_; }
 
@@ -22,9 +22,8 @@ function onOpen() {
     .addItem('4. 作成済みPDFの確認', 'openPdfLinksDialog')
     .addItem('5. ビジター情報の投稿文', 'openVisitorPostDialog')
     .addSubMenu(ui.createMenu('📝 役職ごとの入力（定例会の準備）')
-      .addItem('入力状況の一覧', 'openRoleStatusDialog')
+      .addItem('入力状況の一覧・事前MTGのパワポ', 'openRoleStatusDialog')
       .addItem('スピーカーローテーション（書記兼会計）', 'openSpeakerRotationDialog')
-      .addItem('事前MTG（朝イチMTG）のパワポ', 'openPreMeetingDialog')
       .addSeparator()
       .addItem('プレジデント', 'openRoleInputPresident')
       .addItem('バイスプレジデント', 'openRoleInputVice')

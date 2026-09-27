@@ -80,7 +80,8 @@
    var viewParam = (typeof params !== 'undefined' && params && params.view) ? String(params.view).replace(/[^a-z]/g, '') : ''; ?>
  <h3>役職ごとの入力（定例会の準備）</h3>
  <div class="sub">次回の定例会について、役職ごとに必要なことを入力します。保存先は<b>ルーティンチェックシート</b>（その開催日の列）です。
-   入力欄には、前回の内容や名簿などから<b>推定した初期値</b>が入っています。確かめて直してから「保存する」を押してください。</div>
+   入力欄には、前回の内容や名簿などから<b>推定した初期値</b>が入っています。確かめて直してから「保存する」を押してください。
+   入力した内容から、<b>事前MTG（朝イチMTG）のパワポ</b>も作れます（入力状況の一覧の、カードの上の欄）。</div>
  <div class="bar">
    <label>定例会：<select id="meeting" onchange="changeMeeting()"></select></label>
    <span class="muted" id="sheetNote"></span>

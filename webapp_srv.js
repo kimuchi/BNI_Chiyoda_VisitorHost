@@ -34,15 +34,13 @@ function getSS_() {
 
 // ウェブアプリに出す機能の一覧。キーは表示するHTMLファイル名（URLの ?p= に入る）。
 // 同じ画面を別の開き方で出すときは、file に画面のHTMLファイル名、params に画面へ渡す値を書く
-// （事前MTG … ?p=premtg で role_input.html を view=premtg で開く。
-//   スピーカーローテーション … ?p=rotation で role_input.html を role=secretary・view=rotation で開く）。
+// （スピーカーローテーション … ?p=rotation で role_input.html を role=secretary・view=rotation で開く）。
 // トップページのリンクは ?p=キー だけにする。リンクに「&view=…」を <?= ?> で足すと、
 // Apps Script が & や = をURL用に置き換えて（%26 %3D）、開く画面が分からなくなるため。
 var WEBAPP_PAGES_ = [
   { group: '毎週の作業', items: [
-    { key: 'role_input',        label: '役職ごとの入力（定例会の準備）', desc: '次回の定例会について役職ごとに入力します。入力状況も一目で分かります' },
-    { key: 'premtg', file: 'role_input', params: { view: 'premtg' },
-      label: '事前MTG（朝イチMTG）のパワポ', desc: '役職ごとの入力（共有事項・お願い事項など）から作ります' },
+    { key: 'role_input',        label: '役職ごとの入力・事前MTGのパワポ',
+      desc: '次回の定例会について役職ごとに入力します。入力状況が一目で分かり、入力した内容から事前MTG（朝イチMTG）のパワポも作れます' },
     { key: 'rotation', file: 'role_input', params: { role: 'secretary', view: 'rotation' },
       label: 'スピーカーローテーション（書記兼会計）', desc: 'メインプレゼンの順番・Facebookの案内文。前半スライドの表もここから作られます' },
     { key: 'dialog',            label: 'CSVから名簿・PDF作成',   desc: '参加者のCSVを取り込んで名簿とPDFを作ります' },
@@ -82,6 +80,13 @@ var WEBAPP_PAGES_ = [
   ]}
 ];
 
+// トップページには出さないが、URLで開ける入口（前のリンク・ブックマークのため）
+//   premtg … 事前MTGのパワポは「役職ごとの入力」の一覧で作る（入口を1つにまとめた）。
+//            ?p=premtg で開くと、一覧を開いてすぐ事前MTGの中身の確かめを出す
+var WEBAPP_ALIASES_ = [
+  { key: 'premtg', file: 'role_input', params: { view: 'premtg' }, label: '役職ごとの入力・事前MTGのパワポ' }
+];
+
 // 画面に渡す値（一覧の params。URLに書いたものがあればそちらを優先）
 function webAppPageParams_(page, given) {
   var out = {}, k;
@@ -96,6 +101,7 @@ function findWebAppPage_(key) {
     var items = WEBAPP_PAGES_[g].items;
     for (var i = 0; i < items.length; i++) if (items[i].key === key) return items[i];
   }
+  for (var a = 0; a < WEBAPP_ALIASES_.length; a++) if (WEBAPP_ALIASES_[a].key === key) return WEBAPP_ALIASES_[a];
   return null;
 }
 
