@@ -567,6 +567,74 @@ function riFillPhotos_(parts, path, xml, persons, cache, res) {
   return xml;
 }
 
+// === ネットワーキング学習コーナー ===
+// 担当は、その期のエデュケーションコーディネーター（役職・チーム（半期ごと））。
+//   ・「担当：」の文字のある枠（Activeチャプターの雛形）… 1行目にカテゴリー、2行目に「担当：お名前」。
+//     雛形の斜体・自動縮小（文字がとても小さくなる）をやめ、カテゴリー20pt・お名前32ptの太字にそろえる
+//     （枠の幅に収まらないときだけ小さくする）
+//   ・公式ファイルの作り（「氏名／学習トピック」の枠）… 「氏名」をお名前にする（学習トピックはそのまま）
+//   ・写真 … その枠の上の写真（無ければいちばん大きな写真）を、エデュケーションコーディネーターの写真にする。
+//     写真が無い方のときは枠を外し、「スピーカーの写真を挿入」のような見本の文字も消す
+var RI_LEARN_CAT_PT_ = 20, RI_LEARN_NAME_PT_ = 32;
+function riLearnPt_(text, want, wEmu) {
+  var avail = Math.max(1, (wEmu || 0) - 2 * 91440) / 12700 * 0.95, em = riTextEm_(text);
+  return em * want <= avail ? want : Math.max(Math.floor(want / 2), Math.floor(avail / em));
+}
+function riRewriteLearnBox_(xml, box, p) {
+  var r = findShapeRange_(xml, box.id);
+  if (!r) return xml;
+  var seg = xml.substring(r.start, r.end), tb = findTagRanges_(seg, 'p:txBody')[0];
+  if (!tb) return xml;
+  var body = seg.substring(tb.start, tb.end);
+  // 文字の色・書体は、雛形の最初の文字のまま。斜体・大きさ・太字は決め直す
+  var rPr = (body.match(/<a:rPr\b[^>]*\/>|<a:rPr\b[^>]*>[\s\S]*?<\/a:rPr>/) || ['<a:rPr lang="ja-JP"/>'])[0]
+    .replace(/\s(?:i|sz|b|dirty|err)="[^"]*"/g, '');
+  var run = function (text, pt, bold) {
+    return '<a:r>' + rPr.replace(/^<a:rPr\b/, '<a:rPr sz="' + pt * 100 + '" b="' + (bold ? 1 : 0) + '" i="0"')
+         + '<a:t>' + escapeXml_(text) + '</a:t></a:r>';
+  };
+  var para = function (text, pt, bold) {
+    return '<a:p><a:pPr algn="ctr"/>' + run(text, pt, bold) + '<a:endParaRPr lang="ja-JP" sz="' + pt * 100 + '"/></a:p>';
+  };
+  var bodyPr = (body.match(/<a:bodyPr\b[^>]*\/>|<a:bodyPr\b[^>]*>[\s\S]*?<\/a:bodyPr>/) || ['<a:bodyPr/>'])[0]
+    .replace(/<a:normAutofit\b[^>]*\/>/, '<a:normAutofit/>');                        // 縮小の割合を外す
+  var lst = (body.match(/<a:lstStyle\b[^>]*\/>|<a:lstStyle\b[^>]*>[\s\S]*?<\/a:lstStyle>/) || ['<a:lstStyle/>'])[0];
+  var name = '担当：' + p.name;
+  var paras = (p.category ? para(p.category, riLearnPt_(p.category, RI_LEARN_CAT_PT_, box.acx), false) : '')
+            + para(name, riLearnPt_(name, RI_LEARN_NAME_PT_, box.acx), true);
+  seg = seg.substring(0, tb.start) + '<p:txBody>' + bodyPr + lst + paras + '</p:txBody>' + seg.substring(tb.end);
+  return xml.substring(0, r.start) + seg + xml.substring(r.end);
+}
+function riLearningCorner_(xml, data, W, H) {
+  var ec = data && data.holdersOk ? data.roles.ec : null;
+  if (!ec) return { xml: xml, done: false };
+  var shapes = riShapes_(xml), pics = riPhotos_(shapes, W, H), pic = null;
+  var box = shapes.filter(function (s) { return s.tag === 'p:sp' && /担当\s*[：:]/.test(s.text); })[0];
+  if (box) {
+    xml = riRewriteLearnBox_(xml, box, ec);
+    pic = riPicNear_(pics, box, false, null);
+  } else {
+    box = shapes.filter(function (s) {
+      return s.tag === 'p:sp' && s.lines.some(function (l) { return l.trim() === '氏名'; });
+    })[0];
+    if (!box) return { xml: xml, done: false };
+    var r = findShapeRange_(xml, box.id), seg = xml.substring(r.start, r.end);
+    seg = replaceTokensInXml_(seg.replace(/(<a:t(?:\s[^>]*)?>)氏名(<\/a:t>)/, '$1{{学習コーナー担当}}$2'), { '学習コーナー担当': ec.name });
+    xml = xml.substring(0, r.start) + seg + xml.substring(r.end);
+  }
+  if (!pic) pic = pics.slice().sort(function (a, b) { return b.acx * b.acy - a.acx * a.acy; })[0] || null;
+  if (pic) {
+    xml = riNamePic_(xml, pic.id, '{{' + riRoleBase_('ec') + '写真}}');
+    // 写真の無い方：写真の枠は外すので、後ろの「スピーカーの写真を挿入」のような見本の文字も消す
+    if (!findPhotoIdForName_(ec.name)) {
+      shapes.forEach(function (s) {
+        if (s.tag === 'p:sp' && /写真/.test(s.text) && riOverlap_(s, pic) > 0.5) xml = setParagraphsInShape_(xml, s.id, ['']);
+      });
+    }
+  }
+  return { xml: xml, done: true, name: ec.name };
+}
+
 // 前半スライドの役職紹介のページを、その期の方にする。
 // data … riDataFrom_ / riDataOfDate_ の結果。null なら、差し込み口を空にするだけ（写真の枠はそのまま）
 function applyRoleIntro_(parts, data, cache) {
@@ -609,6 +677,11 @@ function applyRoleIntro_(parts, data, cache) {
         if (write.length) xml = riWriteSlots_(xml, write, data, fits);
       }
     }
+    // ネットワーキング学習コーナー（担当はその期のエデュケーションコーディネーター）
+    if (data && i < stop && /学習コーナー/.test(slideText_(xml))) {
+      var lc = riLearningCorner_(xml, data, W, H);
+      if (lc.done) { xml = lc.xml; res.learning = lc.name; }
+    }
     if (xml !== before || hasTok) {
       var tm, txt = slideText_(xml), tre = /\{\{([^{}]{1,60})氏名\}\}/g;
       while ((tm = tre.exec(txt)) !== null) {
@@ -639,6 +712,7 @@ function riMessage_(data, res) {
   if (!data.teamsOk) msg += 'チームのメンバーは未登録のため、チームのページはテンプレートのままです。';
   if (res.hidden.length) msg += '\n担当者が未登録の役職のページは非表示にしました: ' + res.hidden.join('、');
   if (res.overflow.length) msg += '\nページの枠より人数が多いチーム: ' + res.overflow.join('、');
+  if (res.learning) msg += '\nネットワーキング学習コーナー：担当 ' + res.learning + 'さん（その期のエデュケーションコーディネーター）';
   if (res.noPhoto.length) msg += '\n写真が見つからない方（写真の枠を外しました）: ' + res.noPhoto.join('、');
   return msg;
 }

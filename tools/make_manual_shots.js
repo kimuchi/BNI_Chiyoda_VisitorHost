@@ -118,11 +118,17 @@ const surname = (n) => n.split(' ')[0] + 'さん';
   ['退会者', 'なし'], ['開放カテゴリー', 'なし'], ['メインプレゼン', '①' + N(22) + 'さん　②' + N(23) + 'さん'],
   ['推薦の言葉', N(0) + 'さん→' + N(1) + 'さん'], ['スタートアッププレゼン', N(10) + 'さん'], ['BNI目的と概要', 'Givers Gain®（与える者は与えられる）'],
   ['一般規定', '2番'],
+  // バイスプレジデントによる報告（数は作り物）。9/30 の欄はまだ空なので、画面にはこの回の記載が入る
+  ['バイスプレジデントによる報告', 'チャプター設立以来、月間リファーラル数の平均は300件、2026年8月の月間リファーラル数は250件(62件/週） '
+    + '2026年3月から2026年8月の半年間のリファーラル数の合計は1,800件となります。 （クリック）チャプターが発足されてから交わされた'
+    + 'ビジネスのサンキュー額つまり売上は、 50億1,234万円となります。（このあとスライド通り速報を読み上げる）'],
 ].forEach(([t, v]) => setRoutine(ROUTINE, PREV, t, v));
 // 9/30：バイスプレジデントの項目の一部と、事前MTGの共有事項（役職ごと）は入力済み
 [
   ['一般規定', '3番'], ['遅刻・欠席担当(7:00開始)', surname(N(17))], ['名札・バッチの注意', 'なし'],
   ['メインプレゼン', '①' + N(10) + 'さん　②' + N(11) + 'さん'], ['スタートアッププレゼン', N(12) + 'さん'],
+  // 新メンバー（名簿にまだ無い方も）・更新メンバー（年数の記載が無い方も）
+  ['新入会', surname(N(20)) + '、見本 新子さん（エステサロン）'], ['更新式(更新メンバー)', surname(N(8)) + '（2年更新）、' + surname(N(14))],
   ['推薦の言葉', '①' + N(0) + 'さん→' + N(10) + 'さん　②' + N(1) + 'さん→' + N(11) + 'さん\nアフター：' + N(2) + 'さん→' + N(12) + 'さん'],
 ].forEach(([t, v]) => setRoutine(ROUTINE, NEXT, t, v));
 
@@ -273,7 +279,7 @@ const answersSlides = {
   getMemberPresenContext: { any: mpCtx },
   getWeeklyGuests: { any: { ok: true, guests: [{ name: '見本　アンバサダー', role: 'Activeチャプター担当アンバサダー', hidden: true },
                                                 { name: '見本　ディレクター', role: 'エグゼクティブディレクター', hidden: true }] } },
-  getRoutineInfo: { any: F.getRoutineInfo(NEXT) },
+  getRoutineInfo: { any: F.getRoutineInfo(NEXT, { firstHalf: true }) },
   computeRenewalLists: { any: F.computeRenewalLists(NEXT) },
   getSpeakerRotationWeeks: { any: F.getSpeakerRotationWeeks(NEXT) },
   getRoleIntroPreview: { any: F.getRoleIntroPreview(NEXT) },
@@ -402,6 +408,23 @@ const SHOTS = [
   { name: 'slides_first', file: () => writePage('first', evalTemplate('slides_meeting_first.html', {}), answersSlides), width: 1000, height: 900, wait: 1200 },
   { name: 'slides_first_roles', file: () => writePage('first_roles', evalTemplate('slides_meeting_first.html', {}), answersSlides), width: 1000, height: 1400,
     wait: 1200, element: '#roleBox' },
+  { name: 'slides_first_members', file: () => writePage('first_members', evalTemplate('slides_meeting_first.html', {}), answersSlides), width: 1000,
+    height: 1400, wait: 1200, element: '#nmSec' },
+  { name: 'slides_first_vp', file: () => writePage('first_vp', evalTemplate('slides_meeting_first.html', {}), answersSlides), width: 1000,
+    height: 2600, wait: 1200, element: '#vpSec' },
+  // ネットワーキングリーダー：月の最初の定例会（10/7）の例。1to1 は同数のお2人
+  { name: 'slides_first_leaders', file: () => writePage('first_leaders', evalTemplate('slides_meeting_first.html', {}), answersSlides), width: 1000,
+    height: 2600, wait: 1200, element: '#nlSec',
+    before: async (p) => {
+      await p.evaluate((names) => {
+        const w = (i) => [{ name: names[i], raw: '', category: '' }];
+        nlFromRoutine({ firstOfMonth: true, networkingLeaders: { month: '2026-09', items: [
+          { key: 'ceu', value: '25', unit: 'ポイント', winners: w(3) }, { key: 'thanks', value: '3,200万円', unit: '', winners: w(7) },
+          { key: 'ext', value: '18', unit: '件', winners: w(15) },
+          { key: 'oto', value: '24', unit: '回', winners: w(2).concat(w(21)) }, { key: 'visitor', value: '3', unit: '名', winners: w(30) }] } });
+      }, FAKE_MEMBERS.map((m) => m.name));
+      await p.waitForTimeout(150);
+    } },
   { name: 'slides_second', file: () => writePage('second', evalTemplate('slides_meeting_second.html', {}), answersSlides), width: 1000, height: 900, wait: 1200 },
   // トークスクリプト（中身を確かめたところ・ひな形の編集）
   { name: 'talk_script', file: () => writePage('talk_script', readHtml('talk_script.html'), answersTalk), width: 1100, height: 900,

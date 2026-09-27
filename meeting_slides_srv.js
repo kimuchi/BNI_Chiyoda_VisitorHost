@@ -161,14 +161,14 @@ function getMeetingSlideContext() {
     var candidates = getMeetingCandidates();          // 既存関数（開催日・第N回）
     var first = candidates.length ? candidates[0] : null;
     var lists = first ? computeRenewalLists(first.dateValue) : { ok: false };
-    var stats = getMeetingStats_();
     var tpl = getBigTemplateStatus().templates, ready = {};
     for (var i = 0; i < tpl.length; i++) ready[tpl[i].kind] = tpl[i].registered;
     var members = getMemberMaster().members || [];
-    // その日のコアバリュー・開催回は、ルーティンチェックシートに書いてある
-    var routine = first ? getRoutineInfo(first.dateValue) : null;
+    // その日のコアバリュー・開催回は、ルーティンチェックシートに書いてある。
+    // 前半の新メンバー・更新メンバー・バイスプレジデントによる報告・ネットワーキングリーダーも（firstHalf）
+    var routine = first ? getRoutineInfo(first.dateValue, { firstHalf: true }) : null;
     return { ok: true, meetings: candidates, defaultMeeting: first,
-             lists: lists.ok ? lists : null, stats: stats, templates: ready,
+             lists: lists.ok ? lists : null, templates: ready,
              routine: routine, seconds: chapterPresenSeconds_(),
              coreValues: CORE_VALUES_.map(function (c) { return c.label; }),
              memberCount: members.length,
@@ -180,22 +180,6 @@ function getMeetingSlideContext() {
   } catch (e) {
     console.error('[MEETING] ' + (e && e.stack ? e.stack : e));
     return { ok: false, message: '初期表示の取得に失敗しました: ' + (e && e.message ? e.message : e) };
-  }
-}
-
-// 実績数値は前回値を初期値にする（毎回ゼロから入力しなくて済む）
-var MEETING_STATS_KEY_ = 'BNI_MEETING_STATS';
-function getMeetingStats_() {
-  var json = PropertiesService.getScriptProperties().getProperty(MEETING_STATS_KEY_);
-  if (!json) return {};
-  try { return JSON.parse(json); } catch (e) { return {}; }
-}
-function saveMeetingStats(data) {
-  try {
-    PropertiesService.getScriptProperties().setProperty(MEETING_STATS_KEY_, JSON.stringify(data || {}));
-    return { ok: true, message: '実績数値を保存しました。次回はこの値が初期表示されます。' };
-  } catch (e) {
-    return { ok: false, message: '保存に失敗しました: ' + (e && e.message ? e.message : e) };
   }
 }
 
@@ -1103,6 +1087,11 @@ function editMeetingSlides_(parts, map, rules, o) {
   // 前半：役職のメンバー紹介（リーダーシップチーム・コーディネーター・チームのページ）を、その期の方にする。
   // 画面で外したとき・その期の役職が読めないときは、差し込み口を空にするだけ（role_intro_srv.js）
   var roles = applyRoleIntro_(parts, o.roleIntro === false ? null : (o.roleIntroData || null), photoCache);
+  // 前半：新メンバー・更新メンバー（1人1枚）／バイスプレジデントによる報告の数／ネットワーキングリーダー
+  // （どれもルーティンチェックシートの内容を画面で確かめたもの。渡されなければテンプレートのまま。meeting_pages_srv.js）
+  var members = o.memberPages ? applyMemberPages_(parts, o.memberPages, photoCache) : null;
+  var vp = o.vpReport ? applyVpReport_(parts, o.vpReport, o.meetingDate || null) : null;
+  var leaders = o.networkingLeaders ? applyNetworkingLeaders_(parts, o.networkingLeaders, photoCache) : null;
   var referral = (o.referral && o.referral.length)
     ? expandPresenterSlides_(parts, o.referral,
         { title: RF_TITLE_, label: 'リファーラル発表', seconds: chapterPresenSeconds_().referral, photoCache: photoCache }) : null;
@@ -1156,7 +1145,8 @@ function editMeetingSlides_(parts, map, rules, o) {
   var audio = o.music ? applyMeetingAudio_(parts, o.music) : null;
   return { touched: touched, byPattern: byPattern, core: core, policy: policy,
            photos: photos, audio: audio, referral: referral, weekly: weekly, guests: guests,
-           reco: reco, renewal: renewal, rotation: rotation, roles: roles };
+           reco: reco, renewal: renewal, rotation: rotation, roles: roles,
+           members: members, vp: vp, leaders: leaders };
 }
 
 // 定例会スライドを生成する。テンプレート内の {{キー}} を置換する方式。
@@ -1166,7 +1156,10 @@ function editMeetingSlides_(parts, map, rules, o) {
 //         memberPresen: [...]（前半に差し込むメンバープレゼンのページ）,
 //         weeklyGuests: ['坂上　達彦', …]（表示にするアンバサダー・ディレクター。null なら触らない）,
 //         weeklyAuto: true/false（ウィークリープレゼンを自動で次へ進めるか）,
-//         roleIntro: true/false（前半の役職のメンバー紹介を、その開催日の期の役職・チームにするか。既定は true） }
+//         roleIntro: true/false（前半の役職のメンバー紹介を、その開催日の期の役職・チームにするか。既定は true）,
+//         memberPages: { newMembers: [{ name, raw, category }], renewMembers: [{ name, raw, category, years }] },
+//         vpReport: { avg, month, count, perWeek, from, to, total, thanks, weekCount, weekExt },
+//         networkingLeaders: { show, month, items: [{ key, value, unit, winners: [{ name, raw, category }] }] } }
 function generateMeetingSlides(kind, values, meetingDateVal, opts) {
   try {
     if (!BIG_TEMPLATE_KINDS_[kind]) return { ok: false, message: 'スライドの種類が不正です。' };
@@ -1179,6 +1172,7 @@ function generateMeetingSlides(kind, values, meetingDateVal, opts) {
 
     var rules = (o.patterns === false) ? []
               : meetingPatternRules_(String(map['開催回'] || '').replace(/[^\d]/g, ''), d);
+    if (kind === 'meetingFirst') o.meetingDate = d;            // 「○/○速報」の日付
     // 前半の役職のメンバー紹介：その開催日の期の「役職・チーム（半期ごと）」
     if (kind === 'meetingFirst' && o.roleIntro !== false && !o.roleIntroData) {
       try { o.roleIntroData = riDataOfDate_(d || new Date()); }
@@ -1209,6 +1203,9 @@ function generateMeetingSlides(kind, values, meetingDateVal, opts) {
     if (info.renewal && info.renewal.message) msg += '\n' + info.renewal.message;
     if (info.rotation && info.rotation.message) msg += '\n' + info.rotation.message;
     if (info.roles && info.roles.message) msg += '\n' + info.roles.message;
+    if (info.members && info.members.message) msg += '\n' + info.members.message;
+    if (info.vp && info.vp.message) msg += '\n' + info.vp.message;
+    if (info.leaders && info.leaders.message) msg += '\n' + info.leaders.message;
     return { ok: true, message: msg, url: r.saved.url, downloadUrl: r.saved.downloadUrl,
              fileName: outName, touched: info.touched, core: info.core, policy: info.policy,
              timing: r.timing };

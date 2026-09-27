@@ -115,7 +115,8 @@ sandbox.global = sandbox;
 vm.createContext(sandbox);
 // member_presen_srv.js は写真の取り込み（mpAddPhoto_）を使うため読み込む
 for (const f of ['ooxml.js', 'chapter_srv.js', 'routine_srv.js', 'member_presen_srv.js', 'referral_srv.js',
-                 'splice_srv.js', 'meeting_slides_srv.js', 'speaker_rotation_srv.js', 'role_input_srv.js', 'role_intro_srv.js']) {
+                 'splice_srv.js', 'meeting_slides_srv.js', 'speaker_rotation_srv.js', 'role_input_srv.js', 'role_intro_srv.js',
+                 'meeting_pages_srv.js']) {
   vm.runInContext(fs.readFileSync(path.join(__dirname, '..', f), 'utf8'), sandbox, { filename: f });
 }
 const F = sandbox;
@@ -181,7 +182,7 @@ vm.createContext(layoutBox);
 }
 
 // --- ルーティンチェックシートから、その日の決めごとを読む ---
-const R = F.getRoutineInfo(DATE);
+const R = F.getRoutineInfo(DATE, { firstHalf: true });
 console.log(`ルーティンチェックシート: ${R.found ? R.sheetName : '(該当なし)'}`);
 console.log(`  第${R.meetingNo}回 / コアバリュー=${R.coreValue || '(なし)'} / 一般規定=${R.generalPolicy || '(なし)'}番`);
 console.log(`  メインプレゼン: ${(R.mainPresenters || []).map((m) => `${m.raw}→${m.name || '(未一致)'}`).join(' / ') || '(なし)'}`);
@@ -359,6 +360,46 @@ if (!SECOND && process.env.MTG_ROLES !== '0') {
   roleIntroData = F.riDataFrom_(24, '2026年10月〜2027年3月', holders, 24, teams, true, withKana);
 }
 
+// --- 前半：新メンバー・更新メンバー／バイスプレジデントによる報告／ネットワーキングリーダー ---
+// 画面と同じく、ルーティンチェックシートの記載（firstHalf）から組み立てる。環境変数で差し替えられる:
+//   MTG_NEW='0,1'（名簿の並びの番号）・MTG_RENEW='2:1,3:2'（番号:年数）… '' なら「いない」
+//   MTG_NL=on/off（表示するか。既定は、月の最初の定例会か、その日に記載があるとき）
+//   MTG_NL_FROM='2026/09/02' … その日の記載を使う（表示にする）
+//   MTG_NL_TIE='oto:2,visitor:3' … その部門の受賞者を、名簿の並びの番号の方を足して増やす
+//   MTG_WEEK='12' … 速報の「今週のリファーラル」の数
+let memberPages = null, vpReport = null, networkingLeaders = null;
+if (!SECOND) {
+  const FH = R.firstHalf || {};
+  const idxList = (env) => process.env[env].split(',').map((x) => x.trim()).filter((x) => x);
+  memberPages = {
+    newMembers: process.env.MTG_NEW !== undefined
+      ? idxList('MTG_NEW').map((i) => ({ name: MEMBERS[+i].name }))
+      : (FH.newMembers || []).map((x) => ({ name: x.name, raw: x.raw, category: x.category })),
+    renewMembers: process.env.MTG_RENEW !== undefined
+      ? idxList('MTG_RENEW').map((x) => { const [i, y] = x.split(':'); return { name: MEMBERS[+i].name, years: +(y || 1) }; })
+      : (FH.renewMembers || []).map((x) => ({ name: x.name, raw: x.raw, category: x.category, years: x.years || 1 })),
+  };
+  vpReport = FH.vpReport ? Object.assign({ weekCount: process.env.MTG_WEEK || '', weekExt: process.env.MTG_WEEK ? '3' : '' }, FH.vpReport) : null;
+  let nlSrc = FH.networkingLeaders, nlShow = !!(FH.firstOfMonth || nlSrc);
+  if (process.env.MTG_NL_FROM) {
+    nlSrc = (F.getRoutineInfo(process.env.MTG_NL_FROM, { firstHalf: true }).firstHalf || {}).networkingLeaders;
+    nlShow = true;
+  }
+  if (process.env.MTG_NL) nlShow = process.env.MTG_NL === 'on';
+  const nlItems = nlSrc ? nlSrc.items.map((it) => ({ key: it.key, value: it.value, unit: it.unit,
+    winners: it.winners.map((w) => ({ name: w.name, raw: w.raw, category: w.category })) })) : [];
+  String(process.env.MTG_NL_TIE || '').split(',').filter((x) => x.trim()).forEach((x) => {
+    const [k, i] = x.split(':'), it = nlItems.find((y) => y.key === k);
+    if (it) it.winners.push({ name: MEMBERS[+i].name });
+  });
+  networkingLeaders = { show: nlShow, month: nlSrc ? nlSrc.month : '', items: nlItems };
+  console.log(`\n新メンバー: ${memberPages.newMembers.map((x) => x.name || x.raw).join('、') || 'なし'}`
+    + ` ／ 更新メンバー: ${memberPages.renewMembers.map((x) => `${x.name || x.raw}（${x.years}年）`).join('、') || 'なし'}`);
+  console.log(`バイスプレジデントによる報告: ${vpReport ? JSON.stringify(vpReport) : '(記載なし)'}${FH.vpReportFrom ? '（' + FH.vpReportFrom + ' の記載）' : ''}`);
+  console.log(`ネットワーキングリーダー: ${nlShow ? '表示' : '非表示'}（月の最初=${FH.firstOfMonth}）`
+    + (nlItems.length ? ' ' + nlItems.map((it) => `${it.key}=${it.value}${it.unit}:${it.winners.map((w) => w.name || w.raw).join('+')}`).join(' / ') : ''));
+}
+
 const info = F.editMeetingSlides_(parts, map, rules, {
   memberPresen: memberPresen,
   weeklyGuests: weeklyGuests,
@@ -374,6 +415,10 @@ const info = F.editMeetingSlides_(parts, map, rules, {
   music: music,
   roleIntro: !!roleIntroData,
   roleIntroData: roleIntroData,
+  memberPages: memberPages,
+  vpReport: vpReport,
+  networkingLeaders: networkingLeaders,
+  meetingDate: d,
 });
 
 console.log('\n書き換え結果:');
@@ -389,6 +434,9 @@ if (info.reco && info.reco.message) console.log('  ' + info.reco.message.split('
 if (info.renewal && info.renewal.message) console.log('  ' + info.renewal.message);
 if (info.rotation && info.rotation.message) console.log('  ' + info.rotation.message);
 if (info.roles && info.roles.message) console.log('  ' + info.roles.message.split('\n').join('\n  '));
+if (info.members && info.members.message) console.log('  ' + info.members.message.split('\n').join('\n  '));
+if (info.vp && info.vp.message) console.log('  ' + info.vp.message);
+if (info.leaders && info.leaders.message) console.log('  ' + info.leaders.message.split('\n').join('\n  '));
 
 // --- 役職のメンバー紹介の中身を確かめる ---
 // 入れたお名前がそのページにあること・写真の枠の写真がその方のものであること・写真の無い方の枠は外したこと・
@@ -441,6 +489,105 @@ if (roleIntroData && info.roles) {
   roleFails.slice(0, 20).forEach((f) => console.log('    NG ' + f));
 }
 
+// --- 新メンバー・更新メンバー／バイスプレジデントによる報告／ネットワーキングリーダーの中身を確かめる ---
+let pageChecks = 0;
+const pageFails = [];
+if (!SECOND) {
+  const pck = (ok, msg) => { pageChecks++; if (!ok) pageFails.push(msg); };
+  const order = F.slideOrder_(parts), sz = F.fpSize_(parts);
+  const txt = (p) => F.slideText_(F.xmlOf_(parts, p) || '');
+  const flat = (p) => txt(p).normalize('NFKC').replace(/\s/g, '');
+  const shown = (p) => !/<p:sld\b[^>]*\sshow="0"/.test(F.xmlOf_(parts, p) || '');
+  const noPhoto = new Set(MEMBERS.filter((m, i) => NO_PHOTO.has(i)).map((m) => m.name));
+  // 写真の枠 picId の画像が、その方の写真か（写真の無い方は枠が隠れているか）
+  const photoOk = (p, picId, name) => {
+    const x = F.xmlOf_(parts, p), r = F.findShapeRange_(x, picId);
+    if (!r) return false;
+    const seg = x.substring(r.start, r.end);
+    if (noPhoto.has(name) || !PHOTO_FILE[name]) return /<p:cNvPr\b[^>]*\shidden="1"/.test(seg);
+    const rels = F.xmlOf_(parts, p.replace(/^(ppt\/slides\/)(slide\d+\.xml)$/, '$1_rels/$2.rels')) || '';
+    const rid = (seg.match(/r:embed="(rId\d+)"/) || [])[1];
+    const rel = (rels.match(new RegExp('<Relationship\\b[^>]*\\bId="' + rid + '"[^>]*>')) || [''])[0];
+    const tgt = ((rel.match(/Target="([^"]+)"/) || [])[1] || '').replace('../', 'ppt/');
+    return !!parts[tgt] && parts[tgt]._src === PHOTO_FILE[name] && !/<p:cNvPr\b[^>]*\shidden="1"/.test(seg);
+  };
+  // 新メンバー・更新メンバー：1人1枚。表示のページの数と、お名前・写真・年数
+  if (memberPages) {
+    [['new', '新メンバー', memberPages.newMembers], ['renew', '更新メンバー', memberPages.renewMembers]].forEach(([k, label, list]) => {
+      const pages = order.filter((p) => F.fpMemberKind_(F.xmlOf_(parts, p)) === k && F.fpMemberUnit_(F.xmlOf_(parts, p), sz.W, sz.H));
+      const vis = pages.filter(shown);
+      pck(vis.length === list.length, `${label}：表示のページが ${vis.length}枚（${list.length}名のはず）`);
+      list.forEach((x, i) => {
+        const p = vis[i];
+        if (!p) return;
+        const nm = x.name || x.raw;
+        pck(txt(p).includes(nm), `${label}：${p} に ${nm} が無い`);
+        const who = byName[nm];
+        if (who && who.title) pck(flat(p).includes(`【${who.title}】`.normalize('NFKC').replace(/\s/g, '')), `${label}：${p} に ${nm} のカテゴリーが無い`);
+        if (who && who.company) pck(flat(p).includes(who.company.normalize('NFKC').replace(/\s/g, '')), `${label}：${p} に ${nm} の会社名が無い`);
+        if (k === 'renew') pck(flat(p).includes(`${x.years || 1}年更新`), `${label}：${p} に「${x.years || 1}年更新」が無い`);
+        const u = F.fpMemberUnit_(F.xmlOf_(parts, p), sz.W, sz.H);
+        if (u && u.photo && who) pck(photoOk(p, u.photo.id, nm), `${label}：${p} の写真が ${nm} さんのものでない`);
+        if (noPhoto.has(nm)) pck(!/トリミング/.test(txt(p)), `${label}：${p}（写真の無い方）に見本の文字が残っている`);
+      });
+    });
+  }
+  // バイスプレジデントによる報告：数字と速報の日付
+  if (vpReport) {
+    const vpPages = order.filter((p) => /バイスプレジデント/.test(txt(p)) && /報告/.test(txt(p)));
+    const all = vpPages.map(flat).join('|');
+    const want = [vpReport.avg && vpReport.avg + '件', vpReport.count && vpReport.count + '件', vpReport.total && vpReport.total + '件', vpReport.thanks,
+                  vpReport.perWeek && '(' + vpReport.perWeek + '件/週)'].filter(Boolean);
+    want.forEach((w) => pck(all.includes(w.normalize('NFKC')), `バイスプレジデントによる報告に「${w}」が無い`));
+    if (vpReport.month) {
+      const [y, m] = vpReport.month.split('-').map(Number);
+      pck(all.includes(`${y}年${m}月の月間リファーラル数`), `バイスプレジデントによる報告の年月（${y}年${m}月）が無い`);
+    }
+    if (vpReport.from && vpReport.to) {
+      const [y1, m1] = vpReport.from.split('-').map(Number), [y2, m2] = vpReport.to.split('-').map(Number);
+      pck(all.includes(`${y1}年${m1}月から${y2}年${m2}月`), `累計の期間（${y1}年${m1}月から${y2}年${m2}月）が無い`);
+    }
+    if (vpPages.some((p) => /速報/.test(txt(p)))) pck(all.includes(`${d.getMonth() + 1}/${d.getDate()}速報`), '速報の日付が開催日でない');
+    if (vpReport.weekCount) pck(all.includes(`今週のリファーラル${vpReport.weekCount}件`), '速報の今週のリファーラルの数が無い');
+  }
+  // ネットワーキングリーダー：月の最初の定例会だけ表示。部門のページ・まとめのページに受賞者
+  if (networkingLeaders) {
+    const nlPages = order.filter((p) => /ネットワーキングリーダー/.test(flat(p)));
+    if (!networkingLeaders.show) nlPages.forEach((p) => pck(!shown(p), `ネットワーキングリーダー：${p} が表示のまま（非表示のはず）`));
+    else {
+      const vis = nlPages.filter(shown);
+      pck(vis.length > 0, 'ネットワーキングリーダー：表示のページが無い');
+      const filled = (info.leaders && info.leaders.filled) || [];
+      networkingLeaders.items.forEach((it) => {
+        const names = it.winners.map((w) => (byName[w.name] ? w.name : '')).filter(Boolean);
+        if (!names.length) return;
+        const pages = vis.filter((p) => { const inf = F.fpNlPage_(F.xmlOf_(parts, p), sz.W, sz.H); return inf.type === 'kind' && inf.kind === it.key; });
+        pck(pages.length >= 1, `ネットワーキングリーダー：${it.key} のページが表示されていない`);
+        names.forEach((nm) => {
+          const onKind = pages.filter((p) => txt(p).includes(nm));
+          pck(onKind.length === 1, `ネットワーキングリーダー：${it.key} の ${nm} のページが ${onKind.length}枚`);
+          onKind.forEach((p) => {
+            const inf = F.fpNlPage_(F.xmlOf_(parts, p), sz.W, sz.H), u = inf.units.find((x) => F.slideText_(F.xmlOf_(parts, p).substring(F.findShapeRange_(F.xmlOf_(parts, p), x.name.id).start, F.findShapeRange_(F.xmlOf_(parts, p), x.name.id).end)).includes(nm));
+            pck(!!u, `ネットワーキングリーダー：${p} の ${nm} の枠が見つからない`);
+            if (u && u.photo) pck(photoOk(p, u.photo.id, nm), `ネットワーキングリーダー：${p} の写真が ${nm} さんのものでない`);
+            if (inf.value) pck(flat(p).includes(String(it.value).normalize('NFKC').replace(/\s/g, '').replace(/(万円|円)$/, '')), `ネットワーキングリーダー：${p} に数 ${it.value} が無い`);
+          });
+          const sum = vis.filter((p) => F.fpNlPage_(F.xmlOf_(parts, p), sz.W, sz.H).type === 'summary');
+          sum.forEach((p) => pck(txt(p).includes(nm), `ネットワーキングリーダー：まとめのページに ${nm} が無い`));
+        });
+        if (names.length === 2) pck(pages.some((p) => names.every((nm) => txt(p).includes(nm))), `ネットワーキングリーダー：${it.key} のお2人のページが無い`);
+      });
+      pck(filled.length > 0, 'ネットワーキングリーダー：入れたところが無い');
+      if (networkingLeaders.month) {
+        const m = +networkingLeaders.month.split('-')[1], fw = String(m).replace(/[0-9]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 0xFEE0));
+        pck(vis.some((p) => new RegExp(`(${m}|${fw})月度`).test(txt(p).replace(/\s/g, ''))) || !nlPages.some((p) => /月度/.test(txt(p))), 'ネットワーキングリーダー：見出しの「○月度」が対象の月でない');
+      }
+    }
+  }
+  console.log(`  新メンバー・更新メンバー／バイス報告／ネットワーキングリーダー: 検査 ${pageChecks} 件` + (pageFails.length ? `　NG ${pageFails.length} 件` : '　OK'));
+  pageFails.slice(0, 30).forEach((f) => console.log('    NG ' + f));
+}
+
 // --- 書き出し ---
 const OUT = process.env.MTG_OUT || path.join(DIR, '..', 'out');
 fs.rmSync(OUT, { recursive: true, force: true });
@@ -475,6 +622,9 @@ fs.writeFileSync(path.join(OUT, 'plan.json'), JSON.stringify({ plan, map, info: 
   rotation: info.rotation || null, rotationPlan: speakerRotation,
   // 役職のメンバー紹介（前半）
   roles: info.roles ? { message: info.roles.message, hidden: info.roles.hidden, filled: info.roles.filled } : null,
+  // 新メンバー・更新メンバー／バイスプレジデントによる報告／ネットワーキングリーダー（前半）
+  members: info.members || null, vp: info.vp || null, leaders: info.leaders || null,
+  memberPages: memberPages, vpReport: vpReport, networkingLeaders: networkingLeaders,
 } }, null, 1));
 console.log(`\n書き出し: ${Object.keys(plan).length} パーツ → ${OUT}`);
-if (roleFails.length) process.exitCode = 1;
+if (roleFails.length || pageFails.length) process.exitCode = 1;
