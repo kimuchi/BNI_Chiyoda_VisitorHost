@@ -263,8 +263,11 @@ function getSpeakerRotation() {
     for (var i = 0; i < st.order.length; i++) inOrder[rotNorm_(st.order[i])] = true;
     for (var j = 0; j < env.members.length; j++) inMaster[rotNorm_(env.members[j].name)] = true;
     if (env.members.length) st.order.forEach(function (n) { if (!inMaster[rotNorm_(n)]) missing.push(n); });
-    var holders = {};
-    try { holders = roleHolders_(); } catch (e) {}
+    // 案内文の「書記兼会計の○○まで」は、その回の期（半期）の書記兼会計
+    try {
+      var hAll = roleHolderTerms_();
+      weeks.forEach(function (w) { w.secretary = roleHoldersOfTerm_(hAll, roleTermOf_(parseDate_(w.date))).holders.secretary || ''; });
+    } catch (e) {}
     // ルーティンチェックシートで開催回が空の日（休会の予定）が、休会日に入っていなければ知らせる
     var hints = [], limit = new Date(next.getTime()); limit.setDate(limit.getDate() + 7 * 30);
     Object.keys(rotRoutineDates_()).sort().forEach(function (k) {
@@ -275,8 +278,8 @@ function getSpeakerRotation() {
     return {
       ok: true, order: st.order, excluded: st.excluded, anchor: st.anchor, header: st.header, notes: st.notes,
       updated: st.updated, rebased: rb.rebased, openDate: fmtDate_(rb.open),
-      missing: missing, holidayHints: hints, weeks: weeks, fbText: rotFbText_(weeks[0], holders.secretary || ''),
-      secretary: holders.secretary || '',
+      missing: missing, holidayHints: hints, weeks: weeks, fbText: rotFbText_(weeks[0], (weeks[0] || {}).secretary || ''),
+      secretary: (weeks[0] || {}).secretary || '',
       members: env.members.map(function (m) {
         return { name: m.name, title: m.title || '', collab: m.collab || '', inOrder: !!inOrder[rotNorm_(m.name)] };
       }),

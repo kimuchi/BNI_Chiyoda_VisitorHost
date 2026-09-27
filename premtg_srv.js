@@ -184,7 +184,7 @@ function premtgData_(target) {
   ];
 
   // 役職ごとの共有事項
-  var holders = roleHolders_();
+  var holders = roleHolders_(target);               // その開催日の期（半期）の担当者
   for (var k = 0; k < PREMTG_ROLES_.length; k++) {
     var def = roleDefOf_(PREMTG_ROLES_[k].key);
     if (!def) continue;
