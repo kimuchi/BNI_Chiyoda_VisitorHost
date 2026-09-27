@@ -2,7 +2,7 @@
 
 // 反映されたか確かめるための版。変更したら日付を更新する。
 // clasp push / デプロイが効いているかは、これを画面で見れば分かる。
-var SYSTEM_VERSION_ = '2026-09-27t';
+var SYSTEM_VERSION_ = '2026-09-27u';
 
 function getSystemVersion() { return SYSTEM_VERSION_; }
 
@@ -60,6 +60,7 @@ function onOpen() {
       .addItem('メンバー名簿', 'openMemberMasterDialog')
       .addItem('メンバー写真', 'openMemberPhotoDialog')
       .addSeparator()
+      .addItem('公式ファイルから雛形を作る', 'openOfficialTemplatesDialog')
       .addItem('PowerPointテンプレート（ビジター用）', 'openTemplateFileDialog')
       .addItem('大きなスライド（定例会など）', 'openBigTemplateDialog')
       .addSeparator()

@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html><head><base target="_top">
+<style>
+ body{font-family:sans-serif;padding:18px;font-size:14px;margin:0;color:#222;}
+ h3{margin:0 0 6px;color:#0055ff;}
+ h4{margin:14px 0 6px;font-size:14px;}
+ .why{background:#eef5ff;border-left:4px solid #0055ff;padding:10px 12px;border-radius:0 4px 4px 0;font-size:12px;line-height:1.7;margin-bottom:12px;}
+ .warn{background:#fffbe8;border-left:4px solid #ffc107;padding:9px 12px;font-size:12px;border-radius:0 4px 4px 0;margin:8px 0 12px;line-height:1.6;}
+ .box{border:1px solid #ddd;border-radius:6px;padding:12px;margin-bottom:12px;}
+ input[type=text]{width:100%;padding:6px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;}
+ button{border:none;padding:8px 14px;border-radius:4px;cursor:pointer;font-weight:bold;font-size:13px;background:#0055ff;color:#fff;margin-top:8px;}
+ button.sub{background:#fff;color:#0055ff;border:1px solid #0055ff;font-size:12px;padding:6px 10px;}
+ button:disabled{opacity:.5;cursor:default;}
+ .state{font-size:12px;margin-top:6px;line-height:1.6;}
+ .ok{color:#188038;font-weight:bold;} .ng{color:#c00;} .muted{color:#777;font-size:12px;}
+ table{border-collapse:collapse;width:100%;font-size:12.5px;margin-top:6px;}
+ th,td{border:1px solid #e3e3e3;padding:6px 7px;text-align:left;vertical-align:top;} th{background:#f2f6ff;}
+ td.run{white-space:nowrap;}
+ #msg{margin-top:12px;font-weight:bold;white-space:pre-wrap;line-height:1.6;}
+ a{color:#0f3d91;}
+</style></head>
+<body>
+ <h3>公式ファイルから雛形を作る</h3>
+ <div class="why">
+   BNIメンバーがダウンロードできる<b>定例会の公式スライド（.pptx）</b>から、このシステムで使う雛形
+   （ビジター紹介・ゲスト紹介・代理紹介・ビジタープレゼン・メンバープレゼン・定例会の前半と後半）を作って、
+   「01_テンプレート」に保存し、登録します。<b>次からは、作った雛形を PowerPoint で直して</b>お使いください
+   （リーダーシップの写真・お名前など）。<br>
+   公式ファイルは約100MBありますが、使う部品だけを読み、動画は圧縮して入れます（音はそのまま鳴ります）。
+ </div>
+
+ <h4>1. 公式ファイル</h4>
+ <div class="box">
+   <div class="muted">共有ドライブのフォルダに公式ファイル（ダウンロードした .pptx のまま）を置き、そのファイルの共有リンクを貼り付けてください。</div>
+   <input type="text" id="link" placeholder="https://docs.google.com/presentation/d/xxxx/edit?… または https://drive.google.com/file/d/xxxx/view">
+   <button class="sub" id="saveBtn" onclick="saveLink()">このファイルを使う</button>
+   <div class="state" id="fileState">読み込み中...</div>
+ </div>
+
+ <h4>2. 作る雛形</h4>
+ <div class="box">
+   <table id="kinds"></table>
+   <div class="state" id="secNote"></div>
+   <div class="warn">チェックを入れた雛形を、公式ファイルから作り直して登録します。<b>いま登録してある雛形は、登録が外れます</b>
+     （ファイルは消しません。Googleドライブにそのまま残ります）。自分で直した雛形を使っているときは、チェックを外してください。</div>
+   <button id="goBtn" onclick="go()">作って登録する</button>
+ </div>
+ <div id="msg"></div>
+
+<script>
+ var ST=null, running=false, RES={};   // RES … 雛形ごとの結果（一覧を読み直しても残す）
+ window.onload=load;
+ function esc(x){var d=document.createElement('span');d.textContent=x==null?'':x;return d.innerHTML;}
+ function el(id){return document.getElementById(id);}
+ function show(t,ok){var m=el('msg');m.style.color=ok===false?'#c00':(ok?'#188038':'#0055ff');m.innerText=t||'';}
+ function fail(e){ running=false; busy(false); show('エラー: '+((e&&e.message)?e.message:String(e)),false); }
+ function busy(b){ ['saveBtn','goBtn'].forEach(function(id){ el(id).disabled=b; });
+   ((ST&&ST.kinds)||[]).forEach(function(k){ var c=el('c_'+k.kind); if(c) c.disabled=b; }); }
+ function load(){ google.script.run.withSuccessHandler(render).withFailureHandler(fail).getOfficialTemplateStatus(); }
+ function secLabel(v){ v=parseInt(v,10)||0; var m=Math.floor(v/60), r=v%60; return m ? m+'分'+(r ? r+'秒' : '') : r+'秒'; }
+
+ function render(st){
+   if(!st||!st.ok){ show(st&&st.message?st.message:'読み込めませんでした。',false); return; }
+   ST=st;
+   var f=st.file;
+   el('fileState').innerHTML = !f ? '<span class="ng">まだ設定していません。</span>'
+     : f.error ? '<span class="ng">'+esc(f.error)+'</span>'
+     : '<span class="ok">設定済み</span>：<a href="'+esc(f.url)+'" target="_blank">'+esc(f.name)+'</a>（'+f.sizeMB+'MB）';
+   var h='<tr><th style="width:26px;"></th><th>雛形</th><th>いま登録してあるもの</th><th class="run">結果</th></tr>';
+   st.kinds.forEach(function(k){
+     var reg = k.registered ? (esc(k.fileName)+(k.fromOfficial ? '<br><span class="muted">公式ファイルから作成（'+esc(k.madeAt||'')+'）</span>' : ''))
+                            : '<span class="muted">未登録</span>';
+     h+='<tr><td><input type="checkbox" id="c_'+k.kind+'"'+(k.registered?'':' checked')+'></td>'
+       +'<td>'+esc(k.label)+'</td><td>'+reg+'</td><td class="run" id="r_'+k.kind+'">'+(RES[k.kind]||'')+'</td></tr>';
+   });
+   el('kinds').innerHTML=h;
+   var s=st.seconds||{};
+   el('secNote').innerHTML='カウントダウンは、チャプターの設定の秒数で作ります（ウィークリー '+secLabel(s.weekly)
+     +'・スタートアッププレゼン '+secLabel(s.startup)+'・ビジタープレゼン '+secLabel(s.visitor)+'・リファーラル発表 '+secLabel(s.referral)
+     +'）。表紙には「BNI '+esc(st.chapter)+'」と、次回の開催回・日付を入れます。';
+ }
+
+ function saveLink(){
+   var v=el('link').value.trim();
+   if(!v){ show('公式ファイルの共有リンクを貼り付けてください。',false); return; }
+   busy(true); show('確かめています...');
+   google.script.run.withSuccessHandler(function(r){
+     busy(false);
+     if(!r||!r.ok){ show(r&&r.message?r.message:'設定できませんでした。',false); return; }
+     el('link').value=''; render(r.status); show(r.message,true);
+   }).withFailureHandler(fail).saveOfficialFileLink(v);
+ }
+
+ function go(){
+   if(running) return;
+   if(!ST||!ST.file||ST.file.error){ show('先に「1. 公式ファイル」を設定してください。',false); return; }
+   var list=ST.kinds.filter(function(k){ return el('c_'+k.kind).checked; });
+   if(!list.length){ show('作る雛形にチェックを入れてください。',false); return; }
+   var over=list.filter(function(k){ return k.registered; });
+   if(over.length && !confirm(over.map(function(k){ return '・'+k.label; }).join('\n')
+       +'\n\nは、いま登録してある雛形の代わりに、公式ファイルから作った雛形を登録します。よろしいですか？')) return;
+   running=true; busy(true);
+   var done=[], bad=[], i=0;
+   var put=function(kind,h){ RES[kind]=h; el('r_'+kind).innerHTML=h; };
+   list.forEach(function(k){ put(k.kind,'<span class="muted">待ち</span>'); });
+   (function next(){
+     if(i>=list.length){
+       running=false; busy(false);
+       show((done.length?'作って登録しました（'+done.length+'件）。\n'+done.join('\n'):'')+(bad.length?'\n作れなかったもの:\n'+bad.join('\n'):''),
+            bad.length?false:true);
+       load();
+       return;
+     }
+     var k=list[i++];
+     put(k.kind,'作っています...');
+     show('「'+k.label+'」を作っています（'+i+' / '+list.length+'）。1つ30秒ほどかかります...');
+     google.script.run.withSuccessHandler(function(r){
+       if(r&&r.ok){ put(k.kind,'<span class="ok">登録しました</span><br><a href="'+esc(r.url)+'" target="_blank">開く</a>（'+r.sizeMB+'MB）');
+                    done.push('・'+r.message); }
+       else { put(k.kind,'<span class="ng">作れませんでした</span>'); bad.push('・'+k.label+': '+(r&&r.message?r.message:'')); }
+       next();
+     }).withFailureHandler(function(e){
+       put(k.kind,'<span class="ng">エラー</span>'); bad.push('・'+k.label+': '+((e&&e.message)?e.message:String(e))); next();
+     }).buildOfficialTemplate(k.kind);
+   })();
+ }
+</script>
+</body></html>

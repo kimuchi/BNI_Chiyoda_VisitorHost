@@ -12,19 +12,38 @@ var COMPANY_TALL    = { x: 5087424, y: 2776058, cx: 6893161, cy: 1446550 };  // 
 var CATEGORY_TOP = 3456634, CATEGORY_TOP_LOW = 4071101;                      // 【カテゴリー】の上端
 var CATEGORY_W_PT = 7311519 / 12700;                                         // カテゴリーの枠の幅
 
+// 文字の大きさの基準（pt）。元ツールは会社名・カテゴリーとも44ptで組む。
+// 公式ファイルから作った雛形では、テンプレートの文字の大きさ（companyPt・categoryPt）で組む
+var COMPANY_PT = 44, CATEGORY_PT = 44;
+
 // テンプレートの実測値で置き換える。
-// 会社名が1行のときの枠は、2行の枠の上端をそのままに高さだけ縮めて作る。
+//   { companyTall, categoryLow, categoryWidth } … リファーラル発表（元ツールの寸法のひな形）。
+//       会社名が1行のときの枠は、2行の枠の上端をそのままに高さだけ縮めて作る
+//   { companyDefault, categoryTop, categoryWidth, companyPt, categoryPt } … 公式ファイルから作った雛形。
+//       会社名が2行のときの枠は、1行の枠の上端をそのままに高さだけ伸ばし、カテゴリーもそのぶん下げる
 function setLayoutBoxes(box) {
-  if (!box || !box.companyTall) return;
-  COMPANY_TALL = box.companyTall;
-  COMPANY_DEFAULT = box.companyDefault || {
-    x: COMPANY_TALL.x, y: COMPANY_TALL.y, cx: COMPANY_TALL.cx,
-    cy: Math.round(PAD_EMU + 1 * BASE_PT * LINE_EMU)
-  };
-  CATEGORY_TOP_LOW = box.categoryLow || (COMPANY_TALL.y + COMPANY_TALL.cy - GAP_EMU);
+  if (!box || !(box.companyTall || box.companyDefault)) return;
+  if (box.companyPt) COMPANY_PT = box.companyPt;
+  if (box.categoryPt) CATEGORY_PT = box.categoryPt;
+  if (box.companyTall) {
+    COMPANY_TALL = box.companyTall;
+    COMPANY_DEFAULT = box.companyDefault || {
+      x: COMPANY_TALL.x, y: COMPANY_TALL.y, cx: COMPANY_TALL.cx,
+      cy: Math.round(PAD_EMU + 1 * COMPANY_PT * LINE_EMU)
+    };
+  } else {
+    COMPANY_DEFAULT = box.companyDefault;
+    COMPANY_TALL = { x: COMPANY_DEFAULT.x, y: COMPANY_DEFAULT.y, cx: COMPANY_DEFAULT.cx,
+                     cy: Math.round(PAD_EMU + 2 * COMPANY_PT * LINE_EMU) };
+  }
   CATEGORY_TOP = box.categoryTop || (COMPANY_DEFAULT.y + COMPANY_DEFAULT.cy - GAP_EMU);
+  CATEGORY_TOP_LOW = box.categoryLow
+    || (box.categoryTop ? box.categoryTop + (COMPANY_TALL.cy - COMPANY_DEFAULT.cy) : (COMPANY_TALL.y + COMPANY_TALL.cy - GAP_EMU));
   if (box.categoryWidth) CATEGORY_W_PT = box.categoryWidth / 12700;
 }
+// 小さくしていく下限（元ツールの 44pt → 28pt・20pt と同じ割合）
+function minPtOf(base){ return Math.round(base * MIN_PT / BASE_PT); }
+function hardMinPtOf(base){ return Math.round(base * HARD_MIN_PT / BASE_PT); }
 // 1pt・1行ぶんの高さと枠の上下余白。上の2つの枠から逆算した値で、
 // 3行以上になったときに枠と【カテゴリー】の位置を自分で出すために使う。
 var LINE_EMU = 12700 * 1.213, PAD_EMU = 91440;
@@ -78,7 +97,7 @@ function splitCorp(text){
 }
 
 function companyFit(lines, pt, geom, catTop){
-  return { lines:lines, fontPt:(pt===BASE_PT?0:pt), geom:geom, categoryTop:catTop };
+  return { lines:lines, fontPt:(pt===COMPANY_PT?0:pt), geom:geom, categoryTop:catTop };
 }
 // 行数と文字の大きさから、枠の高さと【カテゴリー】の位置を出す
 function companyCalc(lines, pt){
@@ -96,33 +115,34 @@ function companyCalc(lines, pt){
 // 2行決め打ちのままだと、3行になったときに【カテゴリー】と文字が重なる。
 function layoutCompany(raw){
   var wasAbbrev=/[㈱㈲㈾]/.test(raw||''), text=expandCorp(raw);
-  if(!text) return companyFit([''], BASE_PT, COMPANY_DEFAULT, CATEGORY_TOP);
+  var base=COMPANY_PT, min=minPtOf(base), hard=hardMinPtOf(base);
+  if(!text) return companyFit([''], base, COMPANY_DEFAULT, CATEGORY_TOP);
   if(wasAbbrev){
     var sp=splitCorp(text);
-    if(sp) return companyFit([sp.main,sp.suffix], BASE_PT, COMPANY_TALL, CATEGORY_TOP_LOW);
+    if(sp) return companyFit([sp.main,sp.suffix], base, COMPANY_TALL, CATEGORY_TOP_LOW);
   }
-  var pt=BASE_PT, w1=widthPt(COMPANY_DEFAULT), w2=widthPt(COMPANY_TALL);
+  var pt=base, w1=widthPt(COMPANY_DEFAULT), w2=widthPt(COMPANY_TALL);
   var lines=wrapKinsoku(text,pt,true,w1);
-  while(lines.length>1 && pt>MIN_PT){ pt-=2; lines=wrapKinsoku(text,pt,true,w1); }
+  while(lines.length>1 && pt>min){ pt-=2; lines=wrapKinsoku(text,pt,true,w1); }
   if(lines.length<=1) return companyFit(lines, pt, COMPANY_DEFAULT, CATEGORY_TOP);
 
   var sp2=splitCorp(text);
-  if(sp2) return companyFit([sp2.main,sp2.suffix], BASE_PT, COMPANY_TALL, CATEGORY_TOP_LOW);
+  if(sp2) return companyFit([sp2.main,sp2.suffix], base, COMPANY_TALL, CATEGORY_TOP_LOW);
 
-  pt=BASE_PT; lines=wrapKinsoku(text,pt,true,w2);
-  while(lines.length>2 && pt>MIN_PT){ pt-=2; lines=wrapKinsoku(text,pt,true,w2); }
-  while(lines.length>3 && pt>HARD_MIN_PT){ pt-=2; lines=wrapKinsoku(text,pt,true,w2); }
+  pt=base; lines=wrapKinsoku(text,pt,true,w2);
+  while(lines.length>2 && pt>min){ pt-=2; lines=wrapKinsoku(text,pt,true,w2); }
+  while(lines.length>3 && pt>hard){ pt-=2; lines=wrapKinsoku(text,pt,true,w2); }
   lines=mergeOrphan(lines);
-  if(lines.length<=2 && pt===BASE_PT) return companyFit(lines, pt, COMPANY_TALL, CATEGORY_TOP_LOW);
+  if(lines.length<=2 && pt===base) return companyFit(lines, pt, COMPANY_TALL, CATEGORY_TOP_LOW);
   return companyCalc(lines, pt);
 }
 
 // カテゴリー：【】で囲み、1行に収まるまで小さくする。それでも無理なら2行＋行間を詰める。
 function layoutCategory(rawTitle){
-  var text='【'+normParens(rawTitle||'')+'】', pt=BASE_PT;
+  var text='【'+normParens(rawTitle||'')+'】', base=CATEGORY_PT, min=minPtOf(base), pt=base;
   var lines=wrapKinsoku(text,pt,true,CATEGORY_W_PT);
-  while(lines.length>1 && pt>MIN_PT){ pt-=2; lines=wrapKinsoku(text,pt,true,CATEGORY_W_PT); }
-  if(lines.length<=1) return { lines:lines, fontPt:(pt!==BASE_PT?pt:0), tight:false };
+  while(lines.length>1 && pt>min){ pt-=2; lines=wrapKinsoku(text,pt,true,CATEGORY_W_PT); }
+  if(lines.length<=1) return { lines:lines, fontPt:(pt!==base?pt:0), tight:false };
   return { lines:mergeOrphan(lines), fontPt:pt, tight:true };
 }
 
@@ -130,17 +150,20 @@ function layoutCategory(rawTitle){
 // 1つの画面でメンバープレゼン（既定の枠）とリファーラル発表（別の枠）の両方を
 // 組むことがあるので、切り替えたら必ず元に戻す。
 var LAYOUT_DEFAULTS_ = { cd: COMPANY_DEFAULT, ct: COMPANY_TALL, top: CATEGORY_TOP,
-                         low: CATEGORY_TOP_LOW, w: CATEGORY_W_PT };
+                         low: CATEGORY_TOP_LOW, w: CATEGORY_W_PT, cp: COMPANY_PT, ap: CATEGORY_PT };
 function withLayoutBoxes(box, fn){
-  var saved = { cd: COMPANY_DEFAULT, ct: COMPANY_TALL, top: CATEGORY_TOP, low: CATEGORY_TOP_LOW, w: CATEGORY_W_PT };
+  var saved = { cd: COMPANY_DEFAULT, ct: COMPANY_TALL, top: CATEGORY_TOP, low: CATEGORY_TOP_LOW, w: CATEGORY_W_PT,
+                cp: COMPANY_PT, ap: CATEGORY_PT };
   try{
     COMPANY_DEFAULT = LAYOUT_DEFAULTS_.cd; COMPANY_TALL = LAYOUT_DEFAULTS_.ct;
     CATEGORY_TOP = LAYOUT_DEFAULTS_.top; CATEGORY_TOP_LOW = LAYOUT_DEFAULTS_.low; CATEGORY_W_PT = LAYOUT_DEFAULTS_.w;
+    COMPANY_PT = LAYOUT_DEFAULTS_.cp; CATEGORY_PT = LAYOUT_DEFAULTS_.ap;
     if (box) setLayoutBoxes(box);
     return fn();
   } finally {
     COMPANY_DEFAULT = saved.cd; COMPANY_TALL = saved.ct;
     CATEGORY_TOP = saved.top; CATEGORY_TOP_LOW = saved.low; CATEGORY_W_PT = saved.w;
+    COMPANY_PT = saved.cp; CATEGORY_PT = saved.ap;
   }
 }
 
@@ -178,7 +201,8 @@ function memberPresenOrder(mctx, startKey){
 }
 function memberPresenItems(mctx, startKey, longName, auto){
   var S=memberPresenSeconds(mctx);
-  return withLayoutBoxes(null, function(){
+  // 枠の寸法：テンプレートから採ったもの（公式ファイルから作った雛形）。無ければ元ツールの寸法
+  return withLayoutBoxes(mctx.layoutBoxes || null, function(){
     var items=[], rows=mctx.rowsPerPage||7;
     memberPresenOrder(mctx, startKey).forEach(function(b){
       var list=(mctx.members||[]).filter(function(m){ return m.blockKey===b.gkey; });

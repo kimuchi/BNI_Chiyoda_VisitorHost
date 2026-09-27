@@ -99,16 +99,20 @@ function buildPresenXml_(xml, v, sec) {
 }
 
 // 紹介／代理紹介スライド1枚分（3人）。空き枠は空文字で上書きしてダミー文字を消す
+// 公式ファイルから作った雛形のように「専門分野：」「招待者：」の見出しが値と同じ枠に入っているときは、
+// 見出しを残して後ろに値を入れる（空き枠は見出しごと消す）
 function buildGroupXml_(xml, trio) {
   for (var i = 0; i < 3; i++) {
     var v = trio[i], b = SLIDE_BLOCKS_[i];
-    xml = setTextInShape_(xml, b.category, v ? v.category : '');
-    xml = setTextInShape_(xml, b.inviter,  v ? v.inviter  : '');
+    var cp = groupLabelOf_(xml, b.category), ip = groupLabelOf_(xml, b.inviter);
+    var cat = v ? cp + v.category : '', inv = v ? ip + v.inviter : '';
+    xml = setTextInShape_(xml, b.category, cat);
+    xml = setTextInShape_(xml, b.inviter,  inv);
     xml = setTextInShape_(xml, b.name,     v ? v.name + ' 様' : '');
     // 長い専門分野・会社名は枠からあふれるので、文字数に応じて小さくする
     if (v) {
-      xml = fitFontToShape_(xml, b.category, v.category, FIT_MIN_.groupValue);
-      xml = fitFontToShape_(xml, b.inviter,  v.inviter,  FIT_MIN_.groupValue);
+      xml = fitFontToShape_(xml, b.category, cat, FIT_MIN_.groupValue);
+      xml = fitFontToShape_(xml, b.inviter,  inv, FIT_MIN_.groupValue);
       xml = fitFontToShape_(xml, b.name,     v.name + ' 様', FIT_MIN_.groupName);
     }
     // 空き枠は左の見出しも消す。値だけ空にすると「氏名」「専門分野」「招待者」が残る
@@ -117,6 +121,15 @@ function buildGroupXml_(xml, trio) {
     }
   }
   return xml;
+}
+
+// 枠の文字の頭にある見出し（「専門分野：」「招待者：」）。無ければ空
+function groupLabelOf_(xml, shapeId) {
+  var r = findShapeRange_(xml, shapeId);
+  if (!r) return '';
+  var t = slideText_(xml.substring(r.start, r.end)).replace(/^[\s　]+/, '');
+  var m = t.match(/^([^：:\s　]{1,8}[：:])/);
+  return m ? m[1] : '';
 }
 
 function makeGroups_(list) {

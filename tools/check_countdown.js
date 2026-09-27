@@ -6,7 +6,8 @@
 //   ・ベルの見本 … 20秒のカウントダウン（数字の箱 0〜20）のあと、最後にベルが鳴る（p:audio）
 //   ・卵時計の見本 … 最初に卵時計の動画（音つき）が流れ、そのあとで45秒のカウントダウン。
 //                    動画をクリックすると一時停止（interactiveSeq）。BNIの公式のスライドと同じ作り
-// ビジタープレゼンは docs/templates の雛形（クリックすると20が消えて始まり、最後にベル）をそのまま使う。
+//   ・ビジタープレゼンの見本 … Activeチャプターの雛形と同じ作り（氏名25・会社名27・カテゴリー29。クリックすると
+//                              20がすぐ消えて19から数え、最後にベル）
 // 確かめること
 //   ・数字の箱が新しい秒数ぶんになり、1秒ごとに消える指示も同じ数になる
 //   ・ベルは新しいカウントダウンの最後（元と同じ間隔）に鳴る。卵時計の動画は最初に流れ、カウントダウンはそのあと
@@ -26,7 +27,6 @@ let checks = 0;
 function ck(ok, msg) { checks++; if (!ok) fails.push(msg); }
 const J = (x) => JSON.stringify(x);
 
-const { readZip } = require('./lib_zip');
 const sb = { console };
 vm.createContext(sb);
 for (const f of ['ooxml.js', 'member_presen_srv.js', 'slides_visitor_srv.js']) {
@@ -169,13 +169,44 @@ ck(/advTm="21000"/.test(x) && /<p:cond delay="0"\/>/.test(look(x).start), 'ベ�
 x = sb.mpAdvanceAfterCountdown_('<p:sld><p:cSld><p:spTree/></p:cSld><p:clrMapOvr/></p:sld>', 7);
 ck(/advTm="8000"/.test(x), 'カウントダウンが無いページは秒数から: ' + x);
 
-// ===== 4. ビジタープレゼン（docs/templates の雛形）=====
+// ===== 4. ビジタープレゼン（Activeチャプターの雛形と同じ作り）=====
+function visitorSlide() {
+  const tb = (id, t) => '<p:sp><p:nvSpPr><p:cNvPr id="' + id + '" name="TextBox ' + id + '"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>'
+    + '<p:spPr><a:xfrm><a:off x="4725960" y="' + (1448716 + (id - 25) * 700000) + '"/><a:ext cx="7466039" cy="769441"/></a:xfrm></p:spPr>'
+    + '<p:txBody><a:bodyPr/><a:p><a:r><a:rPr lang="ja-JP" sz="4000"/><a:t>' + t + '</a:t></a:r></a:p></p:txBody></p:sp>';
+  let shapes = '';
+  for (let n = 0; n <= 20; n++) shapes += box(4 + n, n);
+  shapes += tb(25, '伊原 克己 様') + tb(27, '株式会社見本企画') + tb(29, '【デザイン印刷】') + media(49, 'audio');
+  // クリック：「20」（id 24）をすぐ消し、そのあと1秒ごとに 19 … 1 を消す。最後（19秒）にベル
+  let steps = '<p:par><p:cTn id="4" fill="hold"><p:stCondLst><p:cond delay="0"/></p:stCondLst><p:childTnLst>'
+    + '<p:par><p:cTn id="5" presetID="1" presetClass="exit" presetSubtype="0" fill="hold" grpId="0" nodeType="clickEffect">'
+    + '<p:stCondLst><p:cond delay="0"/></p:stCondLst><p:childTnLst><p:set><p:cBhvr><p:cTn id="6" dur="1" fill="hold">'
+    + '<p:stCondLst><p:cond delay="0"/></p:stCondLst></p:cTn><p:tgtEl><p:spTgt spid="24"/></p:tgtEl>'
+    + '<p:attrNameLst><p:attrName>style.visibility</p:attrName></p:attrNameLst></p:cBhvr><p:to><p:strVal val="hidden"/></p:to></p:set>'
+    + '</p:childTnLst></p:cTn></p:par></p:childTnLst></p:cTn></p:par>', id = 7;
+  for (let k = 1; k <= 19; k++) { steps += hide(id, id + 1, id + 2, (k - 1) * 1000, 24 - k); id += 3; }
+  steps += call(id, id + 1, id + 2, 19000, 49, 'playFrom(0.0)', 'afterEffect'); id += 3;
+  let bld = '';
+  for (let n = 1; n <= 20; n++) bld += '<p:bldP spid="' + (4 + n) + '" grpId="0" animBg="1"/>';
+  return '<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">'
+    + '<p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>' + shapes + '</p:spTree></p:cSld>'
+    + '<p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr><p:transition advTm="400"/>'
+    + '<p:timing><p:tnLst><p:par><p:cTn id="1" dur="indefinite" restart="never" nodeType="tmRoot"><p:childTnLst>'
+    + '<p:seq concurrent="1" nextAc="seek"><p:cTn id="2" dur="indefinite" nodeType="mainSeq"><p:childTnLst>'
+    + '<p:par><p:cTn id="3" fill="hold"><p:stCondLst><p:cond delay="indefinite"/></p:stCondLst><p:childTnLst>' + steps + '</p:childTnLst></p:cTn></p:par>'
+    + '</p:childTnLst></p:cTn><p:prevCondLst><p:cond evt="onPrev" delay="0"><p:tgtEl><p:sldTgt/></p:tgtEl></p:cond></p:prevCondLst>'
+    + '<p:nextCondLst><p:cond evt="onNext" delay="0"><p:tgtEl><p:sldTgt/></p:tgtEl></p:cond></p:nextCondLst></p:seq>'
+    + '<p:audio><p:cMediaNode vol="65854" showWhenStopped="0"><p:cTn id="' + id + '" fill="hold" display="0"><p:stCondLst><p:cond delay="indefinite"/></p:stCondLst>'
+    + '<p:endCondLst><p:cond evt="onStopAudio" delay="0"><p:tgtEl><p:sldTgt/></p:tgtEl></p:cond></p:endCondLst></p:cTn>'
+    + '<p:tgtEl><p:spTgt spid="49"/></p:tgtEl></p:cMediaNode></p:audio>'
+    + '</p:childTnLst></p:cTn></p:par></p:tnLst><p:bldLst>' + bld + '</p:bldLst></p:timing></p:sld>';
+}
 {
-  const tpl = readZip(fs.readFileSync(path.join(ROOT, 'docs', 'templates', 'BNI_テンプレート_ビジタープレゼン.pptx')));
-  const vx = tpl['ppt/slides/slide1.xml'].toString('utf8');
+  const vx = visitorSlide();
   const v = { name: '見本　太郎', company: '株式会社見本', category: 'デザイン印刷' };
   const t0 = look(vx);
-  ck(t0.boxes === 20 && t0.hides.length === 20 && t0.calls.length === 1 && t0.audio, '雛形の作り（20秒・ベル）: ' + J({ b: t0.boxes, h: t0.hides.length, c: t0.calls }));
+  ck(t0.boxes === 20 && t0.hides.length === 20 && t0.calls.length === 1 && t0.calls[0].delay === 19000 && t0.audio
+     && sb.mpCountdownEndMs_(vx) === 19000, '雛形の作り（20秒・ベル）: ' + J({ b: t0.boxes, h: t0.hides.length, c: t0.calls }));
   // 同じ秒数（20秒）・秒数なし … カウントダウンには触らない
   for (const sec of [20, undefined]) {
     const r = look(sb.buildPresenXml_(vx, v, sec));

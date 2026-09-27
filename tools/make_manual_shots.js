@@ -289,8 +289,18 @@ const bigStatus = F.getBigTemplateStatus();
   t.registered = true; t.fileName = ['BNI_定例会前半.pptx', 'BNI_定例会後半.pptx', 'BNI_メンバープレゼン.pptx'][i] || (t.label + '.pptx');
   t.sizeMB = [34.2, 31.8, 2.4][i] || 1; t.url = 'https://drive.google.com/';
 });
+// 公式ファイルから雛形を作る：ビジター用とメンバープレゼンは作って登録済み、前半・後半はこれから（チェックが入る）
+const officialMade = (kind, file) => ({ registered: true, fileName: 'BNI_テンプレート_' + file + '（公式から作成）.pptx', url: '#',
+  fromOfficial: true, madeAt: '2026/09/27 10:12' });
+const officialStatus = { ok: true, file: { id: 'x', name: 'BNI公式スライド.pptx', url: '#', sizeMB: 92.7 },
+  kinds: [['intro', 'ビジター紹介（3人1枚）', 'ビジター紹介'], ['guest', 'ゲスト紹介（3人1枚）', 'ゲスト紹介'], ['dairi', '代理紹介（3人1枚）', '代理紹介'],
+    ['presen', 'ビジタープレゼン（1人1枚）', 'ビジタープレゼン'], ['memberPresen', 'メンバープレゼン', 'メンバープレゼン'],
+    ['meetingFirst', '定例会スライド（前半）', '定例会前半'], ['meetingSecond', '定例会スライド（後半）', '定例会後半']]
+    .map(([kind, label, file], i) => Object.assign({ kind, label, registered: false, fileName: '', url: '', fromOfficial: false },
+      i < 5 ? officialMade(kind, file) : {})),
+  seconds: { weekly: 30, startup: 150, visitor: 20, referral: 7 }, chapter: 'Activeチャプター' };
 const answersSettings = { getMemberMaster: { any: masterAnswer }, getHolidays: { any: F.getHolidays() }, getBigTemplateStatus: { any: bigStatus },
-                          getChapterSettings: { any: F.getChapterSettings() } };
+                          getChapterSettings: { any: F.getChapterSettings() }, getOfficialTemplateStatus: { any: officialStatus } };
 
 // ---- トークスクリプト（既定のひな形。9/30 は上の架空の参加者・チェックシートの値で作る）----
 for (const f of ['talk_script_default.js', 'talk_script_srv.js']) {
@@ -393,6 +403,7 @@ const SHOTS = [
   { name: 'holiday', file: () => writePage('holiday', readHtml('holiday.html'), answersSettings), width: 520, height: 560 },
   { name: 'chapter_settings', file: () => writePage('chapter_settings', readHtml('chapter_settings.html'), answersSettings), width: 600, height: 1010 },
   { name: 'big_templates', file: () => writePage('big_templates', readHtml('big_templates.html'), answersSettings), width: 900, height: 700, wait: 700 },
+  { name: 'official_templates', file: () => writePage('official_templates', readHtml('official_templates.html'), answersSettings), width: 760, height: 700, wait: 700, full: true },
 ];
 function readHtml(f) { return fs.readFileSync(path.join(ROOT, f), 'utf8'); }
 
