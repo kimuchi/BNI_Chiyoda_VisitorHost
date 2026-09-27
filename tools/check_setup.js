@@ -222,14 +222,14 @@ let grid = sh ? valuesOf(sh) : [[]];
   const dueOf = (l) => byLabel(l).slice(6, 8).join('／');
   ck(dueOf('スピーカーローテーション用スライド画像') === '5日前／木曜まで' && dueOf('メンバーシップから報告') === '2日前／日曜まで'
      && dueOf('リージョン参加者') === '3日前／土曜まで' && dueOf('割振表') === '1日前／月曜' && dueOf('真正度確認') === '当日／火曜'
-     && dueOf('2分30秒プレゼン') === '／', '期日と曜日目安（火曜開催）: ' + ['スピーカーローテーション用スライド画像', 'メンバーシップから報告', '真正度確認'].map(dueOf).join(' | '));
+     && dueOf('スタートアッププレゼン') === '／', '期日と曜日目安（火曜開催）: ' + ['スピーカーローテーション用スライド画像', 'メンバーシップから報告', '真正度確認'].map(dueOf).join(' | '));
   const hs = sh._fmt.filter((f) => f[0] === 'background' && f[5] === '#e0e0e0').map((f) => grid[0][f[2] - 1]);
   ck(J(hs) === J(hol), '休会日の列に色: ' + J(hs));
   ck(sh._frozen.rows === 4 && sh._widths[10] === 150, '書式（見出しの固定・列の幅）: ' + J(sh._frozen));
 }
 // 読む側：スライド・役職ごとの入力・トークスクリプト
 {
-  const labels = ['定例会回数', 'BNI目的と概要', '2分30秒プレゼン', 'メインプレゼン', '募集カテゴリー', '開放カテゴリー', '審査中カテゴリー',
+  const labels = ['定例会回数', 'BNI目的と概要', 'スタートアッププレゼン', 'メインプレゼン', '募集カテゴリー', '開放カテゴリー', '審査中カテゴリー',
                   '一般規定', '推薦の言葉', 'リージョン参加者', 'ウィークリープレゼン', '真正度確認', '更新対象者30日前', '更新対象者60日前',
                   '更新対象者90日前', '担当割り振り', '代理', '欠席', '医療欠席', '体験談', 'エデュケーション', '新入会'];
   const lost = labels.filter((l) => F.routineFindRow_(grid, [l]) < 0);
@@ -252,6 +252,14 @@ ck(ctx.ok && ctx.found && vice.items.length >= 10 && vice.status.required >= 8, 
   const sv = id ? F.saveRoleInput('2026/10/06', 'vice', [{ id, value: '見本の報告', orig: '' }]) : { ok: false };
   const g2 = valuesOf(sh), rr = F.routineFindRow_(g2, ['メンバーシップから報告']);
   ck(sv.ok && g2[rr][9] === '見本の報告', '役職ごとの入力を保存（10/6 の列）: ' + J(sv).slice(0, 120) + ' / ' + (g2[rr] || [])[9]);
+}
+{
+  // スタートアッププレゼンの行（新しく作ったシートの呼び名）に書いた方を、スライド・トークスクリプトが読む
+  const who = F.getMemberMaster().members[0].name, rr = F.routineFindRow_(valuesOf(sh), ['スタートアッププレゼン']);
+  sh.getRange(rr + 1, 10, 1, 1).setValues([[who.replace(/[\s　].*$/, '') + 'さん']]);
+  resetAll();
+  const ri = F.getRoutineInfo('2026/10/06');
+  ck(ri.found && ri.longPresenter === who, 'スタートアッププレゼンの方を読む: ' + J({ raw: ri.longPresenterRaw, name: ri.longPresenter }));
 }
 {
   const pv = F.previewTalkScript('2026/10/06');

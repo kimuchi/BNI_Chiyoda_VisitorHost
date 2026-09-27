@@ -67,7 +67,8 @@
      リファーラル発表のページを<b>名簿のNo.順で全員ぶん</b>作る</label>
    　<label>カウントダウン <input type="text" id="rfSec" size="2" value="7">秒</label>
    <div id="rfNote" style="font-size:11px;color:#888;margin-top:4px;"></div>
-   <div style="font-size:11px;color:#888;">カウントダウンはクリックで始まり、次のページへもクリックで進みます。</div>
+   <div style="font-size:11px;color:#888;">カウントダウンはクリックで始まり、次のページへもクリックで進みます。
+     秒数のはじめの値は ⚙️ 設定 ＞ チャプター の「リファーラル発表」です（ここで変えるのは、この回だけ）。</div>
  </div>
 
  <div class="sec">
@@ -99,6 +100,7 @@
  function init(c){
    if(!c.ok){ fail({message:c.message}); return; }
    ctx=c;
+   if(c.seconds && c.seconds.referral) document.getElementById('rfSec').value=c.seconds.referral;
    initMeetings(c);
    var mh=memberOptions();
    ['lt1','lt2'].forEach(function(id){ document.getElementById(id).innerHTML=mh; });
@@ -263,7 +265,7 @@
  function buildReferral(){
    var on=document.getElementById('rfOn');
    if(!on || !on.checked || !rfBoxes) return [];
-   var sec=parseInt(document.getElementById('rfSec').value,10)||7;
+   var sec=parseInt(document.getElementById('rfSec').value,10)||((ctx&&ctx.seconds&&ctx.seconds.referral)||7);
    var list=referralMembers();
    // 枠の位置はリファーラル発表のひな形の実測値に切り替えて組む（組み終わったら元に戻る）
    return withLayoutBoxes(rfBoxes, function(){

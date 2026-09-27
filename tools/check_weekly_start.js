@@ -77,6 +77,8 @@ const sandbox = {
     return d;
   },
   fmtDate_: (d) => (d ? fmt(d) : ''),
+  // チャプターの設定は保存していない（既定の値。カウントダウンの秒数など）
+  PropertiesService: { getScriptProperties: () => ({ getProperty: () => null }) },
 };
 // 「今日」：サーバーはふだん最近の期のシートだけを読むので、実行した日で結果が変わらないよう、
 // 下の 3) で「記載のある最後の開催日の3日後」に固定する（それまでは実行した日）
@@ -88,7 +90,7 @@ sandbox.Date = class extends RealDate {
 };
 vm.createContext(sandbox);
 vm.runInContext('Date = this.Date;', sandbox);
-for (const f of ['member_master_srv.js', 'routine_srv.js', 'member_presen_srv.js']) {
+for (const f of ['chapter_srv.js', 'member_master_srv.js', 'routine_srv.js', 'member_presen_srv.js']) {
   vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), sandbox, { filename: f });
 }
 // 業種区分マスタは初期値（member_master_srv.js の DEFAULT_CATEGORIES_）を使う

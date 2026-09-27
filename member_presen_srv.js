@@ -221,7 +221,7 @@ function getMemberPresenContext() {
       cands[c].startRaw = (st && st.key) ? st.raw : '';
       cands[c].startRawDate = (st && st.key) ? st.date : '';
       cands[c].startSteps = (st && st.key) ? st.steps : 0;
-      // 2分30秒プレゼンの方は、ルーティンチェックシートに書いてある
+      // スタートアッププレゼンの方は、ルーティンチェックシートに書いてある
       var ri = null;
       try { ri = getRoutineInfo(cands[c].dateValue); } catch (e) {}
       cands[c].longPresenter = (ri && ri.found) ? ri.longPresenter : '';
@@ -233,8 +233,11 @@ function getMemberPresenContext() {
     var tpl = null, st = getBigTemplateStatus();
     for (var t = 0; t < st.templates.length; t++) if (st.templates[t].kind === MP_TEMPLATE_KIND_) tpl = st.templates[t];
 
+    // カウントダウンの秒数（チャプターの設定）。ウィークリーとスタートアッププレゼンで使う
+    var sec = chapterPresenSeconds_();
     return { ok: true, members: members, blocks: cycle, candidates: cands,
              template: tpl, rowsPerPage: MP_ROWS_PER_OVERVIEW_,
+             seconds: { weekly: sec.weekly, startup: sec.startup },
              unusedCategories: unusedCategoryRows_(members).map(function (r) { return r.block; }) };
   } catch (e) {
     console.error('[MPRESEN] ' + (e && e.stack ? e.stack : e));
@@ -368,9 +371,11 @@ function mpIndividualSlide_(tplXml, tplRels, item, photo) {
   if (item.categoryPt) xml = setFontSizeInShape_(xml, MP_INDIVIDUAL_.category, item.categoryPt);
   if (item.categoryTight) xml = setLineSpacingInShape_(xml, MP_INDIVIDUAL_.category, 85);
 
-  // 30秒以外にしたい方（2分30秒プレゼンなど）は、カウントダウンごと作り直す
-  if (item.countdownSec) xml = mpSetCountdown_(xml, item.countdownSec);
-  if (item.autoAdvanceMs) xml = mpAutoAdvance_(xml, item.autoAdvanceMs);
+  // 秒数（チャプターの設定。スタートアッププレゼンの方は長い）がテンプレートと違うときは、
+  // カウントダウンごと作り直す。同じならテンプレートのまま使う（カウントダウンの無いテンプレートも、そのまま）
+  var nowSec = item.countdownSec ? mpCountdownSeconds_(xml) : 0;
+  if (nowSec && item.countdownSec !== nowSec) xml = mpSetCountdown_(xml, item.countdownSec);
+  if (item.auto) xml = mpAdvanceAfterCountdown_(xml, item.countdownSec);
 
   if (item.nextName) {
     xml = setParagraphsInShape_(xml, MP_INDIVIDUAL_.nextName, [item.nextName]);
@@ -456,9 +461,17 @@ function mpAutoAdvance_(xml, ms) {
   return xml;
 }
 
-// --- 長さの違うカウントダウンを作る（2分30秒プレゼンなど）---
-// テンプレートに入っているのは30秒ぶんだけなので、秒数を変えるときは
-// 数字の箱とアニメーションを作り直す。書式は見本の箱からそのまま引き継ぐ。
+// カウントダウンが終わって1秒おいたら、次のスライドへ進むようにする。
+// 終わる時刻は秒数からではなく、アニメーションの指示から読む
+// （卵時計の動画が流れてからカウントダウンが始まる雛形もあるため）。読めなければ sec 秒で終わるとみなす
+function mpAdvanceAfterCountdown_(xml, sec) {
+  var end = mpCountdownEndMs_(xml);
+  return mpAutoAdvance_(xml, (end || (sec || 30) * 1000) + 1000);
+}
+
+// --- 長さの違うカウントダウンを作る（スタートアッププレゼンなど）---
+// テンプレートに入っている秒数と違うときは、数字の箱とアニメーションを作り直す。
+// 書式は見本の箱からそのまま引き継ぐ。
 
 // 表示する文字。60秒以上なら「2:30」のような分:秒にする。
 function mpCountdownLabels_(sec) {
@@ -485,17 +498,24 @@ function mpCountdownShapes_(xml) {
   for (i = 0; i < ranges.length; i++) {
     var seg = xml.substring(ranges[i].start, ranges[i].end);
     var id = (seg.match(/<p:cNvPr[^>]*\sid="(\d+)"/) || [])[1];
-    var t = (seg.match(/<a:t>([^<]*)<\/a:t>/) || [])[1];
+    var num = mpCountdownNum_((seg.match(/<a:t>[^<]*<\/a:t>/g) || []).join('').replace(/<[^>]+>/g, ''));
     var ext = seg.match(/<a:ext\s+cx="(\d+)"\s+cy="(\d+)"\s*\/>/);
-    if (!id || t === undefined || !/^\d+$/.test(t) || !ext) continue;
+    if (!id || isNaN(num) || !ext) continue;
     var key = ext[1] + 'x' + ext[2];
-    all.push({ id: id, num: parseInt(t, 10), start: ranges[i].start, end: ranges[i].end,
+    all.push({ id: id, num: num, start: ranges[i].start, end: ranges[i].end,
                xml: seg, key: key, cx: parseInt(ext[1], 10), animated: !!anim[id] });
     if (anim[id]) sizes[key] = true;
   }
   var out = [];
   for (i = 0; i < all.length; i++) if (all[i].animated || sizes[all[i].key]) out.push(all[i]);
   return out;
+}
+
+// 数字の箱の文字 → 残りの秒数。「30」→ 30、「2:30」→ 150（60秒以上は分:秒で書いてある）。数字でなければ NaN
+function mpCountdownNum_(t) {
+  var m = /^\s*(\d+)(?::([0-5]\d))?\s*$/.exec(t || '');
+  if (!m) return NaN;
+  return m[2] === undefined ? parseInt(m[1], 10) : parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
 }
 
 // 数字の箱を1枚作る。見本の書式をそのまま使い、文字・色・大きさだけ変える。
@@ -603,6 +623,14 @@ function mpCountdownSeconds_(xml) {
   if (boxes.length < 5) return 0;
   for (var i = 0; i < boxes.length; i++) max = Math.max(max, boxes[i].num);
   return max;
+}
+
+// カウントダウンの最後の数字が消える時刻（カウントダウンのまとまりが始まってから ms）。見つからなければ 0
+function mpCountdownEndMs_(xml) {
+  var boxes = mpCountdownShapes_(xml), ts = xml.indexOf('<p:timing>');
+  if (boxes.length < 5 || ts < 0) return 0;
+  var p = mpParseTiming_(xml.substring(ts, xml.indexOf('</p:timing>', ts) + 11), boxes.map(function (b) { return b.id; }));
+  return p && p.cd ? p.cd.end : 0;
 }
 
 // === アニメーションの指示（p:timing）を、音を残したまま作り直す ===
@@ -720,7 +748,8 @@ function mpInnerOf_(el, tag) {
 
 // p:timing を読む → { mainId, groups: [{ xml, cd }], seqTail, others: [xml], bld, cd }
 //   groups … メインの順番の、クリックごとのまとまり。cd はカウントダウンが入っているまとまりの中身
-//            { startCond, first（最初の消す指示の時刻）, last, keep: [{ xml, delay }]（残す指示）}
+//            { startCond, first（最初の消す指示の時刻）, last, end（最後の数字が消える時刻）,
+//              keep: [{ xml, delay }]（残す指示）}
 //   others … メインの順番以外（動画・音声の登録、クリックで動く指示など）
 function mpParseTiming_(t, olds) {
   var root = t.indexOf('nodeType="tmRoot"');
@@ -752,22 +781,27 @@ function mpParseTiming_(t, olds) {
     var cond = mpInnerOf_(gc, 'p:stCondLst'), steps = mpInnerOf_(gc, 'p:childTnLst');
     var entry = { xml: gx, cd: null };
     if (steps) {
-      var keep = [], first = null, last = null;
+      var keep = [], first = null, last = null, end = 0;
+      var delayOf = function (x) {
+        var dm = (x.match(/^<p:cTn\b[^>]*>\s*<p:stCondLst>\s*<p:cond delay="(\d+)"\/>/) || [])[1];
+        return dm === undefined ? 0 : parseInt(dm, 10);
+      };
       mpChildren_(gc, steps.from, steps.to).forEach(function (step) {
         var sc = step.substring(step.indexOf('<p:cTn'), mpElemEnd_(step, step.indexOf('<p:cTn')));
-        var dm = (sc.match(/^<p:cTn\b[^>]*>\s*<p:stCondLst>\s*<p:cond delay="(\d+)"\/>/) || [])[1];
-        var d = dm === undefined ? 0 : parseInt(dm, 10), inner = mpInnerOf_(sc, 'p:childTnLst');
+        var d = delayOf(sc), inner = mpInnerOf_(sc, 'p:childTnLst');
         (inner ? mpChildren_(sc, inner.from, inner.to) : []).forEach(function (effect) {
           if (isCd(effect)) {
             first = first === null ? d : Math.min(first, d);
             last = last === null ? d : Math.max(last, d);
+            end = Math.max(end, d + delayOf(effect.substring(effect.indexOf('<p:cTn'))));
           } else {
             keep.push({ xml: effect, delay: d });
           }
         });
       });
       if (first !== null) {
-        entry.cd = { startCond: cond ? gc.substring(cond.from, cond.to) : '<p:cond delay="0"/>', first: first, last: last, keep: keep };
+        entry.cd = { startCond: cond ? gc.substring(cond.from, cond.to) : '<p:cond delay="0"/>', first: first, last: last,
+                     end: end, keep: keep };
         if (!out.cd) out.cd = entry.cd;
       }
     }

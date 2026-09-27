@@ -267,9 +267,11 @@ if plan_mp:
                 ck(adv == {str((sec + 1) * 1000)},
                    '%d枚目（%s）の自動送りが %s（%d のはず）' % (k + 1, it['name'], adv or 'なし', (sec + 1) * 1000))
                 ck(not click_wait(sx), '%d枚目のカウントダウンがクリック待ち' % (k + 1))
-        # 差し込んだページの後ろに、2分30秒の下書き（非表示）が残っているか
+                ck(countdown_steps(sx) == sec, '%d枚目（%s）のカウントダウンが %d 秒（%d 秒のはず）'
+                   % (k + 1, it['name'], countdown_steps(sx), sec))
+        # 差し込んだページの後ろに、スタートアッププレゼンの下書き（非表示）が残っているか
         rest = [text(p)[1] for p in order[anchor + 1 + len(plan_mp):]]
-        ck(any('１分' in t for t in rest), '2分30秒の下書きのページが消えている')
+        ck(any('１分' in t for t in rest), 'スタートアッププレゼンの下書きのページが消えている')
     # 自動送りがあるので「保存済みのタイミングを使用」が入っていること
     pp = z.read('ppt/presProps.xml').decode('utf-8')
     ck(re.search(r'useTimings="1"', pp) is not None, '「保存済みのタイミングを使用」が入っていない')
@@ -279,8 +281,13 @@ if plan_mp:
     stale = [(i + 1, re.findall(r'advTm="(\d+)"', z.read('ppt/' + p).decode('utf-8')))
              for i, p in enumerate(order) if p not in mine and 'advTm=' in z.read('ppt/' + p).decode('utf-8')]
     ck(not stale, '作っていないページに自動送りが残っている: %s' % stale[:5])
-    two = [it['name'] for it in plan_mp if it.get('countdownSec')]
-    print('  メンバープレゼン: %d枚を差し込み（2分30秒: %s）' % (len(plan_mp), '、'.join(two) or 'なし'))
+    # ほかの方と秒数の違う方（スタートアッププレゼン）
+    secs = [it.get('countdownSec') for it in plan_mp if it['kind'] != 'overview']
+    usual = max(set(secs), key=secs.count) if secs else 30
+    two = ['%s（%s秒）' % (it['name'], it.get('countdownSec')) for it in plan_mp
+           if it['kind'] != 'overview' and it.get('countdownSec') != usual]
+    print('  メンバープレゼン: %d枚を差し込み（カウントダウン %s秒／スタートアッププレゼン: %s）'
+          % (len(plan_mp), usual, '、'.join(two) or 'なし'))
 
 # 写真の取り違い：ページごとに、入るはずの方の写真が入るはずの枠に入っているか。
 # 写真は1人ずつ中身の違う画像にしてあるので、中身（md5）で誰の写真かが分かる。

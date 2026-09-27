@@ -111,13 +111,13 @@ const surname = (n) => n.split(' ')[0] + 'さん';
   ['エデュケーション', surname(N(5))], ['審査中カテゴリー', 'なし'], ['新入会', 'なし'], ['更新式(更新メンバー)', 'なし'],
   ['ウィークリープレゼン', '建築・住まい　10番　' + surname(N(9))], ['募集カテゴリー', '税理士、司法書士、Webデザイナー'],
   ['退会者', 'なし'], ['開放カテゴリー', 'なし'], ['メインプレゼン', '①' + N(22) + 'さん　②' + N(23) + 'さん'],
-  ['推薦の言葉', N(0) + 'さん→' + N(1) + 'さん'], ['2分30秒プレゼン', N(10) + 'さん'], ['BNI目的と概要', 'Givers Gain®（与える者は与えられる）'],
+  ['推薦の言葉', N(0) + 'さん→' + N(1) + 'さん'], ['スタートアッププレゼン', N(10) + 'さん'], ['BNI目的と概要', 'Givers Gain®（与える者は与えられる）'],
   ['一般規定', '2番'],
 ].forEach(([t, v]) => setRoutine(ROUTINE, PREV, t, v));
 // 9/30：バイスプレジデントの項目の一部と、事前MTGの共有事項（役職ごと）は入力済み
 [
   ['一般規定', '3番'], ['遅刻・欠席担当(7:00開始)', surname(N(17))], ['名札・バッチの注意', 'なし'],
-  ['メインプレゼン', '①' + N(10) + 'さん　②' + N(11) + 'さん'], ['2分30秒プレゼン', N(12) + 'さん'],
+  ['メインプレゼン', '①' + N(10) + 'さん　②' + N(11) + 'さん'], ['スタートアッププレゼン', N(12) + 'さん'],
   ['推薦の言葉', '①' + N(0) + 'さん→' + N(10) + 'さん　②' + N(1) + 'さん→' + N(11) + 'さん\nアフター：' + N(2) + 'さん→' + N(12) + 'さん'],
 ].forEach(([t, v]) => setRoutine(ROUTINE, NEXT, t, v));
 
@@ -391,7 +391,7 @@ const SHOTS = [
   // 設定
   { name: 'member_master', file: () => writePage('member_master', readHtml('member_master.html'), answersSettings), width: 1280, height: 640, wait: 700 },
   { name: 'holiday', file: () => writePage('holiday', readHtml('holiday.html'), answersSettings), width: 520, height: 560 },
-  { name: 'chapter_settings', file: () => writePage('chapter_settings', readHtml('chapter_settings.html'), answersSettings), width: 580, height: 740 },
+  { name: 'chapter_settings', file: () => writePage('chapter_settings', readHtml('chapter_settings.html'), answersSettings), width: 600, height: 1010 },
   { name: 'big_templates', file: () => writePage('big_templates', readHtml('big_templates.html'), answersSettings), width: 900, height: 700, wait: 700 },
 ];
 function readHtml(f) { return fs.readFileSync(path.join(ROOT, f), 'utf8'); }

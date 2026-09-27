@@ -12,11 +12,14 @@
 //   ・入力の誤り（名前が空・期が数字でない・日付が読めない・回数が0）は保存しない
 //   ・役職の担当者の初期値はコードに持たない（何も保存していなければ空欄）
 //   ・空のスプレッドシートから始めたとき（初回の準備の記録が fresh）は、メニュー画面の「準備の状況」でチャプターの設定を促す
+//   ・プレゼンの秒数（ウィークリー30秒・スタートアップ2分30秒・ビジター20秒・リファーラル7秒が既定）を変えられる。
+//     「3:00」「３０秒」の書き方も読む。5秒〜10分の外は保存しない。画面は分・秒の欄
 
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 const { makeRoleServer } = require('./lib_role_fixture');
+const { loadPage } = require('./lib_minidom');
 
 const ROOT = path.join(__dirname, '..');
 const fails = [];
@@ -149,6 +152,55 @@ ck(J(F.roleHolders_(D(2026, 10, 7))) === J(before.h1007) && F.getMeetingCandidat
 ck(!/ずらしました/.test(F.saveChapterSettings({ name: 'Active', region: 'BNI東京千代田リージョン', term: 23, meetingBaseDate: '2026/03/18', meetingBaseCount: 509 }).message),
    '期を変えていないのに「ずらしました」と出る');
 
+// ===== 5b. プレゼンの秒数（ウィークリー・スタートアップ・ビジター・リファーラル）=====
+{
+  const DEF = { weekly: 30, startup: 150, visitor: 20, referral: 7 };
+  resetCache();
+  ck(J(F.chapterPresenSeconds_()) === J(DEF) && J(F.getChapterSettings().seconds) === J(DEF), '秒数の初期値: ' + J(F.chapterPresenSeconds_()));
+  ck(F.chapterSecondsLabel_(150) === '2分30秒' && F.chapterSecondsLabel_(30) === '30秒' && F.chapterSecondsLabel_(180) === '3分',
+     '秒数の書き方: ' + [150, 30, 180].map(F.chapterSecondsLabel_).join(' / '));
+  const base = { name: 'Active', region: 'BNI東京千代田リージョン', term: 23, meetingBaseDate: '2026/03/18', meetingBaseCount: 509 };
+  const keep = props.BNI_CHAPTER;
+  for (const bad of [{ weekly: 4 }, { startup: 601 }, { visitor: 'あいう' }, { referral: '' + 0 }]) {
+    const rb = F.saveChapterSettings(Object.assign({}, base, { seconds: bad }));
+    ck(!rb.ok && /秒数は、5秒〜10分/.test(rb.message) && props.BNI_CHAPTER === keep, '範囲の外の秒数を保存した: ' + J(bad) + ' → ' + J(rb));
+  }
+  let rs = F.saveChapterSettings(Object.assign({}, base, { seconds: { weekly: '45', startup: '3:00', visitor: '３０秒', referral: '0分10秒' } }));
+  ck(rs.ok && J(JSON.parse(props.BNI_CHAPTER).seconds) === J({ weekly: 45, startup: 180, visitor: 30, referral: 10 })
+     && J(F.chapterPresenSeconds_()) === J({ weekly: 45, startup: 180, visitor: 30, referral: 10 }),
+     '秒数（「3:00」「３０秒」「0分10秒」の書き方）: ' + props.BNI_CHAPTER);
+  ck(/ウィークリープレゼンテーション 45秒・スタートアッププレゼン 3分・ビジタープレゼン 30秒・リファーラル発表 10秒/.test(rs.message),
+     '保存したときの知らせに秒数が出ない: ' + rs.message);
+  // 秒数を渡さない保存（名前だけ直すなど）では、秒数はそのまま
+  rs = F.saveChapterSettings(Object.assign({}, base));
+  ck(rs.ok && F.chapterPresenSeconds_().startup === 180, '秒数を渡さない保存で、秒数が変わった: ' + J(F.chapterPresenSeconds_()));
+  // 範囲の外の値が保存されていても（手で書き換えたなど）、その項目は既定の値で動く
+  props.BNI_CHAPTER = J(Object.assign(JSON.parse(props.BNI_CHAPTER), { seconds: { weekly: 2, startup: 9999, visitor: 25 } }));
+  resetCache();
+  ck(J(F.chapterPresenSeconds_()) === J({ weekly: 30, startup: 150, visitor: 25, referral: 7 }), '壊れた秒数の読み方: ' + J(F.chapterPresenSeconds_()));
+
+  // 画面：分・秒の欄に出して、直して保存する
+  const sent = [];
+  const page = loadPage('chapter_settings.html', { server: {
+    getChapterSettings: () => F.getChapterSettings(),
+    saveChapterSettings: (d) => { sent.push(d); return F.saveChapterSettings(d); } }, fails });
+  const { els, run, step } = page;
+  step('チャプターの設定を開く', () => page.window.onload());
+  ck(String(els.sec_weekly_m.value) === '0' && String(els.sec_weekly_s.value) === '30' && String(els.sec_startup_m.value) === '2'
+     && String(els.sec_startup_s.value) === '30' && String(els.sec_visitor_s.value) === '25',
+     '分・秒の欄: ' + ['weekly', 'startup', 'visitor', 'referral'].map((k) => els['sec_' + k + '_m'].value + ':' + els['sec_' + k + '_s'].value).join(' '));
+  ck(/5秒〜10分/.test(els.secNote.textContent) && /30秒・2分30秒・20秒・7秒/.test(els.secNote.textContent), '秒数の説明: ' + els.secNote.textContent);
+  step('スタートアッププレゼンを3分に・ビジターを20秒に', () => {
+    els.sec_startup_m.value = '3'; els.sec_startup_s.value = '0'; els.sec_visitor_m.value = ''; els.sec_visitor_s.value = '20';
+    run('save()');
+  });
+  ck(sent.length === 1 && J(sent[0].seconds) === J({ weekly: 30, startup: 180, visitor: 20, referral: 7 })
+     && J(F.chapterPresenSeconds_()) === J({ weekly: 30, startup: 180, visitor: 20, referral: 7 }), '画面から保存した秒数: ' + J(sent[0] && sent[0].seconds));
+  // 元に戻す
+  F.saveChapterSettings(Object.assign({}, base, { seconds: DEF }));
+  ck(J(F.chapterPresenSeconds_()) === J(DEF), '秒数を戻せない');
+}
+
 // ===== 6. 空のスプレッドシートから始めたとき =====
 delete props.BNI_CHAPTER; delete props.BNI_ROLE_HOLDERS_TERMS; delete props.BNI_ROLE_HOLDERS; resetCache();
 let all = F.roleHolderTerms_();
@@ -182,4 +234,4 @@ if (fails.length) {
   fails.forEach((f) => console.log('   ' + f));
   process.exit(1);
 }
-console.log('OK: 初期値（Activeチャプター）・名前（題名・メール・冊子）・定例会の曜日と回数・期の付け直し（担当者・チーム・記録）・入力の誤り・初回の準備');
+console.log('OK: 初期値（Activeチャプター）・名前（題名・メール・冊子）・定例会の曜日と回数・期の付け直し（担当者・チーム・記録）・入力の誤り・プレゼンの秒数・初回の準備');

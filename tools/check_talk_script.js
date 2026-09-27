@@ -110,6 +110,21 @@ ck(valOf(pv, 'チーム:エデュケーションコーディネーター').value
 ck(valOf(pv, 'メインプレゼン').value === '泉さん・舩川さん' && valOf(pv, 'メインプレゼン1').value === '泉' && valOf(pv, 'メインプレゼン2').value === '舩川',
    'メインプレゼン: ' + J(['メインプレゼン', 'メインプレゼン1', 'メインプレゼン2'].map((k) => valOf(pv, k).value)));
 ck(valOf(pv, 'ウィークリープレゼンの起点').value === '22番 熊田', 'ウィークリープレゼンの起点（ブレイクアウトルームも）: ' + valOf(pv, 'ウィークリープレゼンの起点').value);
+// スタートアッププレゼン（前の呼び名 {2分30秒プレゼン} のままのひな形でも同じ値）と、プレゼンの秒数（チャプターの設定）
+{
+  const env = F.talkEnv_(F.parseDate_('2026/09/23'));
+  const st = F.talkValue_('スタートアッププレゼン', env), old = F.talkValue_('2分30秒プレゼン', env);
+  ck(J(st) === J(old) && st.state === 'ok' && valOf(pv, 'スタートアッププレゼン').value === st.value,
+     'スタートアッププレゼン（前の呼び名も）: ' + J([st, old, valOf(pv, 'スタートアッププレゼン')]));
+  ck(['ウィークリープレゼンの秒数', 'スタートアッププレゼンの秒数', 'ビジタープレゼンの秒数', 'リファーラル発表の秒数']
+       .map((k) => F.talkValue_(k, env).value).join('/') === '30秒/2分30秒/20秒/7秒', 'プレゼンの秒数（既定）: '
+     + ['ウィークリープレゼンの秒数', 'スタートアッププレゼンの秒数', 'ビジタープレゼンの秒数', 'リファーラル発表の秒数'].map((k) => F.talkValue_(k, env).value).join('/'));
+  const vrow = pv.rows.find((r) => /ビジター様のプレゼンテーションタイム/.test(r.talk));
+  ck(vrow && /プレゼンの時間は20秒です/.test(vrow.talk), '台本のビジタープレゼンの秒数: ' + (vrow && vrow.talk.slice(0, 60)));
+  const wrow = pv.rows.find((r) => /ウィークリープレゼンテーションのコーナー/.test(r.talk));
+  ck(wrow && /の2分30秒のスタートアッププレゼンになります/.test(wrow.talk) && /ビジター様の20秒のプレゼンタイム/.test(wrow.talk),
+     '台本のスタートアッププレゼン: ' + (wrow && (wrow.talk.match(/\(そして[^)]*\)/) || [''])[0]));
+}
 ck(valOf(pv, '推薦のことばの件数').value === '2' && valOf(pv, '推薦のことば').value.split('\n').length === 2
    && /^川邉さんから　泉さんに　推薦の言葉/.test(valOf(pv, '推薦のことば').value) && valOf(pv, '推薦のことばを受けた方').value === '泉さん・舩川さん',
    '推薦のことば: ' + J(valOf(pv, '推薦のことば')));

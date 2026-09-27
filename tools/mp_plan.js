@@ -64,7 +64,7 @@ const members = [
 ];
 members.forEach((m) => { const b = blocks.find((x) => x.gkey === m.blockKey); if (b) b.count++; });
 const ctx = { ok: true, blocks, members, rowsPerPage: 7, candidates: [], template: { registered: true } };
-// 2分30秒プレゼンの方は、検証のため1人選んだ状態にする。自動送りはオン（画面の既定と同じ）
+// スタートアッププレゼンの方は、検証のため1人選んだ状態にする。自動送りはオン（画面の既定と同じ）
 const items = sandbox.memberPresenItems(ctx, blocks[0].gkey, '加納　祐介', true);
 fs.mkdirSync(OUT, { recursive: true });
 fs.writeFileSync(path.join(OUT, 'items.json'), JSON.stringify(items, null, 1));

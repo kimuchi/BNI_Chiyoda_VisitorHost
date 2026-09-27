@@ -2,7 +2,7 @@
 //
 // チャプターでは開催日ごとの準備を「【NN期】ルーティンチェックシート」で管理している。
 // 1行目に開催日、2行目に定例会回数が並び、その下に項目が縦に並ぶ表。
-// ここに書いてある「コアバリュー」「2分30秒プレゼンの方」を、
+// ここに書いてある「コアバリュー」「スタートアッププレゼンの方」を、
 // 各画面の初期値として読み込む（同じことを二度入力しなくて済むように）。
 //
 //   1行目  … 定例会開催日（1列おきに入っている）
@@ -129,6 +129,9 @@ function routineFindRow_(grid, labels) {
 //             省略すると、最近（ROUTINE_RECENT_DAYS_ 日）の回が載っているシートだけ
 // シートの中身は1回の実行の中で使い回す（項目を変えて何度読んでも、シートを読むのは1回）。
 var ROUTINE_WEEKLY_LABELS_ = ['ウィークリープレゼン'];
+// スタートアッププレゼン（新しく入った方の長いプレゼン）の行。
+// チャプターによって長さが違い、「2分30秒プレゼン」と書いてあるシートもあるので、どちらでも読む
+var ROUTINE_STARTUP_LABELS_ = ['スタートアッププレゼン', 'スタートアップ', '2分30秒プレゼン', '2分30秒'];
 var ROUTINE_ROWS_CACHE_ = {};
 var ROUTINE_GRID_CACHE_ = {};
 function routineRowValues_(labels, fromKey) {
@@ -391,7 +394,7 @@ function getRoutineInfo(dateStr) {
 
     var no = pick(['定例会回数']);
     var core = pick(['BNI目的と概要', 'BNIの目的と概要']);
-    var long = pick(['2分30秒プレゼン', '2分30秒']);
+    var long = pick(ROUTINE_STARTUP_LABELS_);
     var main = pick(['メインプレゼン']);
     var wanted = pick(['募集カテゴリー', 'チャプターが求める', '求める専門分野']);
     var open = pick(['開放カテゴリー']);

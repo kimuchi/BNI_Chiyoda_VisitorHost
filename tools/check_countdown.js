@@ -2,16 +2,19 @@
 //
 //   node tools/check_countdown.js
 //
-// 実物の雛形は使わず、同じ作りの見本のページをここで組み立てる。
+// 同じ作りの見本のページをここで組み立てる。
 //   ・ベルの見本 … 20秒のカウントダウン（数字の箱 0〜20）のあと、最後にベルが鳴る（p:audio）
 //   ・卵時計の見本 … 最初に卵時計の動画（音つき）が流れ、そのあとで45秒のカウントダウン。
 //                    動画をクリックすると一時停止（interactiveSeq）。BNIの公式のスライドと同じ作り
+// ビジタープレゼンは docs/templates の雛形（クリックすると20が消えて始まり、最後にベル）をそのまま使う。
 // 確かめること
 //   ・数字の箱が新しい秒数ぶんになり、1秒ごとに消える指示も同じ数になる
 //   ・ベルは新しいカウントダウンの最後（元と同じ間隔）に鳴る。卵時計の動画は最初に流れ、カウントダウンはそのあと
 //   ・動画・音声の登録（p:video・p:audio）とクリックでの一時停止が残る
 //   ・指示の番号（p:cTn id）は1からの通し番号で、ほかの指示を指す番号（p:tn val）も合っている
 //   ・始め方（元のまま／クリック／すぐ）と自動で次へ（advTm）
+//   ・自動で次へ進む時間は、最後の数字が消えて1秒後（卵時計の動画のあとに始まる雛形でも）
+//   ・ビジタープレゼン：チャプターの設定の秒数が雛形と同じなら作り直さない。違えばその秒数にして、ベルは最後に鳴る
 
 const fs = require('fs');
 const path = require('path');
@@ -21,10 +24,14 @@ const ROOT = path.join(__dirname, '..');
 const fails = [];
 let checks = 0;
 function ck(ok, msg) { checks++; if (!ok) fails.push(msg); }
+const J = (x) => JSON.stringify(x);
 
+const { readZip } = require('./lib_zip');
 const sb = { console };
 vm.createContext(sb);
-for (const f of ['ooxml.js', 'member_presen_srv.js']) vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), sb, { filename: f });
+for (const f of ['ooxml.js', 'member_presen_srv.js', 'slides_visitor_srv.js']) {
+  vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), sb, { filename: f });
+}
 
 // --- 見本のページ ---
 const box = (id, n) => '<p:sp><p:nvSpPr><p:cNvPr id="' + id + '" name="TextBox ' + id + '"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>'
@@ -141,6 +148,46 @@ ck(/<p:cond delay="0"\/>/.test(rz.start) && /<p:video><p:cMediaNode[^>]*><p:cTn[
 ck(!/advTm/.test(sb.mpNoAutoAdvance_(z)), 'クリックで次へ（advTm を外す）');
 // 同じ秒数なら作り直さなくても同じ数（mpCountdownSeconds_）
 ck(sb.mpCountdownSeconds_(sb.mpSetCountdown_(egg, 30)) === 30 && sb.mpCountdownSeconds_('<p:sld/>') === 0, 'いまの秒数の読み取り');
+// 60秒以上は「2:30」のような分:秒の箱になる。それも読めて、もう一度作り直せる（ベルは最後のまま）
+{
+  const long = sb.mpSetCountdown_(bell, 150), again = sb.mpSetCountdown_(long, 45), ra = look(again);
+  ck(sb.mpCountdownSeconds_(long) === 150 && /<a:t>2:30<\/a:t>/.test(long) && /<a:t>0:00<\/a:t>/.test(long),
+     '分:秒の箱の読み取り: ' + sb.mpCountdownSeconds_(long));
+  ck(ra.boxes === 45 && ra.hides.length === 45 && ra.calls.length === 1 && ra.calls[0].delay === 45000 && ra.audio && ra.serial,
+     '2分30秒 → 45秒に作り直す: ' + J({ b: ra.boxes, h: ra.hides.length, c: ra.calls }));
+}
+
+// ===== 3. 終わる時刻と、自動で次へ進む時間 =====
+// 最後の数字が消える時刻（まとまりが始まってから）。卵時計のページは動画のぶん（2.09秒）遅い
+ck(sb.mpCountdownEndMs_(bell) === 20000 && sb.mpCountdownEndMs_(egg) === 47090, '終わる時刻: ベル ' + sb.mpCountdownEndMs_(bell) + '・卵時計 ' + sb.mpCountdownEndMs_(egg));
+ck(sb.mpCountdownEndMs_(sb.mpSetCountdown_(egg, 30)) === 32090 && sb.mpCountdownEndMs_(sb.mpSetCountdown_(bell, 150)) === 150000,
+   '作り直したあとの終わる時刻: ' + sb.mpCountdownEndMs_(sb.mpSetCountdown_(egg, 30)));
+x = sb.mpAdvanceAfterCountdown_(sb.mpSetCountdown_(egg, 30, false), 30);
+ck(/advTm="33090"/.test(x) && !/advTm="31000"/.test(x), '卵時計のページの自動送り（最後の数字が消えて1秒後）: ' + (x.match(/advTm="\d+"/) || [])[0]);
+x = sb.mpAdvanceAfterCountdown_(bell, 20);
+ck(/advTm="21000"/.test(x) && /<p:cond delay="0"\/>/.test(look(x).start), 'ベルのページの自動送り: ' + (x.match(/advTm="\d+"/) || [])[0]);
+x = sb.mpAdvanceAfterCountdown_('<p:sld><p:cSld><p:spTree/></p:cSld><p:clrMapOvr/></p:sld>', 7);
+ck(/advTm="8000"/.test(x), 'カウントダウンが無いページは秒数から: ' + x);
+
+// ===== 4. ビジタープレゼン（docs/templates の雛形）=====
+{
+  const tpl = readZip(fs.readFileSync(path.join(ROOT, 'docs', 'templates', 'BNI_テンプレート_ビジタープレゼン.pptx')));
+  const vx = tpl['ppt/slides/slide1.xml'].toString('utf8');
+  const v = { name: '見本　太郎', company: '株式会社見本', category: 'デザイン印刷' };
+  const t0 = look(vx);
+  ck(t0.boxes === 20 && t0.hides.length === 20 && t0.calls.length === 1 && t0.audio, '雛形の作り（20秒・ベル）: ' + J({ b: t0.boxes, h: t0.hides.length, c: t0.calls }));
+  // 同じ秒数（20秒）・秒数なし … カウントダウンには触らない
+  for (const sec of [20, undefined]) {
+    const r = look(sb.buildPresenXml_(vx, v, sec));
+    ck(r.t === t0.t, 'ビジタープレゼン ' + sec + '秒: 雛形と同じ秒数なのにアニメーションが変わった');
+  }
+  const y = sb.buildPresenXml_(vx, v, 30), r = look(y);
+  ck(r.boxes === 30 && r.hides.length === 30 && r.bld === 30, 'ビジタープレゼン 30秒: 数字の箱 ' + r.boxes + '・消す指示 ' + r.hides.length);
+  ck(r.calls.length === 1 && r.calls[0].delay === 30000 && r.audio, 'ビジタープレゼン 30秒: ベルが最後（30秒）に鳴らない ' + J(r.calls));
+  ck(/delay="indefinite"/.test(r.start) && r.serial && r.wellFormed && !/advTm="(?!400")/.test(y),
+     'ビジタープレゼン 30秒: 始め方（クリック）・番号・自動送りが雛形のままでない');
+  ck(y.indexOf('見本　太郎 様') >= 0 && y.indexOf('株式会社見本') >= 0, 'ビジタープレゼン: 氏名・会社名が入らない');
+}
 
 console.log(`カウントダウンと音: 検査 ${checks} 件`);
 if (fails.length) {
@@ -148,4 +195,4 @@ if (fails.length) {
   fails.forEach((f) => console.log('   ' + f));
   process.exit(1);
 }
-console.log('OK: 秒数を変えても、ベル（最後）・卵時計の動画（最初）・動画と音声の登録・クリックでの一時停止が残る／始め方／自動で次へ');
+console.log('OK: 秒数を変えても、ベル（最後）・卵時計の動画（最初）・動画と音声の登録・クリックでの一時停止が残る／始め方／自動で次へ（最後の数字の1秒後）／ビジタープレゼンの秒数');
