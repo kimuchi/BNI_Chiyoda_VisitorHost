@@ -25,6 +25,17 @@ function getHomeStatus() {
         + (ch.saved ? '' : '（初期値）'), '設定する', 'openChapterSettingsDialog');
   } catch (e) { add('chapter', 'チャプター', false, '確認できませんでした', '設定する', 'openChapterSettingsDialog'); }
 
+  // ルーティンチェックシート（次回の開催日の列があるか）。空のスプレッドシートから始めたときは、
+  // チャプターの設定を保存したときに作る（setup_srv.js）
+  try {
+    var nx = getMeetingCandidates()[0], hitR = nx ? findRoutineColumn_(parseDate_(nx.dateValue)) : null;
+    var wait = chapterFresh_() && !chapterInfo_().saved;
+    add('routine', 'ルーティンチェックシート', !!hitR,
+        hitR ? hitR.name : (wait ? 'チャプターの設定を保存すると作ります'
+                                 : (nx ? '次回（' + nx.display + '）の列がありません' : '次回の開催日がありません')),
+        wait ? '設定する' : '作る', wait ? 'openChapterSettingsDialog' : 'menuCreateMissingSheets');
+  } catch (e) { add('routine', 'ルーティンチェックシート', false, '確認できませんでした', '作る', 'menuCreateMissingSheets'); }
+
   // 素材フォルダ
   try {
     var a = getAssetSettings();

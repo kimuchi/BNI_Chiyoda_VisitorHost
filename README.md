@@ -48,6 +48,7 @@ BNI_Chiyoda_VisitorHost/
 │   └ menu_home.html
 ├── chapter_srv.js            # チャプターの設定（名前・リージョン・期の番号・定例会の曜日と回数）
 │   └ chapter_settings.html
+├── setup_srv.js              # 初回の準備（空のスプレッドシートで開いたときにシートを作る）・足りないシートを作る
 │
 │  ── 毎週の作業 ──
 ├── dialog.html               # CSV取込・名簿作成
@@ -60,7 +61,7 @@ BNI_Chiyoda_VisitorHost/
 │   └ role_input.html         #   入力状況の一覧・役職ごとの入力・スピーカーローテーション（?p=role_input&role=vice など）
 ├── speaker_rotation_srv.js   # スピーカーローテーション（メインプレゼンの順番。前半スライドの表もここで作る）
 ├── premtg_srv.js             # 事前MTG（朝イチMTG）のパワポ（画面は role_input.html の一覧。入口は役職ごとの入力と同じ）
-│   └ premtg_template.html    #   既定のひな形（templates/BNI_テンプレート_事前MTG.pptx をbase64にしたもの）
+│   └ premtg_template.html    #   既定のひな形（docs/templates/BNI_テンプレート_事前MTG.pptx をbase64にしたもの）
 ├── archive.html              # シートの整理（アーカイブ）
 │
 │  ── スライド・冊子 ──
@@ -112,7 +113,8 @@ BNI_Chiyoda_VisitorHost/
 ├── docs/images/              # マニュアルのスクリーンショット（WebP。架空のデータで撮ったもの。
 │                             #   Google認証の auth*.webp は実際の画面で、メールアドレスと顔写真を見本に置き換えたもの）
 ├── docs/samples/             # 見本（チャプター名を {チャプター} にしたトークスクリプトのひな形など）
-├── templates/                # ビジター用・事前MTGのpptxテンプレート（大きなテンプレートはDriveに置く。templates/README.md）
+├── docs/templates/           # スライドの雛形（ビジター用・事前MTG。大きな雛形はDriveに置く。docs/templates/README.md）
+├── docs/SETUP.md             # 初期導入の手順（新しいチャプターが空のスプレッドシートから始めるとき）
 └── tools/                    # 検査・生成スクリプト（GASには送らない）
     │  ── 毎回走らせる検査 ──
     ├── check_gas_names.py    #   名前の衝突・参照先HTMLの検査
@@ -120,6 +122,7 @@ BNI_Chiyoda_VisitorHost/
     ├── check_manual_links.py #   マニュアルの導線 ↔ 実際のメニュー
     ├── build_manual.py       #   MANUAL.md → manual.html（docs/images の画像を埋め込む）
     ├── make_manual_shots.js  #   マニュアルのスクリーンショットを架空のデータで撮り直す（Chromium・Pillow を使う）
+    ├── clean_pptx_meta.py    #   pptxのファイルの情報（作成者・コメントの作成者・変更の記録・縮小画像）を消す／--check で確かめる
     │  ── 画面をNodeで動かす（ブラウザ無し）──
     ├── lib_minidom.js        #   画面をNodeで動かすための簡易DOM
     ├── check_meeting_dialog.js  # 定例会スライドの画面（前半・後半・ウィークリープレゼン）
@@ -127,6 +130,7 @@ BNI_Chiyoda_VisitorHost/
     ├── check_role_input_dialog.js # 役職ごとの入力の画面（一覧・入力・保存までサーバーとつないで通す）
     ├── check_webapp_pages.js #   ウェブアプリの画面一覧（?p= での開き方・トップページのリンク）
     ├── check_chapter.js      #   チャプターの設定（名前・期の付け直し・定例会の曜日と回数・初回の準備）
+    ├── check_setup.js        #   初回の準備（空のスプレッドシート・チェックシートを作る・前の期を写す）
     │  ── ルーティンチェックシート（実物をExcelに書き出したもので確かめる）──
     │     書き出した routine.json・members.json はリポジトリに入れない（名簿にあたるため）。
     │     検査の中の氏名は架空のもの（実物を使うときは、書き出したものの氏名も同じ架空の氏名に置き換えてから使う）
@@ -198,6 +202,10 @@ clasp push
 ### 4. 初期設定
 
 スプレッドシートを開き、メニューバーの **「名簿システム」** から各種設定を行ってください。詳細は [MANUAL.md](MANUAL.md) を参照してください。
+
+**新しいチャプターで、空のスプレッドシートから始めるとき**は、[docs/SETUP.md](docs/SETUP.md)（初期導入の手順）を見てください。
+空のスプレッドシートで初めて開くと、使うシート（メンバー名簿・業種区分マスタ・休会日）を自動で作り、
+チャプターの設定を保存したときにルーティンチェックシートを作ります（`setup_srv.js`）。
 
 ## ウェブアプリの更新（URLを変えずに）
 
@@ -379,7 +387,7 @@ clasp deployments
 
 ### 更新が反映されたかの確かめ方
 
-`コード.js` の `SYSTEM_VERSION_`（例: `2026-09-27r`）が、ウェブアプリのトップページの下と
+`コード.js` の `SYSTEM_VERSION_`（例: `2026-09-27s`）が、ウェブアプリのトップページの下と
 「定例会スライド（前半）」「定例会スライド（後半）」の画面の右上に **「版 …」** として出ます。
 機能を変えたらこの値を変え、`clasp push`・`clasp version`・`clasp deploy` のあとに画面で確かめてください。
 

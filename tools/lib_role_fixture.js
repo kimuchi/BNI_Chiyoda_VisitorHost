@@ -160,7 +160,7 @@ function makeRoleServer(routinePath, membersPath) {
   vm.createContext(sandbox);
   for (const f of ['コード.js', 'chapter_srv.js', 'ooxml.js', 'splice_srv.js', 'referral_srv.js', 'big_templates_srv.js',
                    'member_master_srv.js', 'routine_srv.js', 'member_presen_srv.js', 'meeting_slides_srv.js',
-                   'visitor_post_srv.js', 'role_input_srv.js', 'speaker_rotation_srv.js', 'premtg_srv.js']) {
+                   'visitor_post_srv.js', 'role_input_srv.js', 'speaker_rotation_srv.js', 'premtg_srv.js', 'setup_srv.js']) {
     vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), sandbox, { filename: f });
   }
   // メンバー名簿のシート（担当者を「役職」に反映する検査用）。名簿の方の役職は空欄にし、

@@ -332,6 +332,7 @@ const answersTalk = { getTalkScriptContext: { any: talkCtx }, previewTalkScript:
 
 const homeStatus = { ok: true, latest: { date: NEXT }, title: F.chapterSystemTitle_(), checks: [
   { label: 'チャプター', ready: true, detail: F.chapterLabel_() + '・いまの期 ' + F.roleTermOf_(new F.Date()) + '期・次回 ' + F.getMeetingCandidates()[0].display },
+  { label: 'ルーティンチェックシート', ready: true, detail: '【23期】ルーティンチェックシート' },
   { label: '素材フォルダ', ready: true, detail: 'BNI素材（見本）' }, { label: 'メンバーリスト（割り振り用）', ready: true, detail: FAKE_MEMBERS.length + '名' },
   { label: 'メンバー名簿（冊子・スライド用）', ready: true, detail: FAKE_MEMBERS.length + '名' },
   { label: 'メンバー写真', ready: false, detail: '30枚（未照合 6名）', fixLabel: '管理する', fixFn: 'openMemberPhotoDialog' },

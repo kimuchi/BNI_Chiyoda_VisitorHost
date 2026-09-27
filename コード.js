@@ -2,7 +2,7 @@
 
 // 反映されたか確かめるための版。変更したら日付を更新する。
 // clasp push / デプロイが効いているかは、これを画面で見れば分かる。
-var SYSTEM_VERSION_ = '2026-09-27r';
+var SYSTEM_VERSION_ = '2026-09-27s';
 
 function getSystemVersion() { return SYSTEM_VERSION_; }
 
@@ -54,6 +54,7 @@ function onOpen() {
       .addItem('アーカイブを全て表示に戻す', 'menuUnarchiveAll'))
     .addSubMenu(ui.createMenu('⚙️ 設定')
       .addItem('チャプター（名前・期・定例会の回数）', 'openChapterSettingsDialog')
+      .addItem('足りないシートを作る（ルーティンチェックシートなど）', 'menuCreateMissingSheets')
       .addSeparator()
       .addItem('BNI 素材フォルダ', 'openAssetSettingsDialog')
       .addItem('メンバー名簿', 'openMemberMasterDialog')
@@ -80,6 +81,8 @@ function onOpen() {
     .addSeparator()
     .addItem('❓ 使い方（ヘルプ）', 'openManualDialog')
     .addToUi();
+  // 空のスプレッドシートで初めて開いたときは、使うシートを作る（初回の準備。setup_srv.js）
+  try { setupOnOpen_(); } catch (e) { console.error('[SETUP] ' + (e && e.stack ? e.stack : e)); }
 }
 
 function openCsvDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createTemplateFromFile('dialog').evaluate().setWidth(1000).setHeight(700), 'データの確認・PDF作成'); }
