@@ -1046,6 +1046,9 @@ function editMeetingSlides_(parts, map, rules, o) {
   // 写真は1つの控えで取り込む。同じ方の写真は1枚だけ入れて使い回し、
   // 別の処理が同じ名前の画像を作って上書きし合うこと（写真の取り違い）も起きない。
   var photoCache = { by: {}, seq: 0 };
+  // 前半：役職のメンバー紹介（リーダーシップチーム・コーディネーター・チームのページ）を、その期の方にする。
+  // 画面で外したとき・その期の役職が読めないときは、差し込み口を空にするだけ（role_intro_srv.js）
+  var roles = applyRoleIntro_(parts, o.roleIntro === false ? null : (o.roleIntroData || null), photoCache);
   var referral = (o.referral && o.referral.length)
     ? expandPresenterSlides_(parts, o.referral,
         { title: RF_TITLE_, label: 'リファーラル発表', seconds: chapterPresenSeconds_().referral, photoCache: photoCache }) : null;
@@ -1099,7 +1102,7 @@ function editMeetingSlides_(parts, map, rules, o) {
   var audio = o.music ? applyMeetingAudio_(parts, o.music) : null;
   return { touched: touched, byPattern: byPattern, core: core, policy: policy,
            photos: photos, audio: audio, referral: referral, weekly: weekly, guests: guests,
-           reco: reco, renewal: renewal, rotation: rotation };
+           reco: reco, renewal: renewal, rotation: rotation, roles: roles };
 }
 
 // 定例会スライドを生成する。テンプレート内の {{キー}} を置換する方式。
@@ -1108,7 +1111,8 @@ function editMeetingSlides_(parts, map, rules, o) {
 //         coreValue: 'Givers Gain' など,
 //         memberPresen: [...]（前半に差し込むメンバープレゼンのページ）,
 //         weeklyGuests: ['坂上　達彦', …]（表示にするアンバサダー・ディレクター。null なら触らない）,
-//         weeklyAuto: true/false（ウィークリープレゼンを自動で次へ進めるか） }
+//         weeklyAuto: true/false（ウィークリープレゼンを自動で次へ進めるか）,
+//         roleIntro: true/false（前半の役職のメンバー紹介を、その開催日の期の役職・チームにするか。既定は true） }
 function generateMeetingSlides(kind, values, meetingDateVal, opts) {
   try {
     if (!BIG_TEMPLATE_KINDS_[kind]) return { ok: false, message: 'スライドの種類が不正です。' };
@@ -1121,6 +1125,11 @@ function generateMeetingSlides(kind, values, meetingDateVal, opts) {
 
     var rules = (o.patterns === false) ? []
               : meetingPatternRules_(String(map['開催回'] || '').replace(/[^\d]/g, ''), d);
+    // 前半の役職のメンバー紹介：その開催日の期の「役職・チーム（半期ごと）」
+    if (kind === 'meetingFirst' && o.roleIntro !== false && !o.roleIntroData) {
+      try { o.roleIntroData = riDataOfDate_(d || new Date()); }
+      catch (e) { console.warn('[MEETING] 役職・チームを読めませんでした: ' + (e && e.message ? e.message : e)); }
+    }
 
     var r = editPptxOnServer_(kind, outName, function (parts) {
       return editMeetingSlides_(parts, map, rules, o);
@@ -1145,6 +1154,7 @@ function generateMeetingSlides(kind, values, meetingDateVal, opts) {
     if (info.reco && info.reco.message) msg += '\n' + info.reco.message;
     if (info.renewal && info.renewal.message) msg += '\n' + info.renewal.message;
     if (info.rotation && info.rotation.message) msg += '\n' + info.rotation.message;
+    if (info.roles && info.roles.message) msg += '\n' + info.roles.message;
     return { ok: true, message: msg, url: r.saved.url, downloadUrl: r.saved.downloadUrl,
              fileName: outName, touched: info.touched, core: info.core, policy: info.policy,
              timing: r.timing };

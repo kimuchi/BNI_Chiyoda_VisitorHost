@@ -642,6 +642,9 @@ function offBuildFirst_(src, opt) {
     else if (t.indexOf('リーダーシップチーム') >= 0) { var lp = offPlaceholderPhotos_(xml, rels, weekly); xml = lp.xml; rels = lp.rels; }
     else if (t.indexOf('メンバーシップ委員会による報告') >= 0 && /<a:tbl>/.test(xml)) xml = offMembershipTokens_(xml);
     else if (t.indexOf('スピーカーローテーション') >= 0 && /<a:tbl>/.test(xml)) xml = offRotationArea_(xml);
+    // 役職のメンバー紹介（リーダーシップチーム・サポートチーム）：お名前の欄と写真の枠に差し込み口を入れる
+    // （作るときに、その期の「役職・チーム（半期ごと）」の方が入る。role_intro_srv.js）
+    if (k < head) xml = riTokenizePage_(xml, 12192000, 6858000);
     slides.push({ xml: xml, rels: rels, notesOf: pg.path, hidden: hidden });
   });
   var mp = offPage_(src, src.order[main]), two = offTwoPersonPage_(mp, mp, 'メインプレゼン', '', false);
