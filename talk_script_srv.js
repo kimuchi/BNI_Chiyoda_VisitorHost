@@ -256,15 +256,19 @@ function talkValue_(key, env) {
       if (key === 'メインプレゼン') return ok(names.map(function (n) { return n + 'さん'; }).join('・'));
       return ok(names[key === 'メインプレゼン1' ? 0 : 1] || '');
     }
-    case '2分30秒プレゼン': {
+    case 'スタートアッププレゼン': case '2分30秒プレゼン': {       // 「2分30秒プレゼン」は前の呼び名
       var r2 = env.routine();
       if (!r2) return ok('');
       if (!r2.longPresenter && r2.longPresenterRaw === '' ) {
-        var raw2 = talkRoutineItem_(env, '2分30秒プレゼン');
+        var raw2 = talkRoutineItem_(env, ROUTINE_STARTUP_LABELS_);
         if (raw2.state === 'none') return raw2;
       }
       return ok(r2.longPresenter ? talkShort_(r2.longPresenter, env.members()) : talkBare_(r2.longPresenterRaw));
     }
+    case 'ウィークリープレゼンの秒数': return ok(chapterSecondsLabel_(c.seconds.weekly));
+    case 'スタートアッププレゼンの秒数': return ok(chapterSecondsLabel_(c.seconds.startup));
+    case 'ビジタープレゼンの秒数': return ok(chapterSecondsLabel_(c.seconds.visitor));
+    case 'リファーラル発表の秒数': return ok(chapterSecondsLabel_(c.seconds.referral));
     case 'ウィークリープレゼンの起点': {
       var w = env.weekly();
       var no = w && w.member ? String(w.member.no == null ? '' : w.member.no).replace(/\.0+$/, '').trim() : '';
@@ -340,11 +344,12 @@ function talkDateLabel_(d) {
 }
 
 // チェックシートの、その開催日の列の値（項目名は空白を除いて、完全一致 → 前方一致の順で探す）
+//   label … 項目名。呼び名が揺れる項目は配列で（前にあるものほど優先）
 function talkRoutineItem_(env, label) {
   var g = env.grid();
   if (!g) return { value: '', state: 'missing' };
-  var want = String(label).replace(/[\s　]/g, '').replace(/[※＊].*$/, '');
-  var r = routineFindRow_(g.grid, [want]);
+  var want = [].concat(label).map(function (l) { return String(l).replace(/[\s　]/g, '').replace(/[※＊].*$/, ''); });
+  var r = routineFindRow_(g.grid, want);
   if (r < 0) return { value: '', state: 'missing' };
   var v = String(g.grid[r][g.col - 1] == null ? '' : g.grid[r][g.col - 1]).trim();
   if (!v) return { value: '', state: 'missing' };
@@ -493,6 +498,12 @@ function talkCatalog_() {
     { key: 'チャプター', desc: '「' + chapterLabel_() + '」' }, { key: 'チャプター名', desc: '「' + chapterInfo_().name + '」' },
     { key: 'リージョン', desc: 'チャプターの設定のリージョン' }, { key: '回', desc: '定例会の回数（数字）' },
     { key: '開催日', desc: '「10月7日(水)」' }, { key: '期', desc: 'その回の期（数字）' }] });
+  var sec = chapterInfo_().seconds;
+  g.push({ group: 'プレゼンの秒数（チャプターの設定）', items: [
+    { key: 'ウィークリープレゼンの秒数', desc: '「' + chapterSecondsLabel_(sec.weekly) + '」' },
+    { key: 'スタートアッププレゼンの秒数', desc: '「' + chapterSecondsLabel_(sec.startup) + '」' },
+    { key: 'ビジタープレゼンの秒数', desc: '「' + chapterSecondsLabel_(sec.visitor) + '」' },
+    { key: 'リファーラル発表の秒数', desc: '「' + chapterSecondsLabel_(sec.referral) + '」' }] });
   var roles = [];
   ROLE_DEFS_.forEach(function (r) {
     roles.push({ key: r.label, desc: 'その期の' + r.label + 'の名字' });
@@ -513,7 +524,7 @@ function talkCatalog_() {
     { key: '代理の人数', desc: '数字' }, { key: '代理の一覧', desc: '「〇〇さんの代理として〇〇様」' }] });
   g.push({ group: 'チェックシート（その回の列）', items: [
     { key: 'メインプレゼン', desc: '「〇〇さん・〇〇さん」' }, { key: 'メインプレゼン1', desc: '1人目の名字' }, { key: 'メインプレゼン2', desc: '2人目の名字' },
-    { key: '2分30秒プレゼン', desc: '名字' }, { key: 'ウィークリープレゼンの起点', desc: '「22番 〇〇」（ブレイクアウトルームの起点も同じ）' },
+    { key: 'スタートアッププレゼン', desc: '名字（前の呼び名 {2分30秒プレゼン} でも同じ）' }, { key: 'ウィークリープレゼンの起点', desc: '「22番 〇〇」（ブレイクアウトルームの起点も同じ）' },
     { key: 'ウィークリープレゼンの業種区分', desc: '始まりの業種区分' }, { key: 'コアバリュー', desc: '「BNI目的と概要」のコアバリュー' },
     { key: '推薦のことば', desc: '「〇〇さんから　〇〇さんに　推薦の言葉を…」を1組1行' }, { key: '推薦のことばの件数', desc: '数字' },
     { key: '推薦のことばを書いた方', desc: '「〇〇さん・〇〇さん」' }, { key: '推薦のことばを受けた方', desc: '「〇〇さん・〇〇さん」' },

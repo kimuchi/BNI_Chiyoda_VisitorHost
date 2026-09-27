@@ -81,7 +81,9 @@ var FIT_MIN_ = { presenName: 40, presenCompany: 16, presenCategory: 14,
 // プレゼンスライド1枚分（ID25=氏名+様 / ID27=会社名 / ID29=【カテゴリー】）
 // 会社名は長い会社があり、そのままだと枠からあふれて下の【カテゴリー】に重なるため、
 // 文字数に応じて自動で小さくする。枠の幅と元の大きさはテンプレートから読む。
-function buildPresenXml_(xml, v) {
+// sec … カウントダウンの秒数（チャプターの設定のビジタープレゼン）。テンプレートと違うときだけ作り直す
+//       （始め方はテンプレートのまま。最後に鳴るベルの音も残る）
+function buildPresenXml_(xml, v, sec) {
   var nm = v.name + ' 様', cat = '【' + v.category + '】';
   xml = setTextInShape_(xml, 25, nm);
   xml = setTextInShape_(xml, 27, v.company);
@@ -91,6 +93,8 @@ function buildPresenXml_(xml, v) {
   // 2行になったぶんは【カテゴリー】を下にずらして重なりを避ける。
   xml = fitTextAndPush_(xml, 27, 29, v.company, FIT_MIN_.presenCompany);
   xml = fitFontToShape_(xml, 29, cat, FIT_MIN_.presenCategory);
+  var now = sec ? mpCountdownSeconds_(xml) : 0;
+  if (now && sec !== now) xml = mpSetCountdown_(xml, sec);
   return xml;
 }
 
@@ -189,9 +193,10 @@ function generateVisitorSlides(sheetName, type) {
     if (type === 'presen') {
       if (!parsed.visitors.length) return { ok: false, message: 'このシートにビジターがいません。' };
       dataList = parsed.visitors;
-      builder = buildPresenXml_;
+      var vsec = chapterPresenSeconds_().visitor;
+      builder = function (xml, v) { return buildPresenXml_(xml, v, vsec); };
       outName = mmdd + '_BNI_プレゼンスライド.pptx';
-      countLabel = parsed.visitors.length + '名・' + dataList.length + '枚';
+      countLabel = parsed.visitors.length + '名・' + dataList.length + '枚・カウントダウン' + chapterSecondsLabel_(vsec);
     } else if (type === 'intro') {
       if (!parsed.visitors.length) return { ok: false, message: 'このシートにビジターがいません。' };
       dataList = makeGroups_(parsed.visitors);

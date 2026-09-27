@@ -32,18 +32,20 @@ const LISTS = { ok: true, text: { newMembers: '該当者なし', renewMembers: '
                 newMembers: [], renewMembers: [], d90: [{ name: 'A', date: '2026/12/01', left: 70 }], d60: [],
                 d30: [{ name: 'B', date: '2026/10/10', left: 17 }], overdue: [], noDate: [], done: [], leaving: [] };
 const sent = [];
+const J = (x) => JSON.stringify(x);
 const SERVER = {
   getMeetingSlideContext: () => ({
     ok: true, meetings: [{ dateValue: DATE, display: '第534回 2026/09/23' }],
     defaultMeeting: { dateValue: DATE, display: '第534回 2026/09/23' }, lists: LISTS, stats: {},
     templates: { meetingFirst: true, meetingSecond: true, memberPresen: true }, routine,
+    seconds: { weekly: 45, startup: 180, visitor: 20, referral: 9 },          // チャプターの設定（既定と違う秒数）
     coreValues: ['Givers Gain', 'Accountability'], memberCount: MEMBERS.length,
     members: MEMBERS.map((m) => ({ no: m.no, name: m.name, company: m.company, title: m.title, hasPhoto: true })),
   }),
   getRoutineInfo: () => routine,
   getWeeklyGuests: () => ({ ok: true, guests: GUESTS }),
   getMemberPresenContext: () => ({
-    ok: true, members: mm, blocks, rowsPerPage: 7, unusedCategories: ['研修・教育'],
+    ok: true, members: mm, blocks, rowsPerPage: 7, unusedCategories: ['研修・教育'], seconds: { weekly: 45, startup: 180 },
     candidates: [{ dateValue: DATE, start: gk('建築・住まい'), longPresenter: '', longPresenterRaw: '',
                    startFrom: 'routine', startRaw: '建築　住まい　２２番　熊田さん', startRawDate: DATE, startSteps: 0 }],
   }),
@@ -109,6 +111,10 @@ const shown = (el) => !!el && el.style.display !== 'none' && el.style.display !=
   ck(JSON.stringify(o.weeklyGuests) === JSON.stringify(['大庭　まり子']), 'weeklyGuests が ' + JSON.stringify(o.weeklyGuests));
   ck(o.weeklyAuto === true, '自動送りが渡っていない');
   ck(pagesOf(o).length > 40, 'メンバーのページが ' + pagesOf(o).length);
+  // カウントダウンの秒数はチャプターの設定（ウィークリー45秒）。スタートアッププレゼンの方はいない日
+  ck(pagesOf(o).filter((x) => x.kind === 'individual').every((x) => x.countdownSec === 45 && x.auto === true),
+     'メンバーのページの秒数・自動送り: ' + J(pagesOf(o).filter((x) => x.kind === 'individual').slice(0, 2).map((x) => [x.countdownSec, x.auto])));
+  ck(/カウントダウンは 45秒。/.test(els.mpNote2.innerHTML), '秒数の案内: ' + els.mpNote2.innerHTML);
   const last = pagesOf(o)[pagesOf(o).length - 1] || {};
   ck(last.kind === 'individual' && last.nextName === '大庭　まり子', '最後の方の NEXT が ' + last.nextName);
   ck((pagesOf(o)[0] || {}).block === '建築・住まい', '最初のページが「建築・住まい」の扉ではない');
@@ -121,6 +127,15 @@ const shown = (el) => !!el && el.style.display !== 'none' && el.style.display !=
      'ローテーションの表のデータが渡っていない: ' + JSON.stringify(o.speakerRotation).slice(0, 120));
   ck(lastCall()[1]['新メンバー'] === '該当者なし' && lastCall()[1]['更新90'] === undefined, '前半の差し込む値がおかしい');
 
+  step('スタートアッププレゼンの方を選ぶ', () => { els.mpLong.value = MEMBERS[3].name; run('renderMP()'); run('gen()'); });
+  {
+    const ind = pagesOf(lastOpts()).filter((x) => x.kind === 'individual');
+    const lp = ind.filter((x) => x.name === MEMBERS[3].name);
+    ck(lp.length === 1 && lp[0].countdownSec === 180 && ind.filter((x) => x.countdownSec === 180).length === 1,
+       'スタートアッププレゼンの方だけ3分: ' + J(lp.map((x) => x.countdownSec)));
+    ck(new RegExp('カウントダウンは 45秒（' + MEMBERS[3].name + 'さんは 3分）').test(els.mpNote2.innerHTML), '秒数の案内（スタートアップ）: ' + els.mpNote2.innerHTML);
+  }
+  step('スタートアッププレゼンの方を外す', () => { els.mpLong.value = ''; run('renderMP()'); });
   step('坂上さんも入れる', () => { els.gs_0.checked = true; els.mpAuto.checked = false; run('renderMP()'); run('gen()'); });
   o = lastOpts();
   // メインプレゼンを選び直すと、表の1回目もその2名になる。表を作らないチェックなら渡さない
@@ -130,7 +145,7 @@ const shown = (el) => !!el && el.style.display !== 'none' && el.style.display !=
   ck(lastOpts().speakerRotation === null, '表を作らないのにデータが渡っている');
   step('表を作る・元に戻す', () => { els.rotOn.checked = true; els.mp1.value = MEMBERS[0].name; });
   ck(JSON.stringify(o.weeklyGuests) === JSON.stringify(['坂上　達彦', '大庭　まり子']), 'weeklyGuests が ' + JSON.stringify(o.weeklyGuests));
-  ck(o.weeklyAuto === false && pagesOf(o).every((x) => !x.autoAdvanceMs), '自動送りを外したのに自動で進む');
+  ck(o.weeklyAuto === false && pagesOf(o).every((x) => !x.auto), '自動送りを外したのに自動で進む');
   ck((pagesOf(o)[pagesOf(o).length - 1] || {}).nextName === '坂上　達彦', 'NEXT が先頭の方（坂上さん）になっていない');
 
   // 開催日を選び直すと、読み込み中の間は作成できない
@@ -184,8 +199,9 @@ const shown = (el) => !!el && el.style.display !== 'none' && el.style.display !=
   step('後半を作る', () => { els.au_0.value = 'f1'; els.av_1.value = '50'; run('gen()'); });
   const o = lastOpts();
   ck(lastCall()[0] === 'meetingSecond', '後半の作成で種類が ' + lastCall()[0]);
-  ck((o.referral || []).length === MEMBERS.length && o.referral.every((x) => x.auto === false && x.seconds === 7),
-     'リファーラル発表: ' + (o.referral || []).length + '名ぶん');
+  ck((o.referral || []).length === MEMBERS.length && o.referral.every((x) => x.auto === false && x.seconds === 9),
+     'リファーラル発表（秒数はチャプターの設定の9秒）: ' + (o.referral || []).length + '名ぶん・' + J((o.referral || [])[0] && o.referral[0].seconds));
+  ck(els.rfSec.value === '9', 'リファーラル発表の秒数の欄: ' + els.rfSec.value);
   ck(JSON.stringify(o.music) === JSON.stringify({ 'slide1.xml#3': { fileId: 'f1' }, 'slide21.xml#3': { volume: 50 } }),
      '音楽の指定: ' + JSON.stringify(o.music));
   ck(o.memberPresen === undefined && o.weeklyGuests === undefined, '後半なのにメンバーのページが渡っている');

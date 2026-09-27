@@ -322,7 +322,7 @@ if (MP_DIR && F.weeklyAnchor_(parts)) {
   }
   const ind = memberPresen.filter((x) => x.kind === 'individual').length;
   console.log(`\nメンバープレゼン: ${memberPresen.length}ページ（扉${memberPresen.length - ind}＋個人${ind}）`
-    + `／2分30秒=${longName || 'なし'}／差し込み先=${F.weeklyAnchor_(parts)}`);
+    + `／スタートアッププレゼン=${longName || 'なし'}／差し込み先=${F.weeklyAnchor_(parts)}`);
 }
 
 // --- スピーカーローテーションの表（前半。画面と同じく、1回目はメインプレゼンのお2人）---

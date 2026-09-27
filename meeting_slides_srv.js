@@ -169,7 +169,7 @@ function getMeetingSlideContext() {
     var routine = first ? getRoutineInfo(first.dateValue) : null;
     return { ok: true, meetings: candidates, defaultMeeting: first,
              lists: lists.ok ? lists : null, stats: stats, templates: ready,
-             routine: routine,
+             routine: routine, seconds: chapterPresenSeconds_(),
              coreValues: CORE_VALUES_.map(function (c) { return c.label; }),
              memberCount: members.length,
              memberNames: members.map(function (m) { return m.name; }),
@@ -949,7 +949,7 @@ function weeklyGuestPages_(parts) {
     if (flat.indexOf('終わりましたか') >= 0) break;
     if (flat.toUpperCase().indexOf('WEEKLYPRESENTATION') < 0) continue;
     var sh = presenterShapes_(xml, slideW), name = shapeTextOf_(xml, sh.nameBox);
-    // 「苗字　名前」「〇〇　〇〇」のままの下書き（2分30秒のページなど）は人のページではない
+    // 「苗字　名前」「〇〇　〇〇」のままの下書き（スタートアッププレゼンのページなど）は人のページではない
     if (!name || /苗字|名前|氏名/.test(name) || /^[〇○◯\s　]+$/.test(name)) continue;
     out.push({ key: order[i].replace(/^.*\//, ''), path: order[i], name: name,
                role: shapeTextOf_(xml, sh.category), hidden: /<p:sld\b[^>]*\sshow="0"/.test(xml) });
@@ -964,16 +964,18 @@ function shapeTextOf_(xml, id) {
 
 // names … 表示にする方の氏名（画面のチェック）。入っていない方のページは非表示にする。
 // auto  … メンバーのページと同じく、カウントダウンが終わったら自動で次へ進めるか
+// カウントダウンは、メンバーと同じウィークリープレゼンテーションの秒数（チャプターの設定）
 function applyWeeklyGuests_(parts, names, auto) {
   var pages = weeklyGuestPages_(parts), want = {}, shown = [], hidden = [], paths = [], i;
+  var sec = chapterPresenSeconds_().weekly;
   for (i = 0; i < names.length; i++) want[normName_(names[i])] = true;
   for (i = 0; i < pages.length; i++) {
     var g = pages[i], xml = xmlOf_(parts, g.path), on = !!want[normName_(g.name)];
     xml = setSlideShow_(xml, on);
     if (on) {
       try {
-        xml = mpSetCountdown_(xml, WEEKLY_SECONDS_, !auto);
-        xml = auto ? mpAutoAdvance_(xml, (WEEKLY_SECONDS_ + 1) * 1000) : mpNoAutoAdvance_(xml);
+        xml = mpSetCountdown_(xml, sec, !auto);
+        xml = auto ? mpAdvanceAfterCountdown_(xml, sec) : mpNoAutoAdvance_(xml);
       } catch (e) {
         console.warn('[MEETING] ' + g.name + 'さんのページのカウントダウンを作り直せませんでした: ' + e.message);
       }
@@ -1016,7 +1018,7 @@ function getWeeklyGuests() {
 // --- メンバープレゼンのページを前半に差し込む ---
 // メンバープレゼンのテンプレートで人数ぶんのページを作り、それを前半スライドの
 // 「ウィークリープレゼンテーション」の見出しページの直後へ差し込む。
-// アンバサダー・ディレクター・2分30秒の下書きのページは、差し込んだページの後ろに残る
+// アンバサダー・ディレクター・スタートアッププレゼンの下書きのページは、差し込んだページの後ろに残る
 // （アンバサダー・ディレクターは applyWeeklyGuests_ で表示を切り替える）。
 function insertMemberPresen_(parts, items) {
   var anchor = weeklyAnchor_(parts);
@@ -1026,7 +1028,7 @@ function insertMemberPresen_(parts, items) {
   var built = buildMemberPresenSlides_(src, items);
   var sp = spliceSlides_(parts, src, slideOrder_(src), anchor);
   var auto = false;
-  for (var i = 0; i < items.length; i++) if (items[i].autoAdvanceMs) auto = true;
+  for (var i = 0; i < items.length; i++) if (items[i].auto) auto = true;
   var msg = 'メンバープレゼンのページを ' + sp.paths.length + '枚 差し込みました（'
           + (auto ? '自動で次へ' : 'クリックで次へ') + '）。';
   if (built.noPhoto && built.noPhoto.length) msg += '\n写真が見つからない方: ' + built.noPhoto.join('、');
@@ -1046,7 +1048,7 @@ function editMeetingSlides_(parts, map, rules, o) {
   var photoCache = { by: {}, seq: 0 };
   var referral = (o.referral && o.referral.length)
     ? expandPresenterSlides_(parts, o.referral,
-        { title: RF_TITLE_, label: 'リファーラル発表', seconds: RF_SECONDS_, photoCache: photoCache }) : null;
+        { title: RF_TITLE_, label: 'リファーラル発表', seconds: chapterPresenSeconds_().referral, photoCache: photoCache }) : null;
   // 前半：アンバサダー・ディレクターのページの表示を切り替える（差し込みより先に。同じ作りのため）
   var guests = o.weeklyGuests ? applyWeeklyGuests_(parts, o.weeklyGuests, o.weeklyAuto !== false) : null;
   // 前半：メンバープレゼンのページを差し込む（メンバープレゼンのテンプレートから作る）

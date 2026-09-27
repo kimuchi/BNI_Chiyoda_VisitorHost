@@ -6,16 +6,14 @@
 //
 // メンバープレゼンとの違い
 //   ・順番は業種区分の巡回ではなく、**名簿のNo.順（1番から）**
-//   ・カウントダウンは30秒ではなく**7秒**
+//   ・カウントダウンはリファーラル発表の秒数（チャプターの設定。Activeチャプターは7秒。画面でその回だけ変えられる）
 //   ・ページは単独のファイルではなく、後半スライドの中で増える
 
 var RF_TITLE_ = 'REFERRAL PRESENTATION';
-var RF_SECONDS_ = 7;
 var WEEKLY_TITLE_ = 'WEEKLY PRESENTATION';
-var WEEKLY_SECONDS_ = 30;
 
 // ひな形のページの図形は、IDではなく「役割」で見分ける。
-// 前半のウィークリープレゼン・後半のリファーラル発表・2分30秒の下書きページは
+// 前半のウィークリープレゼン・後半のリファーラル発表・スタートアッププレゼンの下書きページは
 // どれも同じ作りだが、図形IDはページごとに違うため。
 //
 //   氏名・会社名・カテゴリー … 幅の広い（6,000,000EMU超）文字箱を上から順に3つ
@@ -118,10 +116,10 @@ function rfBuildSlide_(tplXml, tplRels, item, photo, SH) {
   // カウントダウンを作り直す（見本の書式のまま秒数だけ変える）。
   //   auto が true … スライドが出たらすぐ始まり、終わったら自動で次へ
   //   auto が false … クリックで始まり、次のページへもクリックで進む（元のテンプレートと同じ）
-  var sec = item.seconds || RF_SECONDS_;
+  var sec = item.seconds || chapterPresenSeconds_().referral;
   if (item.auto) {
     xml = mpSetCountdown_(xml, sec, false);
-    xml = mpAutoAdvance_(xml, (sec + 1) * 1000);
+    xml = mpAdvanceAfterCountdown_(xml, sec);
   } else {
     xml = mpSetCountdown_(xml, sec, true);
     xml = mpNoAutoAdvance_(xml);
@@ -235,12 +233,12 @@ function expandPresenterSlides_(parts, items, opts) {
   putXml_(parts, 'ppt/_rels/presentation.xml.rels', prsRels);
   putXml_(parts, '[Content_Types].xml', ct);
 
-  var msg = label + 'のページを ' + made.length + '枚 作りました（'
-          + (items[0].seconds || o.seconds || RF_SECONDS_) + '秒）。';
-  if (noPhoto.length) msg += '\n写真が見つからない方: ' + noPhoto.join('、');
   var auto = false;
   for (i = 0; i < items.length; i++) if (items[i].auto) auto = true;
-  msg = msg.replace(/秒）。$/, '秒・' + (auto ? '自動で次へ' : 'クリックで次へ') + '）。');
+  var msg = label + 'のページを ' + made.length + '枚 作りました（'
+          + chapterSecondsLabel_(items[0].seconds || o.seconds || chapterPresenSeconds_().referral)
+          + '・' + (auto ? '自動で次へ' : 'クリックで次へ') + '）。';
+  if (noPhoto.length) msg += '\n写真が見つからない方: ' + noPhoto.join('、');
   return { message: msg, made: made.length, noPhoto: noPhoto, auto: auto,
            paths: made.map(function (x) { return x.path; }) };
 }

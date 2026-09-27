@@ -2,7 +2,7 @@
 
 // 反映されたか確かめるための版。変更したら日付を更新する。
 // clasp push / デプロイが効いているかは、これを画面で見れば分かる。
-var SYSTEM_VERSION_ = '2026-09-27s';
+var SYSTEM_VERSION_ = '2026-09-27t';
 
 function getSystemVersion() { return SYSTEM_VERSION_; }
 
@@ -53,7 +53,7 @@ function onOpen() {
       .addItem('アーカイブして整理する', 'openArchiveDialog')
       .addItem('アーカイブを全て表示に戻す', 'menuUnarchiveAll'))
     .addSubMenu(ui.createMenu('⚙️ 設定')
-      .addItem('チャプター（名前・期・定例会の回数）', 'openChapterSettingsDialog')
+      .addItem('チャプター（名前・期・定例会の回数・プレゼンの秒数）', 'openChapterSettingsDialog')
       .addItem('足りないシートを作る（ルーティンチェックシートなど）', 'menuCreateMissingSheets')
       .addSeparator()
       .addItem('BNI 素材フォルダ', 'openAssetSettingsDialog')

@@ -149,9 +149,19 @@ function withLayoutBoxes(box, fn){
 // メンバープレゼンの画面と、定例会スライド（前半に差し込むとき）の両方から使う。
 //   mctx     … getMemberPresenContext() の結果
 //   startKey … 始まりの業種区分
-//   longName … 2分30秒プレゼンの方（いなければ空）
+//   longName … スタートアッププレゼンの方（いなければ空）
 //   auto     … カウントダウンが終わったら自動で次へ進むか
-var MP_LONG_SEC = 150, MP_NORMAL_SEC = 30;
+// カウントダウンの秒数は、チャプターの設定（mctx.seconds）。無ければ Activeチャプターの値
+var MP_SECONDS_DEFAULT = { weekly: 30, startup: 150 };
+function memberPresenSeconds(mctx){
+  var s=(mctx&&mctx.seconds)||{};
+  return { weekly: s.weekly||MP_SECONDS_DEFAULT.weekly, startup: s.startup||MP_SECONDS_DEFAULT.startup };
+}
+// 150 →「2分30秒」
+function secondsLabel(sec){
+  var m=Math.floor(sec/60), r=sec%60;
+  return m ? m+'分'+(r ? r+'秒' : '') : r+'秒';
+}
 // 始まりの業種区分をどこから決めたか（画面に出す一言。textContent で使う）
 //   c … getMemberPresenContext() の candidates の1つ
 function memberPresenStartNote(c){
@@ -167,6 +177,7 @@ function memberPresenOrder(mctx, startKey){
   return live.slice(at).concat(live.slice(0,at));
 }
 function memberPresenItems(mctx, startKey, longName, auto){
+  var S=memberPresenSeconds(mctx);
   return withLayoutBoxes(null, function(){
     var items=[], rows=mctx.rowsPerPage||7;
     memberPresenOrder(mctx, startKey).forEach(function(b){
@@ -180,11 +191,11 @@ function memberPresenItems(mctx, startKey, longName, auto){
       }
       list.forEach(function(m,i){
         var co=layoutCompany(m.company||''), ca=layoutCategory(m.title||'');
-        var isLong=(!!longName && m.name===longName), sec=isLong?MP_LONG_SEC:MP_NORMAL_SEC;
+        var isLong=(!!longName && m.name===longName);
         items.push({ kind:'individual', photoName:m.name, name:m.name,
-          // カウントダウンが終わってから1秒おいて次のスライドへ。
-          // 30秒のときはテンプレートのまま使えるので作り直さない（countdownSec は0）。
-          countdownSec:(isLong?MP_LONG_SEC:0), autoAdvanceMs:(auto?(sec+1)*1000:0),
+          // カウントダウンの秒数（テンプレートと同じ秒数なら、サーバーは作り直さない）。
+          // auto … カウントダウンが終わってから1秒おいて次のスライドへ
+          countdownSec:(isLong?S.startup:S.weekly), auto:!!auto,
           companyLines:co.lines, companyPt:co.fontPt, companyGeom:co.geom, categoryTop:co.categoryTop,
           companyTall:(co.geom!==COMPANY_DEFAULT),
           categoryLines:ca.lines, categoryPt:ca.fontPt, categoryTight:ca.tight,

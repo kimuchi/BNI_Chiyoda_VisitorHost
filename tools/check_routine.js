@@ -101,7 +101,7 @@ for (const d of dates) {
 }
 console.log(`開催日 ${dates.length} 件 → 列が見つかった ${ok} 件・見つからない ${noSheet} 件`);
 console.log(`  コアバリューを判別できた: ${withCore} 件`);
-console.log(`  2分30秒プレゼンの方あり : ${withPres} 件`);
+console.log(`  スタートアッププレゼンの方あり : ${withPres} 件`);
 if (badCore.length) {
   console.log(`  判別できなかったコアバリュー ${badCore.length} 件:`);
   badCore.slice(0, 8).forEach(([d, v]) => console.log(`    ${d}  ${JSON.stringify(v).slice(0, 60)}`));
@@ -144,7 +144,7 @@ for (const d of samples) {
   console.log(`  ${d}  ${r.found ? r.sheetName : '(該当なし)'}`
     + (r.found ? `  第${r.meetingNo}回  コアバリュー=${r.coreValue || '(不明)'} `
                + `${r.coreValueRaw ? '［' + String(r.coreValueRaw).replace(/\s+/g, ' ').slice(0, 30) + '］' : ''}`
-               + `  2分30秒=${r.longPresenter || (r.longPresenterRaw ? r.longPresenterRaw + '(未一致)' : 'なし')}` : ''));
+               + `  スタートアップ=${r.longPresenter || (r.longPresenterRaw ? r.longPresenterRaw + '(未一致)' : 'なし')}` : ''));
 }
 
 // --- 推薦の言葉の読み取り（決まった書き方で確かめる）---

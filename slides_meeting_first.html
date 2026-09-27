@@ -71,7 +71,7 @@
      <table>
        <tr><th>始まりの業種区分</th><td><select id="mpStart" onchange="renderMP()"></select>
            <div id="mpStartNote" style="font-size:11px;color:#888;"></div></td></tr>
-       <tr><th>2分30秒プレゼン</th><td><select id="mpLong" onchange="renderMP()"></select>
+       <tr><th>スタートアッププレゼン</th><td><select id="mpLong" onchange="renderMP()"></select>
            <div id="mpLongNote" style="font-size:11px;color:#888;"></div></td></tr>
      </table>
      <div id="mpWarn" style="font-size:12px;color:#b26b00;margin-top:6px;line-height:1.7;"></div>
@@ -254,7 +254,7 @@
    document.getElementById('mpWarn').innerHTML=notes.join('<br>');
    mpForDate();
  }
- // 開催日が変わったら、始まりの区分と2分30秒の方を選び直す
+ // 開催日が変わったら、始まりの区分とスタートアッププレゼンの方を選び直す
  function mpForDate(){
    if(!mpCtx) return;
    var c=mpCandidate(), live=mpLive();
@@ -287,8 +287,11 @@
    });
    box.innerHTML=h;
    var items=buildMP(), ov=items.filter(function(x){ return x.kind==='overview'; }).length, gs=pickedGuests();
+   var S=memberPresenSeconds(mpCtx);
    note.innerHTML = items.length
      ? ('扉ページ '+ov+'枚＋個人ページ '+(items.length-ov)+'枚＝<b>'+items.length+'枚</b>を差し込みます。'
+        +'<br>カウントダウンは '+secondsLabel(S.weekly)+(get('mpLong') ? '（'+esc(get('mpLong'))+'さんは '+secondsLabel(S.startup)+'）' : '')
+        +'。秒数は ⚙️ 設定 ＞ チャプター で変えられます。'
         +(gs.length ? '<br>最後の方のページの「NEXT」には '+esc(gs[0].name)+'さんを出します。' : ''))
      : '';
    refreshGen();

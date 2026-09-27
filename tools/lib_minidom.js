@@ -98,7 +98,7 @@ function loadPage(file, opts) {
     return el;
   }
   function scan(html) {
-    const re = /<(input|select|textarea|div|span|table|button|a|label|code|img)\b([^>]*)>/g;
+    const re = /<(input|select|textarea|div|span|table|button|a|label|code|img|b|strong|p|pre|td|tr|ul|li|section|h[1-6])\b([^>]*)>/g;
     let m;
     while ((m = re.exec(html)) !== null) {
       const id = attr(m[0], 'id');

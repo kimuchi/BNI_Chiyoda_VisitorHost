@@ -16,6 +16,11 @@
     #msg { margin-top: 12px; font-size: 13px; white-space: pre-wrap; line-height: 1.6; }
     #msg.ok { color: #1a7f37; } #msg.err { color: #c00; }
     b.pv { color: #0055ff; }
+    table.sec { border-collapse: collapse; font-size: 14px; margin-top: 4px; }
+    table.sec th { text-align: left; font-weight: normal; padding: 5px 14px 5px 0; vertical-align: top; }
+    table.sec th small { display: block; font-size: 11.5px; color: #777; margin-top: 1px; }
+    table.sec td { padding: 5px 0; white-space: nowrap; vertical-align: top; }
+    table.sec input { width: 64px; }
   </style>
 </head>
 <body>
@@ -45,11 +50,27 @@
     <input type="number" id="baseCount" min="1" style="width:100px;"> 回</div>
   <div class="hint" id="nextNote" style="margin-top:6px;"></div>
 
+  <label>プレゼンの秒数（カウントダウン）</label>
+  <div class="hint">スライドのカウントダウンの長さです。雛形の秒数と違うときは、スライドを作るときに数字を作り直します
+    （ベルや卵時計の音はそのまま鳴ります）。</div>
+  <table class="sec">
+    <tr><th>ウィークリープレゼンテーション<small>メンバー（アンバサダー・ディレクターも）</small></th>
+      <td><input type="number" id="sec_weekly_m" min="0" max="10"> 分 <input type="number" id="sec_weekly_s" min="0" max="59"> 秒</td></tr>
+    <tr><th>スタートアッププレゼン<small>ルーティンチェックシートに書いた方</small></th>
+      <td><input type="number" id="sec_startup_m" min="0" max="10"> 分 <input type="number" id="sec_startup_s" min="0" max="59"> 秒</td></tr>
+    <tr><th>ビジタープレゼン<small>ビジター・代理スライドのプレゼン</small></th>
+      <td><input type="number" id="sec_visitor_m" min="0" max="10"> 分 <input type="number" id="sec_visitor_s" min="0" max="59"> 秒</td></tr>
+    <tr><th>リファーラル発表<small>後半スライドの画面で、その回だけ変えることもできます</small></th>
+      <td><input type="number" id="sec_referral_m" min="0" max="10"> 分 <input type="number" id="sec_referral_s" min="0" max="59"> 秒</td></tr>
+  </table>
+  <div class="hint" id="secNote" style="margin-top:6px;"></div>
+
   <button id="saveBtn" onclick="save()">設定を保存する</button>
   <div id="msg"></div>
 
   <script>
     var W = ['日', '月', '火', '水', '木', '金', '土'], cur = null;
+    var SEC_KEYS = ['weekly', 'startup', 'visitor', 'referral'];
     function el(id) { return document.getElementById(id); }
     function show(text, ok) { var m = el('msg'); m.className = ok ? 'ok' : 'err'; m.textContent = text || ''; }
     window.onload = function () {
@@ -68,7 +89,26 @@
       el('baseCount').value = s.meetingBaseCount || '';
       el('nextNote').textContent = s.next ? '今の設定での次回: ' + s.next : '';
       el('freshNote').hidden = !(s.fresh && !s.saved);
+      var sec = s.seconds || {}, def = (s.defaults && s.defaults.seconds) || {};
+      SEC_KEYS.forEach(function (k) {
+        var v = parseInt(sec[k], 10) || 0;
+        el('sec_' + k + '_m').value = Math.floor(v / 60);
+        el('sec_' + k + '_s').value = v % 60;
+      });
+      var lim = s.secondsLimits || { min: 5, max: 600 };
+      el('secNote').textContent = '入れられるのは ' + secLabel(lim.min) + '〜' + secLabel(lim.max) + ' です。既定は '
+        + SEC_KEYS.map(function (k) { return secLabel(def[k]); }).join('・') + '（上から順に）。';
       preview();
+    }
+    function secLabel(v) {
+      v = parseInt(v, 10) || 0;
+      var m = Math.floor(v / 60), r = v % 60;
+      return m ? m + '分' + (r ? r + '秒' : '') : r + '秒';
+    }
+    // 分・秒の欄 → 秒（空欄は0）
+    function secOf(k) {
+      var n = function (id) { var v = parseInt(el(id).value, 10); return isNaN(v) ? 0 : v; };
+      return n('sec_' + k + '_m') * 60 + n('sec_' + k + '_s');
     }
     function preview() {
       var n = el('name').value.trim().replace(/^BNI\s*/i, '').replace(/\s*(チャプター|chapter)$/i, '');
@@ -79,7 +119,8 @@
     }
     function save() {
       var data = { name: el('name').value, region: el('region').value, term: el('term').value,
-                   meetingBaseDate: el('baseDate').value, meetingBaseCount: el('baseCount').value };
+                   meetingBaseDate: el('baseDate').value, meetingBaseCount: el('baseCount').value, seconds: {} };
+      SEC_KEYS.forEach(function (k) { data.seconds[k] = secOf(k); });
       if (cur && String(data.term) !== String(cur.term)
           && !confirm('いまの期を ' + cur.term + '期 から ' + data.term + '期 に変えます。\n登録してある役職・チーム（半期ごと）の期も同じだけずらします。よろしいですか？')) return;
       el('saveBtn').disabled = true;
