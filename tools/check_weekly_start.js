@@ -78,7 +78,16 @@ const sandbox = {
   },
   fmtDate_: (d) => (d ? fmt(d) : ''),
 };
+// 「今日」：サーバーはふだん最近の期のシートだけを読むので、実行した日で結果が変わらないよう、
+// 下の 3) で「記載のある最後の開催日の3日後」に固定する（それまでは実行した日）
+const RealDate = Date;
+let TODAY = null;
+sandbox.Date = class extends RealDate {
+  constructor(...a) { if (a.length) super(...a); else super(TODAY ? TODAY.getTime() : RealDate.now()); }
+  static now() { return TODAY ? TODAY.getTime() : RealDate.now(); }
+};
 vm.createContext(sandbox);
+vm.runInContext('Date = this.Date;', sandbox);
 for (const f of ['member_master_srv.js', 'routine_srv.js', 'member_presen_srv.js']) {
   vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), sandbox, { filename: f });
 }
@@ -94,7 +103,8 @@ const blockName = (k) => (cycle.find((c) => c.gkey === k) || {}).block || '(な�
 console.log('区分と人数: ' + cycle.map((c) => `${c.block} ${c.count}名`).join(' / '));
 
 // 1) 記載がすべて区分として読めるか
-const rows = sandbox.routineRowValues_(vm.runInContext('ROUTINE_WEEKLY_LABELS_', sandbox));
+// （ふだんは最近の期のシートだけを読む。ここでは昔の記載も確かめたいので、いちばん古い開催日から読む）
+const rows = sandbox.routineRowValues_(vm.runInContext('ROUTINE_WEEKLY_LABELS_', sandbox), dates[0]);
 const keys = Object.keys(rows).sort();
 const parsed = {};
 const unread = [];
@@ -133,6 +143,7 @@ ck(total > 0 && agree === total, `繰り上げが実際の記載と合わない�
 // 3) 画面に渡す値（その日の記載・前回からの繰り上げ）
 const last = keys[keys.length - 1];
 const next = fmt(new Date(new Date(last + ' 00:00:00').getTime() + 7 * 86400000));
+TODAY = new RealDate(new RealDate(last + ' 00:00:00').getTime() + 3 * 86400000);
 const onDay = sandbox.mpStartFromRoutine_(cycle, members, rows, last, HOLIDAYS);
 ck(onDay && onDay.from === 'routine' && onDay.key === sandbox.mpAdvance_(cycle, parsed[last], 0),
    `記載のある日（${last}）がその記載どおりにならない: ${JSON.stringify(onDay)}`);

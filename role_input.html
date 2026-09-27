@@ -204,8 +204,24 @@
  window.onload = function(){
    google.script.run.withSuccessHandler(function(v){ if(v) el('ver').innerText='版 '+v; }).getSystemVersion();
    view = ROLE_PARAM || '';
+   if(VIEW_PARAM==='rotation'){
+     // スピーカーローテーションを直接開くときは、ローテーションを先に読む。
+     // 書記兼会計の入力画面の準備（初期値の推定）は時間がかかるので、「← 書記兼会計の入力」を押したときに読む
+     rotFirst=true; rotOpened=true; view='';
+     openRotation();
+     loadQuiet();
+     return;
+   }
    load('');
  };
+ // 定例会の選択肢とシートの表示だけを読む（画面は切り替えない。ローテーションを先に開いたとき用）
+ var rotFirst=false;
+ function loadQuiet(){
+   google.script.run.withSuccessHandler(function(c){
+     if(!rotFirst || !c || !c.ok) return;              // もう書記兼会計の画面に移っていたら使わない
+     ctx=c; fillMeetingBar(c);
+   }).withFailureHandler(function(){}).getRoleInputContext('', '');
+ }
 
  // 開催日の内容を読み込む（読み込み中は保存できない）。
  // 役職の画面を開くときは、その役職の初期値の推定もいっしょに受け取る
@@ -224,6 +240,13 @@
 
  function setContext(c){
    ctx = c;
+   fillMeetingBar(c);
+   if(view && roleOf(view)) openRole(view); else { view=''; showOverview(true); }
+   if(VIEW_PARAM==='rotation' && view==='secretary' && !rotOpened){ rotOpened=true; openRotation(); }
+   if(VIEW_PARAM==='premtg' && !view && !premtgOpened){ premtgOpened=true; premtgPreview(); try{ el('premtgBox').scrollIntoView(); }catch(e){} }
+ }
+ // 上の帯：定例会の選択肢・シートの名前・お知らせ
+ function fillMeetingBar(c){
    var sel = el('meeting');
    sel.innerHTML = (c.meetings||[]).map(function(m){
      return '<option value="'+esc(m.dateValue)+'"'+(m.dateValue===c.date?' selected':'')+'>'+esc(m.display)+'</option>';
@@ -234,9 +257,6 @@
    el('sheetNote').innerText = c.found ? (c.sheetName+(c.meetingNo?'　第'+c.meetingNo+'回':'')) : '';
    var w = el('warn');
    if(c.message){ w.style.display='block'; w.innerHTML=esc(c.message); } else { w.style.display='none'; w.innerHTML=''; }
-   if(view && roleOf(view)) openRole(view); else { view=''; showOverview(true); }
-   if(VIEW_PARAM==='rotation' && view==='secretary' && !rotOpened){ rotOpened=true; openRotation(); }
-   if(VIEW_PARAM==='premtg' && !view && !premtgOpened){ premtgOpened=true; premtgPreview(); try{ el('premtgBox').scrollIntoView(); }catch(e){} }
  }
 
  function roleOf(key){ return ctx ? (ctx.roles||[]).filter(function(r){ return r.key===key; })[0] : null; }
@@ -252,6 +272,7 @@
    var d = el('meeting').value;
    if(!leaveOk()){ el('meeting').value = ctx.date; return; }
    fields={}; ids=[];
+   if(rotFirst){ rotFirst=false; view='secretary'; }      // ローテーションを先に開いていたとき：その日の書記兼会計の入力へ
    load(d);
  }
 
@@ -542,7 +563,7 @@
    }).withFailureHandler(premtgFail).generatePreMeetingSlides(ctx.date);
  }
 
- var rot=null, rOrder=[], rExcluded=[], rAnchor=null, rDirty=false, rotOpened=false;
+ var rot=null, rOrder=[], rExcluded=[], rAnchor=null, rDirty=false, rotOpened=false, rotBack=false;
  function nm(s){ return String(s==null?'':s).replace(/[\s　]+/g,''); }
  function openRotation(){
    if(busy) return;
@@ -551,14 +572,25 @@
    el('loading').innerHTML='⏳ 読み込み中…（スピーカーローテーション）'; show('loading', true);
    google.script.run.withSuccessHandler(function(r){
      busy=false; show('loading', false); el('rotSaveBtn').disabled=false;
-     if(!r || !r.ok){ fail({message:(r&&r.message)||'読み込めませんでした。'}); return; }
-     setRot(r, '');
-   }).withFailureHandler(fail).getSpeakerRotation();
+     if(!r || !r.ok) fail({message:(r&&r.message)||'読み込めませんでした。'}); else setRot(r, '');
+     rotAfter();
+   }).withFailureHandler(function(e){ fail(e); rotAfter(); }).getSpeakerRotation();
+ }
+ // ローテーションの読み込み中に「← 書記兼会計の入力」を押していたら、読み終わってから書記兼会計の画面へ
+ function rotAfter(){ if(rotBack){ rotBack=false; backToSecretary(); } }
+ function backToSecretary(){
+   view='secretary';
+   if(ctx && roleOf('secretary')) openRole('secretary'); else load(ctx ? ctx.date : '');
  }
  function closeRotation(){
    if(rDirty && !confirm('保存していない並び順の変更があります。戻ると消えます。よろしいですか？')) return;
    rDirty=false;
    show('rotView', false);
+   if(rotFirst){                                         // ローテーションを先に開いていたときは、ここで書記兼会計の画面を読む
+     rotFirst=false; view='secretary';
+     if(busy) rotBack=true; else backToSecretary();
+     return;
+   }
    if(ctx && roleOf('secretary')){ view='secretary'; show('roleView', true); }
    else showOverview(true);
  }

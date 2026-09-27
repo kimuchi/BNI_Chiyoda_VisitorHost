@@ -47,32 +47,58 @@ function routineDate_(v) {
 
 // 開催日 → { シート, 列 } の索引。
 // 1回の実行中に何度も呼ばれる（開催日の候補ぶん）ので、1度だけ作って使い回す。
+//
+// 昔の期のシートは、ルールを知るための控えで、ふだんの準備には使わないので読まない
+// （期ごとに1枚ずつ増えていき、全部読むと時間がかかる）。
+// 期の新しいシートから読んでいき、ROUTINE_RECENT_DAYS_ 日より前の回しか載っていないシートまで来たら、
+// そのシート（前回の開催日を探すのに使うことがある）で止める。
+// それより前の日を探すときだけ（fromKey に昔の日を渡したとき）、昔の期のシートも読む。
+var ROUTINE_RECENT_DAYS_ = 120;
 var ROUTINE_INDEX_ = null;
-function routineIndex_() {
-  if (ROUTINE_INDEX_) return ROUTINE_INDEX_;
-  var sheets = getSS_().getSheets(), idx = {};
-  for (var i = 0; i < sheets.length; i++) {
+var ROUTINE_INDEX_FROM_ = '';     // 索引に入っている範囲：この日からあとの回（'' は全部のシート）
+function routineRecentKey_() {
+  var d = new Date(); d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - ROUTINE_RECENT_DAYS_);
+  return fmtDate_(d);
+}
+function routineIndex_(fromKey) {
+  var from = routineRecentKey_();
+  if (fromKey && fromKey < from) from = fromKey;
+  if (ROUTINE_INDEX_ && (!ROUTINE_INDEX_FROM_ || ROUTINE_INDEX_FROM_ <= from)) return ROUTINE_INDEX_;
+  var sheets = getSS_().getSheets(), list = [], idx = {}, all = true, i;
+  for (i = 0; i < sheets.length; i++) {
     var m = sheets[i].getName().match(ROUTINE_SHEET_RE_);
-    if (!m) continue;
-    var last = sheets[i].getLastColumn();
+    if (m) list.push({ sheet: sheets[i], name: sheets[i].getName(), term: parseInt(m[1], 10) });
+  }
+  list.sort(function (a, b) { return b.term - a.term; });          // 期の新しいシートから
+  for (i = 0; i < list.length; i++) {
+    var last = list[i].sheet.getLastColumn();
     if (last < 2) continue;
-    var row1 = sheets[i].getRange(1, 1, 1, last).getValues()[0];
+    var row1 = list[i].sheet.getRange(1, 1, 1, last).getValues()[0], newest = '';
     for (var c = 0; c < row1.length; c++) {
       var d = routineDate_(row1[c]);
       if (!d) continue;
       var key = fmtDate_(d);
-      // 同じ日が複数の期にあれば、期の新しい方を採る
-      if (idx[key] && idx[key].term >= parseInt(m[1], 10)) continue;
-      idx[key] = { sheet: sheets[i], name: sheets[i].getName(), term: parseInt(m[1], 10), col: c + 1 };
+      if (key > newest) newest = key;
+      // 同じ日が複数の期にあれば、期の新しい方（先に読んだ方）を採る
+      if (!idx[key]) idx[key] = { sheet: list[i].sheet, name: list[i].name, term: list[i].term, col: c + 1 };
     }
+    if (newest && newest < from && i < list.length - 1) { all = false; break; }   // ここより昔の期は読まない
   }
   ROUTINE_INDEX_ = idx;
+  ROUTINE_INDEX_FROM_ = all ? '' : from;
   return idx;
 }
 
-// 開催日から、その日が載っているシートと列を探す
+// 開催日から、その日が載っているシートと列を探す（昔の日なら、昔の期のシートも読む）
 function findRoutineColumn_(target) {
-  return routineIndex_()[fmtDate_(target)] || null;
+  var key = fmtDate_(target);
+  return routineIndexFor_(key)[key] || null;
+}
+function routineIndexFor_(key) {
+  var idx = routineIndex_();
+  if (!idx[key] && ROUTINE_INDEX_FROM_ && key < ROUTINE_INDEX_FROM_) idx = routineIndex_(key);
+  return idx;
 }
 
 // 項目名（B〜E列のどこか）で行を探す。0から数えた行番号（無ければ -1）。
@@ -96,25 +122,31 @@ function routineFindRow_(grid, labels) {
   return r >= 0 ? r : scan(false);
 }
 
-// ある項目を、すべての開催日について読む → { 'yyyy/MM/dd': 値 }（空欄の日は入れない）。
+// ある項目を、開催日ごとに読む → { 'yyyy/MM/dd': 値 }（空欄の日は入れない）。
 // 「ウィークリープレゼン」のように、その日に書かれていなければ
-// 前回までの記載から数えたい項目に使う。シートごとに1回だけ読む。
+// 前回までの記載から数えたい項目に使う。
+//   fromKey … 'yyyy/MM/dd'。この日より前の回しか載っていないシート（昔の期）は読まない。
+//             省略すると、最近（ROUTINE_RECENT_DAYS_ 日）の回が載っているシートだけ
+// シートの中身は1回の実行の中で使い回す（項目を変えて何度読んでも、シートを読むのは1回）。
 var ROUTINE_WEEKLY_LABELS_ = ['ウィークリープレゼン'];
 var ROUTINE_ROWS_CACHE_ = {};
-function routineRowValues_(labels) {
-  var ck = labels.join('|');
+var ROUTINE_GRID_CACHE_ = {};
+function routineRowValues_(labels, fromKey) {
+  var from = fromKey || routineRecentKey_();
+  var ck = labels.join('|') + '@' + from;
   if (ROUTINE_ROWS_CACHE_[ck]) return ROUTINE_ROWS_CACHE_[ck];
-  var idx = routineIndex_(), bySheet = {}, out = {}, key, name;
+  var idx = routineIndex_(from), bySheet = {}, out = {}, key, name;
   for (key in idx) {
     var e = idx[key];
-    if (!bySheet[e.name]) bySheet[e.name] = { sheet: e.sheet, cols: [] };
+    if (!bySheet[e.name]) bySheet[e.name] = { sheet: e.sheet, cols: [], last: '' };
     bySheet[e.name].cols.push({ key: key, col: e.col });
+    if (key > bySheet[e.name].last) bySheet[e.name].last = key;
   }
   for (name in bySheet) {
-    var sh = bySheet[name].sheet;
-    var rows = Math.min(ROUTINE_SCAN_ROWS_, sh.getLastRow()), last = sh.getLastColumn();
-    if (rows < 1 || last < 1) continue;
-    var grid = sh.getRange(1, 1, rows, last).getValues(), r = routineFindRow_(grid, labels);
+    if (bySheet[name].last < from) continue;
+    var grid = routineSheetGrid_(name, bySheet[name].sheet);
+    if (!grid) continue;
+    var r = routineFindRow_(grid, labels);
     if (r < 0) continue;
     for (var i = 0; i < bySheet[name].cols.length; i++) {
       var c = bySheet[name].cols[i], v = grid[r][c.col - 1];
@@ -124,6 +156,23 @@ function routineRowValues_(labels) {
   }
   ROUTINE_ROWS_CACHE_[ck] = out;
   return out;
+}
+
+// ルーティンチェックシート1枚の中身（項目を探す範囲まで）。1回の実行の中で使い回す
+function routineSheetGrid_(name, sh) {
+  if (ROUTINE_GRID_CACHE_[name]) return ROUTINE_GRID_CACHE_[name];
+  var rows = Math.min(ROUTINE_SCAN_ROWS_, sh.getLastRow()), last = sh.getLastColumn();
+  if (rows < 1 || last < 1) return null;
+  ROUTINE_GRID_CACHE_[name] = sh.getRange(1, 1, rows, last).getValues();
+  return ROUTINE_GRID_CACHE_[name];
+}
+
+// 読み込んだルーティンチェックシートの控えを捨てる（書き込んだあとや、画面から呼ばれた最初に）
+function routineResetCache_() {
+  ROUTINE_INDEX_ = null;
+  ROUTINE_INDEX_FROM_ = '';
+  ROUTINE_ROWS_CACHE_ = {};
+  ROUTINE_GRID_CACHE_ = {};
 }
 
 // 「なし」「無し」「休会」などは、指定されていないものとして扱う。
@@ -332,8 +381,7 @@ function getRoutineInfo(dateStr) {
       return { ok: true, found: false,
         message: 'ルーティンチェックシートに ' + fmtDate_(t) + ' の列が見つかりませんでした。' };
     }
-    var rows = Math.min(ROUTINE_SCAN_ROWS_, hit.sheet.getLastRow());
-    var grid = hit.sheet.getRange(1, 1, rows, hit.col).getValues();
+    var grid = routineSheetGrid_(hit.name, hit.sheet) || [];     // 候補の日が同じシートなら、読むのは1回
 
     // 項目の行を探し、その開催日の列の値を返す
     var pick = function (labels) {

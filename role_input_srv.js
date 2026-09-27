@@ -312,7 +312,7 @@ function roleMd_(d) {
 // 入力状況の一覧だけなら推定は要らないので、一覧はすぐ出る）。'*' は全役職（検査用）
 function getRoleInputContext(dateStr, roleKey) {
   try {
-    ROUTINE_INDEX_ = null;                                   // シートを足した直後などに備え、毎回読み直す
+    routineResetCache_();                                    // シートを足した直後などに備え、毎回読み直す
     var meetings = roleMeetingChoices_();
     var date = dateStr || (meetings[0] ? meetings[0].dateValue : '');
     var target = parseDate_(date);
@@ -327,14 +327,14 @@ function getRoleInputContext(dateStr, roleKey) {
 }
 
 function roleBuildContext_(target, roleKey) {
-  var idx = routineIndex_(), key = fmtDate_(target), hit = idx[key] || null;
+  var key = fmtDate_(target), idx = routineIndexFor_(key), hit = idx[key] || null;
   var today = new Date(); today.setHours(0, 0, 0, 0);
   var holders = roleHolders_(), sheetOf = roleSheetCache_();
   var no = '';
   var ctx = { ok: true, date: key, display: roleMd_(target), today: fmtDate_(today), estimatedFor: roleKey || '',
               found: !!hit, sheetName: hit ? hit.name : '', roles: [], items: {}, order: [], unknown: [],
               members: [], version: (typeof SYSTEM_VERSION_ === 'string') ? SYSTEM_VERSION_ : '' };
-  try { ctx.members = (getMemberMaster().members || []).map(function (m) { return m.name; }); } catch (e) {}
+  try { ctx.members = (getMemberMaster({ membersOnly: true }).members || []).map(function (m) { return m.name; }); } catch (e) {}
   if (!hit) {
     ctx.message = 'ルーティンチェックシートに ' + key + ' の列が見つかりません。'
       + '「【NN期】ルーティンチェックシート」の1行目に開催日があるか確かめてください。';
@@ -470,7 +470,7 @@ function roleEstimateEnv_(target, prevDates, ctx) {
   };
   return {
     target: target, date: fmtDate_(target), prevDates: prevDates, itemByTitle: itemByTitle,
-    members: function () { return once('members', function () { return getMemberMaster().members || []; }); },
+    members: function () { return once('members', function () { return getMemberMaster({ membersOnly: true }).members || []; }); },
     holidays: function () { return once('holidays', function () { return getHolidays(); }); },
     renewal: function () { return once('renewal', function () { var L = computeRenewalLists(fmtDate_(target)); return L && L.ok ? L : null; }); },
     participants: function () {
@@ -674,11 +674,10 @@ function saveRoleInput(dateStr, roleKey, entries) {
     return { ok: false, message: 'ほかの方が保存中です。少し待ってからもう一度お試しください。' };
   }
   try {
-    ROUTINE_INDEX_ = null;
-    ROUTINE_ROWS_CACHE_ = {};
+    routineResetCache_();
     var target = parseDate_(dateStr);
     if (!target) return { ok: false, message: '開催日が分かりません。' };
-    var hit = routineIndex_()[fmtDate_(target)];
+    var hit = findRoutineColumn_(target);
     if (!hit) return { ok: false, message: 'ルーティンチェックシートに ' + fmtDate_(target) + ' の列が見つかりません。' };
     var sh = hit.sheet, list = entries || [];
     var readGrid = function () {
@@ -728,7 +727,7 @@ function saveRoleInput(dateStr, roleKey, entries) {
       cellR.setValue(value);
       saved++;
     }
-    ROUTINE_ROWS_CACHE_ = {};
+    routineResetCache_();
     try { if (SpreadsheetApp.flush) SpreadsheetApp.flush(); } catch (e) {}
     try { lock.releaseLock(); } catch (e) {}
     var msg = saved ? ('保存しました（' + saved + '項目）。') : '変更はありませんでした。';

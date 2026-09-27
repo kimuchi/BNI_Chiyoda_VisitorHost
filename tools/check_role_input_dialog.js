@@ -134,12 +134,18 @@ step('書きかけで戻る', () => { els['f_' + iEdu].value = '見本さん'; r
 ck(page.log.confirms.length === 1 && /保存していない入力があります/.test(page.log.confirms[0]), '書きかけで戻っても確認が出ない');
 
 // ===================== スピーカーローテーション（書記兼会計）=====================
+// ローテーションを先に読む。書記兼会計の入力（初期値の推定に時間がかかる）は「← 書記兼会計の入力」を押したときに読む
+let nCalls = calls.length;
+const callsSince = () => calls.slice(nCalls).map((c) => c.slice(0, 3));
 page = open('secretary', 'rotation');
 ({ els, window, run, step } = page);
 page.flush();
 window.onload();
+ck(callsSince().some((c) => c[0] === 'rot') && !callsSince().some((c) => c[0] === 'ctx' && c[2] === 'secretary'),
+   '開いてすぐに読むのがローテーションだけになっていない: ' + JSON.stringify(callsSince()));
 step('ローテーションを開く', () => {});
 ck(shown(els.rotView) && !shown(els.roleView) && !shown(els.overview), 'ローテーションの画面が出ていない');
+ck(els.meeting.value === '2026/09/30' && /23期/.test(els.sheetNote.innerText), '上の帯（開催日・シート）が出ていない: ' + els.sheetNote.innerText);
 ck(shown(els.rotOpenBtn) === true, '書記兼会計の画面に「スピーカーローテーションの管理」ボタンが無い');
 ck(/9\/30\(水\) <b>次回<\/b>/.test(els.rotWeeks.innerHTML) && /確定/.test(els.rotWeeks.innerHTML)
    && (els.rotWeeks.innerHTML.match(/<tr/g) || []).length === 13, '予定の表: ' + els.rotWeeks.innerHTML.slice(0, 200));
@@ -203,6 +209,23 @@ ck(after.header === 'メインプレゼンテーション（各５分）' && aft
 ck(drawn().includes('徳山 京介') && drawn().indexOf('徳山 京介') < drawn().indexOf('長見 響児'), '並びを直したあとの画像: ' + drawn().filter((t) => /さん|[一-龥]{2} /.test(t)).join(' '));
 step('書記兼会計の入力に戻る', () => run('closeRotation()'));
 ck(shown(els.roleView) && !shown(els.rotView) && els.roleName.innerText === '書記兼会計', '書記兼会計の入力に戻らない');
+ck(callsSince().some((c) => c[0] === 'ctx' && c[2] === 'secretary') && Object.keys(run('fields')).length > 0,
+   '戻ったときに書記兼会計の入力を読んでいない: ' + JSON.stringify(callsSince().filter((x) => x[0] === 'ctx')));
+step('もう一度ローテーションを開いて戻る', () => { run('openRotation()'); });
+nCalls = calls.length;
+step('2回目は読み直さずに戻る', () => run('closeRotation()'));
+ck(shown(els.roleView) && !shown(els.rotView) && !callsSince().length, '2回目に戻るとき: ' + JSON.stringify(callsSince()));
+
+// ローテーションの読み込み中に「← 書記兼会計の入力」を押しても、読み終わってから書記兼会計の入力になる
+nCalls = calls.length;
+page = open('secretary', 'rotation');
+({ els, window, run, step } = page);
+page.flush();
+window.onload();
+step('読み込み中に戻る', () => run('closeRotation()'));
+ck(shown(els.roleView) && !shown(els.rotView) && !shown(els.loading) && els.roleName.innerText === '書記兼会計'
+   && callsSince().some((c) => c[0] === 'ctx' && c[2] === 'secretary'),
+   '読み込み中に戻ったあと: ' + JSON.stringify({ role: shown(els.roleView), rot: shown(els.rotView), loading: shown(els.loading), calls: callsSince() }));
 
 // 定例会の日（9/30）に開くと、終わったあとに投稿するので「ご案内する回」は次の回（10/7）
 page = open('secretary', 'rotation', '2026-09-30T20:00:00');

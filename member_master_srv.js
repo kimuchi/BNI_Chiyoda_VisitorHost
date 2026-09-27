@@ -150,7 +150,8 @@ function toDateStr_(v) {
   return String(v).trim();
 }
 
-function getMemberMaster() {
+// opts.membersOnly … 名簿の行だけ返す（表紙・業種区分マスタを読まないぶん速い。サーバーの中から使う）
+function getMemberMaster(opts) {
   try {
     var sh = ensureMemberSheet_(), data = sh.getDataRange().getValues(), members = [];
     var col = function (r, i) { return String(r[i] == null ? '' : r[i]).trim(); };
@@ -175,6 +176,7 @@ function getMemberMaster() {
         expireDate: toDateStr_(r[14])
       });
     }
+    if (opts && opts.membersOnly) return { ok: true, members: members };
     return { ok: true, members: members, cover: getCoverInfo_(), categories: getCategoryMaster() };
   } catch (e) {
     console.error('[MEMBER] ' + (e && e.stack ? e.stack : e));
