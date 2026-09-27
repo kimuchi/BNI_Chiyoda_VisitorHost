@@ -178,10 +178,12 @@
 <p><strong>画面から行う場合</strong> <code>デプロイ</code> ＞ <code>デプロイを管理</code> ＞ 鉛筆アイコン ＞ バージョンを <code>新バージョン</code> にして <code>デプロイ</code> を押すと、URLはそのままで中身が新しくなります。</p>
 <p><strong>コマンドで行う場合</strong></p>
 <pre>
+git pull
 clasp push
-clasp deploy -i &lt;デプロイID&gt; -d &quot;更新&quot;
+clasp version &quot;更新のメモ&quot;          （→「Created version 34」のように番号が出ます）
+clasp deploy -i &lt;デプロイID&gt; -V 34   （-V には、いま出た番号を書きます）
 </pre>
-<p>（<code>appsscript.json</code> に <code>webapp</code> の宣言が必要です。無いとライブラリとして デプロイされ、URLで開けなくなります。詳しくはREADMEをご覧ください） <code>-i</code> を付けると既存のデプロイを上書きするので<strong>URLは変わりません</strong>。 付け忘れると別のURLが新しく作られてしまいます。 デプロイIDは <code>clasp deployments</code> で調べられるほか、 ウェブアプリURLの <code>/s/</code> と <code>/exec</code> の間の文字列がそのままIDです。</p>
+<p><strong>この順番で行ってください。</strong> <code>clasp version</code> は、最後に <code>clasp push</code> した中身を保存します。 （<code>appsscript.json</code> に <code>webapp</code> の宣言が必要です。無いとライブラリとして デプロイされ、URLで開けなくなります。詳しくはREADMEをご覧ください） <code>-i</code> を付けると既存のデプロイを上書きするので<strong>URLは変わりません</strong>。 付け忘れると別のURLが新しく作られてしまいます。 デプロイIDは <code>clasp deployments</code> で調べられるほか、 ウェブアプリURLの <code>/s/</code> と <code>/exec</code> の間の文字列がそのままIDです。</p>
 <p><strong>反映されたかは「版」で確かめられます。</strong> ウェブアプリのトップページのいちばん下と、 「定例会スライド（前半）」「定例会スライド（後半）」の画面の右上に <code>版 2026-09-27a</code> のように出ます。 更新をお願いしたときにお伝えする版と同じになっていれば、新しい中身で動いています。</p>
 <hr>
 <h2 id="sec4">メニューの構成</h2>
@@ -1217,7 +1219,7 @@ https://docs.google.com/spreadsheets/u/1/d/xxxxx/edit
 <li>PowerPointの <code>スライドショー</code> &gt; <code>スライドショーの設定</code> で <strong>「保存済みのタイミングを使用」</strong> が 選ばれているか（作成時に入れていますが、手で変えると効かなくなります）</li>
 </ol>
 <h3>Q: 新しい機能が画面に出てきません</h3>
-<p>→ 画面の <strong>「版」</strong>（ウェブアプリのトップページの下、定例会スライドの画面の右上）を見てください。 お伝えした版と違う場合は、更新がまだ反映されていません。 <code>clasp push</code> と <code>clasp deploy</code> のあと、スプレッドシートを再読み込みしてから開き直してください （手順は「ウェブアプリとして開く」の「機能を追加・変更したあと」）。</p>
+<p>→ 画面の <strong>「版」</strong>（ウェブアプリのトップページの下、定例会スライドの画面の右上）を見てください。 お伝えした版と違う場合は、更新がまだ反映されていません。 <code>clasp push</code>・<code>clasp version</code>・<code>clasp deploy</code> を順に行ったか確かめ、スプレッドシートを再読み込みしてから開き直してください （手順は「ウェブアプリとして開く」の「機能を追加・変更したあと」）。</p>
 <h3>Q: 後半の画面が「読み込み中…」のまま進みません</h3>
 <p>→ 後半テンプレートは20MB以上あり、<strong>初回は開くのに1分ほど</strong>かかります。そのままお待ちください。 2回目からは、テンプレートを差し替えるまで前回調べた結果を使うので、すぐ終わります。 赤字でエラーが出た場合は、<code>⚙️ 設定</code> &gt; <code>大きなスライド</code> の登録と、 <code>🔧 動作確認</code> &gt; <code>Googleの権限を確認・許可する</code> を確かめてください。</p>
 <h3>Q: 役職ごとの入力で「保存する」を押しても保存できません</h3>

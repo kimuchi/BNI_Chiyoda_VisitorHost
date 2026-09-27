@@ -263,22 +263,35 @@ URLは誰でも開けますが、**中身はその人自身の権限で動く**�
 ### 2. 同じデプロイを更新する
 
 ```bash
-clasp push
-clasp deploy -i <デプロイID> -d "更新内容のメモ"
+git pull                              # GitHub の最新を取ってくる
+clasp push                            # Apps Script に送る（この時点ではウェブアプリはまだ古いまま）
+clasp version "更新内容のメモ"        # 送った中身を番号つきで保存 → 「Created version 34」のように番号が出る
+clasp deploy -i <デプロイID> -V 34    # その番号を、今のURLに割り当てる
 ```
 
-`-i`（`--deploymentId`）を付けると**既存のデプロイを上書き**するので、**URLは変わりません。**
-新しいバージョンが自動で作られ、それがそのURLに割り当てられます。
+**この順番が大事です。** `clasp version` は「最後に `clasp push` した中身」を保存します。
+`git pull`・`clasp push` より先に `clasp version` を作ると、新しいコードが入りません。
+`-V` には、直前の `clasp version` で出た番号を書きます（毎回1つずつ増えます）。
 
+`-i`（`--deploymentId`）を付けると**既存のデプロイを上書き**するので、**URLは変わりません。**
 `-i` を付けずに `clasp deploy` を実行すると**新しいデプロイが作られ、URLも別物になります。**
 ブックマークが効かなくなるので注意してください。
 
-### まとめ（毎回この2行）
+`-V` を付けずに `clasp deploy -i <デプロイID> -d "メモ"` とすると、バージョンの作成と割り当てを
+1回で行います。ただし環境によっては反映されないことがあるため、上のように分けるほうが確実です。
+
+### まとめ（毎回この4行）
 
 ```bash
+git pull
 clasp push
-clasp deploy -i AKfycbwwG3oVenqKtbf0uQtdO1VfORDEXvzMPsZoA3_YiZkqGXt_iiu-RAX9hzBuJjvw7vGu -d "更新"
+clasp version "V2.5"     # → Created version 34（番号は毎回1つずつ増える）
+clasp deploy -i AKfycbwwG3oVenqKtbf0uQtdO1VfORDEXvzMPsZoA3_YiZkqGXt_iiu-RAX9hzBuJjvw7vGu -V 34
 ```
+
+終わったら、ウェブアプリのトップページの下の **「版 …」** が `コード.js` の `SYSTEM_VERSION_` と
+同じになっているか確かめます。`clasp version` の説明に版（例: `"V2.5 2026-09-27o"`）を入れておくと、
+`デプロイを管理` の一覧でどのコードのバージョンか分かります。
 
 ### `Requested entity was not found.` と出るとき
 
@@ -288,20 +301,15 @@ clasp deploy -i AKfycbwwG3oVenqKtbf0uQtdO1VfORDEXvzMPsZoA3_YiZkqGXt_iiu-RAX9hzBu
 `clasp deployments` の一覧から選んだ場合、`@HEAD` の行や古いデプロイの行を
 拾ってしまっていることがよくあります。
 
-### `clasp deploy -i` で更新されないとき
+### デプロイしたのに新しくならないとき
 
-環境によっては `-i` を付けても反映されないことがあります。順に試してください。
+順に確かめてください。
 
-**その1：バージョンを明示する**
+**その1：順番を確かめる**
 
-```bash
-clasp push
-clasp version "更新内容のメモ"      # → 「Created version 7」のように番号が出る
-clasp deploy -i <デプロイID> -V 7
-```
-
-`clasp deploy` 単体だと、バージョンの作成と割り当てをまとめて行おうとして
-失敗することがあります。分けると通ることがあります。
+`clasp version` の前に `git pull` と `clasp push` をしたか確かめてください。
+`clasp push` より前に作ったバージョンには、新しいコードが入っていません。
+その場合は `clasp push` → `clasp version` → `clasp deploy -i <デプロイID> -V <新しい番号>` をやり直します。
 
 **その2：反映されたか必ず確かめる**
 
@@ -309,7 +317,7 @@ clasp deploy -i <デプロイID> -V 7
 clasp deployments
 ```
 
-`@5` のような番号が上がっていれば成功です。変わっていなければ失敗しています。
+今のURLのIDの行が、`@34` のように直前に作った番号になっていれば成功です。変わっていなければ失敗しています。
 画面側でも、ウェブアプリの下部に出ている **版の日付**で確認できます。
 
 **その3：それでも駄目なら画面から**
@@ -325,7 +333,7 @@ clasp deployments
 
 - **ライブラリになってしまう / URLで開けない**
   `appsscript.json` の `webapp` の宣言が抜けています。上記を追加し、
-  `clasp push` してから `clasp deploy -i <ID>` をやり直してください。
+  `clasp push` → `clasp version` → `clasp deploy -i <ID> -V <番号>` をやり直してください。
   同じデプロイIDのままウェブアプリに戻ります。
 - **メニューは出るがリンクの先が真っ白**
   ウェブアプリの画面は `googleusercontent.com` のiframeの中で動くため、
@@ -336,7 +344,8 @@ clasp deployments
 ### 補足
 
 - `-d`（説明）は省略できます。あとで `clasp deployments` を見たときに分かりやすいので付けるのがおすすめです。
-- 特定のバージョンを割り当て直したいときは `-V <バージョン番号>` を併用します。
+- 前のバージョンに戻したいときは、前の番号を `-V` に書きます（例: `clasp deploy -i <ID> -V 33`）。
+  URLはそのままで、中身だけ前の状態に戻ります。
 - コマンド名はclaspのバージョンで変わることがあります。`clasp --version` で確認してください。
 - デプロイをやめるときは `clasp undeploy <デプロイID>` です。
 
@@ -359,7 +368,7 @@ clasp deployments
 
 `コード.js` の `SYSTEM_VERSION_`（例: `2026-09-27o`）が、ウェブアプリのトップページの下と
 「定例会スライド（前半）」「定例会スライド（後半）」の画面の右上に **「版 …」** として出ます。
-機能を変えたらこの値を変え、`clasp push`・`clasp deploy` のあとに画面で確かめてください。
+機能を変えたらこの値を変え、`clasp push`・`clasp version`・`clasp deploy` のあとに画面で確かめてください。
 
 ## 使用技術
 
