@@ -15,6 +15,7 @@
  th,td{border:1px solid #e3e3e3;padding:6px 8px;text-align:left;}
  th{background:#f2f6ff;}
  #msg{margin-top:12px;font-weight:bold;white-space:pre-wrap;}
+ .init{margin-top:22px;padding-top:10px;border-top:1px dashed #ddd;font-size:11.5px;color:#777;line-height:1.7;}
  a{color:#0f3d91;}
 </style></head>
 <body>
@@ -33,6 +34,13 @@
 
   <div class="status" id="status">読み込み中...</div>
   <div id="msg"></div>
+
+  <!-- 初期設定のときだけ使う入口（ふだんのメニューには出さない） -->
+  <div class="init" id="initBox">
+    <a href="javascript:void(0)" id="officialLink" onclick="openOfficial()">公式ファイルから雛形を作る</a>
+    （初期設定のときに使います。ふだんは使いません）<br>
+    BNIの公式スライド（.pptx）から、ビジター用・メンバープレゼン・定例会の雛形を作って「01_テンプレート」に登録します。
+  </div>
 
 <script>
   window.onload = load;
@@ -56,6 +64,11 @@
     document.getElementById('status').innerHTML = h;
   }
   function esc(x){ var d=document.createElement('span'); d.textContent=x==null?'':x; return d.innerHTML; }
+  // 公式ファイルから雛形を作る画面を開く。ウェブアプリではそのページへ、スプレッドシートではダイアログを開き直す
+  function openOfficial(){
+    if(typeof WEBAPP_URL === 'string' && WEBAPP_URL){ window.open(WEBAPP_URL + '?p=official_templates', '_top'); return; }
+    google.script.run.withFailureHandler(fail).openOfficialTemplatesDialog();
+  }
   function fail(e){ document.getElementById('msg').innerText='エラー: '+((e&&e.message)?e.message:e); document.getElementById('msg').style.color='#d00'; document.getElementById('btnSave').disabled=false; }
 
   function save(){

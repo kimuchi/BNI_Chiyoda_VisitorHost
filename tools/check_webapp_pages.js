@@ -8,6 +8,8 @@
 //     （URLに書いた値が優先。?p=role_input&role=vice の role など）
 //   ・事前MTGのパワポは「役職ごとの入力」と入口を1つにまとめた（トップページには出さない）。
 //     前のリンク ?p=premtg は、トップページに出さない入口（WEBAPP_ALIASES_）として開ける
+//   ・公式ファイルから雛形を作る（初期設定のときだけ）も、トップページには出さず ?p=official_templates で開く。
+//     画面には WEBAPP_URL を渡し、BNI 素材フォルダの画面のリンクからそのURLで開く
 //   ・トップページのリンクは ?p=キー だけ。
 //     リンクの ? より後ろに <?= ?> で「&…」を足すと、Apps Script が & や = をURL用に置き換えて（%26 %3D）
 //     開く画面が分からなくなる（事前MTGのリンクがトップページから開けなかった原因）
@@ -85,6 +87,15 @@ ck(opened && opened.name === 'role_input' && opened.params.role === 'vice' && !o
 opened = null;
 F.doGet({ parameter: { p: 'role_input', view: 'premtg' } });
 ck(opened && opened.name === 'role_input' && opened.params.view === 'premtg', '?p=role_input&view=premtg: ' + JSON.stringify(opened));
+// 画面には、ウェブアプリのURL（WEBAPP_URL）を渡す。画面から別の画面を開くときに使う
+// （BNI 素材フォルダの画面の「公式ファイルから雛形を作る」。トップページには出さない入口）
+{
+  const out = F.doGet({ parameter: { p: 'asset_settings' } });
+  ck(out && /<script>var WEBAPP_URL = "https:\/\/script\.google\.com\/macros\/s\/TEST\/exec";<\/script>/.test(out._content || ''),
+     '画面に WEBAPP_URL が渡らない: ' + String(out && out._content).slice(0, 300));
+  ck(!items.some((x) => x.key === 'official_templates') && ALIASES.some((x) => x.key === 'official_templates'),
+     '公式ファイルから雛形を作る：トップページに出ている／URLで開けない');
+}
 // 知らないキーはトップページ
 opened = null;
 F.doGet({ parameter: { p: 'role_input&view=premtg' } });
@@ -111,4 +122,4 @@ if (fails.length) {
   fails.forEach((f) => console.log('   ' + f));
   process.exit(1);
 }
-console.log('OK: キー・画面のHTML・?p= での開き方（事前MTG・スピーカーローテーション・役職の指定）・トップページの入口とリンク');
+console.log('OK: キー・画面のHTML・?p= での開き方（事前MTG・スピーカーローテーション・役職の指定・公式ファイルから雛形）・WEBAPP_URL・トップページの入口とリンク');

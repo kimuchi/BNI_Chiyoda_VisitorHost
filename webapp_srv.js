@@ -65,7 +65,6 @@ var WEBAPP_PAGES_ = [
     { key: 'asset_settings',    label: 'BNI 素材フォルダ',       desc: '写真やテンプレートの保存先' },
     { key: 'member_master',     label: 'メンバー名簿',           desc: 'すべての機能が参照する正本' },
     { key: 'member_photos',     label: 'メンバー写真',           desc: '氏名で自動照合されます' },
-    { key: 'official_templates', label: '公式ファイルから雛形を作る', desc: '公式のpptxから、ビジター用・メンバープレゼン・定例会の雛形を作って登録' },
     { key: 'template_files',    label: 'PowerPointテンプレート', desc: 'ビジター用の4種類' },
     { key: 'big_templates',     label: '大きなスライド',         desc: '定例会などDriveリンクで登録' },
     { key: 'spreading',         label: 'Spreadingから名簿を更新', desc: 'MCPで取得した内容を貼り付け' },
@@ -86,8 +85,11 @@ var WEBAPP_PAGES_ = [
 // トップページには出さないが、URLで開ける入口（前のリンク・ブックマークのため）
 //   premtg … 事前MTGのパワポは「役職ごとの入力」の一覧で作る（入口を1つにまとめた）。
 //            ?p=premtg で開くと、一覧を開いてすぐ事前MTGの中身の確かめを出す
+//   official_templates … 公式ファイルから雛形を作る。初期設定のときだけ使うので、BNI 素材フォルダの画面の
+//            小さなリンクから開く
 var WEBAPP_ALIASES_ = [
-  { key: 'premtg', file: 'role_input', params: { view: 'premtg' }, label: '役職ごとの入力・事前MTGのパワポ' }
+  { key: 'premtg', file: 'role_input', params: { view: 'premtg' }, label: '役職ごとの入力・事前MTGのパワポ' },
+  { key: 'official_templates', label: '公式ファイルから雛形を作る' }
 ];
 
 // 画面に渡す値（一覧の params。URLに書いたものがあればそちらを優先）
@@ -149,6 +151,9 @@ function doGet(e) {
             + 'style="color:#ffd200;text-decoration:none;font-weight:bold;">'
             + '← メニューに戻る</a>'
             + '<span style="opacity:.85;">' + escapeHtmlText_(page.label) + '</span></div>';
+    // 画面から別の画面を開くとき（BNI 素材フォルダの画面の「公式ファイルから雛形を作る」など）に使うURL。
+    // ダイアログではこの値が無いので、画面の側は WEBAPP_URL があるかどうかで開き方を変える
+    bar += '<script>var WEBAPP_URL = ' + JSON.stringify(getWebAppUrl_()).replace(/</g, '\\u003c') + ';</script>';
     content = content.replace(/(<body[^>]*>)/i, '$1' + bar);
 
     return HtmlService.createHtmlOutput(content)

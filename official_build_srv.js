@@ -719,9 +719,14 @@ function offMembershipTokens_(xml) {
         row = tr.substring(0, tcs[0].start) + offSetLines_(small, [tok(2 * r - 1)], 'a:txBody')
             + offSetLines_(small, [tok(2 * r)], 'a:txBody') + tr.substring(tcs[tcs.length - 1].end);
       } else {
-        var tc = tr.substring(tcs[0].start, tcs[0].end);
-        row = tr.substring(0, tcs[0].start) + offSetLines_(offSetSize_(tc, 16), [r === 1 ? '{{審査中カテゴリー}}' : ''], 'a:txBody')
-            + tr.substring(tcs[0].end);
+        // 1つ目のマス目に差し込み口。つないだマス目（hMerge）の中に隠れている見本の「First & last name」も消す
+        row = tr;
+        for (var ci = tcs.length - 1; ci >= 0; ci--) {
+          var tc = tr.substring(tcs[ci].start, tcs[ci].end);
+          var nt = ci === 0 ? offSetLines_(offSetSize_(tc, 16), [r === 1 ? '{{審査中カテゴリー}}' : ''], 'a:txBody')
+                            : offSetLines_(tc, [''], 'a:txBody');
+          row = row.substring(0, tcs[ci].start) + nt + row.substring(tcs[ci].end);
+        }
       }
       out = out.substring(0, trs[r].start) + row + out.substring(trs[r].end);
     }
