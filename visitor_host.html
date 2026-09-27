@@ -25,7 +25,7 @@
     優先順位: 数値が小さいほどオリエンに優先的に割り振られます。空欄は最低優先です。
   </div>
 
-  <!-- 役職ごとの入力の「役職・委員会（半期ごと）」で登録したビジターホストを読み取る。読み取ったあとは手で直せる -->
+  <!-- 役職ごとの入力の「役職・チーム（半期ごと）」で登録したビジターホストを読み取る。読み取ったあとは手で直せる -->
   <div class="readbar" id="readBar" style="display:none;">
     <b>役職から読み取る</b>：<select id="roleTerm"></select>
     <button type="button" onclick="readRoles()">読み取る</button>
@@ -62,7 +62,7 @@
         }).join('');
         el('readNote').innerText = r.handover
           ? '期の終わり（引継ぎの時期）は次の期の方がビジターホストをするので、次の期を選んであります。'
-          : '役職ごとの入力の「役職・委員会（半期ごと）」で登録した、ビジターホストとビジターホストコーディネーターを読み取ります。';
+          : '役職ごとの入力の「役職・チーム（半期ごと）」で登録した、ビジターホストとビジターホストコーディネーターを読み取ります。';
         el('readBar').style.display = '';
       }).withFailureHandler(function() {}).getVisitorHostsFromRoles();
       google.script.run.withSuccessHandler(function(list) {
@@ -102,7 +102,7 @@
       var term = parseInt(el('roleTerm').value, 10), t = null;
       for (var i = 0; i < roleInfo.terms.length; i++) if (roleInfo.terms[i].term === term) t = roleInfo.terms[i];
       if (!t || !t.names.length) {
-        el('readNote').innerText = term + '期のビジターホストが登録されていません。役職ごとの入力の「役職・委員会（半期ごと）」で登録してください。';
+        el('readNote').innerText = term + '期のビジターホストが登録されていません。役職ごとの入力の「役職・チーム（半期ごと）」で登録してください。';
         return;
       }
       var want = {}, found = {}, hit = 0, miss = [];
@@ -115,8 +115,8 @@
       });
       t.names.forEach(function(n) { if (!found[nm(n)]) miss.push(n); });
       el('readNote').innerText = term + '期のビジターホスト ' + hit + '名にチェックを入れました（ほかの方のチェックは外しました。優先順位はそのままです）。'
-        + (t.registered ? '' : t.from ? '（' + term + '期の委員会・チームは未登録のため、' + t.from + '期の顔ぶれです）'
-                                       : '（委員会・チームが未登録のため、ビジターホストコーディネーターだけです）')
+        + (t.registered ? '' : t.from ? '（' + term + '期のチームは未登録のため、' + t.from + '期の顔ぶれです）'
+                                       : '（チームのメンバーが未登録のため、ビジターホストコーディネーターだけです）')
         + (miss.length ? '\nメンバーリストに見つからない方：' + miss.join('、') : '')
         + '\n確かめて、必要なら手で直してから「設定を保存する」を押してください。';
     }
