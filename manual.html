@@ -35,23 +35,23 @@
     <div class="toc">
       <b>目次</b>
       <ol>
-        <li><a href="#sec1">準備：メニューが出ていないところから</a></li>
-        <li><a href="#sec2">はじめに：初回だけ必要な「Google認証」の手順</a></li>
-        <li><a href="#sec3">ウェブアプリとして開く（ダイアログが出ない環境向け）</a></li>
-        <li><a href="#sec4">メニューの構成</a></li>
-        <li><a href="#sec5">毎週の作業の全体の流れ</a></li>
-        <li><a href="#sec6">ステップ①　Spreadingからデータをダウンロードする</a></li>
-        <li><a href="#sec7">ステップ②　ビジター名簿とPDFを作成する</a></li>
-        <li><a href="#sec8">ステップ③　ルーム・オリエン割り振り表を作成する</a></li>
-        <li><a href="#sec9">ステップ④　案内メールを一括送信する</a></li>
-        <li><a href="#sec10">作成済みPDFをもう一度見たいとき</a></li>
-        <li><a href="#sec11">ビジター情報の投稿文をつくる</a></li>
-        <li><a href="#sec12">役職ごとの入力（定例会の準備）</a></li>
-        <li><a href="#sec13">スライド・メンバーブックの作成</a></li>
-        <li><a href="#sec14">抽選ルーレット用のビジター招待数</a></li>
-        <li><a href="#sec15">シートの整理（アーカイブ）</a></li>
-        <li><a href="#sec16">初期設定（初回・メンバー変更時のみ）</a></li>
-        <li><a href="#sec17">よくある質問</a></li>
+        <li><a href="#sec1" target="_self">準備：メニューが出ていないところから</a></li>
+        <li><a href="#sec2" target="_self">はじめに：初回だけ必要な「Google認証」の手順</a></li>
+        <li><a href="#sec3" target="_self">ウェブアプリとして開く（ダイアログが出ない環境向け）</a></li>
+        <li><a href="#sec4" target="_self">メニューの構成</a></li>
+        <li><a href="#sec5" target="_self">毎週の作業の全体の流れ</a></li>
+        <li><a href="#sec6" target="_self">ステップ①　Spreadingからデータをダウンロードする</a></li>
+        <li><a href="#sec7" target="_self">ステップ②　ビジター名簿とPDFを作成する</a></li>
+        <li><a href="#sec8" target="_self">ステップ③　ルーム・オリエン割り振り表を作成する</a></li>
+        <li><a href="#sec9" target="_self">ステップ④　案内メールを一括送信する</a></li>
+        <li><a href="#sec10" target="_self">作成済みPDFをもう一度見たいとき</a></li>
+        <li><a href="#sec11" target="_self">ビジター情報の投稿文をつくる</a></li>
+        <li><a href="#sec12" target="_self">役職ごとの入力（定例会の準備）</a></li>
+        <li><a href="#sec13" target="_self">スライド・メンバーブックの作成</a></li>
+        <li><a href="#sec14" target="_self">抽選ルーレット用のビジター招待数</a></li>
+        <li><a href="#sec15" target="_self">シートの整理（アーカイブ）</a></li>
+        <li><a href="#sec16" target="_self">初期設定（初回・メンバー変更時のみ）</a></li>
+        <li><a href="#sec17" target="_self">よくある質問</a></li>
       </ol>
     </div>
 <h1>Activeチャプター 名簿システム ご利用マニュアル</h1>
@@ -1259,6 +1259,18 @@ https://docs.google.com/spreadsheets/u/1/d/xxxxx/edit
 <h3>Q: 投稿文の「入金済み／未入金」が実際と違います</h3>
 <p>→ 入金の状態は、<strong>SpreadingのCSVを取り込んだときのもの</strong>です。 「5. ビジター情報の投稿文」の一覧でその方を切り替えるか、 SpreadingからCSVをダウンロードし直して「1. CSVから名簿・PDF作成」で作り直してください。</p>
   </div>
-  <a class="top" href="#top">▲ 目次へ</a>
+  <a class="top" href="#top" target="_self">▲ 目次へ</a>
+  <script>
+    // 目次などのページ内のリンクは、この中で見出しまで動かすだけにする。
+    // Apps Script の画面は枠（iframe）の中で表示され、<base target="_top"> のままだと
+    // 外側の画面ごと移動して「ページが開かない」になるため
+    document.addEventListener('click', function (e) {
+      var a = e.target && e.target.closest ? e.target.closest('a[href^="#"]') : null;
+      if (!a) return;
+      var id = a.getAttribute('href').slice(1), t = id ? document.getElementById(id) : null;
+      e.preventDefault();
+      if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  </script>
 </body>
 </html>

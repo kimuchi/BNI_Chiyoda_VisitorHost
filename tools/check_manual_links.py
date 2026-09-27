@@ -40,7 +40,18 @@ def main():
         for no, part, line in bad:
             print('  MANUAL.md:%d  「%s」  %s' % (no, part, line))
         sys.exit(1)
-    print('OK: マニュアルの導線はすべて実際のメニュー項目と一致しています（メニュー %d 項目）' % len(labels))
+    # manual.html の目次などのページ内リンク：<base target="_top"> のままだと、Apps Script の枠の外側ごと
+    # 移動して「ページが開かない」になる。target="_self" と、見出しまで動かすだけの仕組みがあるか
+    page = io.open(os.path.join(ROOT, 'manual.html'), encoding='utf-8').read()
+    inner = re.findall(r'<a\b[^>]*href="#[^"]*"[^>]*>', page)
+    loose = [a for a in inner if 'target="_self"' not in a]
+    if not inner or loose or 'e.preventDefault()' not in page or 'scrollIntoView' not in page:
+        print('NG: manual.html のページ内リンクが、画面の外側ごと移動します（目次から飛ぶとページが開かない）')
+        for a in loose[:5]:
+            print('  ' + a)
+        sys.exit(1)
+    print('OK: マニュアルの導線はすべて実際のメニュー項目と一致しています（メニュー %d 項目）。'
+          '目次などのページ内リンク %d 個は、マニュアルの中だけで動きます' % (len(labels), len(inner)))
 
 
 if __name__ == '__main__':
