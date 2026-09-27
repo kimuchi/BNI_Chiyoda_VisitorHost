@@ -27,9 +27,11 @@ function escHtml(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-// 文字の幅は全角1・半角0.5で測る（canvasの代わり）
-function fakeCtx() {
+// 文字の幅は全角1・半角0.5で測る（canvasの代わり）。
+// 描いた文字（fillText）は texts に残す（画像に何を描いたかを確かめるため）
+function fakeCtx(texts) {
   let size = 44;
+  const noop = () => {};
   return {
     set font(v) { const m = /(\d+(?:\.\d+)?)px/.exec(v); size = m ? parseFloat(m[1]) : 44; },
     get font() { return size + 'px'; },
@@ -38,7 +40,19 @@ function fakeCtx() {
       for (const ch of String(t)) w += ch.charCodeAt(0) < 128 ? 0.5 : 1.0;
       return { width: w * size };
     },
+    fillText(t, x, y) { if (texts) texts.push({ text: String(t), size, x, y, color: this.fillStyle }); },
+    scale: noop, fillRect: noop, strokeRect: noop, save: noop, restore: noop, beginPath: noop, rect: noop, clip: noop,
+    fillStyle: '', strokeStyle: '', lineWidth: 1, textAlign: '', textBaseline: '',
   };
+}
+// canvas の代わり。toDataURL は、描いた文字と大きさをJSONにしたものを base64 で返す
+function fakeCanvas() {
+  const texts = [];
+  const cv = { width: 0, height: 0, _texts: texts };
+  cv.getContext = () => fakeCtx(texts);
+  cv.toDataURL = () => 'data:image/png;base64,'
+    + Buffer.from(JSON.stringify({ width: cv.width, height: cv.height, texts })).toString('base64');
+  return cv;
 }
 
 function loadPage(file, opts) {
@@ -46,7 +60,7 @@ function loadPage(file, opts) {
   const server = o.server || {};
   const fails = o.fails || [];
   const els = {};
-  const log = { alerts: [], confirms: [], copies: 0, calls: [] };
+  const log = { alerts: [], confirms: [], copies: 0, calls: [], downloads: [] };
 
   function parseOptions(el, html) {
     el.options = [];
@@ -84,7 +98,7 @@ function loadPage(file, opts) {
     return el;
   }
   function scan(html) {
-    const re = /<(input|select|textarea|div|span|table|button|a|label|code)\b([^>]*)>/g;
+    const re = /<(input|select|textarea|div|span|table|button|a|label|code|img)\b([^>]*)>/g;
     let m;
     while ((m = re.exec(html)) !== null) {
       const id = attr(m[0], 'id');
@@ -120,11 +134,12 @@ function loadPage(file, opts) {
   const document = {
     getElementById: (id) => els[id] || null,
     createElement: (tag) => {
-      if (tag === 'canvas') return { getContext: () => fakeCtx() };
-      const x = { textContent: '' };
+      if (tag === 'canvas') return fakeCanvas();
+      const x = { textContent: '', click() { if (this.download) log.downloads.push({ name: this.download, href: this.href }); } };
       Object.defineProperty(x, 'innerHTML', { get() { return escHtml(this.textContent); } });
       return x;
     },
+    body: { appendChild() {}, removeChild() {} },
     execCommand: (cmd) => { if (cmd === 'copy') log.copies++; return true; },
   };
 
@@ -151,7 +166,10 @@ function loadPage(file, opts) {
   function flushOne() { if (!queue.length) return false; queue.shift()(); return true; }
 
   const window = {};
-  const sandbox = { window, document, console,
+  // o.now … 画面の「きょう」（'2026-09-30T10:00:00' など）。無ければ本当のきょう
+  const RealDate = Date;
+  const PageDate = o.now ? class extends RealDate { constructor(...a) { if (a.length) super(...a); else super(new RealDate(o.now).getTime()); } } : RealDate;
+  const sandbox = { window, document, console, Date: PageDate,
                     navigator: {},
                     alert: (m) => { log.alerts.push(m); },
                     confirm: (m) => { log.confirms.push(m); return true; },

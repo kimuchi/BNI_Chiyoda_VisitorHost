@@ -23,13 +23,14 @@ const server = {
   importSpeakerRotation: (j) => { calls.push(['rotImport', j]); return S.F.importSpeakerRotation(j); },
   getPreMeetingPreview: (d) => { calls.push(['premtgPreview', d]); return S.F.getPreMeetingPreview(d); },
   generatePreMeetingSlides: (d) => { calls.push(['premtgMake', d]); return S.F.generatePreMeetingSlides(d); },
+  saveSpeakerRotationImage: (b, n) => { calls.push(['rotImage', n]); return S.F.saveSpeakerRotationImage(b, n); },
 };
 // 事前MTGのパワポの保存先（Drive）は使わない
 S.F.saveOutputFile_ = (blob, name) => ({ id: 'x', url: 'https://example/' + name, downloadUrl: 'https://example/dl/' + name });
 // 本番はサーバーがURLの役職（?role=…）を画面に埋め込む。ここでは同じ置き換えをしてから読む
-function open(role, view) {
+function open(role, view, now) {
   return loadPage('role_input.html', {
-    server, fails,
+    server, fails, now,
     preprocess: (p) => p.replace(/<\?\s*var roleParam[\s\S]*?\?>/, '')
       .replace('<?= roleParam ?>', role || '').replace('<?= viewParam ?>', view || ''),
   });
@@ -149,6 +150,33 @@ ck(/＜【9月30日定例会】メインプレゼンターのご案内＞/.test(
 step('Facebookの文をコピー', () => run('copyFb()'));
 ck(page.log.copies === 1, 'コピーされない');
 
+// Facebookに添付する画像（前半スライドの表と同じ作り。ご案内する回から5回分）
+const imgOf = () => JSON.parse(Buffer.from(String(run('rotImgData')).split(',')[1] || '', 'base64').toString() || '{"texts":[]}');
+const drawn = () => imgOf().texts.map((t) => t.text);
+ck(els.rotFbWeek.options.length === 12 && els.rotFbWeek.value === '0', 'ご案内する回（ふつうの日は次回）: ' + els.rotFbWeek.value);
+ck(els.rotFb.value === S.F.getSpeakerRotation().fbText, '画面の投稿文が、サーバーの文面と違う');
+let dr = drawn();
+ck(['日　程', 'メインプレゼンテーション（各４分45秒）', '第535回', '9月30日', '10月28日'].every((t) => dr.includes(t)) && !dr.includes('11月4日'),
+   '画像の中身（9/30〜10/28 の5回分）: ' + dr.slice(0, 12).join(' '));
+ck(dr.some((t) => /^※　２週間前までに/.test(t)), '画像に注意書きが無い');
+ck(run('rotImgName') === '20260930_スピーカーローテーション.png' && els.rotImg.style.display !== 'none', '画像の名前・表示: ' + run('rotImgName'));
+step('10/7 のご案内にする', () => { els.rotFbWeek.value = '1'; run('renderFb()'); });
+dr = drawn();
+ck(/^＜【10月7日定例会】メインプレゼンターのご案内＞/.test(els.rotFb.value) && /（１）渡邉 真理子さん\//.test(els.rotFb.value), '10/7 の投稿文: ' + els.rotFb.value.slice(0, 60));
+ck(dr.includes('10月7日') && dr.includes('11月4日') && !dr.includes('9月30日'), '10/7 からの画像: ' + dr.slice(0, 12).join(' '));
+ck(imgOf().texts.filter((t) => t.color === '#C00000').slice(0, 2).map((t) => t.text).join('・') === '渡邉 真理子・岡本 翔太',
+   '画像の1回目のお2人（赤）: ' + imgOf().texts.filter((t) => t.color === '#C00000').slice(0, 2).map((t) => t.text).join('・'));
+step('画像を保存', () => run('rotImgDownload()'));
+ck(page.log.downloads.length === 1 && page.log.downloads[0].name === '20261007_スピーカーローテーション.png'
+   && /^data:image\/png;base64,/.test(page.log.downloads[0].href), '画像の保存: ' + JSON.stringify(page.log.downloads.map((d) => d.name)));
+step('画像をDriveに保存', () => run('rotImgDrive()'));
+// （Nodeの画面では画像の中身が本物のPNGではないので、サーバーは「画像が空です」と断る。呼び出しとお知らせを確かめる）
+ck(calls.some((c) => c[0] === 'rotImage' && c[1] === '20261007_スピーカーローテーション.png') && /画像が空です/.test(els.rotImgMsg.innerText),
+   'Driveに保存: ' + (els.rotImgMsg.innerText || els.rotImgMsg.innerHTML));
+step('見出しを変えると画像も描き直す', () => { els.rotHeader.value = '見本の見出し'; run('renderFb()'); });
+ck(drawn().includes('見本の見出し'), '見出しを変えても画像が変わらない');
+step('ご案内する回を次回に戻す', () => { els.rotHeader.value = S.F.getSpeakerRotation().header; els.rotFbWeek.value = '0'; run('renderFb()'); });
+
 const weekCell = (md) => { const m = els.rotWeeks.innerHTML.match(new RegExp(md.replace('/', '\\/') + '\\(水\\)[^]*?<\\/tr>')); return m ? m[0].replace(/<[^>]+>/g, ' ') : ''; };
 step('入れ替え', () => { els.rotSwapA.value = '長見 響児'; els.rotSwapB.value = '徳山 京介'; run('rotSwap()'); });
 ck(/星本 充輝\s+徳山 京介/.test(weekCell('10/28')) && /保存していない変更/.test(els.rotDirty.innerText), '入れ替えが予定に出ない: ' + weekCell('10/28'));
@@ -171,8 +199,19 @@ const after = S.F.getSpeakerRotation();
 ck(after.header === 'メインプレゼンテーション（各５分）' && after.order[0] === '渡邉 真理子'
    && after.weeks.find((w) => w.md.indexOf('10/21') === 0).people.map((p) => p.name).join('・') === '竹田 明日翔・星本 充輝',
    'サーバーの状態: ' + JSON.stringify({ h: after.header, o: after.order.slice(0, 3) }));
+// 並びを直すと、画像も直した並びで描き直す（10/28 は星本さん・徳山さん）
+ck(drawn().includes('徳山 京介') && drawn().indexOf('徳山 京介') < drawn().indexOf('長見 響児'), '並びを直したあとの画像: ' + drawn().filter((t) => /さん|[一-龥]{2} /.test(t)).join(' '));
 step('書記兼会計の入力に戻る', () => run('closeRotation()'));
 ck(shown(els.roleView) && !shown(els.rotView) && els.roleName.innerText === '書記兼会計', '書記兼会計の入力に戻らない');
+
+// 定例会の日（9/30）に開くと、終わったあとに投稿するので「ご案内する回」は次の回（10/7）
+page = open('secretary', 'rotation', '2026-09-30T20:00:00');
+({ els, window, run, step } = page);
+page.flush();
+window.onload();
+step('定例会の日にローテーションを開く', () => {});
+ck(els.rotFbWeek.value === '1' && /次の回を選んであります/.test(els.rotFbWeekNote.innerText) && /^＜【10月7日定例会】/.test(els.rotFb.value),
+   '定例会の日のご案内する回: ' + els.rotFbWeek.value + ' ' + els.rotFb.value.slice(0, 20));
 
 // ===================== 事前MTG（朝イチMTG）のパワポ =====================
 // メニューの「事前MTG（朝イチMTG）のパワポ」は、一覧を開いてすぐ中身の確かめを出す
@@ -204,4 +243,4 @@ if (fails.length) {
   fails.slice(0, 30).forEach((f) => console.log('   ' + f));
   process.exit(1);
 }
-console.log('OK: 一覧（入力状況・担当者）／役職の入力（推定・前回・人数・保存・シートへの書き込み）／URLでの役職指定／スピーカーローテーション／事前MTGのパワポ');
+console.log('OK: 一覧（入力状況・担当者）／役職の入力（推定・前回・人数・保存・シートへの書き込み）／URLでの役職指定／スピーカーローテーション（Facebookの文と画像）／事前MTGのパワポ');

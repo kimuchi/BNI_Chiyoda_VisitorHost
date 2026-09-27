@@ -367,6 +367,27 @@ function rotPairFor_(d) {
   return p || [];
 }
 
+// Facebookに添付する表の画像（画面で描いたPNG）を 03_生成物 に保存する。
+// 画面からそのままダウンロードできない環境（ダイアログなど）向け。
+function saveSpeakerRotationImage(base64, fileName) {
+  try {
+    var name = String(fileName || 'スピーカーローテーション.png').replace(/[\\\/:*?"<>|]/g, '_');
+    if (!/\.png$/i.test(name)) name += '.png';
+    var data = String(base64 || '').replace(/^data:image\/png;base64,/, '');
+    var bytes = data ? Utilities.base64Decode(data) : [];
+    // PNGの頭の目印（\x89PNG）があるものだけ保存する
+    var sig = [0x89, 0x50, 0x4E, 0x47], isPng = bytes.length > 8;
+    for (var i = 0; isPng && i < sig.length; i++) if ((bytes[i] & 0xff) !== sig[i]) isPng = false;
+    if (!isPng) return { ok: false, message: '画像が空です。画面を開き直してください。' };
+    var saved = saveOutputFile_(Utilities.newBlob(bytes, 'image/png', name), name);
+    return { ok: true, url: saved.url, downloadUrl: saved.downloadUrl, fileName: name,
+             message: '「03_生成物」に保存しました。' };
+  } catch (e) {
+    console.error('[ROT] ' + (e && e.stack ? e.stack : e));
+    return { ok: false, message: '画像を保存できませんでした: ' + (e && e.message ? e.message : e) };
+  }
+}
+
 // --- 定例会スライド（前半）の「スピーカーローテーション」のページ ---
 // 書記兼会計が作っていた表の画像を、スライドの表に置き換える。
 // ページは「スピーカーローテーション」の文字で探し、いちばん大きい画像の場所に表と注意書きを置く。
