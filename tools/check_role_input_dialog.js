@@ -237,7 +237,7 @@ ck(els.rotFbWeek.value === '1' && /次の回を選んであります/.test(els.r
    '定例会の日のご案内する回: ' + els.rotFbWeek.value + ' ' + els.rotFb.value.slice(0, 20));
 
 // ===================== 事前MTG（朝イチMTG）のパワポ =====================
-// メニューの「事前MTG（朝イチMTG）のパワポ」は、一覧を開いてすぐ中身の確かめを出す
+// 前のリンク（?p=premtg）・前のメニューの「事前MTG（朝イチMTG）のパワポ」は、一覧を開いてすぐ中身の確かめを出す
 page = open('', 'premtg');
 ({ els, window, run, step } = page);
 page.flush();

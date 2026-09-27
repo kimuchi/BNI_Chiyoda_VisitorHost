@@ -6,6 +6,8 @@
 //   ・一覧のキーがURLにそのまま書ける文字だけで、重なっていない。開く画面のHTMLがある
 //   ・?p=キー で開いたとき、一覧どおりの画面（file があればそちら）を、一覧の params つきで開く
 //     （URLに書いた値が優先。?p=role_input&role=vice の role など）
+//   ・事前MTGのパワポは「役職ごとの入力」と入口を1つにまとめた（トップページには出さない）。
+//     前のリンク ?p=premtg は、トップページに出さない入口（WEBAPP_ALIASES_）として開ける
 //   ・トップページのリンクは ?p=キー だけ。
 //     リンクの ? より後ろに <?= ?> で「&…」を足すと、Apps Script が & や = をURL用に置き換えて（%26 %3D）
 //     開く画面が分からなくなる（事前MTGのリンクがトップページから開けなかった原因）
@@ -46,19 +48,20 @@ vm.createContext(sandbox);
 vm.runInContext(fs.readFileSync(path.join(ROOT, 'webapp_srv.js'), 'utf8'), sandbox, { filename: 'webapp_srv.js' });
 const F = sandbox;
 const PAGES = vm.runInContext('WEBAPP_PAGES_', sandbox);
+const ALIASES = vm.runInContext('WEBAPP_ALIASES_', sandbox);
 
 // --- 一覧 ---
 const items = PAGES.flatMap((g) => g.items);
-const keys = items.map((it) => it.key);
+const keys = items.concat(ALIASES).map((it) => it.key);
 ck(new Set(keys).size === keys.length, 'キーが重なっている: ' + keys.filter((k, i) => keys.indexOf(k) !== i).join(','));
-for (const it of items) {
+for (const it of items.concat(ALIASES)) {
   ck(/^[a-z_]+$/.test(it.key), `キー「${it.key}」にURLで困る文字がある（英小文字と _ だけにする）`);
   ck(fs.existsSync(path.join(ROOT, (it.file || it.key) + '.html')), `「${it.label}」の画面 ${(it.file || it.key)}.html が無い`);
   ck(!it.query, `「${it.label}」に query がある（リンクが崩れる。file と params を使う）`);
 }
 
 // --- ?p=キー で開く ---
-for (const it of items) {
+for (const it of items.concat(ALIASES)) {
   opened = null;
   F.doGet({ parameter: { p: it.key } });
   ck(opened && opened.name === (it.file || it.key), `?p=${it.key} で開いた画面: ${opened && opened.name}`);
@@ -86,7 +89,10 @@ ck(opened && opened.name === 'role_input' && opened.params.view === 'premtg', '?
 opened = null;
 F.doGet({ parameter: { p: 'role_input&view=premtg' } });
 ck(opened && opened.name === 'webapp_home', '知らないキー（崩れたリンク）でトップページに戻らない: ' + JSON.stringify(opened && opened.name));
-ck(opened && opened.groups && opened.groups.flatMap((g) => g.items).some((x) => x.key === 'premtg'), 'トップページに事前MTGが出ていない');
+const homeItems = (opened && opened.groups ? opened.groups : []).flatMap((g) => g.items);
+const roleItem = homeItems.find((x) => x.key === 'role_input');
+ck(roleItem && /役職ごとの入力/.test(roleItem.label) && /事前MTG/.test(roleItem.label) && !homeItems.some((x) => x.file === 'role_input' && x.params && x.params.view === 'premtg'),
+   'トップページの入口（役職ごとの入力・事前MTGのパワポを1つに）: ' + homeItems.filter((x) => (x.file || x.key) === 'role_input').map((x) => x.label).join(' / '));
 
 // --- トップページのリンク ---
 const home = fs.readFileSync(path.join(ROOT, 'webapp_home.html'), 'utf8');
@@ -105,4 +111,4 @@ if (fails.length) {
   fails.forEach((f) => console.log('   ' + f));
   process.exit(1);
 }
-console.log('OK: キー・画面のHTML・?p= での開き方（事前MTG・スピーカーローテーション・役職の指定）・トップページのリンク');
+console.log('OK: キー・画面のHTML・?p= での開き方（事前MTG・スピーカーローテーション・役職の指定）・トップページの入口とリンク');

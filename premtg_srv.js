@@ -47,6 +47,7 @@ var PREMTG_REQUESTS_ = [
 var PREMTG_BLOCKS_ = ['直近のイベント', 'お願い事項', '定例会関連'];
 
 // --- 画面を開く（役職ごとの入力の一覧を、事前MTGの欄を開いた状態で）---
+// メニューは「入力状況の一覧・事前MTGのパワポ」にまとめた。これは前のメニューが残っているとき用
 function openPreMeetingDialog() { openRoleInputDialog_('', 'premtg'); }
 
 // --- 材料を集める ---
