@@ -40,7 +40,7 @@ function memBlob(content, type, n) {
 // --- テスト用の写真（テンプレート内の画像を流用する。縦横比ちがいの3枚）---
 const SAMPLE = Object.keys(manifest.photos);
 const PHOTOS = {};
-['岡安秀明', '田中秀一', '佐藤祐之'].forEach((n, i) => { if (SAMPLE[i]) PHOTOS[n] = SAMPLE[i]; });
+['丘野秀人', '田村秀二', '加納祐介'].forEach((n, i) => { if (SAMPLE[i]) PHOTOS[n] = SAMPLE[i]; });
 
 const sandbox = {
   console,

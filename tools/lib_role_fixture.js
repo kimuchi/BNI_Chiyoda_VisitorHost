@@ -95,7 +95,7 @@ function makeRoleServer(routinePath, membersPath) {
   sheets.push(makeSheet('休会日', HOLIDAYS.map((d) => [new Date(d + ' 00:00:00')])));
 
   // 参加者シート（9/30）：架空のビジター2名・ゲスト1名・キャンセル1名と、名簿の方の代理1名
-  const SUB_FOR = MEMBERS.find((m) => /^船木/.test(m.name)) || MEMBERS[5];
+  const SUB_FOR = MEMBERS.find((m) => /^船越/.test(m.name)) || MEMBERS[5];
   sheets.push(makeSheet('20260930参加者', [
     ['No.', '参加者氏名', 'ふりがな', 'カテゴリー', '会社名', '招待者', '備考', '種別', 'ステータス'],
     ['', '見本 一郎', 'みほん いちろう', '税理士', '見本会計', MEMBERS[0].name, '', 'Visitor', ''],
@@ -116,6 +116,14 @@ function makeRoleServer(routinePath, membersPath) {
   members[16].joinDate = '2025/01/10';
 
   const props = {};
+  // 検査の前提：役職の担当者（期ごとにする前の保存先）と、スピーカーローテーションの状態。
+  // 本番ではコードに持たず、画面で登録・取り込みする（名簿にあたるものはコードに書かない）。
+  // 氏名は検査用の名簿（members.json）の方。担当者は24期、ローテーションは 10/14 第537回が並びの6番目から
+  props.BNI_ROLE_HOLDERS = JSON.stringify({"president": "熊田 龍平", "vice": "船越 雄一", "secretary": "原口 雅樹", "vhc": "藤本 礼子", "mentor": "伊豆澤 潤", "ec": "伊原 良太", "web": "相田 周作", "support": "山内 登志夫", "training": "溝川 懸", "event": "田村 浩美", "bcp": "梅中 公平", "spreading": "金井 美里", "gbc": "中西 渉"});
+  props.BNI_SPEAKER_ROTATION = JSON.stringify({
+    order: ["山内 登志夫", "金井 美里", "川邉 真由子", "船越 雄一", "岡林 翔吾", "仲里根 愛子", "羽生 成史", "熊田 龍平", "中西 渉", "梅田 明日斗", "星野 充弘", "長尾 響一", "徳永 京平", "平松成子", "加納 祐介", "伊原 良太", "辻 英二", "山岸 由紀子", "成田 幸司", "伊豆澤 潤", "梅中 公平", "鈴村 秀樹", "村井 絢香", "原口 雅樹", "福元 良平", "藤本 礼子", "深井 宗二郎", "桒田 美香", "上原 誠", "田村 浩美", "細川 哲也", "宮崎 隼人", "溝川 懸", "豊島 恵", "西澤 浩平", "高村 翔平", "相田 周作", "岩渕裕太", "文野 雅彦", "丘野 秀人", "北川 光男", "若松 勇人", "田村 秀二", "小西 美和", "泉 ゆか", "舩川 ちなつ"],
+    excluded: ["船越 雄一", "熊田 龍平", "山岸 由紀子", "村井 絢香", "丘野 秀人", "原口 雅樹"],
+    anchor: {"date": "2026/10/14", "pointer": 5} });
   const sandbox = {
     console,
     SpreadsheetApp: {},

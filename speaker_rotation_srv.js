@@ -22,16 +22,10 @@ var ROT_KEY_ = 'BNI_SPEAKER_ROTATION';
 var ROT_SLIDE_WEEKS_ = 5;                       // スライドの表に載せる回数
 var ROT_LIST_WEEKS_ = 12;                       // 管理画面に並べる回数
 
-// 初期値：ツールの状態（2026/9/26 に受け取ったもの。10/14 第537回は、並びの6番目から）
+// 初期値（まだ保存していないとき）。並びはメンバー名簿の順・対象外なし・起点は次の開催日の先頭から（rotLoad_）。
+// ツール（MP選出・ローテーション管理ツール）の状態は、画面の「ツールから取り込む」で入れる。
+// メンバーの氏名はコードに書かない（名簿はスプレッドシートにだけ置く）
 var ROT_DEFAULT_ = {
-  order: ['山本 登一郎', '金子 美緒', '渡邉 真理子', '船木 雄大', '岡本 翔太', '仲宗根 愛里', '葉山 成男',
-          '熊谷 龍威', '中込 渉', '竹田 明日翔', '星本 充輝', '長見 響児', '徳山 京介', '平井成美', '佐藤 祐之',
-          '伊東 良之', '尹 英勝', '山口 由美子', '成毛 幸夫', '伊五澤 潤', '竹中 公基', '鈴木 秀男', '村上 絢子',
-          '原田 雅人', '福王 良兼', '藤田 礼恵', '深田 宗一郎', '桒原 美穂', '上野 誠', '田中 浩子', '細田 哲雄',
-          '野崎 隼太', '溝口 懸', '豊田 恵', '三澤 浩三', '高瀬 翔太', '合川 周平', '石渕裕介', '分銅 雅一',
-          '岡安 秀明', '木村 光範', '若林 勇貴', '田中 秀一', '小池 美咲', '瞳 ゆり', '舩山 ちひろ'],
-  excluded: ['船木 雄大', '熊谷 龍威', '山口 由美子', '村上 絢子', '岡安 秀明', '原田 雅人'],
-  anchor: { date: '2026/10/14', pointer: 5 },
   header: 'メインプレゼンテーション（各４分45秒）',
   notes: ['２週間前までに、略歴書と発表用のデータ・資料を書記兼会計までご提出ください。',
           '当日、スピーカーからのご提供で包装した商品（目安1,000～2,000円程度）をお持ちください。',
@@ -46,15 +40,27 @@ function rotLoad_() {
   try { raw = PropertiesService.getScriptProperties().getProperty(ROT_KEY_); } catch (e) {}
   try { st = raw ? JSON.parse(raw) : null; } catch (e) { st = null; }
   var d = JSON.parse(JSON.stringify(ROT_DEFAULT_));
-  st = st || d;
-  if (!Array.isArray(st.order)) st.order = d.order;
+  st = st || {};
+  if (!Array.isArray(st.order)) st.order = rotRosterOrder_();
   if (!Array.isArray(st.excluded)) st.excluded = [];
-  if (!st.anchor || !parseDate_(st.anchor.date)) st.anchor = d.anchor;
+  if (!st.anchor || !parseDate_(st.anchor.date)) {
+    var holidays = [];
+    try { holidays = getHolidays(); } catch (e) {}
+    st.anchor = { date: fmtDate_(rotNextMeeting_(holidays)), pointer: 0 };
+  }
   st.anchor.pointer = parseInt(st.anchor.pointer, 10) || 0;
   if (typeof st.header !== 'string') st.header = d.header;
   if (!Array.isArray(st.notes)) st.notes = d.notes;
   st.updated = st.updated || '';
   return st;
+}
+
+// まだ並びを保存していないときの並び：メンバー名簿の順
+function rotRosterOrder_() {
+  try {
+    return (getMemberMaster({ membersOnly: true }).members || []).map(function (m) { return String(m.name || '').trim(); })
+      .filter(function (n) { return !!n; });
+  } catch (e) { return []; }
 }
 
 function rotSave_(st) {

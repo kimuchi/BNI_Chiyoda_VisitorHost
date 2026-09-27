@@ -52,7 +52,7 @@ function countVisitorsByInviter_(sheet) {
     var no = String(data[r][noIdx] == null ? '' : data[r][noIdx]).trim();
     if (!/^V/i.test(no)) continue;          // ビジターのみ。ゲスト(G)・代理は対象外
     visitors++;
-    // 招待者名はメンバー名簿の表記にそろえる（渡邉/渡辺などの異体字対応）
+    // 招待者名はメンバー名簿の表記にそろえる（川邉/川辺などの異体字対応）
     var key = rouletteKey_(matchInviterToMember(data[r][invIdx], members));
     if (!key) { noInviter.push(String(data[r][nmIdx >= 0 ? nmIdx : noIdx] || no)); continue; }
     counts[key] = (counts[key] || 0) + 1;

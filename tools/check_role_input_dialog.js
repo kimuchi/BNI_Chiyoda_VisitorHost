@@ -63,8 +63,8 @@ ck(els.meeting.value === '2026/09/30' && /第535回/.test(els.meeting.options[0]
 ck(/23期/.test(els.sheetNote.innerText) && /第535回/.test(els.sheetNote.innerText), 'シートの表示: ' + els.sheetNote.innerText);
 ck((els.cards.innerHTML.match(/入力する →/g) || []).length === 13, 'カードが13枚ない');
 ck(/未入力あり 13/.test(els.summary.innerHTML), '入力状況のまとめ: ' + els.summary.innerHTML.replace(/<[^>]+>/g, ' '));
-ck(/メンターコーディネーター[\s\S]*?伊五澤[\s\S]*?今週の共有事項（9\/28/.test(els.cards.innerHTML), 'メンターコーディネーターのカード');
-ck(!!els.hd_0 && els.hd_0.value === '熊谷 龍威', '担当者の選択: ' + (els.hd_0 && els.hd_0.value));
+ck(/メンターコーディネーター[\s\S]*?伊豆澤[\s\S]*?今週の共有事項（9\/28/.test(els.cards.innerHTML), 'メンターコーディネーターのカード');
+ck(!!els.hd_0 && els.hd_0.value === '熊田 龍平', '担当者の選択: ' + (els.hd_0 && els.hd_0.value));
 
 // ===================== バイスプレジデントの入力 =====================
 step('バイスプレジデントを開く', () => run("openRole('vice')"));
@@ -72,7 +72,7 @@ ck(shown(els.roleView) && !shown(els.overview) && els.roleName.innerText === '�
 const iPolicy = idxOf(page, '一般規定'), iLate = idxOf(page, '遅刻・欠席担当'), iSub = idxOf(page, '代理', '代理・欠席');
 const iVis = idxOf(page, '人数：ビジター'), iShare = idxOf(page, '今週の共有事項（バイスプレジデント）'), iNew = idxOf(page, '新入会');
 ck(iPolicy >= 0 && els['f_' + iPolicy].value === '3番', '一般規定の初期値: ' + (els['f_' + iPolicy] || {}).value);
-ck(iLate >= 0 && els['f_' + iLate].value === '藤田さん', '遅刻・欠席担当の初期値: ' + (els['f_' + iLate] || {}).value);
+ck(iLate >= 0 && els['f_' + iLate].value === '藤本さん', '遅刻・欠席担当の初期値: ' + (els['f_' + iLate] || {}).value);
 ck(iVis >= 0 && els['f_' + iVis].value === '2', 'ビジター人数の初期値: ' + (els['f_' + iVis] || {}).value);
 ck(iSub >= 0 && els['f_' + iSub].value === S.SUB_FOR.name.split(' ')[0] + 'さん', '代理の初期値: ' + (els['f_' + iSub] || {}).value);
 ck(/<b>1名<\/b>/.test(els['it_' + iSub].innerHTML), '代理の人数が出ていない');
@@ -137,17 +137,17 @@ ck(!/担当者はまだ登録されていません/.test(els.holderNote.innerTex
 // 開催日を変える（10/7 は 24期のシート。担当者も24期）
 step('10/7 に変える', () => { els.meeting.value = '2026/10/07'; run('changeMeeting()'); });
 ck(/24期/.test(els.sheetNote.innerText) && /第536回/.test(els.sheetNote.innerText), '10/7 に変わらない: ' + els.sheetNote.innerText);
-ck(els.holderTerm.value === '24' && els.hd_0.value === '熊谷 龍威' && presidentCard() === '熊谷 龍威',
+ck(els.holderTerm.value === '24' && els.hd_0.value === '熊田 龍平' && presidentCard() === '熊田 龍平',
    '10/7（24期）の担当者: ' + els.holderTerm.value + ' ' + presidentCard());
 // 次の期（25期）の担当者を前もって登録する。10/7 のカードは24期のまま
 step('25期を選ぶ', () => { els.holderTerm.value = '25'; run('renderHolders()'); });
-ck(/25期の担当者はまだ登録されていません。24期の担当者を出しています/.test(els.holderNote.innerText) && els.hd_0.value === '熊谷 龍威',
+ck(/25期の担当者はまだ登録されていません。24期の担当者を出しています/.test(els.holderNote.innerText) && els.hd_0.value === '熊田 龍平',
    '25期を選んだとき: ' + els.holderNote.innerText);
 step('25期のプレジデントを登録', () => { els.hd_0.value = els.hd_0.options[3].value; run('saveHolders()'); });
 const hc25 = calls.filter((c) => c[0] === 'holders').pop();
 ck(hc25 && hc25[2] === 25 && hc25[3] === '2026/10/07' && els.holderTerm.value === '25' && !/担当者はまだ登録されていません/.test(els.holderNote.innerText)
    && els.hd_0.value === hc25[1].president, '25期の保存: ' + JSON.stringify(hc25 && hc25.slice(2)) + ' ' + els.holderTerm.value);
-ck(presidentCard() === '熊谷 龍威', '25期を登録したら、10/7（24期）のカードが変わった: ' + presidentCard());
+ck(presidentCard() === '熊田 龍平', '25期を登録したら、10/7（24期）のカードが変わった: ' + presidentCard());
 // メンバー名簿の「役職」に反映する。いまは23期（今の期）を保存したときに反映した23期の担当者
 step('24期を選ぶ', () => { els.holderTerm.value = '24'; run('renderHolders()'); });
 ck(/23期（2026年4月〜9月）の内容を反映しています（2026\/09\/26）/.test(els.rosterNote.innerText) && /自動で反映します/.test(els.rosterNote.innerText),
@@ -159,7 +159,7 @@ step('選び直す', () => run('renderHolders()'));
 const nConf = page.log.confirms.length;
 step('名簿の役職に反映', () => run('rosterRoles()'));
 const conf = page.log.confirms[nConf] || '';
-ck(/24期（2026年10月〜2027年3月）の担当者に合わせて直します/.test(conf) && /・熊谷 龍威：（空欄） → プレジデント/.test(conf)
+ck(/24期（2026年10月〜2027年3月）の担当者に合わせて直します/.test(conf) && /・熊田 龍平：（空欄） → プレジデント/.test(conf)
    && new RegExp('・' + newHolder + '：プレジデント → （空欄）').test(conf), '反映の前の確かめ: ' + conf.slice(0, 300));
 ck(calls.some((c) => c[0] === 'rosterApply' && c[1] === 24) && /24期の担当者に合わせて直しました（\d+名）/.test(els.holderMsg.innerText)
    && /24期（2026年10月〜2027年3月）の内容を反映しています/.test(els.rosterNote.innerText),
@@ -174,23 +174,23 @@ const tIdx = (key) => run(`teamEdit.teams.findIndex(function(t){ return t.key===
 const tByName = (n) => run(`teamEdit.teams.findIndex(function(t){ return t.name===${JSON.stringify(n)}; })`);
 const iVh = tIdx('role:vhc'), iEc = tIdx('role:ec'), iTr = tIdx('role:training');
 ck(/リーダーシップチーム/.test(teamHtml()) && /メンバーシップ委員会/.test(teamHtml()) && /Webチーム/.test(teamHtml())
-   && /リーダー：ビジターホストコーディネーター/.test(teamHtml()) && iVh >= 0 && !!els.hd_3 && els.hd_3.value === '藤田 礼恵'
+   && /リーダー：ビジターホストコーディネーター/.test(teamHtml()) && iVh >= 0 && !!els.hd_3 && els.hd_3.value === '藤本 礼子'
    && /チームのメンバーはまだ登録されていません/.test(els.holderNote.innerText),
    'チームの表: ' + els.holderNote.innerText + ' / ' + iVh + ' ' + (els.hd_3 && els.hd_3.value));
 step('ビジターホストにサポートメンバーを足す', () => {
-  els['ta_' + iVh].value = '山本 登一郎'; els['tr_' + iVh].value = 'サブリーダー'; run(`addMember(${iVh})`);
-  els['ta_' + iVh].value = '岡安 秀明'; run(`addMember(${iVh})`);
+  els['ta_' + iVh].value = '山内 登志夫'; els['tr_' + iVh].value = 'サブリーダー'; run(`addMember(${iVh})`);
+  els['ta_' + iVh].value = '丘野 秀人'; run(`addMember(${iVh})`);
 });
-ck(/山本 登一郎<span class="muted">（サブリーダー）<\/span>/.test(teamHtml()) && /岡安 秀明<a /.test(teamHtml())
-   && !els['ta_' + iVh].options.some((o) => o.value === '岡安 秀明'), 'ビジターホストのメンバー: ' + run(`JSON.stringify(teamEdit.teams[${iVh}].members)`));
+ck(/山内 登志夫<span class="muted">（サブリーダー）<\/span>/.test(teamHtml()) && /丘野 秀人<a /.test(teamHtml())
+   && !els['ta_' + iVh].options.some((o) => o.value === '丘野 秀人'), 'ビジターホストのメンバー: ' + run(`JSON.stringify(teamEdit.teams[${iVh}].members)`));
 step('足す方を選ばずに足す', () => run(`addMember(${iEc})`));
 ck(/足す方を選んでください/.test(els.holderMsg.innerText), '選ばずに足したとき: ' + els.holderMsg.innerText);
-step('コーディネーター以外にもサポートメンバー', () => { els['ta_' + iEc].value = '原田 雅人'; run(`addMember(${iEc})`); });
+step('コーディネーター以外にもサポートメンバー', () => { els['ta_' + iEc].value = '原口 雅樹'; run(`addMember(${iEc})`); });
 step('チームの名前を直す', () => { els['tn_' + iTr].value = 'トレーニング促進委員'; });
 step('チームを足す', () => { els.teamName.value = '広報チーム'; run('addTeam()'); });
 const iPr = tByName('広報チーム');
 ck(iPr > 0 && !!els['tl_' + iPr] && run(`teamEdit.teams[${iTr}].name`) === 'トレーニング促進委員', '足したチーム・直した名前: ' + iPr);
-step('足したチームのリーダーとメンバー', () => { els['tl_' + iPr].value = '木村 光範'; els['ta_' + iPr].value = '佐藤 祐之'; run(`addMember(${iPr})`); });
+step('足したチームのリーダーとメンバー', () => { els['tl_' + iPr].value = '北川 光男'; els['ta_' + iPr].value = '加納 祐介'; run(`addMember(${iPr})`); });
 step('同じ名前のチームは足さない', () => { els.teamName.value = '広報チーム'; run('addTeam()'); });
 ck(/「広報チーム」はもうあります/.test(els.holderMsg.innerText), '同じ名前: ' + els.holderMsg.innerText);
 const confBefore = page.log.confirms.length;
@@ -201,20 +201,20 @@ ck(/先に「この期の役職・チームを保存」/.test(els.holderMsg.inne
 step('役職・チームを保存', () => run('saveHolders()'));
 const hcT = calls.filter((c) => c[0] === 'holders').pop();
 const sentTeam = (k) => ((hcT && hcT[4]) || []).find((t) => t.key === k || t.name === k) || {};
-ck(hcT && hcT[2] === 24 && JSON.stringify(sentTeam('role:vhc').members) === JSON.stringify([{ name: '山本 登一郎', note: 'サブリーダー' }, { name: '岡安 秀明', note: '' }])
-   && sentTeam('role:ec').members[0].name === '原田 雅人' && sentTeam('role:training').name === 'トレーニング促進委員'
-   && sentTeam('広報チーム').leader === '木村 光範' && sentTeam('広報チーム').members[0].name === '佐藤 祐之',
+ck(hcT && hcT[2] === 24 && JSON.stringify(sentTeam('role:vhc').members) === JSON.stringify([{ name: '山内 登志夫', note: 'サブリーダー' }, { name: '丘野 秀人', note: '' }])
+   && sentTeam('role:ec').members[0].name === '原口 雅樹' && sentTeam('role:training').name === 'トレーニング促進委員'
+   && sentTeam('広報チーム').leader === '北川 光男' && sentTeam('広報チーム').members[0].name === '加納 祐介',
    'チームの保存: ' + JSON.stringify(hcT && hcT[4] && hcT[4].filter((t) => t.members.length || t.leader)));
 const rosterSh = S.sheets.find((s) => s.getName() === 'メンバー名簿'), RCOL = rosterSh._grid[0].indexOf('役職');
 const rosterRole = (n) => (rosterSh._grid.find((r) => r[2] === n) || [])[RCOL];
 ck(/24期（2026年10月〜2027年3月）の役職・チームを保存しました。メンバー名簿の「役職」も直しました/.test(els.holderMsg.innerText)
-   && els.holderNote.innerText === '' && rosterRole('山本 登一郎') === 'メンバーサポート委員・ビジターホスト（サブリーダー）'
-   && rosterRole('原田 雅人') === '書記兼会計・エデュケーションコーディネーター（サポート）' && rosterRole('木村 光範') === '広報チーム（リーダー）'
-   && rosterRole('佐藤 祐之') === '広報チーム' && rosterRole('見本 ホスト') === '',
-   '保存したあと: ' + els.holderMsg.innerText + ' / ' + ['山本 登一郎', '原田 雅人', '木村 光範', '佐藤 祐之', '見本 ホスト'].map(rosterRole).join(','));
+   && els.holderNote.innerText === '' && rosterRole('山内 登志夫') === 'メンバーサポート委員・ビジターホスト（サブリーダー）'
+   && rosterRole('原口 雅樹') === '書記兼会計・エデュケーションコーディネーター（サポート）' && rosterRole('北川 光男') === '広報チーム（リーダー）'
+   && rosterRole('加納 祐介') === '広報チーム' && rosterRole('見本 ホスト') === '',
+   '保存したあと: ' + els.holderMsg.innerText + ' / ' + ['山内 登志夫', '原口 雅樹', '北川 光男', '加納 祐介', '見本 ホスト'].map(rosterRole).join(','));
 // 直したまま期を切り替えるときは確かめる
 step('直したまま期を切り替える', () => {
-  els['ta_' + iVh].value = '熊谷 龍威'; run(`addMember(${iVh})`);
+  els['ta_' + iVh].value = '熊田 龍平'; run(`addMember(${iVh})`);
   els.holderTerm.value = '25'; run('changeHolderTerm()');
 });
 ck(/保存していない役職・チームの変更があります/.test(page.log.confirms.slice(-1)[0] || '') && els.holderTerm.value === '25'
@@ -255,8 +255,8 @@ ck(els.meeting.value === '2026/09/30' && /23期/.test(els.sheetNote.innerText), 
 ck(shown(els.rotOpenBtn) === true, '書記兼会計の画面に「スピーカーローテーションの管理」ボタンが無い');
 ck(/9\/30\(水\) <b>次回<\/b>/.test(els.rotWeeks.innerHTML) && /確定/.test(els.rotWeeks.innerHTML)
    && (els.rotWeeks.innerHTML.match(/<tr/g) || []).length === 13, '予定の表: ' + els.rotWeeks.innerHTML.slice(0, 200));
-ck(/10\/14 の回から/.test(els.rotAnchorNote.innerHTML) && /仲宗根 愛里さん・葉山 成男さん/.test(els.rotAnchorNote.innerHTML), '起点の説明: ' + els.rotAnchorNote.innerHTML);
-ck((els.rotOrder.innerHTML.match(/<tr/g) || []).length === 46 && /仲宗根 愛里 <span class="badge req">10\/14の回はここから/.test(els.rotOrder.innerHTML), '並び順の表');
+ck(/10\/14 の回から/.test(els.rotAnchorNote.innerHTML) && /仲里根 愛子さん・羽生 成史さん/.test(els.rotAnchorNote.innerHTML), '起点の説明: ' + els.rotAnchorNote.innerHTML);
+ck((els.rotOrder.innerHTML.match(/<tr/g) || []).length === 46 && /仲里根 愛子 <span class="badge req">10\/14の回はここから/.test(els.rotOrder.innerHTML), '並び順の表');
 ck(/休会日に入っていません/.test(els.rotMissing.innerHTML) && /11\/11/.test(els.rotMissing.innerHTML), '休会日のお知らせが出ていない');
 ck(/＜【9月30日定例会】メインプレゼンターのご案内＞/.test(els.rotFb.value), 'Facebookの文: ' + els.rotFb.value.slice(0, 40));
 step('Facebookの文をコピー', () => run('copyFb()'));
@@ -274,9 +274,9 @@ ck(dr.some((t) => /^※　２週間前までに/.test(t)), '画像に注意書�
 ck(run('rotImgName') === '20260930_スピーカーローテーション.png' && els.rotImg.style.display !== 'none', '画像の名前・表示: ' + run('rotImgName'));
 step('10/7 のご案内にする', () => { els.rotFbWeek.value = '1'; run('renderFb()'); });
 dr = drawn();
-ck(/^＜【10月7日定例会】メインプレゼンターのご案内＞/.test(els.rotFb.value) && /（１）渡邉 真理子さん\//.test(els.rotFb.value), '10/7 の投稿文: ' + els.rotFb.value.slice(0, 60));
+ck(/^＜【10月7日定例会】メインプレゼンターのご案内＞/.test(els.rotFb.value) && /（１）川邉 真由子さん\//.test(els.rotFb.value), '10/7 の投稿文: ' + els.rotFb.value.slice(0, 60));
 ck(dr.includes('10月7日') && dr.includes('11月4日') && !dr.includes('9月30日'), '10/7 からの画像: ' + dr.slice(0, 12).join(' '));
-ck(imgOf().texts.filter((t) => t.color === '#C00000').slice(0, 2).map((t) => t.text).join('・') === '渡邉 真理子・岡本 翔太',
+ck(imgOf().texts.filter((t) => t.color === '#C00000').slice(0, 2).map((t) => t.text).join('・') === '川邉 真由子・岡林 翔吾',
    '画像の1回目のお2人（赤）: ' + imgOf().texts.filter((t) => t.color === '#C00000').slice(0, 2).map((t) => t.text).join('・'));
 step('画像を保存', () => run('rotImgDownload()'));
 ck(page.log.downloads.length === 1 && page.log.downloads[0].name === '20261007_スピーカーローテーション.png'
@@ -290,29 +290,29 @@ ck(drawn().includes('見本の見出し'), '見出しを変えても画像が変
 step('ご案内する回を次回に戻す', () => { els.rotHeader.value = S.F.getSpeakerRotation().header; els.rotFbWeek.value = '0'; run('renderFb()'); });
 
 const weekCell = (md) => { const m = els.rotWeeks.innerHTML.match(new RegExp(md.replace('/', '\\/') + '\\(水\\)[^]*?<\\/tr>')); return m ? m[0].replace(/<[^>]+>/g, ' ') : ''; };
-step('入れ替え', () => { els.rotSwapA.value = '長見 響児'; els.rotSwapB.value = '徳山 京介'; run('rotSwap()'); });
-ck(/星本 充輝\s+徳山 京介/.test(weekCell('10/28')) && /保存していない変更/.test(els.rotDirty.innerText), '入れ替えが予定に出ない: ' + weekCell('10/28'));
+step('入れ替え', () => { els.rotSwapA.value = '長尾 響一'; els.rotSwapB.value = '徳永 京平'; run('rotSwap()'); });
+ck(/星野 充弘\s+徳永 京平/.test(weekCell('10/28')) && /保存していない変更/.test(els.rotDirty.innerText), '入れ替えが予定に出ない: ' + weekCell('10/28'));
 step('上下に動かす', () => run('rotMove(0,1)'));
-ck(run('rOrder[0]') === '金子 美緒' && run('rOrder[1]') === '山本 登一郎' && run('rAnchor.pointer') === 5, '上下に動かしたあと');
+ck(run('rOrder[0]') === '金井 美里' && run('rOrder[1]') === '山内 登志夫' && run('rAnchor.pointer') === 5, '上下に動かしたあと');
 step('外す', () => run('rotDel(2)'));
-ck(run('rAnchor.pointer') === 4 && run('rOrder[rAnchor.pointer]') === '仲宗根 愛里' && /外しますか/.test(page.log.confirms.slice(-1)[0] || ''),
+ck(run('rAnchor.pointer') === 4 && run('rOrder[rAnchor.pointer]') === '仲里根 愛子' && /外しますか/.test(page.log.confirms.slice(-1)[0] || ''),
    '前を外したのに起点がずれた: ' + run('rOrder[rAnchor.pointer]'));
-step('入れる', () => { els.rotAddName.value = '渡邉 真理子'; els.rotAddPos.value = '0'; run('rotAdd()'); });
-ck(run('rOrder[0]') === '渡邉 真理子' && run('rOrder[rAnchor.pointer]') === '仲宗根 愛里', '前に入れたのに起点がずれた');
-const iNaka = run("rOrder.indexOf('中込 渉')");
-step('中込さんを対象外にする', () => { els['rx_' + iNaka].checked = false; run(`rotToggle(${iNaka})`); });
-ck(/竹田 明日翔\s+星本 充輝/.test(weekCell('10/21')), '対象外にしたのに予定に出る: ' + weekCell('10/21'));
+step('入れる', () => { els.rotAddName.value = '川邉 真由子'; els.rotAddPos.value = '0'; run('rotAdd()'); });
+ck(run('rOrder[0]') === '川邉 真由子' && run('rOrder[rAnchor.pointer]') === '仲里根 愛子', '前に入れたのに起点がずれた');
+const iNaka = run("rOrder.indexOf('中西 渉')");
+step('中西さんを対象外にする', () => { els['rx_' + iNaka].checked = false; run(`rotToggle(${iNaka})`); });
+ck(/梅田 明日斗\s+星野 充弘/.test(weekCell('10/21')), '対象外にしたのに予定に出る: ' + weekCell('10/21'));
 step('見出しを直して保存', () => { els.rotHeader.value = 'メインプレゼンテーション（各５分）'; run('rotSave()'); });
 const rs = calls.filter((c) => c[0] === 'rotSave').pop();
-ck(rs && rs[1].anchor.date === '2026/10/14' && rs[1].anchor.pointer === 5 && rs[1].excluded.indexOf('中込 渉') >= 0 && rs[1].base === '',
+ck(rs && rs[1].anchor.date === '2026/10/14' && rs[1].anchor.pointer === 5 && rs[1].excluded.indexOf('中西 渉') >= 0 && rs[1].base === '',
    '保存した内容: ' + JSON.stringify(rs && { a: rs[1].anchor, b: rs[1].base }));
 ck(/保存しました/.test(els.rotMsg.innerHTML) && !/保存していない変更/.test(els.rotDirty.innerText), '保存のお知らせ: ' + els.rotMsg.innerHTML);
 const after = S.F.getSpeakerRotation();
-ck(after.header === 'メインプレゼンテーション（各５分）' && after.order[0] === '渡邉 真理子'
-   && after.weeks.find((w) => w.md.indexOf('10/21') === 0).people.map((p) => p.name).join('・') === '竹田 明日翔・星本 充輝',
+ck(after.header === 'メインプレゼンテーション（各５分）' && after.order[0] === '川邉 真由子'
+   && after.weeks.find((w) => w.md.indexOf('10/21') === 0).people.map((p) => p.name).join('・') === '梅田 明日斗・星野 充弘',
    'サーバーの状態: ' + JSON.stringify({ h: after.header, o: after.order.slice(0, 3) }));
-// 並びを直すと、画像も直した並びで描き直す（10/28 は星本さん・徳山さん）
-ck(drawn().includes('徳山 京介') && drawn().indexOf('徳山 京介') < drawn().indexOf('長見 響児'), '並びを直したあとの画像: ' + drawn().filter((t) => /さん|[一-龥]{2} /.test(t)).join(' '));
+// 並びを直すと、画像も直した並びで描き直す（10/28 は星野さん・徳永さん）
+ck(drawn().includes('徳永 京平') && drawn().indexOf('徳永 京平') < drawn().indexOf('長尾 響一'), '並びを直したあとの画像: ' + drawn().filter((t) => /さん|[一-龥]{2} /.test(t)).join(' '));
 step('書記兼会計の入力に戻る', () => run('closeRotation()'));
 ck(shown(els.roleView) && !shown(els.rotView) && els.roleName.innerText === '書記兼会計', '書記兼会計の入力に戻らない');
 ck(callsSince().some((c) => c[0] === 'ctx' && c[2] === 'secretary') && Object.keys(run('fields')).length > 0,
@@ -379,12 +379,12 @@ ck(calls.filter((c) => c[0] === 'premtgPreview').pop()[1] === '2026/10/07' && /�
   ck(shown(ve.readBar) && ve.roleTerm.value === '24' && /24期（2026年10月〜2027年3月）・次の期：3名/.test(termTexts2) && /23期（2026年4月〜9月）・今の期/.test(termTexts2)
      && /引継ぎの時期/.test(ve.readNote.innerText), '役職から読み取る欄: ' + termTexts2 + ' / ' + ve.readNote.innerText);
   vp.step('役職から読み取る', () => vp.run('readRoles()'));
-  ck(ve['chk_' + noOf('藤田 礼恵')].checked && ve['chk_' + noOf('岡安 秀明')].checked && ve['chk_' + noOf('山本 登一郎')].checked
-     && !ve['chk_' + noOf('熊谷 龍威')].checked && /24期のビジターホスト 3名にチェックを入れました/.test(ve.readNote.innerText),
+  ck(ve['chk_' + noOf('藤本 礼子')].checked && ve['chk_' + noOf('丘野 秀人')].checked && ve['chk_' + noOf('山内 登志夫')].checked
+     && !ve['chk_' + noOf('熊田 龍平')].checked && /24期のビジターホスト 3名にチェックを入れました/.test(ve.readNote.innerText),
      '読み取ったあと: ' + ve.readNote.innerText);
-  vp.step('手で足して保存', () => { ve['chk_' + noOf('熊谷 龍威')].checked = true; vp.run('save()'); });
+  vp.step('手で足して保存', () => { ve['chk_' + noOf('熊田 龍平')].checked = true; vp.run('save()'); });
   const vs = calls.filter((c) => c[0] === 'vhSave').pop();
-  ck(vs && ['藤田 礼恵', '岡安 秀明', '山本 登一郎', '熊谷 龍威'].every((n) => vs[1].indexOf(noOf(n)) >= 0) && vs[1].length === 4,
+  ck(vs && ['藤本 礼子', '丘野 秀人', '山内 登志夫', '熊田 龍平'].every((n) => vs[1].indexOf(noOf(n)) >= 0) && vs[1].length === 4,
      'ビジターホストの保存: ' + JSON.stringify(vs && vs[1]));
 }
 

@@ -49,7 +49,7 @@ function parseDate_(v) {
 function fmtDate_(d) { return d ? Utilities.formatDate(d, 'Asia/Tokyo', 'yyyy/MM/dd') : ''; }
 function daysBetween_(a, b) { return Math.round((b.getTime() - a.getTime()) / 86400000); }
 
-// 氏名の配列 → 「山田さん、佐藤さん」。該当なしは「該当者なし」
+// 氏名の配列 → 「山田さん、加納さん」。該当なしは「該当者なし」
 function joinNames_(names) {
   if (!names || !names.length) return '該当者なし';
   var out = [];
@@ -1105,7 +1105,7 @@ function editMeetingSlides_(parts, map, rules, o) {
 // opts: { patterns: true/false（差し込み口が無いページの第○回・日付も直す）,
 //         coreValue: 'Givers Gain' など,
 //         memberPresen: [...]（前半に差し込むメンバープレゼンのページ）,
-//         weeklyGuests: ['坂爪　達也', …]（表示にするアンバサダー・ディレクター。null なら触らない）,
+//         weeklyGuests: ['坂上　達彦', …]（表示にするアンバサダー・ディレクター。null なら触らない）,
 //         weeklyAuto: true/false（ウィークリープレゼンを自動で次へ進めるか） }
 function generateMeetingSlides(kind, values, meetingDateVal, opts) {
   try {

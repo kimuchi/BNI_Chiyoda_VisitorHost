@@ -181,8 +181,8 @@ function routineIsBlank_(s) {
   return !s || /^(なし|無し|ナシ|ない|―|－|-|—|休会|済|未定|\?|？)/.test(s);
 }
 
-// 「谷村さん」のような書き方を、メンバー名簿のフルネームに合わせる。
-// 「３５番船木さん」「内装業　石渕さん」のように、番号や業種が前に付くことがあるため、
+// 「谷口さん」のような書き方を、メンバー名簿のフルネームに合わせる。
+// 「３５番船越さん」「内装業　岩渕さん」のように、番号や業種が前に付くことがあるため、
 // そのままで当たらなければ、前置きを落としながら何通りか試す。
 function routineMemberName_(raw) {
   var s0 = String(raw == null ? '' : raw).trim();
@@ -193,12 +193,12 @@ function routineMemberName_(raw) {
     if (x && tries.indexOf(x) < 0) tries.push(x);
   };
   push(s0);
-  push(s0.replace(/(さん|様|さま|くん|君|ちゃん|氏)?へ$/, '$1'));   // 「山本さんへ」
-  push(s0.replace(/(さん|様|さま|くん|君|ちゃん|氏)?へ?$/, ''));    // 「長見くん」
-  push(s0.replace(/^[0-9０-９]+\s*番?/, ''));            // 「３５番船木さん」
+  push(s0.replace(/(さん|様|さま|くん|君|ちゃん|氏)?へ$/, '$1'));   // 「山内さんへ」
+  push(s0.replace(/(さん|様|さま|くん|君|ちゃん|氏)?へ?$/, ''));    // 「長尾くん」
+  push(s0.replace(/^[0-9０-９]+\s*番?/, ''));            // 「３５番船越さん」
   var parts = s0.split(/[\s　]+/);
-  if (parts.length > 1) push(parts[parts.length - 1]);   // 「内装業　石渕さん」
-  push(s0.replace(/[（(].*$/, ''));                       // 「谷村さん（代理）」
+  if (parts.length > 1) push(parts[parts.length - 1]);   // 「内装業　岩渕さん」
+  push(s0.replace(/[（(].*$/, ''));                       // 「谷口さん（代理）」
 
   var members = getMembersList(), i, k;
   for (k = 0; k < tries.length; k++) {
@@ -209,7 +209,7 @@ function routineMemberName_(raw) {
       }
     }
   }
-  // 字の違い（「渡辺さん」と名簿の「渡邉 真理子」など）でも、名字が1人に決まるなら合わせる
+  // 字の違い（「川辺さん」と名簿の「川邉 真由子」など）でも、名字が1人に決まるなら合わせる
   for (k = 0; k < tries.length; k++) {
     var f = routineFoldName_(tries[k]), hit = [];
     if (f.length < 2) continue;
@@ -250,7 +250,7 @@ function routinePolicyNo_(v) {
   return m ? parseInt(m[1], 10) : 0;
 }
 
-// 「22 メインプレゼン」の欄。「①山本さん　②金子さん」「①木村‗②若林」など。
+// 「22 メインプレゼン」の欄。「①山内さん　②金井さん」「①北川‗②若松」など。
 // 番号の丸数字で切り、無ければ読点で切る。それぞれをメンバー名簿の氏名に合わせる。
 function routineMainPresenters_(v) {
   var s = String(v == null ? '' : v).replace(/[\r\n]+/g, ' ').trim();
@@ -299,12 +299,12 @@ function routineList_(v) {
 
 // 「25 推薦の言葉」の欄。組ごとに「推薦する人 → 推薦される人」のページを作る。
 //   定例会中
-//    ⓵藤田さん⇒金子さん、
-//    ②山口さん⇒山本さん
+//    ⓵藤本さん⇒金井さん、
+//    ②山岸さん⇒山内さん
 //   アフター
-//    ①船木さん→金子さん
+//    ①船越さん→金井さん
 // のように、見出しで「いつ発表するか」を分けて書かれる。見出しの下の組にその時間を付ける。
-// 「佐藤さん→近藤さん（アフター）」のように、組のうしろの括弧に書かれていることもある（その組だけに付ける）。
+// 「加納さん→近江さん（アフター）」のように、組のうしろの括弧に書かれていることもある（その組だけに付ける）。
 //   during … 定例会中（見出しが無いときもこれ）。推薦のことばのページの場所に並べる
 //   after  … アフター・定例会後。抽選コーナーのあとに並べる
 //   later  … 翌週以降（予定のメモ）。スライドには入れない
@@ -322,7 +322,7 @@ function routineRecommendations_(v) {
   if (routineIsBlank_(s.replace(/[\s　]/g, ''))) return [];
   var ARROW = /[→⇒➡]/, lines = s.split(/[\r\n]+/), out = [], when = 'during';
   for (var i = 0; i < lines.length; i++) {
-    // 組のうしろの括弧に時間が書いてあれば（「佐藤さん→近藤さん（アフター）」）、その行の組だけに使う
+    // 組のうしろの括弧に時間が書いてあれば（「加納さん→近江さん（アフター）」）、その行の組だけに使う
     var notes = (lines[i].match(/[（(][^）)]*[）)]/g) || []).join(' ');
     var lineWhen = notes ? routineRecoWhen_(notes, '') : '';
     // 括弧の但し書き（「（先週繰り越し分）」など）と、※以降のメモは落とす
@@ -346,10 +346,10 @@ function routineRecommendations_(v) {
     }
     var segs = body.split(ROUTINE_RECO_MARK_RE_);
     for (var k = 0; k < segs.length; k++) {
-      // 行頭の記号（「・船木さん→…」の・など）と、前後の区切りを落とす
+      // 行頭の記号（「・船越さん→…」の・など）と、前後の区切りを落とす
       var seg = segs[k].replace(/^[\s　.．、,・･•●◆◇■□▪*＊\-－]+/, '').replace(/[\s　、,]+$/, '');
       if (!ARROW.test(seg)) continue;
-      // 1つの区切りに2組以上続けて書かれていたら（「金子さん→三澤さん 藤田さん→長見さん」）、組ごとに分ける
+      // 1つの区切りに2組以上続けて書かれていたら（「金井さん→西澤さん 藤本さん→長尾さん」）、組ごとに分ける
       var found = [], mm;
       if ((seg.match(/[→⇒➡]/g) || []).length > 1) {
         var re = /([^\s　、,→⇒➡]+)[\s　]*[→⇒➡][\s　]*([^\s　、,→⇒➡]+)/g;
@@ -398,9 +398,9 @@ function getRoutineInfo(dateStr) {
     var review = pick(['審査中カテゴリー', '審査中の申込み']);
     var policy = pick(['一般規定']);
     var reco = pick(['推薦の言葉', '推薦のことば']);
-    // アンバサダー・ディレクターなど、その日に来られるリージョンの方（「吉田ED・坂爪アンバサダー」など）
+    // アンバサダー・ディレクターなど、その日に来られるリージョンの方（「大庭ED・坂上アンバサダー」など）
     var region = pick(['リージョン参加者']);
-    // ウィークリープレゼンの始まり（「建築　住まい　22番　熊谷さん」など）
+    // ウィークリープレゼンの始まり（「建築　住まい　22番　熊田さん」など）
     var weekly = pick(ROUTINE_WEEKLY_LABELS_);
     var cv = coreValueOf_(core.value);
     var pres = routineMemberName_(long.value);
