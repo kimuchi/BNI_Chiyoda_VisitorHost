@@ -32,12 +32,16 @@ function getSS_() {
   return SpreadsheetApp.openById(id);
 }
 
-// ウェブアプリに出す機能の一覧。キーは表示するHTMLファイル名。
-// query は、同じ画面を別の開き方で出すときのURLの続き（view=premtg など）。
+// ウェブアプリに出す機能の一覧。キーは表示するHTMLファイル名（URLの ?p= に入る）。
+// 同じ画面を別の開き方で出すときは、file に画面のHTMLファイル名、params に画面へ渡す値を書く
+// （事前MTG … ?p=premtg で role_input.html を view=premtg で開く）。
+// トップページのリンクは ?p=キー だけにする。リンクに「&view=…」を <?= ?> で足すと、
+// Apps Script が & や = をURL用に置き換えて（%26 %3D）、開く画面が分からなくなるため。
 var WEBAPP_PAGES_ = [
   { group: '毎週の作業', items: [
     { key: 'role_input',        label: '役職ごとの入力（定例会の準備）', desc: '次回の定例会について役職ごとに入力します。入力状況も一目で分かります' },
-    { key: 'role_input', query: 'view=premtg', label: '事前MTG（朝イチMTG）のパワポ', desc: '役職ごとの入力（共有事項・お願い事項など）から作ります' },
+    { key: 'premtg', file: 'role_input', params: { view: 'premtg' },
+      label: '事前MTG（朝イチMTG）のパワポ', desc: '役職ごとの入力（共有事項・お願い事項など）から作ります' },
     { key: 'dialog',            label: 'CSVから名簿・PDF作成',   desc: '参加者のCSVを取り込んで名簿とPDFを作ります' },
     { key: 'email',             label: 'メールの確認・一括送信', desc: '案内メールをまとめて送ります' },
     { key: 'allocation',        label: 'ルーム・オリエン割り振り表', desc: 'ビジターごとの担当を決めます' },
@@ -75,6 +79,15 @@ var WEBAPP_PAGES_ = [
   ]}
 ];
 
+// 画面に渡す値（一覧の params。URLに書いたものがあればそちらを優先）
+function webAppPageParams_(page, given) {
+  var out = {}, k;
+  var fixed = page.params || {};
+  for (k in fixed) out[k] = fixed[k];
+  for (k in given) out[k] = given[k];
+  return out;
+}
+
 function findWebAppPage_(key) {
   for (var g = 0; g < WEBAPP_PAGES_.length; g++) {
     var items = WEBAPP_PAGES_[g].items;
@@ -109,9 +122,9 @@ function doGet(e) {
 
     // 既存のダイアログHTMLをそのまま表示する。
     // ダイアログ用に作られているので、上に「メニューに戻る」の帯だけ足す。
-    var tpl = HtmlService.createTemplateFromFile(page.key);
-    // URLの続き（?p=role_input&role=vice の role など）を画面に渡す
-    tpl.params = (e && e.parameter) || {};
+    var tpl = HtmlService.createTemplateFromFile(page.file || page.key);
+    // 画面に渡す値：一覧の params に、URLの続き（?p=role_input&role=vice の role など）を重ねる
+    tpl.params = webAppPageParams_(page, (e && e.parameter) || {});
     var content = tpl.evaluate().getContent();
     var home = getWebAppUrl_() || '?';
     var bar = '<div style="position:sticky;top:0;z-index:9999;background:#16233f;color:#fff;'

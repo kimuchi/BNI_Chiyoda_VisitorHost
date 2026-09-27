@@ -807,7 +807,7 @@ SpreadingのCSVの **「支払いステータス」**（`支払済み` / `未払
 ウェブアプリのURL（`…/exec`）の最後に `?p=role_input&role=記号` を付けると、その役職の入力画面が直接開きます。
 各役職の方へのご案内やブックマークに使えます（例: `…/exec?p=role_input&role=vice`）。
 スピーカーローテーションは `…/exec?p=role_input&role=secretary&view=rotation`、
-事前MTGのパワポは `…/exec?p=role_input&view=premtg` で直接開けます。
+事前MTGのパワポは `…/exec?p=premtg` で直接開けます。
 
 | 役職 | 記号 | 役職 | 記号 |
 |---|---|---|---|
