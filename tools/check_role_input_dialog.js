@@ -132,7 +132,7 @@ const newHolder = els.hd_0.options[2] ? els.hd_0.options[2].value : '';
 const hc23 = calls.filter((c) => c[0] === 'holders').pop();
 ck(hc23 && hc23[1].president === newHolder && hc23[2] === 23 && hc23[3] === '2026/09/30', '担当者の保存: ' + JSON.stringify(hc23 && hc23.slice(2)));
 ck(newHolder && presidentCard() === newHolder, 'カードの担当者が変わらない: ' + presidentCard());
-ck(els.holderNote.innerText === '' && /23期（2026年4月〜9月）の担当者を保存しました/.test(els.holderMsg.innerText), '保存のお知らせ: ' + els.holderMsg.innerText);
+ck(!/担当者はまだ登録されていません/.test(els.holderNote.innerText) && /23期（2026年4月〜9月）の担当者を保存しました/.test(els.holderMsg.innerText), '保存のお知らせ: ' + els.holderMsg.innerText);
 
 // 開催日を変える（10/7 は 24期のシート。担当者も24期）
 step('10/7 に変える', () => { els.meeting.value = '2026/10/07'; run('changeMeeting()'); });
@@ -145,7 +145,7 @@ ck(/25期の担当者はまだ登録されていません。24期の担当者を
    '25期を選んだとき: ' + els.holderNote.innerText);
 step('25期のプレジデントを登録', () => { els.hd_0.value = els.hd_0.options[3].value; run('saveHolders()'); });
 const hc25 = calls.filter((c) => c[0] === 'holders').pop();
-ck(hc25 && hc25[2] === 25 && hc25[3] === '2026/10/07' && els.holderTerm.value === '25' && els.holderNote.innerText === ''
+ck(hc25 && hc25[2] === 25 && hc25[3] === '2026/10/07' && els.holderTerm.value === '25' && !/担当者はまだ登録されていません/.test(els.holderNote.innerText)
    && els.hd_0.value === hc25[1].president, '25期の保存: ' + JSON.stringify(hc25 && hc25.slice(2)) + ' ' + els.holderTerm.value);
 ck(presidentCard() === '熊谷 龍威', '25期を登録したら、10/7（24期）のカードが変わった: ' + presidentCard());
 // メンバー名簿の「役職」に反映する。いまは23期（今の期）を保存したときに反映した23期の担当者
@@ -154,7 +154,7 @@ ck(/23期（2026年4月〜9月）の内容を反映しています（2026\/09\/2
    '名簿への反映の様子: ' + els.rosterNote.innerText);
 // 担当者の変更を保存していないときは、先に保存してもらう
 step('保存せずに反映しようとする', () => { els.hd_1.value = els.hd_1.options[4].value; run('rosterRoles()'); });
-ck(/先に「この期の役職・委員会を保存」/.test(els.holderMsg.innerText) && !calls.some((c) => c[0] === 'rosterPreview'), '保存していない変更があるのに反映した');
+ck(/先に「この期の役職・チームを保存」/.test(els.holderMsg.innerText) && !calls.some((c) => c[0] === 'rosterPreview'), '保存していない変更があるのに反映した');
 step('選び直す', () => run('renderHolders()'));
 const nConf = page.log.confirms.length;
 step('名簿の役職に反映', () => run('rosterRoles()'));
@@ -167,40 +167,59 @@ ck(calls.some((c) => c[0] === 'rosterApply' && c[1] === 24) && /24期の担当�
 step('もう一度反映', () => run('rosterRoles()'));
 ck(/もう24期の内容どおりです/.test(els.holderMsg.innerText) && page.log.confirms.length === nConf + 1, '2回目の反映: ' + els.holderMsg.innerText);
 
-// 委員会・チーム（半期ごと）：メンバーごとに、入っている委員会・チームにチェック
-const mIdx = (n) => run(`teamNames.indexOf(${JSON.stringify(n)})`);
-const headOf = () => (els.teamTable.innerHTML.match(/<tr class="h">([\s\S]*?)<\/tr>/) || [])[1] || '';
-ck(/ビジターホスト/.test(headOf()) && /メンバーシップ委員会/.test(headOf()) && /まだ登録されていません/.test(els.teamNote.innerText)
-   && mIdx('岡安 秀明') >= 0 && /プレジデント/.test(els.teamTable.innerHTML), '委員会・チームの表: ' + els.teamNote.innerText + ' ' + headOf().replace(/<[^>]+>/g, ' '));
-step('ビジターホストにチェック', () => {
-  for (const n of ['岡安 秀明', '成毛 幸夫']) { els['tm_0_' + mIdx(n)].checked = true; run(`teamToggle(0, ${mIdx(n)})`); }
+// チーム（半期ごと）：チーム名・リーダー・役職・メンバーの表。役職のチームのリーダーはその役職の担当者で、
+// サポートメンバーを足せる（役割：サブリーダーなど）。メンバーシップ委員会・足したチームはリーダーを選ぶ
+const teamHtml = () => els.teamTable.innerHTML;
+const tIdx = (key) => run(`teamEdit.teams.findIndex(function(t){ return t.key===${JSON.stringify(key)}; })`);
+const tByName = (n) => run(`teamEdit.teams.findIndex(function(t){ return t.name===${JSON.stringify(n)}; })`);
+const iVh = tIdx('role:vhc'), iEc = tIdx('role:ec'), iTr = tIdx('role:training');
+ck(/リーダーシップチーム/.test(teamHtml()) && /メンバーシップ委員会/.test(teamHtml()) && /Webチーム/.test(teamHtml())
+   && /リーダー：ビジターホストコーディネーター/.test(teamHtml()) && iVh >= 0 && !!els.hd_3 && els.hd_3.value === '藤田 礼恵'
+   && /チームのメンバーはまだ登録されていません/.test(els.holderNote.innerText),
+   'チームの表: ' + els.holderNote.innerText + ' / ' + iVh + ' ' + (els.hd_3 && els.hd_3.value));
+step('ビジターホストにサポートメンバーを足す', () => {
+  els['ta_' + iVh].value = '山本 登一郎'; els['tr_' + iVh].value = 'サブリーダー'; run(`addMember(${iVh})`);
+  els['ta_' + iVh].value = '岡安 秀明'; run(`addMember(${iVh})`);
 });
-ck(els.tmc_0.innerText === '2名', 'チェックした人数: ' + els.tmc_0.innerText);
-step('委員会・チームを足す', () => { els.teamName.value = 'メンター'; run('addTeam()'); });
-ck(/メンター/.test(headOf()) && els.teamName.value === '', '委員会・チームを足せない: ' + headOf().replace(/<[^>]+>/g, ' '));
-step('同じ名前は足さない', () => { els.teamName.value = 'メンター'; run('addTeam()'); });
-ck(/「メンター」はもうあります/.test(els.holderMsg.innerText), '同じ名前: ' + els.holderMsg.innerText);
-step('メンターにチェック', () => { els['tm_2_' + mIdx('田中 秀一')].checked = true; run(`teamToggle(2, ${mIdx('田中 秀一')})`); });
+ck(/山本 登一郎<span class="muted">（サブリーダー）<\/span>/.test(teamHtml()) && /岡安 秀明<a /.test(teamHtml())
+   && !els['ta_' + iVh].options.some((o) => o.value === '岡安 秀明'), 'ビジターホストのメンバー: ' + run(`JSON.stringify(teamEdit.teams[${iVh}].members)`));
+step('足す方を選ばずに足す', () => run(`addMember(${iEc})`));
+ck(/足す方を選んでください/.test(els.holderMsg.innerText), '選ばずに足したとき: ' + els.holderMsg.innerText);
+step('コーディネーター以外にもサポートメンバー', () => { els['ta_' + iEc].value = '原田 雅人'; run(`addMember(${iEc})`); });
+step('チームの名前を直す', () => { els['tn_' + iTr].value = 'トレーニング促進委員'; });
+step('チームを足す', () => { els.teamName.value = '広報チーム'; run('addTeam()'); });
+const iPr = tByName('広報チーム');
+ck(iPr > 0 && !!els['tl_' + iPr] && run(`teamEdit.teams[${iTr}].name`) === 'トレーニング促進委員', '足したチーム・直した名前: ' + iPr);
+step('足したチームのリーダーとメンバー', () => { els['tl_' + iPr].value = '木村 光範'; els['ta_' + iPr].value = '佐藤 祐之'; run(`addMember(${iPr})`); });
+step('同じ名前のチームは足さない', () => { els.teamName.value = '広報チーム'; run('addTeam()'); });
+ck(/「広報チーム」はもうあります/.test(els.holderMsg.innerText), '同じ名前: ' + els.holderMsg.innerText);
 const confBefore = page.log.confirms.length;
-step('空のメンバーシップ委員会を外す', () => run('delTeam(1)'));
-ck(!/メンバーシップ委員会/.test(headOf()) && page.log.confirms.length === confBefore, '空の委員会・チームを外せない（確かめは要らない）');
-step('保存せずに反映しようとする（委員会・チーム）', () => run('rosterRoles()'));
-ck(/先に「この期の役職・委員会を保存」/.test(els.holderMsg.innerText), '委員会・チームを直したまま反映した');
-step('役職・委員会を保存', () => run('saveHolders()'));
+step('空のチームを足して外す', () => { els.teamName.value = '見本チーム'; run('addTeam()'); run(`delTeam(${tByName('見本チーム')})`); });
+ck(tByName('見本チーム') < 0 && page.log.confirms.length === confBefore, '空のチームを外せない（確かめは要らない）');
+step('保存せずに反映しようとする（チーム）', () => run('rosterRoles()'));
+ck(/先に「この期の役職・チームを保存」/.test(els.holderMsg.innerText), 'チームを直したまま反映した');
+step('役職・チームを保存', () => run('saveHolders()'));
 const hcT = calls.filter((c) => c[0] === 'holders').pop();
-ck(hcT && hcT[2] === 24 && JSON.stringify(hcT[4]) === JSON.stringify([{ name: 'ビジターホスト', members: ['岡安 秀明', '成毛 幸夫'] }, { name: 'メンター', members: ['田中 秀一'] }]),
-   '委員会・チームの保存: ' + JSON.stringify(hcT && hcT[4]));
+const sentTeam = (k) => ((hcT && hcT[4]) || []).find((t) => t.key === k || t.name === k) || {};
+ck(hcT && hcT[2] === 24 && JSON.stringify(sentTeam('role:vhc').members) === JSON.stringify([{ name: '山本 登一郎', note: 'サブリーダー' }, { name: '岡安 秀明', note: '' }])
+   && sentTeam('role:ec').members[0].name === '原田 雅人' && sentTeam('role:training').name === 'トレーニング促進委員'
+   && sentTeam('広報チーム').leader === '木村 光範' && sentTeam('広報チーム').members[0].name === '佐藤 祐之',
+   'チームの保存: ' + JSON.stringify(hcT && hcT[4] && hcT[4].filter((t) => t.members.length || t.leader)));
 const rosterSh = S.sheets.find((s) => s.getName() === 'メンバー名簿'), RCOL = rosterSh._grid[0].indexOf('役職');
 const rosterRole = (n) => (rosterSh._grid.find((r) => r[2] === n) || [])[RCOL];
-ck(/24期（2026年10月〜2027年3月）の役職・委員会を保存しました。メンバー名簿の「役職」も直しました/.test(els.holderMsg.innerText)
-   && els.teamNote.innerText === '' && rosterRole('岡安 秀明') === 'ビジターホスト' && rosterRole('田中 秀一') === 'メンター' && rosterRole('見本 ホスト') === '',
-   '保存したあと: ' + els.holderMsg.innerText + ' / ' + ['岡安 秀明', '田中 秀一', '見本 ホスト'].map(rosterRole).join(','));
+ck(/24期（2026年10月〜2027年3月）の役職・チームを保存しました。メンバー名簿の「役職」も直しました/.test(els.holderMsg.innerText)
+   && els.holderNote.innerText === '' && rosterRole('山本 登一郎') === 'メンバーサポート委員・ビジターホスト（サブリーダー）'
+   && rosterRole('原田 雅人') === '書記兼会計・エデュケーションコーディネーター（サポート）' && rosterRole('木村 光範') === '広報チーム（リーダー）'
+   && rosterRole('佐藤 祐之') === '広報チーム' && rosterRole('見本 ホスト') === '',
+   '保存したあと: ' + els.holderMsg.innerText + ' / ' + ['山本 登一郎', '原田 雅人', '木村 光範', '佐藤 祐之', '見本 ホスト'].map(rosterRole).join(','));
 // 直したまま期を切り替えるときは確かめる
-step('直したまま期を切り替える', () => { els['tm_0_' + mIdx('熊谷 龍威')].checked = true; run(`teamToggle(0, ${mIdx('熊谷 龍威')})`);
-  els.holderTerm.value = '25'; run('changeHolderTerm()'); });
-ck(/保存していない役職・委員会の変更があります/.test(page.log.confirms.slice(-1)[0] || '') && els.holderTerm.value === '25'
-   && /25期の委員会・チームはまだ登録されていません。24期の顔ぶれを出しています/.test(els.teamNote.innerText),
-   '期の切り替え: ' + (page.log.confirms.slice(-1)[0] || '') + ' / ' + els.teamNote.innerText);
+step('直したまま期を切り替える', () => {
+  els['ta_' + iVh].value = '熊谷 龍威'; run(`addMember(${iVh})`);
+  els.holderTerm.value = '25'; run('changeHolderTerm()');
+});
+ck(/保存していない役職・チームの変更があります/.test(page.log.confirms.slice(-1)[0] || '') && els.holderTerm.value === '25'
+   && /25期のチームのメンバーはまだ登録されていません。24期の顔ぶれを出しています/.test(els.holderNote.innerText),
+   '期の切り替え: ' + (page.log.confirms.slice(-1)[0] || '') + ' / ' + els.holderNote.innerText);
 step('24期に戻す', () => { els.holderTerm.value = '24'; run('changeHolderTerm()'); });
 // 期が替わったのに、新しい期の担当者がまだ無いときは、一覧の上で知らせる
 step('新しい期の担当者が未登録', () => run("ctx.holderTerm={term:26,label:'2027年10月〜2028年3月',registered:false,from:25,holders:{}}; showOverview(true)"));
@@ -360,12 +379,12 @@ ck(calls.filter((c) => c[0] === 'premtgPreview').pop()[1] === '2026/10/07' && /�
   ck(shown(ve.readBar) && ve.roleTerm.value === '24' && /24期（2026年10月〜2027年3月）・次の期：3名/.test(termTexts2) && /23期（2026年4月〜9月）・今の期/.test(termTexts2)
      && /引継ぎの時期/.test(ve.readNote.innerText), '役職から読み取る欄: ' + termTexts2 + ' / ' + ve.readNote.innerText);
   vp.step('役職から読み取る', () => vp.run('readRoles()'));
-  ck(ve['chk_' + noOf('藤田 礼恵')].checked && ve['chk_' + noOf('岡安 秀明')].checked && ve['chk_' + noOf('成毛 幸夫')].checked
+  ck(ve['chk_' + noOf('藤田 礼恵')].checked && ve['chk_' + noOf('岡安 秀明')].checked && ve['chk_' + noOf('山本 登一郎')].checked
      && !ve['chk_' + noOf('熊谷 龍威')].checked && /24期のビジターホスト 3名にチェックを入れました/.test(ve.readNote.innerText),
      '読み取ったあと: ' + ve.readNote.innerText);
   vp.step('手で足して保存', () => { ve['chk_' + noOf('熊谷 龍威')].checked = true; vp.run('save()'); });
   const vs = calls.filter((c) => c[0] === 'vhSave').pop();
-  ck(vs && ['藤田 礼恵', '岡安 秀明', '成毛 幸夫', '熊谷 龍威'].every((n) => vs[1].indexOf(noOf(n)) >= 0) && vs[1].length === 4,
+  ck(vs && ['藤田 礼恵', '岡安 秀明', '山本 登一郎', '熊谷 龍威'].every((n) => vs[1].indexOf(noOf(n)) >= 0) && vs[1].length === 4,
      'ビジターホストの保存: ' + JSON.stringify(vs && vs[1]));
 }
 
@@ -375,4 +394,4 @@ if (fails.length) {
   fails.slice(0, 30).forEach((f) => console.log('   ' + f));
   process.exit(1);
 }
-console.log('OK: 一覧（入力状況・役職と委員会（半期ごと）・名簿の役職への反映）／役職の入力（推定・前回・人数・保存・シートへの書き込み）／URLでの役職指定／スピーカーローテーション（Facebookの文と画像）／事前MTGのパワポ／ビジターホストの設定（役職から読み取る）');
+console.log('OK: 一覧（入力状況・役職とチーム（半期ごと）・名簿の役職への反映）／役職の入力（推定・前回・人数・保存・シートへの書き込み）／URLでの役職指定／スピーカーローテーション（Facebookの文と画像）／事前MTGのパワポ／ビジターホストの設定（役職から読み取る）');

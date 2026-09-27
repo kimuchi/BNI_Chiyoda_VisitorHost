@@ -64,13 +64,20 @@
  table.holders{border-collapse:collapse;width:100%;font-size:12px;margin:6px 0;}
  table.holders td{padding:3px 5px;border-bottom:1px solid #f0f2f5;}
  table.holders select{font-size:12px;max-width:100%;}
- .subhead{font-weight:bold;font-size:12px;margin:12px 0 2px;}
- .teamwrap{max-height:380px;overflow:auto;border:1px solid #eef0f4;border-radius:4px;margin-top:4px;}
- table.teams{border-collapse:collapse;width:100%;font-size:12px;}
- table.teams td{padding:3px 6px;border-bottom:1px solid #f0f2f5;white-space:nowrap;}
- table.teams td.c{text-align:center;}
- table.teams tr.h td{position:sticky;top:0;background:#f7f9fc;font-weight:bold;z-index:1;}
- table.teams tr.h a{color:#c0392b;text-decoration:none;font-weight:normal;}
+ .teamwrap{overflow-x:auto;margin-top:4px;}
+ table.teams{border-collapse:collapse;width:100%;font-size:12px;min-width:560px;}
+ table.teams td{padding:6px 6px;border-bottom:1px solid #e8ecf2;vertical-align:top;}
+ table.teams tr.h td{background:#4a90e2;color:#fff;font-weight:bold;padding:5px 6px;}
+ table.teams td.tn{width:27%;} table.teams td.tl{width:22%;}
+ table.teams input.tname{width:100%;box-sizing:border-box;font-size:12px;padding:3px 4px;}
+ table.teams select{font-size:12px;max-width:100%;}
+ table.teams .sm{font-size:10.5px;margin-top:2px;}
+ table.teams .sm a{color:#c0392b;text-decoration:none;}
+ .lrow{margin:2px 0;} .lrow .rl{display:inline-block;min-width:118px;}
+ .chip{display:inline-block;background:#eef3fb;border:1px solid #d6e2f5;border-radius:10px;padding:1px 7px;margin:2px 4px 2px 0;white-space:nowrap;}
+ .chip a{color:#c0392b;text-decoration:none;margin-left:2px;}
+ .addm{display:inline-flex;gap:3px;align-items:center;margin-top:3px;flex-wrap:wrap;}
+ .addm select{max-width:140px;font-size:11.5px;} .addm input{width:76px;font-size:11.5px;} .addm button{font-size:11.5px;padding:2px 8px;}
  #premtgBox{margin:0 0 10px;}
  .pmgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px;margin-top:8px;}
  .pmblk{background:#f8f9fa;border:1px solid #e6e9ee;border-radius:6px;padding:7px 9px;}
@@ -114,22 +121,19 @@
    <div class="cards" id="cards"></div>
    <div id="unknownNote"></div>
    <div class="box" id="holderBox">
-     <div style="font-weight:bold;font-size:12.5px;">役職・委員会（半期ごと）</div>
-     <div class="muted">役職の担当者と、ビジターホスト・メンバーシップ委員会などの顔ぶれは、半期（4月〜9月・10月〜3月）ごとに替わります。
-       期ごとに登録すると、一覧のカード、事前MTGのパワポ（役職のページの名前・写真）、ローテーションの案内文、
-       メンバー名簿の「役職」、割り振りのビジターホストの読み取りに使います。次の期も、期を選んで前もって登録できます。</div>
+     <div style="font-weight:bold;font-size:12.5px;">役職・チーム（半期ごと）</div>
+     <div class="muted">役職の担当者（チームのリーダー）と、サポートメンバー（ビジターホスト・メンバーシップ委員会など）は、
+       半期（4月〜9月・10月〜3月）ごとに替わります。期ごとに登録すると、一覧のカード、事前MTGのパワポ（役職のページの名前・写真）、
+       ローテーションの案内文、メンバー名簿の「役職」、割り振りのビジターホストの読み取りに使います。
+       次の期も、期を選んで前もって登録できます。</div>
      <div style="margin:6px 0 2px;"><label>期：<select id="holderTerm" onchange="changeHolderTerm()"></select></label></div>
-     <div class="subhead">役職（13）</div>
      <div class="muted" id="holderNote"></div>
-     <div id="holderTable"></div>
-     <div class="subhead">委員会・チーム</div>
-     <div class="muted" id="teamNote"></div>
      <div class="teamwrap" id="teamTable"></div>
      <div style="margin:6px 0 10px;">
-       <input id="teamName" placeholder="委員会・チームの名前（例：メンター）" style="width:230px;max-width:60%;">
-       <button onclick="addTeam()">＋ 委員会・チームを足す</button>
+       <input id="teamName" placeholder="チームの名前（例：広報チーム）" style="width:220px;max-width:60%;">
+       <button onclick="addTeam()">＋ チームを足す</button>
      </div>
-     <button class="primary" onclick="saveHolders()">この期の役職・委員会を保存</button>
+     <button class="primary" onclick="saveHolders()">この期の役職・チームを保存</button>
      <button onclick="rosterRoles()">名簿の役職に反映</button> <span id="holderMsg" class="muted"></span>
      <div class="muted" id="rosterNote" style="margin-top:6px;"></div>
    </div>
@@ -337,12 +341,17 @@
    renderHolderWarn();
  }
 
- // 役職・委員会（半期ごと）：選んだ期の担当者と委員会・チームを出す（最初は開催日の期）
- var holderShown = 0, teamEdit = null, teamNames = [];
+ // 役職・チーム（半期ごと）：選んだ期の担当者とチームを出す（最初は開催日の期）
+ //   リーダーシップチーム … プレジデント・バイスプレジデント・書記兼会計
+ //   役職のチーム … リーダーはその役職の担当者（ビジターホストのリーダーはビジターホストコーディネーター）
+ //   メンバーシップ委員会・足したチーム … リーダーを選ぶ
+ // 担当者の選ぶ欄は hd_役職の番号（一覧の役職の並び）。チームの名前は tn_、リーダーは tl_、足す方は ta_・役割は tr_
+ var holderShown = 0, holderEdit = null, teamEdit = null, LEADERSHIP = ['president', 'vice', 'secretary'];
  function holderTermOf(term){ return (ctx.holderTerms||[]).filter(function(t){ return t.term===term; })[0] || null; }
+ function roleIndex(key){ for(var i=0;i<(ctx.roles||[]).length;i++) if(ctx.roles[i].key===key) return i; return -1; }
  function changeHolderTerm(){
    if((holdersDirty() || teamsDirty())
-      && !confirm('保存していない役職・委員会の変更があります。期を切り替えると消えます。よろしいですか？')){
+      && !confirm('保存していない役職・チームの変更があります。期を切り替えると消えます。よろしいですか？')){
      el('holderTerm').value = String(holderShown); return;
    }
    renderHolders();
@@ -356,65 +365,91 @@
    }).join('');
    holderShown = cur;
    var ht = holderTermOf(cur) || { term:cur, holders:{}, registered:true, teams:[], teamsRegistered:true };
-   el('holderNote').innerText = (!ht.registered && ht.from)
-     ? ht.term+'期の担当者はまだ登録されていません。'+ht.from+'期の担当者を出しています。直して保存すると、'+ht.term+'期の担当者になります。'
-     : '';
-   var names = (ctx.members||[]).slice();
-   el('holderTable').innerHTML = '<table class="holders">' + (ctx.roles||[]).map(function(r, i){
-     var h = ht.holders[r.key]||'', opts = ['<option value="">（未設定）</option>'], has=false;
-     names.forEach(function(n){ if(n===h) has=true; opts.push('<option value="'+esc(n)+'"'+(n===h?' selected':'')+'>'+esc(n)+'</option>'); });
-     if(h && !has) opts.splice(1,0,'<option value="'+esc(h)+'" selected>'+esc(h)+'</option>');
-     return '<tr><td>'+esc(r.label)+'</td><td><select id="hd_'+i+'">'+opts.join('')+'</select></td></tr>';
-   }).join('') + '</table>';
+   var notes = [];
+   if(!ht.registered && ht.from) notes.push(ht.term+'期の担当者はまだ登録されていません。'+ht.from+'期の担当者を出しています。');
+   if(!ht.teamsRegistered && ht.teamsFrom) notes.push(ht.term+'期のチームのメンバーはまだ登録されていません。'+ht.teamsFrom+'期の顔ぶれを出しています。');
+   else if(!ht.teamsRegistered) notes.push('チームのメンバーはまだ登録されていません。');
+   if(notes.length) notes.push('直して保存すると、'+ht.term+'期のものになります。');
+   el('holderNote').innerText = notes.join('');
+   holderEdit = {};
+   (ctx.roles||[]).forEach(function(r){ holderEdit[r.key] = (ht.holders||{})[r.key]||''; });
    teamEdit = { term:cur, teams: JSON.parse(JSON.stringify(ht.teams||[])) };
-   renderTeams();
+   renderTeams(true);
    renderRosterNote();
  }
- // 委員会・チーム：メンバーごとに、入っている委員会・チームにチェック
- function renderTeams(){
-   var ht = holderTermOf(holderShown) || {}, teams = teamEdit ? teamEdit.teams : [], seen = {}, all = (ctx.members||[]).slice();
-   teams.forEach(function(t){ all = all.concat(t.members); });      // 名簿にいない方（退会した方など）も出す
-   teamNames = [];
-   all.forEach(function(n){ if(n && !seen[nm(n)]){ seen[nm(n)] = true; teamNames.push(n); } });
-   var roleOfName = {};                                  // その期の13の役職（見比べやすいように出す）
-   (ctx.roles||[]).forEach(function(r){ var h=(ht.holders||{})[r.key]; if(h) (roleOfName[nm(h)] = roleOfName[nm(h)] || []).push(r.label); });
-   el('teamNote').innerText = (!ht.teamsRegistered && ht.teamsFrom)
-     ? ht.term+'期の委員会・チームはまだ登録されていません。'+ht.teamsFrom+'期の顔ぶれを出しています。直して保存すると、'+ht.term+'期のものになります。'
-     : (!ht.teamsRegistered ? 'まだ登録されていません。入っている方にチェックを入れて保存してください。' : '');
-   var has = function(t, n){ return t.members.some(function(x){ return nm(x)===nm(n); }); };
-   el('teamTable').innerHTML = '<table class="teams"><tr class="h"><td>氏名</td><td>役職（13）</td>'
-     + teams.map(function(t, ti){
-         return '<td class="c">'+esc(t.name)+' <a href="javascript:void(0)" onclick="delTeam('+ti+')" title="この委員会・チームを外す">✕</a>'
-           +'<br><span class="muted" id="tmc_'+ti+'">'+t.members.length+'名</span></td>';
-       }).join('') + '</tr>'
-     + teamNames.map(function(n, mi){
-         return '<tr><td>'+esc(n)+'</td><td class="muted">'+esc((roleOfName[nm(n)]||[]).join('・'))+'</td>'
-           + teams.map(function(t, ti){
-               return '<td class="c"><input type="checkbox" id="tm_'+ti+'_'+mi+'"'+(has(t, n)?' checked':'')+' onchange="teamToggle('+ti+','+mi+')"></td>';
-             }).join('') + '</tr>';
-       }).join('') + '</table>';
+ // 選ぶ欄の中身：名簿の方（名簿にいない方が選んであれば、それも）
+ function memberOptions(sel, blank){
+   var opts = ['<option value="">'+esc(blank)+'</option>'], has = false;
+   (ctx.members||[]).forEach(function(n){ if(n===sel) has=true; opts.push('<option value="'+esc(n)+'"'+(n===sel?' selected':'')+'>'+esc(n)+'</option>'); });
+   if(sel && !has) opts.splice(1, 0, '<option value="'+esc(sel)+'" selected>'+esc(sel)+'</option>');
+   return opts.join('');
  }
- function teamToggle(ti, mi){
-   var t = teamEdit.teams[ti], n = teamNames[mi], box = el('tm_'+ti+'_'+mi);
-   if(!t || !n) return;
-   t.members = t.members.filter(function(x){ return nm(x)!==nm(n); });
-   if(box && box.checked) t.members.push(n);
-   var c = el('tmc_'+ti); if(c) c.innerText = t.members.length+'名';
+ function holderSelect(key){
+   return '<select id="hd_'+roleIndex(key)+'">'+memberOptions(holderEdit[key]||'', '（未設定）')+'</select>';
  }
+ // 画面で直したところ（担当者・チームの名前・リーダー）を、描き直す前に控える
+ function captureEdits(){
+   if(holderEdit) (ctx.roles||[]).forEach(function(r, i){ var s=el('hd_'+i); if(s) holderEdit[r.key]=s.value; });
+   if(teamEdit) teamEdit.teams.forEach(function(t, ti){
+     var n=el('tn_'+ti), l=el('tl_'+ti);
+     if(n) t.name = String(n.value||'').replace(/\s+/g,' ').trim() || t.name;
+     if(l) t.leader = l.value;
+   });
+ }
+ function renderTeams(fresh){
+   if(!fresh) captureEdits();
+   var teams = teamEdit ? teamEdit.teams : [];
+   var rows = '<tr class="h"><td class="tn">チーム名</td><td class="tl">リーダー</td><td>役職・メンバー</td></tr>'
+     + '<tr><td class="tn"><b>リーダーシップチーム</b></td><td class="tl muted">—</td><td>'
+     + LEADERSHIP.map(function(k){ var r = roleOf(k); return r ? '<div class="lrow"><span class="rl">'+esc(r.label)+'</span>'+holderSelect(k)+'</div>' : ''; }).join('')
+     + '</td></tr>';
+   teams.forEach(function(t, ti){
+     var role = t.key && t.key.indexOf('role:')===0 ? t.key.slice(5) : '', r = role ? roleOf(role) : null;
+     var leader = role ? holderSelect(role)
+       : '<select id="tl_'+ti+'">'+memberOptions(t.leader||'', t.key==='membership' ? '（バイスプレジデント）' : '（未設定）')+'</select>';
+     var sub = r ? 'リーダー：'+esc(r.label)
+       : t.key==='membership' ? 'リーダーの初期値はバイスプレジデント'
+       : '<a href="javascript:void(0)" onclick="delTeam('+ti+')">✕ このチームを外す</a>';
+     var inTeam = {};
+     t.members.forEach(function(m){ inTeam[nm(m.name)] = true; });
+     var chips = t.members.map(function(m, mi){
+       return '<span class="chip">'+esc(m.name)+(m.note?'<span class="muted">（'+esc(m.note)+'）</span>':'')
+         +'<a href="javascript:void(0)" onclick="delMember('+ti+','+mi+')" title="外す">✕</a></span>';
+     }).join('');
+     var add = '<span class="addm"><select id="ta_'+ti+'"><option value="">＋ メンバーを選ぶ</option>'
+       + (ctx.members||[]).filter(function(n){ return !inTeam[nm(n)]; }).map(function(n){ return '<option value="'+esc(n)+'">'+esc(n)+'</option>'; }).join('')
+       + '</select><input id="tr_'+ti+'" placeholder="役割（任意）"><button onclick="addMember('+ti+')">足す</button></span>';
+     rows += '<tr><td class="tn"><input class="tname" id="tn_'+ti+'" value="'+esc(t.name)+'"><div class="sm muted">'+sub+'</div></td>'
+       + '<td class="tl">'+leader+'</td><td>'+chips+(chips?'<br>':'')+add+'</td></tr>';
+   });
+   el('teamTable').innerHTML = '<table class="teams">'+rows+'</table>';
+ }
+ function addMember(ti){
+   var s = el('ta_'+ti), n = s ? s.value : '', note = String((el('tr_'+ti)||{}).value||'').replace(/\s+/g,' ').trim();
+   if(!n){ el('holderMsg').innerText='足す方を選んでください。'; return; }
+   captureEdits();
+   var t = teamEdit.teams[ti];
+   if(!t.members.some(function(m){ return nm(m.name)===nm(n); })) t.members.push({ name:n, note:note });
+   el('holderMsg').innerText='';
+   renderTeams(true);
+ }
+ function delMember(ti, mi){ captureEdits(); teamEdit.teams[ti].members.splice(mi, 1); renderTeams(true); }
  function addTeam(){
    var n = String(el('teamName').value||'').replace(/\s+/g,' ').trim();
-   if(!n){ el('holderMsg').innerText='委員会・チームの名前を入れてください。'; return; }
+   if(!n){ el('holderMsg').innerText='チームの名前を入れてください。'; return; }
+   captureEdits();
    if(teamEdit.teams.some(function(t){ return nm(t.name)===nm(n); })){ el('holderMsg').innerText='「'+n+'」はもうあります。'; return; }
-   teamEdit.teams.push({ name:n, members:[] });
+   teamEdit.teams.push({ key:'', name:n, leader:'', members:[] });
    el('teamName').value=''; el('holderMsg').innerText='';
-   renderTeams();
+   renderTeams(true);
  }
  function delTeam(ti){
+   captureEdits();
    var t = teamEdit.teams[ti];
    if(!t) return;
-   if(t.members.length && !confirm('「'+t.name+'」を外しますか？（'+t.members.length+'名のチェックも消えます）')) return;
+   if(t.members.length && !confirm('「'+t.name+'」を外しますか？（'+t.members.length+'名のメンバーも消えます）')) return;
    teamEdit.teams.splice(ti, 1);
-   renderTeams();
+   renderTeams(true);
  }
  // メンバー名簿の「役職」への反映の様子
  function renderRosterNote(){
@@ -422,32 +457,36 @@
    el('rosterNote').innerText = (ctx.rosterSync ? '✅ '+ctx.rosterSync+'\n' : '')
      + (s.applied ? 'メンバー名簿の「役職」には、'+s.applied+'期（'+s.label+'）の内容を反映しています'+(s.at?'（'+s.at+'）':'')+'。'
                   : 'メンバー名簿の「役職」には、まだ反映していません。')
-     + '期が替わると、新しい期の内容を自動で反映します。委員会・チームを登録した期は、役職の欄をその期の内容（13の役職と委員会・チーム）に書き直します。'
+     + '期が替わると、新しい期の内容を自動で反映します。チームのメンバーを登録した期は、役職の欄をその期の内容（役職とチームでの役割）に書き直します。'
      + '登録していない期は、13の役職の名前だけを直します。';
  }
- // 表示している期の担当者・委員会を、画面で直したまま保存していないか
+ // 表示している期の担当者・チームを、画面で直したまま保存していないか
  function holdersDirty(){
    var ht = holderTermOf(holderShown);
-   return !!ht && (ctx.roles||[]).some(function(r, i){ var s=el('hd_'+i); return !!s && s.value !== (ht.holders[r.key]||''); });
+   if(!ht || !holderEdit) return false;
+   captureEdits();
+   return (ctx.roles||[]).some(function(r){ return (holderEdit[r.key]||'') !== ((ht.holders||{})[r.key]||''); });
  }
  function teamsDirty(){
    var ht = holderTermOf(holderShown);
    if(!ht || !teamEdit) return false;
-   var key = function(ts){ return JSON.stringify((ts||[]).map(function(t){ return [nm(t.name), t.members.map(nm).sort()]; })); };
+   captureEdits();
+   var key = function(ts){ return JSON.stringify((ts||[]).map(function(t){
+     return [t.key||'', t.name, nm(t.leader||''), t.members.map(function(m){ return nm(m.name)+'/'+(m.note||''); })]; })); };
    return key(teamEdit.teams) !== key(ht.teams);
  }
- // 表示している期の役職・委員会を、メンバー名簿の「役職」に反映する（直すところを確かめてから）
+ // 表示している期の役職・チームを、メンバー名簿の「役職」に反映する（直すところを確かめてから）
  function rosterRoles(){
    var term = holderShown;
-   if(holdersDirty() || teamsDirty()){ el('holderMsg').innerText='変更を保存していません。先に「この期の役職・委員会を保存」を押してください。'; return; }
+   if(holdersDirty() || teamsDirty()){ el('holderMsg').innerText='変更を保存していません。先に「この期の役職・チームを保存」を押してください。'; return; }
    el('holderMsg').innerText='メンバー名簿を確かめています…';
    google.script.run.withSuccessHandler(function(p){
      if(!p || !p.ok){ el('holderMsg').innerText=(p&&p.message)||'確かめられませんでした。'; return; }
      var miss = p.notFound.length ? '名簿に見つからない方：'+p.notFound.join('、') : '';
      if(!p.changes.length){ el('holderMsg').innerText='メンバー名簿の「役職」は、もう'+term+'期の内容どおりです。'+(miss?'（'+miss+'）':''); return; }
      var lines = p.changes.map(function(c){ return '・'+c.name+'：'+(c.from||'（空欄）')+' → '+(c.to||'（空欄）'); });
-     if(!confirm('メンバー名簿の「役職」を、'+term+'期（'+p.label+'）の'+(p.full?'役職・委員会':'担当者')+'に合わせて直します。'
-                 +(p.full?'（役職の欄を、この期の内容に書き直します）':'（この期の委員会・チームが未登録なので、13の役職だけを直します）')
+     if(!confirm('メンバー名簿の「役職」を、'+term+'期（'+p.label+'）の'+(p.full?'役職・チーム':'担当者')+'に合わせて直します。'
+                 +(p.full?'（役職の欄を、この期の内容に書き直します）':'（この期のチームのメンバーが未登録なので、13の役職だけを直します）')
                  +'\n\n'+lines.join('\n')+(miss?'\n\n'+miss:'')+'\n\nよろしいですか？')){ el('holderMsg').innerText=''; return; }
      el('holderMsg').innerText='直しています…';
      google.script.run.withSuccessHandler(function(res){
@@ -456,24 +495,25 @@
      }).withFailureHandler(fail).applyRoleHoldersToRoster(term);
    }).withFailureHandler(fail).previewRoleHoldersRoster(term);
  }
- // 開催日の期の役職・委員会がまだ無く、前の期のものを出しているとき（期が替わったとき）に知らせる
+ // 開催日の期の役職・チームがまだ無く、前の期のものを出しているとき（期が替わったとき）に知らせる
  function renderHolderWarn(){
    var ht = ctx.holderTerm, w = el('holderWarn');
    var h = ht && !ht.registered && ht.from && ht.from < ht.term, t = ht && !ht.teamsRegistered && ht.teamsFrom && ht.teamsFrom < ht.term;
    if(h || t){
      w.style.display='block';
-     w.innerHTML = '⚠ '+ht.term+'期（'+esc(ht.label)+'）の'+(h&&t?'役職・委員会':h?'担当者':'委員会・チーム')+'がまだ登録されていません。'
-       +'いまは'+(h?ht.from:ht.teamsFrom)+'期のものを出しています。いちばん下の「役職・委員会（半期ごと）」で登録してください。';
+     w.innerHTML = '⚠ '+ht.term+'期（'+esc(ht.label)+'）の'+(h&&t?'役職・チーム':h?'担当者':'チームのメンバー')+'がまだ登録されていません。'
+       +'いまは'+(h?ht.from:ht.teamsFrom)+'期のものを出しています。いちばん下の「役職・チーム（半期ごと）」で登録してください。';
    } else { w.style.display='none'; w.innerHTML=''; }
  }
  function saveHolders(){
-   var map={}, term=holderShown, order={};
-   (ctx.roles||[]).forEach(function(r, i){ var s=el('hd_'+i); if(s) map[r.key]=s.value; });
-   teamNames.forEach(function(n, i){ order[nm(n)] = i; });
-   // 委員会・チームは、直したときか、もう登録してある期のときだけ送る
-   // （担当者だけを保存したときに、未登録の期へ空や前の期の顔ぶれを登録しないように）
-   var ht = holderTermOf(term), teams = (teamsDirty() || (ht && ht.teamsRegistered)) ? (teamEdit ? teamEdit.teams : []).map(function(t){
-     return { name:t.name, members: t.members.slice().sort(function(a, b){ return (order[nm(a)]||0)-(order[nm(b)]||0); }) };
+   var term = holderShown, ht = holderTermOf(term);
+   captureEdits();
+   var map = {};
+   (ctx.roles||[]).forEach(function(r){ map[r.key] = holderEdit ? (holderEdit[r.key]||'') : ''; });
+   // チームは、直したときか、もう登録してある期のときだけ送る
+   // （担当者だけを保存したときに、未登録の期へ前の期の顔ぶれや空のチームを登録しないように）
+   var teams = (teamsDirty() || (ht && ht.teamsRegistered)) ? (teamEdit ? teamEdit.teams : []).map(function(t){
+     return { key:t.key||'', name:t.name, leader:t.leader||'', members: t.members.map(function(m){ return { name:m.name, note:m.note||'' }; }) };
    }) : null;
    el('holderMsg').innerText='保存しています…';
    google.script.run.withSuccessHandler(function(res){

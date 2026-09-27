@@ -347,46 +347,61 @@ F.saveRoleHolders({ secretary: '原田 雅人' }, 24, '2026/10/07');
   const note = F.roleRosterAfterImport_();
   ck(roleIn('熊谷 龍威') === 'プレジデント' && roleIn('見本 前任') === '' && /24期の内容に合わせ直しました（2名）/.test(note), '取り込みのあと: ' + note);
 
-  // ===================== 委員会・チーム（半期ごと）=====================
-  // まだ登録していない：既定の名前（ビジターホスト・メンバーシップ委員会）だけで、顔ぶれは空
+  // ===================== チーム（半期ごと）=====================
+  // まだ登録していない：既定のチーム（メンバーシップ委員会と、役職ごとのチーム）だけで、メンバーは空
+  const DEF_TEAMS = 'メンバーシップ委員会・エデュケーションコーディネーター・ビジターホスト・Webチーム・メンターコーディネーター・'
+    + 'イベント委員＆1to1促進委員・メンバーサポート委員・トレーニング委員・BCP委員・スプレディング委員会・グローバルビジネスコーディネーター';
   let tt = F.roleTeamsOfTerm_(F.roleTeamTerms_(), 24);
-  ck(!tt.registered && tt.from === null && tt.teams.map((t) => t.name).join('・') === 'ビジターホスト・メンバーシップ委員会'
-     && tt.teams.every((t) => !t.members.length), '未登録の委員会・チーム: ' + JSON.stringify(tt));
-  // 24期の委員会・チームを登録する（名前・顔ぶれの重なりや空欄はそろえる。担当者は変えない）
+  ck(!tt.registered && tt.from === null && tt.teams.map((t) => t.name).join('・') === DEF_TEAMS
+     && tt.teams.every((t) => !t.members.length && !t.leader), '未登録のチーム: ' + tt.teams.map((t) => t.name).join('・'));
+  // 24期のチームを登録する（キーの無い前の形も読む。名前・メンバーの空欄や重なりはそろえる。担当者は変えない）
   res = F.saveRoleHolders(null, 24, '2026/10/07', [
-    { name: 'ビジターホスト', members: ['岡安 秀明', '成毛 幸夫', '岡安　秀明', ''] },
+    { key: 'role:vhc', name: 'ビジターホスト', members: [{ name: '山本 登一郎', note: 'サブリーダー' }, { name: '岡安 秀明' }, '成毛 幸夫', '岡安　秀明', ''] },
     { name: ' メンバーシップ委員会 ', members: ['三澤 浩三'] },
-    { name: 'ビジターホスト', members: ['見本 重なり'] },
+    { key: 'role:ec', name: 'エデュケーションコーディネーター', members: [{ name: '原田 雅人' }] },
+    { key: 'role:mentor', name: 'メンターコーディネーター', members: [{ name: '田中 秀一', note: 'メンター' }] },
+    { key: 'role:web', name: 'Webチーム', members: [{ name: '分銅 雅一' }, { name: '原田 雅人' }] },
+    { key: 'role:vhc', name: 'ビジターホスト', members: ['見本 重なり'] },
     { name: '', members: ['見本 空欄'] },
-    { name: 'メンター', members: ['田中 秀一', '熊谷 龍威'] }]);
+    { name: '広報チーム', leader: '木村 光範', members: ['佐藤 祐之'] }]);
   tt = F.roleTeamsOfTerm_(F.roleTeamTerms_(), 24);
-  ck(res.ok && /24期（2026年10月〜2027年3月）の役職・委員会を保存しました/.test(res.message) && tt.registered
-     && JSON.stringify(tt.teams) === JSON.stringify([{ name: 'ビジターホスト', members: ['岡安 秀明', '成毛 幸夫'] },
-       { name: 'メンバーシップ委員会', members: ['三澤 浩三'] }, { name: 'メンター', members: ['田中 秀一', '熊谷 龍威'] }])
-     && holderOn('2026/10/07', 'president') === '熊谷 龍威',
-     '委員会・チームの保存: ' + res.message + ' ' + JSON.stringify(tt.teams));
-  // 名簿の役職：委員会・チームを登録した期は、役職の欄を全部その期の内容にする（24期は反映してある期なので、保存したときに直す）
-  ck(res.roster && res.roster.full && roleIn('熊谷 龍威') === 'プレジデント・メンター' && roleIn('岡安 秀明') === 'ビジターホスト'
-     && roleIn('三澤 浩三') === 'メンバーシップ委員会' && roleIn('田中 秀一') === 'メンター' && roleIn('原田 雅人') === '書記兼会計'
-     && roleIn('見本 経歴') === '' && roleIn('見本 ホスト') === '' && /メンバー名簿の「役職」も直しました/.test(res.message),
-     '委員会・チームを登録した期の名簿: ' + JSON.stringify(['熊谷 龍威', '岡安 秀明', '見本 経歴', '見本 ホスト'].map(roleIn)));
+  const teamOf = (k) => tt.teams.find((t) => t.key === k) || { members: [] };
+  ck(res.ok && /24期（2026年10月〜2027年3月）の役職・チームを保存しました/.test(res.message) && tt.registered && tt.teams.length === 12
+     && JSON.stringify(teamOf('role:vhc').members) === JSON.stringify([{ name: '山本 登一郎', note: 'サブリーダー' }, { name: '岡安 秀明', note: '' }, { name: '成毛 幸夫', note: '' }])
+     && teamOf('membership').members.map((m) => m.name).join() === '三澤 浩三' && teamOf('custom:1').name === '広報チーム'
+     && teamOf('custom:1').leader === '木村 光範' && holderOn('2026/10/07', 'president') === '熊谷 龍威',
+     'チームの保存: ' + res.message + ' ' + JSON.stringify(tt.teams.filter((t) => t.members.length || t.leader)));
+  // 名簿の役職：チームを登録した期は、役職の欄を全部その期の内容にする（24期は反映してある期なので、保存したときに直す）
+  ck(res.roster && res.roster.full && roleIn('熊谷 龍威') === 'プレジデント' && roleIn('岡安 秀明') === 'ビジターホスト'
+     && roleIn('山本 登一郎') === 'メンバーサポート委員・ビジターホスト（サブリーダー）' && roleIn('三澤 浩三') === 'メンバーシップ委員会'
+     && roleIn('原田 雅人') === '書記兼会計・エデュケーションコーディネーター（サポート）・Webチーム'
+     && roleIn('田中 秀一') === 'メンターコーディネーター（メンター）' && roleIn('木村 光範') === '広報チーム（リーダー）'
+     && roleIn('佐藤 祐之') === '広報チーム' && roleIn('見本 経歴') === '' && roleIn('見本 ホスト') === ''
+     && /メンバー名簿の「役職」も直しました/.test(res.message),
+     'チームを登録した期の名簿: ' + JSON.stringify(['山本 登一郎', '原田 雅人', '田中 秀一', '木村 光範', '見本 経歴'].map(roleIn)));
+  // メンバーシップ委員会のリーダーに、役職の無い方を選ぶと「（リーダー）」、役職のある方は役職だけ
+  ck(F.roleTeamMemberLabel_({ key: 'role:vhc', name: 'ビジターホスト' }, { name: 'x', note: '' }) === 'ビジターホスト'
+     && F.roleTeamMemberLabel_({ key: 'role:training', name: 'トレーニング委員' }, { name: 'x', note: '' }) === 'トレーニング委員（サポート）'
+     && F.roleTeamMemberLabel_({ key: 'role:training', name: 'トレーニング促進委員' }, { name: 'x', note: '' }) === 'トレーニング促進委員',
+     'チームでの役割の書き方');
   // 25期（未登録）は24期の顔ぶれを出す。画面に渡す期の一覧にも入る
   const t25b = F.roleTeamsOfTerm_(F.roleTeamTerms_(), 25);
-  ck(!t25b.registered && t25b.from === 24 && t25b.teams[0].members.join('・') === '岡安 秀明・成毛 幸夫', '25期（未登録）の委員会・チーム: ' + JSON.stringify(t25b));
+  ck(!t25b.registered && t25b.from === 24 && t25b.teams.find((t) => t.key === 'role:vhc').members.map((m) => m.name).join('・') === '山本 登一郎・岡安 秀明・成毛 幸夫',
+     '25期（未登録）のチーム: ' + JSON.stringify(t25b.teams[2]));
   F.ROLE_ROSTER_CHECKED_ = true;
   const c24t = F.getRoleInputContext('2026/10/07', '');
   const e24 = c24t.holderTerms.find((t) => t.term === 24), e25 = c24t.holderTerms.find((t) => t.term === 25);
-  ck(c24t.holderTerm.teamsRegistered && e24.teams.length === 3 && !e25.teamsRegistered && e25.teamsFrom === 24,
+  ck(c24t.holderTerm.teamsRegistered && e24.teams.length === 12 && !e25.teamsRegistered && e25.teamsFrom === 24,
      '画面に渡す委員会・チーム: ' + JSON.stringify(c24t.holderTerms.map((t) => [t.term, t.teamsRegistered, t.teamsFrom])));
-  // 委員会・チームがみな空の期は、13の役職だけを直す（役職の欄を全部書き直さない）
-  F.saveRoleHolders(null, 25, '2026/10/07', [{ name: 'ビジターホスト', members: [] }]);
-  ck(F.previewRoleHoldersRoster(25).full === false, 'みな空の委員会・チームで、役職の欄を全部書き直そうとした');
+  // チームがみな空の期は、13の役職だけを直す（役職の欄を全部書き直さない）
+  F.saveRoleHolders(null, 25, '2026/10/07', [{ key: 'role:vhc', name: 'ビジターホスト', members: [] }]);
+  ck(F.previewRoleHoldersRoster(25).full === false, 'みな空のチームで、役職の欄を全部書き直そうとした');
   delete props.BNI_ROLE_TEAMS_25;
 
   // 割り振り：役職から読み取る。9月（期の最後の月）は引継ぎの時期なので、次の期（24期）を選んでおく
   let vh = F.getVisitorHostsFromRoles();
   ck(vh.ok && vh.now === 23 && vh.pick === 24 && vh.handover && vh.terms.map((t) => t.term).join() === '23,24'
-     && vh.terms[1].names.join('、') === '藤田 礼恵、岡安 秀明、成毛 幸夫' && vh.terms[1].registered
+     && vh.terms[1].names.join('、') === '藤田 礼恵、山本 登一郎、岡安 秀明、成毛 幸夫' && vh.terms[1].registered
      && !vh.terms[0].registered && vh.terms[0].from === 24,
      'ビジターホストの読み取り: ' + JSON.stringify(vh));
   // 次の期の委員会・チームが未登録なら、今の期
@@ -412,4 +427,4 @@ if (fails.length) {
   fails.slice(0, 40).forEach((f) => console.log('   ' + f));
   process.exit(1);
 }
-console.log('OK: 項目（担当の列から）・推定・入力状況・保存（行の追加・衝突・数式・役職の制限）・役職と委員会（半期ごと・名簿の役職への反映・ビジターホストの読み取り）');
+console.log('OK: 項目（担当の列から）・推定・入力状況・保存（行の追加・衝突・数式・役職の制限）・役職とチーム（半期ごと・名簿の役職への反映・ビジターホストの読み取り）');
