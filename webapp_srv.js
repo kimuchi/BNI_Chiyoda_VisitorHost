@@ -33,9 +33,11 @@ function getSS_() {
 }
 
 // ウェブアプリに出す機能の一覧。キーは表示するHTMLファイル名。
+// query は、同じ画面を別の開き方で出すときのURLの続き（view=premtg など）。
 var WEBAPP_PAGES_ = [
   { group: '毎週の作業', items: [
     { key: 'role_input',        label: '役職ごとの入力（定例会の準備）', desc: '次回の定例会について役職ごとに入力します。入力状況も一目で分かります' },
+    { key: 'role_input', query: 'view=premtg', label: '事前MTG（朝イチMTG）のパワポ', desc: '役職ごとの入力（共有事項・お願い事項など）から作ります' },
     { key: 'dialog',            label: 'CSVから名簿・PDF作成',   desc: '参加者のCSVを取り込んで名簿とPDFを作ります' },
     { key: 'email',             label: 'メールの確認・一括送信', desc: '案内メールをまとめて送ります' },
     { key: 'allocation',        label: 'ルーム・オリエン割り振り表', desc: 'ビジターごとの担当を決めます' },

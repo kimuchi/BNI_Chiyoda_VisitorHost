@@ -7,7 +7,9 @@
 var BIG_TEMPLATE_KINDS_ = {
   meetingFirst:  { prop: 'BNI_TPL_MEETING_FIRST_ID',  label: '定例会スライド（前半）' },
   meetingSecond: { prop: 'BNI_TPL_MEETING_SECOND_ID', label: '定例会スライド（後半）' },
-  memberPresen:  { prop: 'BNI_TPL_MEMBER_PRESEN_ID',  label: 'メンバープレゼン' }
+  memberPresen:  { prop: 'BNI_TPL_MEMBER_PRESEN_ID',  label: 'メンバープレゼン' },
+  // 事前MTGは小さなファイル。登録しなければ同梱の既定のひな形で作る（premtg_srv.js）
+  preMeeting:    { prop: 'BNI_TPL_PREMTG_ID',         label: '事前MTG（朝イチMTG）', builtin: true }
 };
 var SLIDES_MIME_ = 'application/vnd.google-apps.presentation';
 var PPTX_MIME_ = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
@@ -27,6 +29,10 @@ function registerBigTemplate(kind, linkOrId) {
     if (mime !== SLIDES_MIME_ && mime !== PPTX_MIME_) {
       return { ok: false, message: 'PowerPoint(.pptx)またはGoogleスライドのファイルを指定してください（現在: ' + mime + '）。' };
     }
+    // 事前MTGは中身（pptxの部品）を書き換えて作るので、Googleスライドのままでは使えない
+    if (def.builtin && mime !== PPTX_MIME_) {
+      return { ok: false, message: '「' + def.label + '」は PowerPoint(.pptx) のファイルを指定してください（Googleスライドのままでは使えません）。' };
+    }
     PropertiesService.getScriptProperties().setProperty(def.prop, id);
     console.log('[BIGTPL] ' + kind + ' -> ' + id + ' (' + mime + ')');
     return { ok: true, message: '「' + def.label + '」に「' + file.getName() + '」を登録しました。', status: getBigTemplateStatus() };
@@ -40,7 +46,8 @@ function getBigTemplateStatus() {
   var props = PropertiesService.getScriptProperties(), list = [];
   for (var k in BIG_TEMPLATE_KINDS_) {
     var def = BIG_TEMPLATE_KINDS_[k], id = props.getProperty(def.prop) || '';
-    var row = { kind: k, label: def.label, registered: false, fileName: '', url: '', mimeType: '', isSlides: false, sizeMB: 0 };
+    var row = { kind: k, label: def.label, registered: false, fileName: '', url: '', mimeType: '', isSlides: false, sizeMB: 0,
+                builtin: !!def.builtin };
     if (id) {
       try {
         var f = DriveApp.getFileById(id);
@@ -201,7 +208,7 @@ function analyzePptxContents(kind) {
 function openBigTemplateDialog() {
   SpreadsheetApp.getUi().showModalDialog(
     HtmlService.createHtmlOutputFromFile('big_templates').setWidth(700).setHeight(700),
-    '大きなスライド（定例会・メンバープレゼン）の登録');
+    '大きなスライド（定例会・メンバープレゼン・事前MTG）の登録');
 }
 
 // 初回の権限取得用。モーダル内では認可画面を出せないため、メニューから1回実行する。
@@ -234,8 +241,10 @@ function inspectPptxTokens(kind) {
   try {
     var def = BIG_TEMPLATE_KINDS_[kind];
     if (!def) return { ok: false, message: 'テンプレートの種類が不正です。' };
-    var file = getBigTemplateFile_(kind);
-    var parts = Utilities.unzip(file.getBlob().setContentType('application/zip'));
+    // 登録していない事前MTGは、同梱の既定のひな形を調べる
+    var id = PropertiesService.getScriptProperties().getProperty(def.prop);
+    var blob = (!id && def.builtin) ? premtgBuiltinBlob_() : getBigTemplateFile_(kind).getBlob();
+    var parts = Utilities.unzip(blob.setContentType('application/zip'));
     var found = {}, slideCount = 0;
     for (var i = 0; i < parts.length; i++) {
       var nm = parts[i].getName();

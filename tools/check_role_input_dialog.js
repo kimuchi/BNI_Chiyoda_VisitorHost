@@ -21,7 +21,11 @@ const server = {
   getSpeakerRotation: () => { calls.push(['rot']); return S.F.getSpeakerRotation(); },
   saveSpeakerRotation: (d) => { calls.push(['rotSave', d]); return S.F.saveSpeakerRotation(d); },
   importSpeakerRotation: (j) => { calls.push(['rotImport', j]); return S.F.importSpeakerRotation(j); },
+  getPreMeetingPreview: (d) => { calls.push(['premtgPreview', d]); return S.F.getPreMeetingPreview(d); },
+  generatePreMeetingSlides: (d) => { calls.push(['premtgMake', d]); return S.F.generatePreMeetingSlides(d); },
 };
+// 事前MTGのパワポの保存先（Drive）は使わない
+S.F.saveOutputFile_ = (blob, name) => ({ id: 'x', url: 'https://example/' + name, downloadUrl: 'https://example/dl/' + name });
 // 本番はサーバーがURLの役職（?role=…）を画面に埋め込む。ここでは同じ置き換えをしてから読む
 function open(role, view) {
   return loadPage('role_input.html', {
@@ -170,10 +174,34 @@ ck(after.header === 'メインプレゼンテーション（各５分）' && aft
 step('書記兼会計の入力に戻る', () => run('closeRotation()'));
 ck(shown(els.roleView) && !shown(els.rotView) && els.roleName.innerText === '書記兼会計', '書記兼会計の入力に戻らない');
 
+// ===================== 事前MTG（朝イチMTG）のパワポ =====================
+// メニューの「事前MTG（朝イチMTG）のパワポ」は、一覧を開いてすぐ中身の確かめを出す
+page = open('', 'premtg');
+({ els, window, run, step } = page);
+page.flush();
+window.onload();
+step('事前MTGを開く', () => {});
+ck(shown(els.overview) && calls.some((c) => c[0] === 'premtgPreview' && c[1] === '2026/09/30'), '開いてすぐ中身の確かめが出ない');
+const pm = els.premtgOut.innerHTML;
+ck(/📅 直近のイベント/.test(pm) && /✏️ お願い事項/.test(pm) && /💻 定例会関連/.test(pm), 'まとめの3つのまとまりが出ていない');
+ck(/・欠席：/.test(pm) && /・ビジター：2名/.test(pm), '定例会関連の中身（バイスが保存したビジター2名）: ' + pm.replace(/<[^>]+>/g, ' ').slice(0, 300));
+ck(/役職のページ（1枚）/.test(pm) && /🎯 バイスプレジデント/.test(pm) && /今週の共有事項が無い役職/.test(pm), '役職のページの割り付け: ' + pm.replace(/<[^>]+>/g, ' ').slice(0, 400));
+ck(/空欄の項目/.test(pm) && /ひな形：既定のもの/.test(pm), '空欄の項目・ひな形の表示');
+step('パワポを作る', () => run('premtgMake()'));
+ck(calls.some((c) => c[0] === 'premtgMake' && c[1] === '2026/09/30'), '作る呼び出しが無い');
+ck(/✅/.test(els.premtgOut.innerHTML) && /20260930_BNI事前MTG\.pptx/.test(els.premtgOut.innerHTML)
+   && /PowerPointをダウンロード/.test(els.premtgOut.innerHTML), '作ったあとの表示: ' + els.premtgOut.innerHTML.replace(/<[^>]+>/g, ' ').slice(0, 300));
+ck(els.premtgBtn.disabled === false, '作ったあとも「パワポを作る」が押せない');
+step('開催日を変える', () => { els.meeting.value = '2026/10/07'; run('changeMeeting()'); });
+ck(els.premtgOut.innerHTML === '', '開催日を変えても前の結果が残っている');
+step('中身を確かめる（10/7）', () => run('premtgPreview()'));
+ck(calls.filter((c) => c[0] === 'premtgPreview').pop()[1] === '2026/10/07' && /役職のページ（0枚）/.test(els.premtgOut.innerHTML),
+   '10/7 の確かめ: ' + els.premtgOut.innerHTML.replace(/<[^>]+>/g, ' ').slice(0, 200));
+
 console.log(`役職ごとの入力の画面: 検査 ${checks} 件`);
 if (fails.length) {
   console.log(`NG: ${fails.length} 件`);
   fails.slice(0, 30).forEach((f) => console.log('   ' + f));
   process.exit(1);
 }
-console.log('OK: 一覧（入力状況・担当者）／役職の入力（推定・前回・人数・保存・シートへの書き込み）／URLでの役職指定／スピーカーローテーション');
+console.log('OK: 一覧（入力状況・担当者）／役職の入力（推定・前回・人数・保存・シートへの書き込み）／URLでの役職指定／スピーカーローテーション／事前MTGのパワポ');

@@ -11,8 +11,23 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { readZip, writeZip } = require('./lib_zip');
 
 const ROOT = path.join(__dirname, '..');
+
+// GAS の Blob を最小限だけ真似る（中身は Buffer）
+function makeBlob(buf, type, name) {
+  let nm = name || '', ct = type || '';
+  return {
+    _buf: buf,
+    getBytes: () => Array.from(buf).map((b) => (b > 127 ? b - 256 : b)),
+    getDataAsString: () => buf.toString('utf8'),
+    getContentType: () => ct,
+    setContentType(t) { ct = t; return this; },
+    setName(n) { nm = n; return this; },
+    getName: () => nm,
+  };
+}
 
 function makeRoleServer(routinePath, membersPath) {
   const ROUTINE = JSON.parse(fs.readFileSync(routinePath, 'utf8'));
@@ -116,7 +131,15 @@ function makeRoleServer(routinePath, membersPath) {
         return f.replace('yyyy', d.getFullYear()).replace('MM', p(d.getMonth() + 1)).replace('dd', p(d.getDate()))
           .replace(/(^|[^M])M(?!M)/, '$1' + (d.getMonth() + 1)).replace(/(^|[^d])d(?!d)/, '$1' + d.getDate());
       },
+      // pptx の展開・再梱包（事前MTGのパワポで使う）
+      newBlob: (data, type, name) => makeBlob(Buffer.isBuffer(data) ? data
+        : Array.isArray(data) ? Buffer.from(data.map((b) => b & 255)) : Buffer.from(String(data), 'utf8'), type, name),
+      base64Decode: (s) => Buffer.from(String(s), 'base64'),
+      unzip: (blob) => Object.entries(readZip(blob._buf)).map(([n, b]) => makeBlob(b, '', n)),
+      zip: (blobs, name) => makeBlob(writeZip(Object.fromEntries(blobs.map((b) => [b.getName(), b._buf]))), 'application/zip', name),
     },
+    // 同梱のファイル（premtg_template.html など）を読む
+    HtmlService: { createHtmlOutputFromFile: (n) => ({ getContent: () => fs.readFileSync(path.join(ROOT, n + '.html'), 'utf8') }) },
     getSS_: () => ({ getSheets: () => sheets, getSheetByName: (n) => sheets.find((s) => s.getName() === n) || null }),
     getMemberMaster: () => ({ ok: true, members: members.map((m) => Object.assign({}, m)) }),
     getMembersList: () => MEMBERS.map((m) => ({ no: m.no, name: m.name })),
@@ -126,8 +149,9 @@ function makeRoleServer(routinePath, membersPath) {
   };
   sandbox.global = sandbox;
   vm.createContext(sandbox);
-  for (const f of ['コード.js', 'member_master_srv.js', 'routine_srv.js', 'member_presen_srv.js',
-                   'meeting_slides_srv.js', 'visitor_post_srv.js', 'role_input_srv.js', 'speaker_rotation_srv.js']) {
+  for (const f of ['コード.js', 'ooxml.js', 'splice_srv.js', 'referral_srv.js', 'big_templates_srv.js',
+                   'member_master_srv.js', 'routine_srv.js', 'member_presen_srv.js', 'meeting_slides_srv.js',
+                   'visitor_post_srv.js', 'role_input_srv.js', 'speaker_rotation_srv.js', 'premtg_srv.js']) {
     vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), sandbox, { filename: f });
   }
   // 業種区分マスタは初期値（member_master_srv.js の DEFAULT_CATEGORIES_）を使う
@@ -149,4 +173,4 @@ function makeRoleServer(routinePath, membersPath) {
   return { F, sandbox, sheets, members, MEMBERS, SUB_FOR, props };
 }
 
-module.exports = { makeRoleServer };
+module.exports = { makeRoleServer, makeBlob };

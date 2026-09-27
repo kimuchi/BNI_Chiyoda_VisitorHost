@@ -64,6 +64,16 @@
  table.holders{border-collapse:collapse;width:100%;font-size:12px;margin:6px 0;}
  table.holders td{padding:3px 5px;border-bottom:1px solid #f0f2f5;}
  table.holders select{font-size:12px;max-width:100%;}
+ #premtgBox{margin:0 0 10px;}
+ .pmgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px;margin-top:8px;}
+ .pmblk{background:#f8f9fa;border:1px solid #e6e9ee;border-radius:6px;padding:7px 9px;}
+ .pmh{font-weight:bold;font-size:12px;margin-bottom:3px;}
+ .pmv{white-space:pre-wrap;font-size:11.5px;line-height:1.55;color:#333;word-break:break-all;}
+ .pmpages{font-size:12px;margin-top:8px;}
+ .pmpages ol{margin:4px 0 0;padding-left:22px;line-height:1.9;}
+ .pmrole{display:inline-block;border-left:5px solid #ccc;padding:0 6px;background:#fff;}
+ .pmdone{background:#e6f4ea;border:1px solid #b7dfc2;color:#137333;border-radius:6px;padding:8px 11px;margin-top:8px;font-size:12px;line-height:1.6;}
+ a.dl{display:inline-block;margin-top:8px;background:#0055ff;color:#fff;padding:7px 14px;border-radius:5px;text-decoration:none;font-weight:bold;font-size:12.5px;}
 </style></head>
 <body>
 <? var roleParam = (typeof params !== 'undefined' && params && params.role) ? String(params.role).replace(/[^a-z]/g, '') : '';
@@ -81,6 +91,17 @@
 
  <div id="overview" style="display:none;">
    <div class="summary" id="summary"></div>
+   <div class="box" id="premtgBox">
+     <div style="display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;">
+       <b style="font-size:13px;">📽 事前MTG（朝イチMTG）のパワポ</b>
+       <span style="margin-left:auto;display:flex;gap:6px;">
+         <button onclick="premtgPreview()">中身を確かめる</button>
+         <button class="primary" id="premtgBtn" onclick="premtgMake()">パワポを作る</button>
+       </span>
+     </div>
+     <div class="muted" style="margin-top:3px;">この開催日の入力内容から、まとめ1枚と、役職ごとの「今週の共有事項」のページを作ります。</div>
+     <div id="premtgOut"></div>
+   </div>
    <div class="cards" id="cards"></div>
    <div id="unknownNote"></div>
    <div class="box">
@@ -204,6 +225,7 @@
    if(c.message){ w.style.display='block'; w.innerHTML=esc(c.message); } else { w.style.display='none'; w.innerHTML=''; }
    if(view && roleOf(view)) openRole(view); else { view=''; showOverview(true); }
    if(VIEW_PARAM==='rotation' && view==='secretary' && !rotOpened){ rotOpened=true; openRotation(); }
+   if(VIEW_PARAM==='premtg' && !view && !premtgOpened){ premtgOpened=true; premtgPreview(); try{ el('premtgBox').scrollIntoView(); }catch(e){} }
  }
 
  function roleOf(key){ return ctx ? (ctx.roles||[]).filter(function(r){ return r.key===key; })[0] : null; }
@@ -227,6 +249,7 @@
  function showOverview(force){
    if(!force && !leaveOk()) return;
    view=''; ids=[]; fields={};
+   el('premtgOut').innerHTML='';                // 入力が変わっているかもしれないので、確かめの結果は消す
    show('roleView', false); show('rotView', false); show('overview', true);
    var roles = ctx.roles||[], n={done:0,todo:0,late:0,none:0};
    roles.forEach(function(r){ n[r.status.state]++; });
@@ -301,11 +324,37 @@
    el('saveBtn').disabled = busy || !ctx.found;
  }
 
- // 「代理・欠席」の欄はお名前の数も出す（フォームの「欠席人数」などの代わり）
+ // 「代理・欠席」の欄はお名前の数も出す（フォームの「欠席人数」などの代わり）。
+ // 数え方は事前MTGのパワポ（premtg_srv.js の premtgCountNames_）と同じ：
+ // かっこの中・「遅刻：○○さん」「○○さん遅刻」は数えない、「○○さん代理：△△さん」は○○さんだけ、
+ // 敬称（さん・様など）があれば敬称の数、無ければ区切りで分けた数
+ function isNone(s){
+   var t=String(s==null?'':s).normalize('NFKC').replace(/[\s。．.！!]/g,'');
+   return /^(なし|無し|特になし|特に無し|ありません|特にありません|ー|-|―|—|‐|0)$/.test(t);
+ }
  function countNames(v){
-   var s=String(v||'').replace(/[（(][^）)]*[）)]/g,'').trim();
-   if(!s || /^(なし|無し|ー|-|―)/.test(s)) return 0;
-   return s.split(/[、,，・\/／\s　]+/).filter(function(x){ return x; }).length;
+   var s=String(v||'').normalize('NFKC'), out='', depth=0, i;
+   for(i=0;i<s.length;i++){
+     var c=s.charAt(i);
+     if(c==='('||c==='「'){ depth++; continue; }
+     if(c===')'||c==='」'){ if(depth>0) depth--; continue; }
+     if(!depth) out+=c;
+   }
+   var HONOR=/(さん|様|さま|氏|くん|君|ちゃん)/g, items=[];
+   out.split(/[\/\n]+/).forEach(function(seg){
+     var late=seg.search(/遅刻\s*:/);
+     if(late>=0) seg=seg.substring(0,late);
+     seg.split(/[、,※・]+/).forEach(function(p){
+       var it=p.split(/代理|→/)[0].trim();
+       if(!it || /遅刻/.test(it)) return;
+       if(/(なし|無し|休会)/.test(it) && !it.match(HONOR)) return;
+       if(isNone(it)) return;
+       items.push(it);
+     });
+   });
+   var honor=0;
+   items.forEach(function(it){ honor+=(it.match(HONOR)||[]).length; });
+   return honor||items.length;
  }
 
  function renderItems(){
@@ -434,6 +483,54 @@
  // ===================== スピーカーローテーション =====================
  // 並び順は位置（何番目か）で考える。起点（anchor）の日は、並びの pointer 番目から2名。
  // 並びを直すときは、ツールと同じく pointer がずれないように合わせる（前に入れたら+1、前を消したら-1）。
+ // --- 事前MTG（朝イチMTG）のパワポ ---
+ var premtgOpened=false;
+ function premtgFail(e){
+   el('premtgBtn').disabled=false;
+   el('premtgOut').innerHTML='<div class="warn" style="margin:8px 0 0;">エラー: '+esc((e&&e.message)?e.message:e)+'</div>';
+ }
+ // 作る前に中身を確かめる（まとめの文・役職のページの割り付け・空欄の項目）
+ function premtgPreview(){
+   if(!ctx) return;
+   el('premtgOut').innerHTML='<div class="loading" style="margin:8px 0 0;">⏳ 入力内容を集めています…</div>';
+   google.script.run.withSuccessHandler(renderPremtg).withFailureHandler(premtgFail).getPreMeetingPreview(ctx.date);
+ }
+ function renderPremtg(p){
+   if(!p || !p.ok){ el('premtgOut').innerHTML='<div class="warn" style="margin:8px 0 0;">'+esc((p&&p.message)||'読み込めませんでした。')+'</div>'; return; }
+   var blk=function(t, lines){
+     return '<div class="pmblk"><div class="pmh">'+esc(t)+'</div><div class="pmv">'
+       +((lines||[]).length?esc(lines.join('\n')):'<span class="muted">（記載なし）</span>')+'</div></div>';
+   };
+   var h='<div class="pmgrid">'+blk('📅 直近のイベント', p.summary['直近のイベント'])
+     +blk('✏️ お願い事項', p.summary['お願い事項'])+blk('💻 定例会関連', p.summary['定例会関連'])+'</div>';
+   h+='<div class="pmpages"><b>役職のページ（'+p.pages.length+'枚）</b>'
+     +(p.pages.length?'<ol start="2">'+p.pages.map(function(pg){
+        return '<li>'+pg.map(function(r){
+          return '<span class="pmrole" style="border-left-color:#'+esc(r.color)+';">'+esc(r.icon+' '+r.label)
+            +' <span class="muted">'+esc(r.holder||'担当者 未設定')+'・'+r.chars+'文字</span></span>';
+        }).join(' ＋ ')+'</li>';
+      }).join('')+'</ol>':'<div class="muted">今週の共有事項がまだ1つもありません（まとめのページだけになります）。</div>')+'</div>';
+   if(p.skipped.length) h+='<div class="hint">今週の共有事項が無い役職（ページを作りません）：'+esc(p.skipped.join('、'))+'</div>';
+   if(p.blank.length) h+='<div class="hint">空欄の項目（パワポでは「—」）：'
+     +esc(p.blank.map(function(b){ return b.label+(b.role?'（'+b.role+'）':''); }).join('、'))+'</div>';
+   h+='<div class="hint">ひな形：'+(p.template.registered?'登録したもの（'+esc(p.template.name)+'）':'既定のもの')
+     +'。デザインは ⚙️ 設定 ＞ 大きなスライド の「事前MTG（朝イチMTG）」で差し替えられます。'
+     +(p.template.error?'<br><b style="color:#b3261e;">'+esc(p.template.error)+'</b>':'')+'</div>';
+   el('premtgOut').innerHTML=h;
+ }
+ function premtgMake(){
+   if(!ctx || busy) return;
+   el('premtgBtn').disabled=true;
+   el('premtgOut').innerHTML='<div class="loading" style="margin:8px 0 0;">⏳ パワポを作っています…（写真を入れるので少しかかります）</div>';
+   google.script.run.withSuccessHandler(function(r){
+     el('premtgBtn').disabled=false;
+     if(!r || !r.ok){ el('premtgOut').innerHTML='<div class="warn" style="margin:8px 0 0;">'+esc((r&&r.message)||'作れませんでした。')+'</div>'; return; }
+     el('premtgOut').innerHTML='<div class="pmdone">✅ '+esc(r.message).replace(/\n/g,'<br>')+'</div>'
+       +'<a class="dl" href="'+esc(r.downloadUrl||r.url)+'" target="_blank">⬇ PowerPointをダウンロード</a> '
+       +'<a href="'+esc(r.url)+'" target="_blank" class="muted">ドライブで見る</a>';
+   }).withFailureHandler(premtgFail).generatePreMeetingSlides(ctx.date);
+ }
+
  var rot=null, rOrder=[], rExcluded=[], rAnchor=null, rDirty=false, rotOpened=false;
  function nm(s){ return String(s==null?'':s).replace(/[\s　]+/g,''); }
  function openRotation(){
