@@ -45,6 +45,56 @@ function ensureMemberSheet_() {
   return sh;
 }
 
+// 以前の既定の業種区分（2026年9月23日の版より前）。
+// そのころに作られた「業種区分マスタ」には、この行がそのまま残っていて、今の既定の行はうしろに足されている。
+// すると同じ区分が2行になり（「建築住まい」と「建築・住まい」など）、巡回順も古いまま（プロモーションが4番）なので、
+// ウィークリープレゼンの順番がずれる（建築＆住まいの次が不動産関連、プロモーションの次が美容・健康になる）。
+// 自動で入ったままの行（6つの値がこのとおりの行）だけを今の既定に直す。手で直した行は触らない。
+var LEGACY_CATEGORIES_ = [
+  ['企業サポート', '企業サポート', '#1f4e79', '#2e75b6', '企業サポート', 1],
+  ['研修教育',     '研修・教育',   '#375623', '#548235', '研修・教育',   2],
+  ['建築住まい',   '建築・住まい', '#7f6000', '#bf9000', '建築＆住まい', 3],
+  ['プロモーション', 'プロモーション', '#833c00', '#c55a11', 'プロモーション', 4],
+  ['美容健康',     '美容・健康',   '#7b2d52', '#c0507f', '美容・健康',   5],
+  ['金融保険',     '金融・保険',   '#1f3864', '#2f5597', '金融・保険',   6],
+  ['不動産',       '不動産',       '#4d3b63', '#7030a0', '不動産',       7],
+  ['暮らしサービス', '暮らしサービス', '#255e5e', '#38859c', '暮らしサービス', 8]
+];
+
+// 区分の書き方の違い（「建築・住まい」「建築住まい」、「美容と健康」「美容健康」）をそろえたもの
+function catNormKey_(s) {
+  return String(s == null ? '' : s).normalize('NFKC').replace(/[\s・･＆&と]/g, '');
+}
+
+// 昔の既定のまま残っている行を、今の既定に直した行の並びを返す。
+//   ・今の既定に同じキーがある（企業サポート・プロモーション）… 今の既定の値（色・巡回順）にする
+//   ・書き方違いの同じ区分が今の既定にある（研修教育・建築住まい・美容健康）… 消す（今の既定の行を使う）
+//   ・今の既定に無い区分（金融保険・不動産・暮らしサービス）… そのまま（使われていなければ「使われていない業種区分を消す」で消せる）
+function repairLegacyCategoryRows_(rows) {
+  var cur = {}, curNorm = {}, legacy = {}, out = [], changed = [], i;
+  for (i = 0; i < DEFAULT_CATEGORIES_.length; i++) {
+    cur[DEFAULT_CATEGORIES_[i][0]] = DEFAULT_CATEGORIES_[i];
+    curNorm[catNormKey_(DEFAULT_CATEGORIES_[i][0])] = DEFAULT_CATEGORIES_[i];
+  }
+  for (i = 0; i < LEGACY_CATEGORIES_.length; i++) legacy[LEGACY_CATEGORIES_[i][0]] = LEGACY_CATEGORIES_[i];
+  var same = function (row, lg) {
+    for (var c = 0; c < 6; c++) {
+      var a = String(row[c] == null ? '' : row[c]).trim(), b = String(lg[c]);
+      if (c === 5 ? Number(a) !== lg[5] : a.toLowerCase() !== b.toLowerCase()) return false;
+    }
+    return true;
+  };
+  for (i = 0; i < rows.length; i++) {
+    var key = String(rows[i][0] == null ? '' : rows[i][0]).trim(), lg = legacy[key];
+    if (lg && same(rows[i], lg)) {
+      if (cur[key]) { out.push(cur[key].slice()); changed.push(key); continue; }
+      if (curNorm[catNormKey_(key)]) { changed.push(key); continue; }
+    }
+    out.push(rows[i].slice(0, 6));
+  }
+  return { rows: out, changed: changed };
+}
+
 function ensureCategorySheet_() {
   var ss = getSS_(), sh = ss.getSheetByName(CAT_SHEET_);
   if (!sh) {
@@ -56,15 +106,23 @@ function ensureCategorySheet_() {
     sh.hideSheet();
     return sh;
   }
+  // 昔の既定のまま残っている行を、今の既定に直す（上の LEGACY_CATEGORIES_）。
   // 区分が増えたとき（Spreadingのグループが変わったときなど）に足りない行を補う。
-  // 既にある行の色や並びは、手で直されている可能性があるのでそのまま残す。
-  var have = {}, data = sh.getDataRange().getValues();
-  for (var i = 1; i < data.length; i++) have[String(data[i][0]).trim()] = true;
+  // それ以外の行の色や並びは、手で直されている可能性があるのでそのまま残す。
+  var data = sh.getDataRange().getValues(), body = data.slice(1);
+  var fixed = repairLegacyCategoryRows_(body), have = {};
+  for (var i = 0; i < fixed.rows.length; i++) have[String(fixed.rows[i][0]).trim()] = true;
   var add = [];
   for (var j = 0; j < DEFAULT_CATEGORIES_.length; j++) {
-    if (!have[DEFAULT_CATEGORIES_[j][0]]) add.push(DEFAULT_CATEGORIES_[j]);
+    if (!have[DEFAULT_CATEGORIES_[j][0]]) add.push(DEFAULT_CATEGORIES_[j].slice());
   }
-  if (add.length) {
+  if (fixed.changed.length) {
+    var all = fixed.rows.concat(add);
+    if (all.length) sh.getRange(2, 1, all.length, 6).setValues(all);
+    if (body.length > all.length) sh.getRange(2 + all.length, 1, body.length - all.length, 6).clearContent();
+    console.log('[CAT] 昔の既定のまま残っていた業種区分を今の既定に直しました: ' + fixed.changed.join('・')
+      + (add.length ? '（' + add.length + '件追加）' : ''));
+  } else if (add.length) {
     sh.getRange(sh.getLastRow() + 1, 1, add.length, 6).setValues(add);
     console.log('[CAT] 業種区分を' + add.length + '件追加しました');
   }

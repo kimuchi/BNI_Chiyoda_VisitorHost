@@ -94,6 +94,20 @@ console.log('\n初期値の推定（9/30）:');
 ck((est('vice', '一般規定') || {}).value === '3番', '一般規定の推定: ' + show('vice', '一般規定'));
 ck(/^プロモーション　\d+番　.+さん$/.test((est('president', 'ウィークリープレゼン') || {}).value || ''),
    'ウィークリープレゼンの推定（建築・住まいの次）: ' + show('president', 'ウィークリープレゼン'));
+// 業種区分マスタに以前の既定の行が残っていても（建築住まい 3・プロモーション 4・美容健康 5 のまま）、1つ進める
+{
+  const realCats = F.getCategoryMaster;
+  const LEGACY = require('vm').runInContext('LEGACY_CATEGORIES_', sandbox);
+  const CUR = require('vm').runInContext('DEFAULT_CATEGORIES_', sandbox);
+  const lk = new Set(LEGACY.map((r) => r[0]));
+  F.getCategoryMaster = () => LEGACY.concat(CUR.filter((r) => !lk.has(r[0])))
+    .map((r) => ({ key: r[0], label: r[1], block: r[4], order: r[5] })).sort((a, b) => a.order - b.order);
+  const c2 = F.getRoleInputContext('2026/09/30', 'president');
+  const w2 = c2.items[c2.order.find((k) => c2.items[k].title === 'ウィークリープレゼン')].estimate || {};
+  ck(/^プロモーション　\d+番　.+さん$/.test(w2.value || '') && /前回（9\/23\(水\)）の記載から、業種区分を1つ進めて/.test(w2.source || ''),
+     '昔の行が残った業種区分マスタでのウィークリープレゼンの推定: ' + JSON.stringify(w2));
+  F.getCategoryMaster = realCats;
+}
 ck((est('vice', '遅刻・欠席担当') || {}).value === '藤田さん', '遅刻・欠席担当: ' + show('vice', '遅刻・欠席担当'));
 ck((est('vice', 'リファーラルの注意') || {}).value === '全員', 'リファーラルの注意: ' + show('vice', 'リファーラルの注意'));
 ck((est('vice', '名札・バッチの注意') || {}).value === '福王さん', '名札・バッチの注意: ' + show('vice', '名札・バッチの注意'));

@@ -54,7 +54,7 @@ BNI_Chiyoda_VisitorHost/
 ├── role_input_srv.js         # 役職ごとの入力（ルーティンチェックシートの担当の列から項目を作り、推定・保存・入力状況）
 │   └ role_input.html         #   入力状況の一覧・役職ごとの入力・スピーカーローテーション（?p=role_input&role=vice など）
 ├── speaker_rotation_srv.js   # スピーカーローテーション（メインプレゼンの順番。前半スライドの表もここで作る）
-├── premtg_srv.js             # 事前MTG（朝イチMTG）のパワポ（画面は role_input.html の一覧。?p=role_input&view=premtg）
+├── premtg_srv.js             # 事前MTG（朝イチMTG）のパワポ（画面は role_input.html の一覧。ウェブアプリは ?p=premtg）
 │   └ premtg_template.html    #   既定のひな形（templates/BNI_テンプレート_事前MTG.pptx をbase64にしたもの）
 ├── archive.html              # シートの整理（アーカイブ）
 │
@@ -113,6 +113,7 @@ BNI_Chiyoda_VisitorHost/
     ├── check_meeting_dialog.js  # 定例会スライドの画面（前半・後半・ウィークリープレゼン）
     ├── check_visitor_post.js #   ビジター情報の投稿文（入金の読み方・文面・画面）
     ├── check_role_input_dialog.js # 役職ごとの入力の画面（一覧・入力・保存までサーバーとつないで通す）
+    ├── check_webapp_pages.js #   ウェブアプリの画面一覧（?p= での開き方・トップページのリンク）
     │  ── ルーティンチェックシート（実物をExcelに書き出したもので確かめる）──
     ├── routine_dump.py       #   xlsx → routine.json
     ├── check_routine.js      #   開催回・コアバリュー・メインプレゼンなどの読み取り
@@ -349,7 +350,7 @@ clasp deployments
 
 ### 更新が反映されたかの確かめ方
 
-`コード.js` の `SYSTEM_VERSION_`（例: `2026-09-27b`）が、ウェブアプリのトップページの下と
+`コード.js` の `SYSTEM_VERSION_`（例: `2026-09-27d`）が、ウェブアプリのトップページの下と
 「定例会スライド（前半）」「定例会スライド（後半）」の画面の右上に **「版 …」** として出ます。
 機能を変えたらこの値を変え、`clasp push`・`clasp deploy` のあとに画面で確かめてください。
 
