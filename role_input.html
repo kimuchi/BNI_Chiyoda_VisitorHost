@@ -141,8 +141,19 @@
    </div>
    <div class="box">
      <div style="font-weight:bold;font-size:12.5px;">次回のメインプレゼンターのご案内（Facebookに投稿する文）</div>
+     <div style="font-size:12px;margin-top:5px;">ご案内する回：<select id="rotFbWeek" onchange="renderFb()"></select>
+       <span class="muted" id="rotFbWeekNote"></span></div>
      <textarea id="rotFb" rows="12" style="width:100%;font-family:inherit;font-size:12.5px;margin-top:5px;"></textarea>
      <button onclick="copyFb()">📋 コピーする</button> <span class="muted" id="rotFbMsg"></span>
+     <div style="font-weight:bold;font-size:12px;margin-top:12px;">添付する画像（ご案内する回から5回分のメインプレゼンター）</div>
+     <div class="muted">前半スライドの「スピーカーローテーション」の表と同じ中身です。並び順・見出し・注意書きを直すと、すぐ描き直します。</div>
+     <div id="rotImgBox" style="margin-top:6px;"><img id="rotImg" alt="スピーカーローテーションの表" style="max-width:100%;border:1px solid #e2e6ec;display:none;"></div>
+     <div style="margin-top:6px;">
+       <button onclick="rotImgDownload()">⬇ 画像を保存</button>
+       <button onclick="rotImgCopy()">📋 画像をコピー</button>
+       <button onclick="rotImgDrive()">Driveに保存</button>
+       <div class="muted" id="rotImgMsg" style="margin-top:4px;line-height:1.6;"></div>
+     </div>
    </div>
    <div class="box">
      <div style="font-weight:bold;font-size:12.5px;">並び順</div>
@@ -159,9 +170,9 @@
    </div>
    <div class="box">
      <div style="font-weight:bold;font-size:12.5px;">定例会スライド（前半）の表</div>
-     <div style="font-size:12px;margin:5px 0;">見出し：<input type="text" id="rotHeader" style="width:60%;"></div>
+     <div style="font-size:12px;margin:5px 0;">見出し：<input type="text" id="rotHeader" style="width:60%;" oninput="renderFb()"></div>
      <div style="font-size:12px;">表の下の注意書き（1行に1つ。先頭に「※」が付きます）：</div>
-     <textarea id="rotNotes" rows="4" style="width:100%;font-family:inherit;font-size:12px;"></textarea>
+     <textarea id="rotNotes" rows="4" style="width:100%;font-family:inherit;font-size:12px;" oninput="renderFb()"></textarea>
    </div>
    <div class="box">
      <div style="font-weight:bold;font-size:12.5px;">MP選出・ローテーション管理ツールから取り込む</div>
@@ -557,6 +568,11 @@
    el('rotHeader').value = r.header||'';
    el('rotNotes').value = (r.notes||[]).join('\n');
    el('rotFb').value = r.fbText||'';
+   // ご案内する回：ふだんは次回。定例会の日は、終わったあとに投稿するので、その次の回
+   var today=ymd(new Date()), w0=(r.weeks||[])[0], pick=(w0 && w0.date===today && r.weeks.length>1) ? 1 : 0;
+   el('rotFbWeek').innerHTML = (r.weeks||[]).map(function(w, i){
+     return '<option value="'+i+'"'+(i===pick?' selected':'')+'>'+(w.no?'第'+esc(w.no)+'回 ':'')+esc(w.md)+'</option>'; }).join('');
+   el('rotFbWeekNote').innerText = pick ? '（きょうは定例会の日なので、次の回を選んであります）' : '';
    renderRot();
    el('rotMsg').innerHTML = msg ? '<span style="color:#188038;">'+esc(msg)+'</span>' : '';
  }
@@ -641,6 +657,7 @@
      return '<option value="'+esc(n)+'">'+(weekOf[nm(n)]?weekOf[nm(n)]+'回目：':'')+esc(n)+'</option>'; }).join('');
    el('rotSwapA').innerHTML = sw; el('rotSwapB').innerHTML = sw;
    el('rotDirty').innerText = rDirty ? '保存していない変更があります' : '';
+   renderFb();
  }
  function rChanged(){ rDirty=true; renderRot(); }
  function rotToggle(i){
@@ -691,6 +708,134 @@
    }).withFailureHandler(function(e){ busy=false; el('rotSaveBtn').disabled=false; el('rotMsg').innerHTML='<span style="color:#d00;">'+esc((e&&e.message)?e.message:e)+'</span>'; })
      .saveSpeakerRotation({ order:rOrder, excluded:rExcluded, anchor:rAnchor, base:rot.updated,
                             header:el('rotHeader').value, notes:el('rotNotes').value.split('\n') });
+ }
+ // --- Facebookの投稿文と、添付する画像 ---
+ var ROT_IMG_WEEKS=5, rotImgData='', rotImgName='';
+ var ROT_IMG_FONT='"Meiryo UI","Meiryo","Hiragino Kaku Gothic ProN","Hiragino Sans","Yu Gothic","Noto Sans JP","Noto Sans CJK JP",sans-serif';
+ // その回のお2人（確定の回はルーティンチェックシートのまま。予定の回は、いまの並び順で計算）と、名簿のカテゴリー・つながりたい人
+ function weekPeople(w){
+   var byName={};
+   (rot.members||[]).forEach(function(m){ byName[nm(m.name)]=m; });
+   var names = w.source==='routine' ? w.people.map(function(p){ return p.name; }) : (rPairs(rPointerAt(w.date),1).pairs[0]||[]);
+   return names.map(function(n){ var m=byName[nm(n)]||{}; return { name:n||'', title:m.title||'', collab:m.collab||'' }; });
+ }
+ // 投稿文（サーバーの rotFbText_ と同じ文面）
+ function fbTextOf(w, people){
+   if(!w || people.length<2) return '（次回のメインプレゼンターが決まっていないため作れません）';
+   var p1=people[0], p2=people[1];
+   return '＜【'+w.label+'定例会】メインプレゼンターのご案内＞\n'
+     +'本日も、定例会お疲れ様でした。\n'
+     +'次回の定例会は'+w.label+'になります。\n\n'
+     +'➊次回のメインプレゼンターをご紹介致します。\n'
+     +'（１）'+p1.name+'さん/'+(p1.title||'')+'\n'
+     +'　　　→つながりたい人：'+(p1.collab||'')+'\n'
+     +'（２）'+p2.name+'さん/'+(p2.title||'')+'\n'
+     +'　　　→つながりたい人：'+(p2.collab||'')+'\n'
+     +'スピーカーの繋がりたい方を、是非ビジターとしてお呼びしましょう！\n'
+     +'➋今後4週間のメイン・プレゼンターは添付画像の通りです。\n'
+     +'➌推薦のことばをお待ちしています。（特にメインプレゼンター宛！）\n'
+     +'毎週月曜日の正午までに、PDFにて書記兼会計の'+(rot.secretary||'（書記兼会計）')+'までご提出下さい';
+ }
+ function renderFb(){
+   if(!rot || !(rot.weeks||[]).length) return;
+   var i=parseInt(el('rotFbWeek').value,10); if(!(i>=0)) i=0;
+   var ws=rot.weeks.slice(i, i+ROT_IMG_WEEKS).map(function(w){
+     return { date:w.date, no:w.no, label:w.label, md:w.md, people:weekPeople(w) };
+   });
+   el('rotFb').value = fbTextOf(ws[0], ws[0].people);
+   rotImgName = String(ws[0].date).replace(/\//g,'')+'_スピーカーローテーション.png';
+   rotImgData = drawRotImage(ws);
+   var img=el('rotImg');
+   if(rotImgData){ img.src=rotImgData; img.style.display=''; el('rotImgMsg').innerText=''; }
+   else { img.style.display='none'; el('rotImgMsg').innerText='この画面では画像を作れません（ブラウザが画像の描画に対応していません）。'; }
+ }
+ // 表の画像（前半スライドの表と同じ作り：見出しの行＋1回につき3行。注意書きは表の下）
+ function drawRotImage(ws){
+   var cv=document.createElement('canvas');
+   if(!cv || !cv.getContext) return '';
+   var g=cv.getContext('2d');
+   if(!g) return '';
+   var S=2, W=1000, pad=12, iw=W-pad*2;
+   var colW=[Math.round(iw*0.17)]; colW.push(Math.round((iw-colW[0])/2)); colW.push(iw-colW[0]-colW[1]);
+   var hHead=38, hCat=30, hName=40, hCol=24;
+   var notes=String(el('rotNotes').value||'').split('\n').map(function(t){ return t.trim(); }).filter(function(t){ return t; });
+   var H=pad+hHead+ws.length*(hCat+hName+hCol)+(notes.length ? 12+notes.length*24 : 0)+pad;
+   cv.width=W*S; cv.height=H*S;
+   g.scale(S,S);
+   g.fillStyle='#FFFFFF'; g.fillRect(0,0,W,H);
+   // 長い文字は、枠に収まるまで小さくする（下限 min。それでもはみ出す分は枠で切る）
+   var fit=function(text, size, bold, maxW, min){
+     var s=size;
+     for(;;){ g.font=(bold?'bold ':'')+s+'px '+ROT_IMG_FONT; if(s<=(min||9) || g.measureText(text).width<=maxW) return s; s-=0.5; }
+   };
+   var cell=function(x, y, w, h, text, o){
+     g.fillStyle=o.fill||'#FFFFFF'; g.fillRect(x,y,w,h);
+     g.strokeStyle='#7F7F7F'; g.lineWidth=1; g.strokeRect(x+0.5,y+0.5,w,h);
+     if(!text) return;
+     fit(text, o.size, o.bold, w-10, o.min);
+     g.save(); g.beginPath(); g.rect(x+2, y+1, w-4, h-2); g.clip();
+     g.fillStyle=o.color||'#000000'; g.textAlign='center'; g.textBaseline='middle';
+     g.fillText(text, x+w/2, y+h/2+1);
+     g.restore();
+   };
+   var x0=pad, y=pad, x1=x0+colW[0], x2=x1+colW[1];
+   var header=String(el('rotHeader').value||rot.header||'');
+   cell(x0, y, colW[0], hHead, '日　程', { fill:'#FF0000', size:20, bold:true });
+   cell(x1, y, colW[1]+colW[2], hHead, header, { fill:'#FF0000', size:20, bold:true });
+   y+=hHead;
+   ws.forEach(function(w){
+     var a=w.people[0]||{}, b=w.people[1]||{};
+     cell(x0, y, colW[0], hCat, w.no?'第'+w.no+'回':'', { size:14, bold:true });
+     cell(x1, y, colW[1], hCat, a.title||'', { size:17, bold:true });
+     cell(x2, y, colW[2], hCat, b.title||'', { size:17, bold:true });
+     y+=hCat;
+     cell(x0, y, colW[0], hName, w.label||'', { size:21, bold:true });
+     cell(x1, y, colW[1], hName, a.name||'', { size:24, bold:true, color:'#C00000' });
+     cell(x2, y, colW[2], hName, b.name||'', { size:24, bold:true, color:'#C00000' });
+     y+=hName;
+     cell(x0, y, colW[0], hCol, '', { fill:'#FCD5B4', size:12 });
+     cell(x1, y, colW[1], hCol, a.collab||'', { fill:'#FCD5B4', size:12, bold:true, min:7 });
+     cell(x2, y, colW[2], hCol, b.collab||'', { fill:'#FCD5B4', size:12, bold:true, min:7 });
+     y+=hCol;
+   });
+   y+=12;
+   notes.forEach(function(t){
+     var line='※　'+t;
+     fit(line, 15, false, iw-16);
+     g.fillStyle='#000000'; g.textAlign='left'; g.textBaseline='middle';
+     g.fillText(line, x0+8, y+12);
+     y+=24;
+   });
+   try { return cv.toDataURL('image/png'); } catch(e){ return ''; }
+ }
+ function rotImgDownload(){
+   if(!rotImgData) return;
+   var a=document.createElement('a');
+   a.href=rotImgData; a.download=rotImgName;
+   document.body.appendChild(a); a.click(); document.body.removeChild(a);
+   el('rotImgMsg').innerText='「'+rotImgName+'」を保存しました。保存されないときは、画像を右クリック（スマホは長押し）して保存するか、「Driveに保存」を使ってください。';
+ }
+ function rotImgCopy(){
+   var msg=function(t){ el('rotImgMsg').innerText=t; };
+   var ng='この画面からはコピーできませんでした。画像を右クリック（スマホは長押し）して「画像をコピー」を選んでください。';
+   if(!rotImgData) return;
+   try {
+     if(!navigator.clipboard || !window.ClipboardItem) { msg(ng); return; }
+     fetch(rotImgData).then(function(r){ return r.blob(); })
+       .then(function(b){ return navigator.clipboard.write([new ClipboardItem({ 'image/png': b })]); })
+       .then(function(){ msg('画像をコピーしました。Facebookの投稿に貼り付けられます。'); }, function(){ msg(ng); });
+   } catch(e){ msg(ng); }
+ }
+ // ダウンロードできない環境向け：03_生成物 に保存して、Driveから開く
+ function rotImgDrive(){
+   if(!rotImgData) return;
+   el('rotImgMsg').innerText='Driveに保存しています…';
+   google.script.run.withSuccessHandler(function(r){
+     if(!r || !r.ok){ el('rotImgMsg').innerText=(r&&r.message)||'保存できませんでした。'; return; }
+     el('rotImgMsg').innerHTML=esc(r.message)+' <a href="'+esc(r.downloadUrl||r.url)+'" target="_blank">⬇ '+esc(r.fileName)+'</a>'
+       +' <a href="'+esc(r.url)+'" target="_blank">ドライブで見る</a>';
+   }).withFailureHandler(function(e){ el('rotImgMsg').innerText='保存できませんでした: '+((e&&e.message)?e.message:e); })
+     .saveSpeakerRotationImage(rotImgData.split(',')[1], rotImgName);
  }
  function copyFb(){
    var t=el('rotFb');

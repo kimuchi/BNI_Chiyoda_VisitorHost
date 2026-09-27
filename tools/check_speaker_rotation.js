@@ -98,10 +98,34 @@ ck(/12\/30/.test(im.message) && !/8\/12/.test(im.message.replace('2026/08/12', '
 ck(pairs(im).slice(1, 4).join(' ') === '10/7:渡邉・岡本 10/14:仲宗根・葉山 10/21:中込・竹田', '取り込んだあとの割り当て: ' + pairs(im).slice(1, 4).join(' '));
 ck(!F.importSpeakerRotation('{"order":[]}').ok, '空のデータを取り込んだ');
 
+// ===================== Facebookに添付する画像を Drive に保存 =====================
+{
+  const zlib = require('zlib');
+  const chunk = (type, data) => {
+    const len = Buffer.alloc(4); len.writeUInt32BE(data.length);
+    const td = Buffer.concat([Buffer.from(type, 'ascii'), data]);
+    const crc = Buffer.alloc(4); crc.writeUInt32BE(zlib.crc32(td));
+    return Buffer.concat([len, td, crc]);
+  };
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(40, 0); ihdr.writeUInt32BE(20, 4); ihdr[8] = 8; ihdr[9] = 2;
+  const png = Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr),
+    chunk('IDAT', zlib.deflateSync(Buffer.alloc((40 * 3 + 1) * 20, 200))), chunk('IEND', Buffer.alloc(0))]);
+  let saved = null;
+  F.saveOutputFile_ = (blob, name) => { saved = { blob, name }; return { id: 'x', url: 'https://example/' + name, downloadUrl: 'https://example/dl/' + name }; };
+  let r = F.saveSpeakerRotationImage('data:image/png;base64,' + png.toString('base64'), '20261007_スピーカーローテーション.png');
+  ck(r.ok && saved && saved.name === '20261007_スピーカーローテーション.png' && saved.blob.getContentType() === 'image/png'
+     && Buffer.compare(saved.blob._buf, png) === 0 && /03_生成物/.test(r.message), '画像の保存: ' + JSON.stringify(r));
+  r = F.saveSpeakerRotationImage(png.toString('base64'), 'a/b:c');
+  ck(r.ok && saved.name === 'a_b_c.png', 'ファイル名の整え方: ' + saved.name);
+  saved = null;
+  r = F.saveSpeakerRotationImage('', 'x.png');
+  ck(!r.ok && !saved, '空の画像を保存した');
+}
+
 console.log(`\nスピーカーローテーション: 検査 ${checks} 件`);
 if (fails.length) {
   console.log(`NG: ${fails.length} 件`);
   fails.forEach((f) => console.log('   ' + f));
   process.exit(1);
 }
-console.log('OK: ツールと同じ割り当て・休会日・確定した回・並びの直し方・ぶつかり・取り込み・Facebookの文');
+console.log('OK: ツールと同じ割り当て・休会日・確定した回・並びの直し方・ぶつかり・取り込み・Facebookの文・画像の保存');
