@@ -22,10 +22,25 @@
   
   <ul id="holidayList"></ul>
   
-  <button class="save-btn" onclick="save()">保存して閉じる</button>
+  <button class="save-btn" id="saveBtn" onclick="save()">保存する</button>
+  <div id="saveNote" style="margin-top:14px;font-weight:bold;white-space:pre-wrap;line-height:1.7;"></div>
 
   <script>
     var holidays = [];
+    // 保存の結果は画面の下に出す（画面は消さない。ウェブアプリでは上の帯と同じ「← メニューに戻る」も出す）
+    function saveNote(text, color) {
+      var m = document.getElementById('saveNote');
+      if (!m) {
+        m = document.createElement('div'); m.id = 'saveNote';
+        m.style.cssText = 'margin-top:14px;font-weight:bold;white-space:pre-wrap;line-height:1.7;';
+        document.body.appendChild(m);
+      }
+      var back = (color === 'green' && typeof WEBAPP_URL === 'string' && WEBAPP_URL)
+        ? '<br><a href="' + WEBAPP_URL + '" target="_top" style="font-size:13px;">← メニューに戻る</a>' : '';
+      m.style.color = color || '#0055ff';
+      m.innerHTML = String(text == null ? '' : text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/\n/g, '<br>') + back;
+    }
+
     window.onload = function() {
       google.script.run.withSuccessHandler(function(data){
         holidays = data;
@@ -67,14 +82,15 @@
     }
 
     function save() {
-      document.body.innerHTML = "<h3 style='color:#0055ff;'>保存中です...</h3>";
+      var btn = document.getElementById('saveBtn');
+      btn.disabled = true;
+      saveNote('保存しています...');
       google.script.run.withSuccessHandler(function(){
-        // ダイアログなら閉じる。ウェブアプリには閉じる相手がいないので保存結果を出す。
-        try {
-          if (google.script.host && google.script.host.close) { google.script.host.close(); return; }
-        } catch (e) {}
-        document.body.innerHTML = "<h3 style='color:green;'>保存しました。</h3>"
-          + "<p style='font-size:13px;color:#666;'>このタブは閉じて構いません。</p>";
+        btn.disabled = false;
+        saveNote('保存しました（休会日 ' + holidays.length + '日）。', 'green');
+      }).withFailureHandler(function(e){
+        btn.disabled = false;
+        saveNote('保存できませんでした: ' + (e && e.message ? e.message : e), '#c00');
       }).saveHolidays(holidays);
     }
   </script>

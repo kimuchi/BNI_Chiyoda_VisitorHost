@@ -512,7 +512,10 @@
       document.getElementById('loading').innerHTML = 'シートとPDFを作成しています... お待ちください。';
       var sel = document.getElementById('meetingSelect'), dateVal = sel.value, displayVal = sel.options[sel.selectedIndex].dataset.display;
       google.script.run.withSuccessHandler(function(msg){
-        document.body.innerHTML = "<div style='text-align:center; padding:50px;'>" + msg + "</div>";
+        // 画面は消さない（ウェブアプリでは上の帯の「← メニューに戻る」から戻れる）
+        var back = (typeof WEBAPP_URL === 'string' && WEBAPP_URL)
+          ? "<div style='margin-top:14px;'><a href='" + WEBAPP_URL + "' target='_top'>← メニューに戻る</a></div>" : '';
+        document.getElementById('loading').innerHTML = "<div style='text-align:center; padding:30px;'>" + msg + back + "</div>";
       }).withFailureHandler(function(err){
         alert("エラー: " + err.message);
         document.getElementById('workspace').style.display = 'flex';

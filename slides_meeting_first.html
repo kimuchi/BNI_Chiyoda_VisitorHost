@@ -351,7 +351,7 @@
      var on = guestRaw ? guestListed(g) : !g.hidden;
      return '<label style="display:block;padding:2px 0;"><input type="checkbox" id="gs_'+i+'"'
        +(on?' checked':'')+' onchange="renderMP()"> <b>'+esc(g.name)+'</b>さん'
-       +(g.role?'（'+esc(g.role)+'）':'')+'のページを入れる</label>';
+       +(g.role?'（'+esc(g.role)+'）':'')+'の'+(g.intro?'紹介とウィークリープレゼンの':'')+'ページを入れる</label>';
    }).join('');
    note.innerHTML = guestRaw ? ('ルーティンチェックシートの「リージョン参加者」：'+esc(guestRaw))
      : 'ルーティンチェックシートの「リージョン参加者」は空欄です。';

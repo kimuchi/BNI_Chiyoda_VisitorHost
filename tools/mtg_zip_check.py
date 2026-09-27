@@ -241,8 +241,21 @@ if guest_pages and guest_res is not None:
                % (g['name'], countdown_steps(sx)))
         else:
             ck(not adv, '非表示の%sさんのページに自動送りが残っている: %s' % (g['name'], adv))
-    print('  アンバサダー・ディレクター: 表示 %s／非表示 %s'
-          % ('、'.join(guest_res.get('shown') or []) or 'なし', '、'.join(guest_res.get('hidden') or []) or 'なし'))
+    # 紹介のページ（見出しより前）も、ウィークリープレゼンのページと同じく、チェックした方だけ表示
+    for ip in guest_res.get('introPages') or []:
+        pp = ip['path'].replace('ppt/', '')
+        ck(pp in order, '%sさんの紹介のページが消えている' % ip['name'])
+        if pp not in order:
+            continue
+        sx, t = text(pp)
+        on = ip['name'] in picked
+        ck(('show="0"' not in sx[:600]) == on,
+           '%sさんの紹介のページが%s（%sのはず）' % (ip['name'], '非表示' if on else '表示', '表示' if on else '非表示'))
+        if anchor is not None:
+            ck(order.index(pp) < anchor, '%sさんの紹介のページが見出しより後ろにある' % ip['name'])
+    print('  アンバサダー・ディレクター: 表示 %s／非表示 %s（紹介のページ %d枚）'
+          % ('、'.join(guest_res.get('shown') or []) or 'なし', '、'.join(guest_res.get('hidden') or []) or 'なし',
+             len(guest_res.get('introPages') or [])))
 
 # メンバープレゼンを前半に差し込んだとき
 if plan_mp:
