@@ -2,7 +2,7 @@
 
 // 反映されたか確かめるための版。変更したら日付を更新する。
 // clasp push / デプロイが効いているかは、これを画面で見れば分かる。
-var SYSTEM_VERSION_ = '2026-09-27q';
+var SYSTEM_VERSION_ = '2026-09-27r';
 
 function getSystemVersion() { return SYSTEM_VERSION_; }
 
@@ -43,6 +43,7 @@ function onOpen() {
       .addItem('ビジター・代理スライド作成', 'openVisitorSlideDialog')
       .addItem('定例会スライド（前半）', 'openMeetingFirstDialog')
       .addItem('定例会スライド（後半）', 'openMeetingSecondDialog')
+      .addItem('トークスクリプト（台本）', 'openTalkScriptDialog')
       .addItem('メンバーブックの編集・PDF出力', 'openMemberBookEditorDialog')
       .addItem('Zoom入室案内の作成', 'openZoomGuideDialog'))
     .addSubMenu(ui.createMenu('🎯 抽選ルーレット')
@@ -450,7 +451,7 @@ function getExistingVisitorSheets() {
 // アーカイブ＝シートを非表示にする方式。データは消えず、再編集・PDF再作成・
 // 割り振りは getSheetByName で引き続き動作する（タブ表示だけ減る）。
 // 開催日は yyyyMMdd。移行前の MMdd（4桁）も読めるようにしてある。
-var ARCHIVE_SHEET_PATTERN_ = /^(\d{8}|\d{4})(参加者_印刷用|参加者|割り振り表|オリエン|オープンネット)$/;
+var ARCHIVE_SHEET_PATTERN_ = /^(\d{8}|\d{4})(参加者_印刷用|参加者|割り振り表|オリエン|オープンネット|トークスクリプト)$/;
 
 // 「20260930」→「2026/09/30」、移行前の「0930」→「09/30」
 function archiveLabel_(key) {

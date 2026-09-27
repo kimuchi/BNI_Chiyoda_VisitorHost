@@ -292,6 +292,44 @@ const bigStatus = F.getBigTemplateStatus();
 const answersSettings = { getMemberMaster: { any: masterAnswer }, getHolidays: { any: F.getHolidays() }, getBigTemplateStatus: { any: bigStatus },
                           getChapterSettings: { any: F.getChapterSettings() } };
 
+// ---- トークスクリプト（既定のひな形。9/30 は上の架空の参加者・チェックシートの値で作る）----
+for (const f of ['talk_script_default.js', 'talk_script_srv.js']) {
+  vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), S.sandbox, { filename: f });
+}
+// 台本は前日〜当日に作るので、9/30 のチェックシートも埋まっているものとして、架空の値を入れる
+// （ここより前に作った画面の返事は、入れる前の値のまま）
+{
+  const live = {};
+  S.sheets.forEach((sh) => { if (/ルーティンチェックシート/.test(sh.getName())) live[sh.getName()] = sh._grid; });
+  const sn = (i) => surname(N(i));
+  [
+    ['トークスクリプト追加事項', '9/30 は23期の最後の定例会です。閉会の前に、プレジデントから半年間のお礼を述べます'],
+    ['その他注意事項', 'なし'], ['担当割り振り', 'ホスト　林・清水／スライド　斎藤／スポットライト　西村／ルーレット　高橋'],
+    ['プレジデントより', '10/7 から24期です。役職の引継ぎをお願いします'], ['バイスプレジデントより', 'ビジターは3名の予定です'],
+    ['書記兼会計より', '10月分のチャプター運営費のお振込みをお願いします'], ['その他のお知らせ', 'なし'],
+    ['リージョン参加者', 'なし'], ['BNI目的と概要', 'Building Relationships（人間関係の構築）'], ['体験談', sn(19)],
+    ['エデュケーション', sn(5)], ['ネットワーキングリーダー', 'なし'], ['新入会', 'なし'], ['更新式(更新メンバー)', sn(8)],
+    ['バイスプレジデントによる報告', '9月の月間リファーラル数は○件、サンキュー額は○円でした（スライドを読み上げる）'],
+    ['メンバーシップから報告', 'なし'], ['審査中カテゴリー', 'なし'], ['募集カテゴリー', '税理士、司法書士、Webデザイナー'],
+    ['開放カテゴリー', 'なし'], ['真正度確認', sn(4) + '⇒' + sn(9) + '　見本 太郎様'],
+    ['リマインダー・特別報告BNIからのお知らせ', 'サンキューの入力をお願いします'], ['アフターMTG', '10/7 のアフターMTGは24期の顔合わせです'],
+    ['本日の招待者', [0, 6, 13, 21, 25].map(sn).join('、')], ['更新対象者60日前', 'なし'],
+  ].forEach(([t, v]) => {
+    // 項目は、トークスクリプトと同じ探し方（項目名が同じか、項目名で始まる行）で探す
+    const hit = Object.values(live).some((g) => {
+      const c = (g[0] || []).indexOf(NEXT), r = c < 0 ? -1 : F.routineFindRow_(g, [t.replace(/\s/g, '')]);
+      if (r < 0) return false;
+      g[r][c] = v;
+      return true;
+    });
+    if (!hit) console.warn('（トークスクリプトの見本）チェックシートに無い項目: ' + t);
+  });
+  F.routineResetCache_();
+}
+const talkCtx = F.getTalkScriptContext();
+const talkPv = F.previewTalkScript(NEXT, {});
+const answersTalk = { getTalkScriptContext: { any: talkCtx }, previewTalkScript: { any: talkPv } };
+
 const homeStatus = { ok: true, latest: { date: NEXT }, title: F.chapterSystemTitle_(), checks: [
   { label: 'チャプター', ready: true, detail: F.chapterLabel_() + '・いまの期 ' + F.roleTermOf_(new F.Date()) + '期・次回 ' + F.getMeetingCandidates()[0].display },
   { label: '素材フォルダ', ready: true, detail: 'BNI素材（見本）' }, { label: 'メンバーリスト（割り振り用）', ready: true, detail: FAKE_MEMBERS.length + '名' },
@@ -340,6 +378,15 @@ const SHOTS = [
   // 定例会スライド
   { name: 'slides_first', file: () => writePage('first', evalTemplate('slides_meeting_first.html', {}), answersSlides), width: 1000, height: 900, wait: 1200 },
   { name: 'slides_second', file: () => writePage('second', evalTemplate('slides_meeting_second.html', {}), answersSlides), width: 1000, height: 900, wait: 1200 },
+  // トークスクリプト（中身を確かめたところ・ひな形の編集）
+  { name: 'talk_script', file: () => writePage('talk_script', readHtml('talk_script.html'), answersTalk), width: 1100, height: 900,
+    before: async (p) => { await p.click('#btnPreview'); await p.waitForTimeout(300); } },
+  { name: 'talk_template', file: () => writePage('talk_template', readHtml('talk_script.html'), answersTalk), width: 1100, height: 760,
+    before: async (p) => {
+      await p.click('#tabEdit'); await p.waitForTimeout(150);
+      await p.evaluate(() => { const r = document.getElementById('r26_talk'); if (r) window.scrollTo(0, r.getBoundingClientRect().top + window.scrollY - 140); });
+      await p.waitForTimeout(100);
+    } },
   // 設定
   { name: 'member_master', file: () => writePage('member_master', readHtml('member_master.html'), answersSettings), width: 1280, height: 640, wait: 700 },
   { name: 'holiday', file: () => writePage('holiday', readHtml('holiday.html'), answersSettings), width: 520, height: 560 },
