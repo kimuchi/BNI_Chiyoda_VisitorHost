@@ -83,6 +83,8 @@ for (const f of ['member_master_srv.js', 'routine_srv.js', 'member_presen_srv.js
   vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), sandbox, { filename: f });
 }
 // 業種区分マスタは初期値（member_master_srv.js の DEFAULT_CATEGORIES_）を使う
+// （6) では本物の getCategoryMaster で、昔の行が残ったシートを読む）
+const realGetCategoryMaster = sandbox.getCategoryMaster;
 sandbox.getCategoryMaster = () => vm.runInContext('DEFAULT_CATEGORIES_', sandbox)
   .map((r) => ({ key: r[0], label: r[1], block: r[4], order: r[5] }));
 
@@ -179,10 +181,72 @@ ck(page.els.mpStart.value === cands[1].start, `次の開催日の始まりの区
 ck(/前回の記載/.test(page.els.mpStartNote.textContent), '前回からの繰り上げが画面に出ていない: ' + page.els.mpStartNote.textContent);
 console.log(`画面: ${last} → 「${blockName(cands[0].start)}」／${next} → 「${blockName(cands[1].start)}」`);
 
+// 6) 業種区分マスタに、以前の既定（2026/9/23 の版より前）の行が残っているとき。
+//    そのころに作られたシートには昔の8行がそのまま残り、今の既定の行はうしろに足されている。
+//    直す前は、昔の行の巡回順（建築住まい 3・プロモーション 4・美容健康 5）が効いて、
+//    「建築＆住まいの次が不動産関連」「プロモーションの次が美容・健康」にずれていた。
+{
+  const LEGACY = vm.runInContext('LEGACY_CATEGORIES_', sandbox);
+  const CUR = vm.runInContext('DEFAULT_CATEGORIES_', sandbox);
+  const legacyKeys = new Set(LEGACY.map((r) => r[0]));
+  const grid = [['キー', '表示ラベル', '色1', '色2', 'ブロック表示名', '巡回順']]
+    .concat(LEGACY.map((r) => r.slice()), CUR.filter((r) => !legacyKeys.has(r[0])).map((r) => r.slice()));
+  const writes = [];
+  const catSheet = {
+    getName: () => '業種区分マスタ',
+    getLastRow: () => { for (let r = grid.length - 1; r >= 0; r--) if (grid[r].some((v) => v !== '')) return r + 1; return 0; },
+    getDataRange: () => catSheet.getRange(1, 1, catSheet.getLastRow(), 6),
+    getRange: (r, c, nr, nc) => ({
+      getValues: () => Array.from({ length: nr }, (_, i) => (grid[r - 1 + i] || []).slice(c - 1, c - 1 + nc)),
+      setValues: (vals) => { writes.push(r); vals.forEach((row, i) => { grid[r - 1 + i] = grid[r - 1 + i] || []; row.forEach((v, j) => { grid[r - 1 + i][c - 1 + j] = v; }); }); },
+      clearContent: () => { writes.push(-r); for (let i = 0; i < nr; i++) if (grid[r - 1 + i]) grid[r - 1 + i] = grid[r - 1 + i].map(() => ''); },
+    }),
+  };
+  const realSS = sandbox.getSS_;
+  sandbox.getSS_ = () => ({ getSheets: () => sheets, getSheetByName: (n) => (n === '業種区分マスタ' ? catSheet : null) });
+  sandbox.getCategoryMaster = realGetCategoryMaster;
+
+  const cats = sandbox.getCategoryMaster();
+  const keysNow = cats.map((c) => c.key);
+  ck(['研修教育', '建築住まい', '美容健康'].every((k) => keysNow.indexOf(k) < 0),
+     '書き方違いの昔の行（研修教育・建築住まい・美容健康）が残っている: ' + keysNow.join(','));
+  ck(CUR.every((r) => keysNow.filter((k) => k === r[0]).length === 1), '今の既定の区分が1行ずつそろっていない: ' + keysNow.join(','));
+  const promo = cats.find((c) => c.key === 'プロモーション'), corp = cats.find((c) => c.key === '企業サポート');
+  ck(promo && promo.order === 5 && promo.bg === '#FF66C3' && corp && corp.order === 1 && corp.bg === '#FFDE58',
+     '昔の既定のままだったプロモーション・企業サポートが今の既定になっていない: ' + JSON.stringify([promo, corp]));
+  ck(['金融保険', '不動産', '暮らしサービス'].every((k) => keysNow.indexOf(k) >= 0), '今の既定に無い昔の区分まで消した');
+  const writesAfterFirst = writes.length;
+  sandbox.getCategoryMaster();
+  ck(writesAfterFirst > 0 && writes.length === writesAfterFirst, '直したあとも毎回書き込んでいる（' + writes.length + '回）');
+
+  const m6 = MEMBERS.map((m) => ({ name: m.name, cat: m.cat, blockKey: '' }));
+  const cyc6 = sandbox.mpBlocks_(m6);
+  const live = cyc6.filter((c) => c.count > 0).map((c) => c.block).join(' → ');
+  ck(live === '企業サポート → 不動産関連 → 建築＆住まい → プロモーション → 暮らし・生活 → 美容・健康 → 飲食・エンタメ',
+     '昔の行が残ったマスタの巡回の並び: ' + live);
+  const st6 = sandbox.mpStartFromRoutine_(cyc6, m6, rows, '2026/09/30', HOLIDAYS);
+  ck(st6 && st6.from === 'previous' && (cyc6.find((c) => c.gkey === st6.key) || {}).block === 'プロモーション',
+     '9/30（前回 9/23 は建築・住まい）の始まり: ' + JSON.stringify(st6));
+  console.log(`\n昔の行が残った業種区分マスタ: ${live}（9/30 は ${(cyc6.find((c) => c.gkey === (st6 || {}).key) || {}).block}）`);
+
+  // 手で直した昔の行（色を変えたもの）は触らない。そのときも、同じ区分が2行あれば今の既定のキーの巡回順を使う
+  const grid2 = [grid[0]].concat(LEGACY.map((r) => r.slice()), CUR.filter((r) => !legacyKeys.has(r[0])).map((r) => r.slice()));
+  grid2[3][2] = '#123456';                                        // 建築住まい（巡回順3）の色を手で変えた
+  grid.length = 0; grid2.forEach((r) => grid.push(r));
+  const cats2 = sandbox.getCategoryMaster();
+  ck(cats2.some((c) => c.key === '建築住まい' && c.bg === '#123456'), '手で直した行を消した・変えた');
+  const cyc7 = sandbox.mpBlocks_(MEMBERS.map((m) => ({ name: m.name, cat: m.cat, blockKey: '' })));
+  const live7 = cyc7.filter((c) => c.count > 0).map((c) => c.block).join(' → ');
+  ck(live7 === live, '手で直した昔の行があるときの巡回の並び: ' + live7);
+
+  sandbox.getSS_ = realSS;
+  sandbox.getCategoryMaster = () => CUR.map((r) => ({ key: r[0], label: r[1], block: r[4], order: r[5] }));
+}
+
 console.log(`\n始まりの業種区分: 検査 ${checks} 件`);
 if (fails.length) {
   console.log(`NG: ${fails.length} 件`);
   fails.forEach((f) => console.log('   ' + f));
   process.exit(1);
 }
-console.log('OK: 記載の読み取り・前回からの繰り上げ・誰もいない区分の飛ばし方');
+console.log('OK: 記載の読み取り・前回からの繰り上げ・誰もいない区分の飛ばし方・昔の行が残った業種区分マスタ');

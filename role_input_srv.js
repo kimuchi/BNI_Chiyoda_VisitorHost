@@ -557,8 +557,9 @@ function roleEstimate_(it, env) {
         if (!first || (parseFloat(members[i].no) || 9999) < (parseFloat(first.no) || 9999)) first = members[i];
       }
       var head = blk.block + (first ? '　' + String(parseFloat(first.no) || '') + '番　' + roleShortName_(first.name, members) : '');
-      var why = (st && st.from === 'previous') ? ('前回（' + roleMd_(parseDate_(st.date)) + '）の記載から、業種区分を' + st.steps + 'つ進めて')
-              : '業種区分の巡回から';
+      // 前回の記載から数えられなかったとき（記載の区分が業種区分マスタに無いなど）は、開催日からの計算
+      var why = (st && st.key && st.from === 'previous') ? ('前回（' + roleMd_(parseDate_(st.date)) + '）の記載から、業種区分を' + st.steps + 'つ進めて')
+              : '業種区分の巡回（開催日からの計算）から';
       return { value: head.replace(/　$/, ''), source: why, mode: 'prefill' };
     }
     case 'renew30': case 'renew60': case 'renew90': {       // 名簿の更新期限日から

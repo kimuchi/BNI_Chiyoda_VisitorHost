@@ -58,14 +58,21 @@ function mpCatKey_(s) {
 // 業種区分マスタ → 巡回の並び。
 // マスタには昔の区分や表記ゆれの行が残っていることがあるので、
 // 「ブロック表示名が同じもの」は1つにまとめる（画面に同じ名前が2つ並ぶのを防ぐ）。
+// まとめた行の巡回順が違うときは、今の既定のキー（DEFAULT_CATEGORIES_）の行の巡回順を使う
+// （昔の行の巡回順を使うと、建築＆住まいが不動産関連の前に来るなど順番がずれる）。
 function mpCycle_() {
-  var cats = getCategoryMaster(), seen = {}, out = [];
+  var cats = getCategoryMaster(), seen = {}, out = [], cur = {}, d;
+  for (d = 0; d < DEFAULT_CATEGORIES_.length; d++) cur[DEFAULT_CATEGORIES_[d][0]] = true;
   for (var i = 0; i < cats.length; i++) {
     var c = cats[i];
     if (!c.key) continue;
     var block = c.block || c.label || c.key, g = mpCatKey_(block);
-    if (seen[g]) { seen[g].keys.push(c.key); continue; }
-    seen[g] = { gkey: g, block: block, order: c.order || (i + 1), keys: [c.key], count: 0, known: true };
+    if (seen[g]) {
+      seen[g].keys.push(c.key);
+      if (cur[c.key] && !seen[g].current && c.order) { seen[g].order = c.order; seen[g].current = true; }
+      continue;
+    }
+    seen[g] = { gkey: g, block: block, order: c.order || (i + 1), keys: [c.key], count: 0, known: true, current: !!cur[c.key] };
     out.push(seen[g]);
   }
   out.sort(function (a, b) { return a.order - b.order; });
