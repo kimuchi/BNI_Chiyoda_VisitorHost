@@ -67,7 +67,7 @@ const sb = Object.assign({}, gas.globals, {
 vm.createContext(sb);
 for (const f of ['ooxml.js', 'chapter_srv.js', 'assets.js', 'big_templates_srv.js', 'member_presen_srv.js', 'referral_srv.js',
                  'splice_srv.js', 'meeting_slides_srv.js', 'speaker_rotation_srv.js', 'slides_visitor_srv.js',
-                 'role_input_srv.js', 'role_intro_srv.js', 'official_srv.js', 'official_build_srv.js']) {
+                 'role_input_srv.js', 'role_intro_srv.js', 'official_srv.js', 'official_build_srv.js', 'routine_srv.js', 'meeting_pages_srv.js']) {
   vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), sb, { filename: f });
 }
 sb.getBigTemplateFile_ = (kind) => ({ getBlob: () => mpBlob, getName: () => kind, getId: () => kind });
@@ -238,9 +238,15 @@ if (made.meetingFirst && made.memberPresen) {
     [{ key: 'membership', name: 'メンバーシップ委員会', members: [{ name: '見本　花子' }, { name: '見本　三郎' }] },
      { key: 'role:vhc', name: 'ビジターホスト', members: [{ name: '見本　三郎' }, { name: '見本　四郎' }, { name: '見本　五郎' }] }],
     true, members.concat([{ name: '見本　五郎', company: '', title: '' }]));
+  sb.getMemberMaster = () => ({ ok: true, members });
+  // 新規および更新メンバー（1枚に両方の欄）・バイスプレジデントによる報告・ネットワーキングリーダー
+  const memberPages = { newMembers: [{ name: '見本　一郎' }, { raw: '新井さん', category: 'エステサロン' }],
+                        renewMembers: [{ name: '見本　花子', years: 2 }] };
+  const vpReport = { avg: '308', month: '2026-09', count: '281', perWeek: '70', from: '2026-04', to: '2026-09', total: '1,927', thanks: '54億8,074万円' };
+  const leaders = { show: true, month: '2026-09', items: [{ key: 'ext', value: '17', unit: '件', winners: [{ name: '見本　四郎' }] }] };
   const res = sb.editMeetingSlides_(parts, map, rules, { memberPresen: items, weeklyGuests: [], weeklyAuto: true,
     mainPresenters: ['見本　一郎', '見本　花子'], speakerRotation: { weeks, header: 'メインプレゼンテーション', notes: ['注意書き'] },
-    roleIntro: true, roleIntroData: roleData });
+    roleIntro: true, roleIntroData: roleData, memberPages, vpReport, networkingLeaders: leaders, meetingDate: new Date(2026, 9, 13) });
   const out = sb.zipFromMap_(parts, 'first.pptx');
   fs.writeFileSync(path.join(OUT, 'meetingFirst_out.pptx'), out._buf);
   integrity([path.join(OUT, 'meetingFirst_out.pptx')], '前半の出来上がり');
@@ -274,6 +280,25 @@ if (made.meetingFirst && made.memberPresen) {
   ck(!all.some((t) => t.includes('{{')), '前半：差し込み口が残っている: ' + all.filter((t) => t.includes('{{')).map((t) => t.slice(0, 40)));
   ck(videosOf(f) >= 3 + items.filter((x) => x.kind === 'individual').length, '前半：動画（音）の数: ' + videosOf(f));
   ck(out._buf.length < 40 * 1024 * 1024, '前半の出来上がりが大きい: ' + (out._buf.length / 1e6).toFixed(1) + 'MB');
+  // 新規および更新メンバー：新メンバーの欄に上から、更新メンバーの欄に年数つきで。余った「氏名」は空
+  const nmX = ss.map((p) => f[p].toString('utf8')).find((x) => text(x).includes('新規および更新メンバー')) || '';
+  ck(text(nmX).includes('見本　一郎') && text(nmX).includes('新井') && text(nmX).includes('見本　花子（2年）') && !text(nmX).includes('氏名')
+     && !/<p:sld\b[^>]*\sshow="0"/.test(nmX), '前半：新規および更新メンバー: ' + text(nmX).slice(0, 100));
+  ck(res.members && /新メンバーのページ：見本　一郎さん、新井さん/.test(res.members.message) && /名簿に無い方.*新井/.test(res.members.message),
+     '前半：新メンバー・更新メンバーの知らせ: ' + (res.members && res.members.message));
+  // バイスプレジデントによる報告：「月間リファーラル数の平均：」のあとに数を入れる（ほかの項目は雛形のまま）
+  const vpX = ss.map((p) => f[p].toString('utf8')).find((x) => text(x).includes('バイスプレジデントによる報告')) || '';
+  ck(text(vpX).includes('月間リファーラル数の平均：308件') && text(vpX).includes('月間ビジター数の平均：'),
+     '前半：バイスプレジデントによる報告: ' + text(vpX).slice(0, 100));
+  // ネットワーキングリーダーの紹介のページ（部門のページではない作り）は、表示にするだけ
+  const nlX = ss.map((p) => f[p].toString('utf8')).find((x) => text(x).includes('ネットワーキングリーダー')) || '';
+  ck(nlX && !/<p:sld\b[^>]*\sshow="0"/.test(nlX) && res.leaders, '前半：ネットワーキングリーダーのページが表示でない');
+  // いない日・月の最初でない日：新規および更新メンバー・ネットワーキングリーダーのページは非表示
+  const parts2 = sb.unzipToMap_(made.meetingFirst);
+  sb.editMeetingSlides_(parts2, map, rules, { memberPages: { newMembers: [], renewMembers: [] }, networkingLeaders: { show: false, items: [] } });
+  const hid = (t) => sb.slideOrder_(parts2).map((p) => sb.xmlOf_(parts2, p)).filter((x) => sb.slideText_(x).includes(t))
+    .every((x) => /<p:sld\b[^>]*\sshow="0"/.test(x));
+  ck(hid('新規および更新メンバー') && hid('ネットワーキングリーダー'), '前半：いない日のページが非表示になっていない');
 }
 
 // ===== 6. 定例会（後半）=====
@@ -357,4 +382,5 @@ if (fails.length) {
   process.exit(1);
 }
 console.log('OK: 7つの雛形・ビジター紹介（見出しを残す）・ビジタープレゼン（卵時計・秒数）・メンバープレゼン（雛形の寸法・秒数・自動送り）'
-  + '・前半（表紙・メンバーシップ・メインプレゼン・差し込み・ローテーション）・後半（リファーラル・推薦のことば・更新状況）');
+  + '・前半（表紙・メンバーシップ・メインプレゼン・差し込み・ローテーション・新規および更新メンバー・バイス報告・ネットワーキングリーダー）'
+  + '・後半（リファーラル・推薦のことば・更新状況）');

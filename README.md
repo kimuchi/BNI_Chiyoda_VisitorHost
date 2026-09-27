@@ -75,6 +75,7 @@ BNI_Chiyoda_VisitorHost/
 │   └ slides_meeting_common.html  #   前半・後半で共通の部品（読み込み中の表示など。include で読む）
 ├── referral_srv.js           # リファーラル発表のページを人数ぶんに増やす
 ├── role_intro_srv.js         # 前半の役職のメンバー紹介（その期の役職・チームの方を入れる。差し込み口・ページの作りで見分ける）
+├── meeting_pages_srv.js      # 前半の新メンバー・更新メンバー（1人1枚）・バイスプレジデントによる報告・ネットワーキングリーダー
 ├── splice_srv.js             # 別のpptxのページを差し込む（メンバープレゼン → 前半スライド）
 ├── routine_srv.js            # ルーティンチェックシートから、その日の決めごとを読む
 ├── slides_layout.html        # 会社名・カテゴリーの組版とメンバーのページの並び（前半・後半で共通。include で読む）
@@ -401,7 +402,7 @@ clasp deployments
 
 ### 更新が反映されたかの確かめ方
 
-`コード.js` の `SYSTEM_VERSION_`（例: `2026-09-27x`）が、ウェブアプリのトップページの下と
+`コード.js` の `SYSTEM_VERSION_`（例: `2026-09-27y`）が、ウェブアプリのトップページの下と
 「定例会スライド（前半）」「定例会スライド（後半）」の画面の右上に **「版 …」** として出ます。
 機能を変えたらこの値を変え、`clasp push`・`clasp version`・`clasp deploy` のあとに画面で確かめてください。
 

@@ -30,11 +30,16 @@
    </div>
  </div>
 
- <div class="sec">
-   <h4>2. 新メンバー・更新メンバー <span class="auto">自動</span></h4>
+ <div class="sec" id="nmSec">
+   <h4>2. 新メンバー・更新メンバー <span class="auto">ルーティンチェックシート</span></h4>
+   <div style="font-size:11px;color:#666;margin-bottom:6px;">
+     「新入会」「更新式（更新メンバー）」の欄から読みます。<b>1人1枚</b>のページを作ります（いない日はそのページを非表示にします）。
+     お名前・会社名・カテゴリー・写真はメンバー名簿から入れます。</div>
    <table>
-     <tr><th>新メンバー</th><td><input type="text" class="wide" id="t_新メンバー"></td></tr>
-     <tr><th>更新メンバー</th><td><input type="text" class="wide" id="t_更新メンバー"></td></tr>
+     <tr><th>新メンバー</th><td><div id="nm_new"></div>
+         <button class="mkbtn" onclick="nmAdd('new')">＋ 追加</button></td></tr>
+     <tr><th>更新メンバー</th><td><div id="nm_renew"></div>
+         <button class="mkbtn" onclick="nmAdd('renew')">＋ 追加</button></td></tr>
    </table>
    <div id="nmDetail" style="font-size:11px;color:#888;margin-top:6px;"></div>
  </div>
@@ -101,15 +106,42 @@
    </div>
  </div>
 
- <div class="sec">
-   <h4>5. 実績数値 <span class="auto">前回値</span></h4>
-   <div style="font-size:11px;color:#666;margin-bottom:6px;">保存すると次回の初期値になります。</div>
-   <div id="stats"></div>
-   <button class="sub" onclick="saveStats()">この数値を保存</button>
+ <div class="sec" id="vpSec">
+   <h4>5. バイスプレジデントによる報告 <span class="auto">ルーティンチェックシート</span></h4>
+   <div style="font-size:11px;color:#666;margin-bottom:6px;">
+     「バイスプレジデントによる報告」の欄（読み上げる文）から、スライドの数字を拾います。見出しの年月と「○/○速報」の日付も入れ替えます。</div>
+   <table>
+     <tr><th>月間リファーラル数の平均</th><td>チャプター設立以来 <input type="text" id="vp_avg" size="8"> 件</td></tr>
+     <tr><th>月間リファーラル数</th><td><input type="month" id="vp_month"> の月間リファーラル数
+         <input type="text" id="vp_count" size="6"> 件（<input type="text" id="vp_perWeek" size="4"> 件/週）</td></tr>
+     <tr><th>累計リファーラル数</th><td><input type="month" id="vp_from"> から <input type="month" id="vp_to"> の累計
+         <input type="text" id="vp_total" size="8"> 件</td></tr>
+     <tr><th>サンキュー額（売上）</th><td>チャプター発足から <input type="text" id="vp_thanks" size="16">
+         <span style="font-size:11px;color:#888;">（例：54億8,074万円）</span></td></tr>
+     <tr><th>速報</th><td><b id="vp_date"></b>速報　今週のリファーラル <input type="text" id="vp_week" size="4"> 件
+         （うち外部 <input type="text" id="vp_weekExt" size="4"> 件）
+         <div style="font-size:11px;color:#888;">数は空欄のままなら、スライドも空欄のままです（定例会の中で入れるとき）。</div></td></tr>
+   </table>
+   <div id="vpNote" style="font-size:11px;color:#888;margin-top:6px;"></div>
+ </div>
+
+ <div class="sec" id="nlSec">
+   <h4>6. ネットワーキングリーダー <span class="auto">ルーティンチェックシート</span></h4>
+   <label><input type="checkbox" id="nlOn" onchange="renderNL()"> <b>ネットワーキングリーダーの発表のページを表示する</b></label>
+   <div id="nlWhy" style="font-size:11px;color:#888;margin:4px 0 6px;"></div>
+   <div id="nlBox">
+     <div class="row"><label>対象の月：<input type="month" id="nl_month"></label>
+       <span style="font-size:11px;color:#888;">（ふつうは先月。見出しの「○年○月度」になります）</span></div>
+     <table id="nlTable"></table>
+     <div style="font-size:11px;color:#888;margin-top:4px;">
+       受賞者が同数で2人のときは、お2人のページにします（3人以上は1人1枚）。まとめのページ（皆さま）には全員を並べます。
+       数の単位（PT・件・名など）はスライドのとおりです。</div>
+     <div id="nlNote" style="font-size:11px;color:#888;margin-top:6px;"></div>
+   </div>
  </div>
 
  <div class="sec">
-   <h4>6. 作成</h4>
+   <h4>7. 作成</h4>
    <div style="font-size:11px;color:#666;margin-bottom:8px;">
      コアバリュー・一般規定は、選んだものの<b>ページを1枚だけ表示</b>にします。
      メンバーのページは「ウィークリープレゼンテーション」の見出しの直後に入ります。
@@ -119,7 +151,6 @@
  <div id="msg"></div>
 
 <script>
- var STAT_KEYS=['総リファーラル数','サンキューカード','1to1','ビジター数','外部リファーラル','CEU'];
  window.onload=function(){
    loadFrom('ctx','開催日とルーティンチェックシート','getMeetingSlideContext',[],init);
  };
@@ -147,8 +178,6 @@
      var w=document.getElementById('warn'); w.style.display='block';
      w.innerHTML+=(w.innerHTML?'<br>':'')+'メンバー名簿が空です。「⚙️ メンバー名簿の管理」で取り込んでください（自動算出に必要です）。';
    }
-   renderStats(c.stats||{});
-   applyLists(c.lists);
    // 前半テンプレート（アンバサダー・ディレクターのページ）と、メンバーのページの材料を読む
    if(tplOk) loadGuests(); else document.getElementById('gsList').innerHTML='<span style="color:#888;">前半テンプレートを登録すると選べます。</span>';
    loadRotation();
@@ -156,24 +185,14 @@
    toggleMP();
    refreshGen();
  }
- function renderStats(s){
-   document.getElementById('stats').innerHTML='<table>'+STAT_KEYS.map(function(k){
-     return '<tr><th>'+esc(k)+'</th><td><input type="text" class="wide" id="s_'+esc(k)+'" value="'+esc(s[k]||'')+'"></td></tr>';
-   }).join('')+'</table>';
- }
- function applyLists(L){
-   if(!L){ return; }
-   val('t_新メンバー', L.text.newMembers); val('t_更新メンバー', L.text.renewMembers);
-   var d=[];
-   if(L.newMembers.length)   d.push('新メンバー: '+L.newMembers.map(function(m){return m.name+'('+m.date+')';}).join('、'));
-   if(L.renewMembers.length) d.push('更新: '+L.renewMembers.map(function(m){return m.name+'('+m.years+'年)';}).join('、'));
-   document.getElementById('nmDetail').innerText=d.join(' ／ ');
- }
  // ルーティンチェックシートに書いてある内容を反映する
  function applyRoutine(R){
    var note=document.getElementById('coreNote');
    guestRaw = (R && R.ok && R.found) ? (R.regionGuestsRaw||'') : '';
    renderGuests();
+   // 新メンバー・更新メンバー／バイスプレジデントによる報告／ネットワーキングリーダー（見つからない日は空に）
+   var F=(R && R.ok && R.found) ? (R.firstHalf||{}) : {};
+   nmFromRoutine(F); vpFromRoutine(F); nlFromRoutine(F);
    if(!R || !R.ok || !R.found){
      note.innerText = (R&&R.message) ? R.message : 'ルーティンチェックシートに該当する開催日が見つかりません。';
      note.style.color='#c60'; return;
@@ -201,20 +220,21 @@
  function reload(){
    var d=get('meeting'); if(!d) return;
    meetingNoFromList();
-   loadFrom('routine','ルーティンチェックシート','getRoutineInfo',[d],applyRoutine);
+   loadFrom('routine','ルーティンチェックシート','getRoutineInfo',[d,{firstHalf:true}],function(R){
+     applyRoutine(R); show('開催日にあわせて更新しました。',true);
+   });
    mpForDate();
    loadRotation();
    loadRoles();
-   loadFrom('lists','新メンバー・更新メンバー','computeRenewalLists',[d],function(L){
-     if(L.ok){ applyLists(L); show('開催日にあわせて更新しました。',true); }
-     else show(L.message,false);
-   });
  }
 
  function collect(){
    var m=baseValues();
-   ['新メンバー','更新メンバー'].forEach(function(k){ m[k]=get('t_'+k); });
-   STAT_KEYS.forEach(function(k){ var e=document.getElementById('s_'+k); if(e) m[k]=e.value; });
+   // 差し込み口 {{新メンバー}} {{更新メンバー}} を使うテンプレートのために、1行の文字にもしておく
+   var nm=nmForSlides(), nmName=function(x){ return (x.name||String(x.raw||'').replace(/(さん|様)$/,''))+'さん'; };
+   m['新メンバー']=nm.newMembers.length ? nm.newMembers.map(nmName).join('、') : '該当者なし';
+   m['更新メンバー']=nm.renewMembers.length
+     ? nm.renewMembers.map(function(x){ return nmName(x)+'（'+(x.years||1)+'年更新）'; }).join('、') : '該当者なし';
    twoPersonValues(m,'メインプレゼン','mp');
    // チャプターが求める専門分野は、表のマス目に1つずつ入れる
    var want=get('t_求める専門分野').split(/[、,・･\/／]+/).map(function(x){return x.trim();})
@@ -361,9 +381,138 @@
    return (guests||[]).filter(function(g,i){ var e=document.getElementById('gs_'+i); return !!(e&&e.checked); });
  }
 
- function saveStats(){
-   var s={}; STAT_KEYS.forEach(function(k){ var e=document.getElementById('s_'+k); if(e) s[k]=e.value; });
-   google.script.run.withSuccessHandler(function(r){ show(r.message, !!r.ok); }).withFailureHandler(fail).saveMeetingStats(s);
+ // --- 新メンバー・更新メンバー（ルーティンチェックシートの「新入会」「更新式」）---
+ // 1行に1人。お名前は名簿から選ぶ（名簿に無い方は、書いてあったとおりの名前で作る）。更新は1年・2年
+ var nmList={'new':[],renew:[]};
+ function nmFromRoutine(F){
+   nmList['new']=(F.newMembers||[]).map(function(x){ return {name:x.name||'', raw:x.raw||'', category:x.category||''}; });
+   nmList.renew=(F.renewMembers||[]).map(function(x){
+     return {name:x.name||'', raw:x.raw||'', category:x.category||'', years:x.years||1, noYears:!x.years}; });
+   var t=[];
+   if(F.newMembersRaw) t.push('新入会「'+F.newMembersRaw+'」');
+   if(F.renewMembersRaw) t.push('更新式「'+F.renewMembersRaw+'」');
+   document.getElementById('nmDetail').innerText = t.length ? 'ルーティンチェックシートの記載：'+t.join('　')
+     : 'ルーティンチェックシートの「新入会」「更新式」は空欄です。';
+   renderNM();
+ }
+ function nmOptions(x){
+   var h='<option value="">（なし）</option>';
+   if(x.raw && !x.name) h+='<option value="?" selected>「'+esc(x.raw)+'」（名簿にありません）</option>';
+   ((ctx&&ctx.members)||[]).forEach(function(m){
+     h+='<option value="'+esc(m.name)+'"'+(m.name===x.name?' selected':'')+'>'+esc(m.name)+'</option>'; });
+   return h;
+ }
+ function renderNM(){
+   ['new','renew'].forEach(function(k){
+     document.getElementById('nm_'+k).innerHTML = nmList[k].length ? nmList[k].map(function(x,i){
+       var who=x.name?memberOf(x.name):null;
+       return '<div class="mkrow"><select onchange="nmSet(\''+k+'\','+i+',this.value)">'+nmOptions(x)+'</select>'
+         +(k==='renew' ? ' <select onchange="nmYears('+i+',this.value)"><option value="1"'+(x.years==2?'':' selected')
+             +'>1年更新</option><option value="2"'+(x.years==2?' selected':'')+'>2年更新</option></select>'
+             +(x.noYears ? '<span class="dt" style="color:#c60;">年数の記載なし（1年にしています）</span>' : '') : '')
+         +(x.raw && !x.name ? '<span class="dt" style="color:#c60;">名簿に無いので、会社名・カテゴリー・写真は空です</span>' : '')
+         +(who && !who.hasPhoto ? '<span class="dt" style="color:#c60;">写真なし</span>' : '')
+         +' <button class="mkbtn" onclick="nmDel(\''+k+'\','+i+')">×</button></div>';
+     }).join('') : '<div style="color:#888;font-size:12px;padding:2px 0;">いません（ページは非表示にします）</div>';
+   });
+ }
+ function nmSet(k,i,v){ var x=nmList[k][i]; if(v!=='?'){ x.name=v; if(!v) x.raw=''; } renderNM(); }
+ function nmYears(i,v){ nmList.renew[i].years=parseInt(v,10)||1; nmList.renew[i].noYears=false; renderNM(); }
+ function nmAdd(k){ nmList[k].push(k==='renew'?{name:'',raw:'',years:1}:{name:'',raw:''}); renderNM(); }
+ function nmDel(k,i){ nmList[k].splice(i,1); renderNM(); }
+ function nmForSlides(){
+   var pick=function(k){ return nmList[k].filter(function(x){ return x.name||x.raw; }).map(function(x){
+     return {name:x.name||'', raw:x.raw||'', category:x.category||'', years:k==='renew'?(x.years||1):0}; }); };
+   return { newMembers: pick('new'), renewMembers: pick('renew') };
+ }
+
+ // --- バイスプレジデントによる報告（ルーティンチェックシートの読み上げる文から拾った数字）---
+ function mdOf(d){ var m=String(d||'').match(/^\d{4}\/(\d{2})\/(\d{2})$/); return m ? (+m[1])+'/'+(+m[2]) : ''; }
+ function vpFromRoutine(F){
+   var V=F.vpReport||{};
+   val('vp_avg',V.avg); val('vp_month',V.month); val('vp_count',V.count); val('vp_perWeek',V.perWeek);
+   val('vp_from',V.from); val('vp_to',V.to); val('vp_total',V.total); val('vp_thanks',V.thanks);
+   val('vp_week',''); val('vp_weekExt','');
+   document.getElementById('vp_date').textContent=mdOf(get('meeting'));
+   document.getElementById('vpNote').innerHTML = !F.vpReport
+     ? '<span style="color:#c60;">ルーティンチェックシートに記載がありません。空欄の数字は、スライドのまま（テンプレートの数字）になります。</span>'
+     : (F.vpReportFrom && F.vpReportFrom!==get('meeting')
+        ? 'この日の欄はまだ空なので、<b>'+esc(F.vpReportFrom)+'</b> の記載から読みました。数字が変わっていれば直してください。'
+        : 'この日の記載から読みました。');
+ }
+ function vpForSlides(){
+   var o={avg:'vp_avg', month:'vp_month', count:'vp_count', perWeek:'vp_perWeek', from:'vp_from', to:'vp_to',
+          total:'vp_total', thanks:'vp_thanks', weekCount:'vp_week', weekExt:'vp_weekExt'};
+   Object.keys(o).forEach(function(k){ o[k]=String(get(o[k])||'').trim(); });
+   return o;
+ }
+
+ // --- ネットワーキングリーダー（月の最初の定例会だけ。バイスプレジデントがルーティンチェックシートに書く原稿から）---
+ var NL_KINDS=[['ceu','CEU','ポイント'],['thanks','サンキュー',''],['ext','外部リファーラル','件'],['oto','1to1','回'],['visitor','ビジター招待数','名']];
+ var nlData={};
+ function prevMonth(d){
+   var m=String(d||'').match(/^(\d{4})\/(\d{2})/); if(!m) return '';
+   var y=+m[1], mo=+m[2]-1; if(mo<1){ mo=12; y--; }
+   return y+'-'+('0'+mo).slice(-2);
+ }
+ function nlFromRoutine(F){
+   var N=F.networkingLeaders;
+   nlData={};
+   NL_KINDS.forEach(function(k){ nlData[k[0]]={value:'', unit:k[2], winners:[]}; });
+   (N?N.items:[]).forEach(function(it){
+     nlData[it.key]={value:it.value||'', unit:it.unit||'', winners:(it.winners||[]).map(function(w){
+       return {name:w.name||'', raw:w.raw||'', category:w.category||''}; })};
+   });
+   val('nl_month', (N&&N.month) || prevMonth(get('meeting')));
+   document.getElementById('nlOn').checked = !!(F.firstOfMonth || N);
+   var why=[];
+   why.push(F.firstOfMonth ? 'この日は、その月の<b>最初の定例会</b>です（発表のある週）。'
+                           : 'この日は、その月の最初の定例会ではありません（ふだんはページを非表示にします）。');
+   if(N) why.push('ルーティンチェックシートの原稿から、部門ごとの数と受賞者を読みました。');
+   else if(F.firstOfMonth) why.push('<span style="color:#c60;">ルーティンチェックシートの「ネットワーキングリーダー」はまだ空欄です。書かれたら開き直すと入ります（手で入れても作れます）。</span>');
+   document.getElementById('nlWhy').innerHTML=why.join('');
+   var un=[];
+   (N?N.items:[]).forEach(function(it){ (it.winners||[]).forEach(function(w){ if(!w.name && w.raw) un.push(w.raw); }); });
+   document.getElementById('nlNote').innerHTML = un.length ? '<span style="color:#c60;">名簿の氏名と一致しなかった方：'
+     +esc(un.join('、'))+'（そのままの名前で、写真・会社名なしで入れます。名簿から選び直せます）</span>' : '';
+   renderNL();
+ }
+ function nlOptions(w){
+   var h='<option value="">（なし）</option>';
+   if(w.raw && !w.name) h+='<option value="?" selected>「'+esc(w.raw)+'」（名簿にありません）</option>';
+   ((ctx&&ctx.members)||[]).forEach(function(m){
+     h+='<option value="'+esc(m.name)+'"'+(m.name===w.name?' selected':'')+'>'+esc(m.name)+'</option>'; });
+   return h;
+ }
+ function renderNL(){
+   var on=document.getElementById('nlOn').checked;
+   document.getElementById('nlBox').style.display = on ? 'block' : 'none';
+   var h='<tr><th>部門</th><th style="width:175px;">数</th><th style="width:auto;">受賞者（同数のときは ＋ で足す）</th></tr>';
+   NL_KINDS.forEach(function(k){
+     var d=nlData[k[0]], ws=d.winners.length ? d.winners : [{name:'',raw:''}];
+     h+='<tr><td>'+esc(k[1])+'</td><td style="white-space:nowrap;"><input type="text" size="10" value="'+esc(d.value)+'" onchange="nlData[\''+k[0]+'\'].value=this.value">'
+       +(k[0]==='thanks' ? '' : ' '+esc(d.unit||k[2]))+'</td><td>'
+       +ws.map(function(w,i){ return '<select onchange="nlSet(\''+k[0]+'\','+i+',this.value)">'+nlOptions(w)+'</select>'; }).join(' ')
+       +' <button class="mkbtn" onclick="nlAdd(\''+k[0]+'\')">＋</button></td></tr>';
+   });
+   document.getElementById('nlTable').innerHTML=h;
+ }
+ function nlSet(k,i,v){
+   var ws=nlData[k].winners;
+   if(!ws[i]) ws[i]={name:'',raw:''};
+   if(v!=='?'){ ws[i].name=v; if(!v) ws[i].raw=''; }
+   nlData[k].winners=ws.filter(function(w,j){ return w.name||w.raw||j<1; });
+   renderNL();
+ }
+ function nlAdd(k){ var ws=nlData[k].winners; if(!ws.length) ws.push({name:'',raw:''}); ws.push({name:'',raw:''}); renderNL(); }
+ function nlForSlides(){
+   return { show: document.getElementById('nlOn').checked, month: get('nl_month'),
+     items: NL_KINDS.map(function(k){
+       var d=nlData[k[0]];
+       return { key:k[0], value:String(d.value||'').trim(), unit:d.unit||k[2],
+                winners:d.winners.filter(function(w){ return w.name||w.raw; })
+                  .map(function(w){ return {name:w.name||'', raw:w.raw||'', category:w.category||''}; }) };
+     }).filter(function(it){ return it.value || it.winners.length; }) };
  }
  // --- スピーカーローテーション（78枚目の表）---
  var rotData=null;
@@ -438,7 +587,11 @@
      weeklyGuests: guests ? pickedGuests().map(function(g){ return g.name; }) : null,
      weeklyAuto: document.getElementById('mpAuto').checked,
      speakerRotation: rotationForSlides(),
-     roleIntro: document.getElementById('roleOn').checked
+     roleIntro: document.getElementById('roleOn').checked,
+     // 新メンバー・更新メンバー（1人1枚）／バイスプレジデントによる報告／ネットワーキングリーダー
+     memberPages: nmForSlides(),
+     vpReport: vpForSlides(),
+     networkingLeaders: nlForSlides()
    });
  }
 </script>

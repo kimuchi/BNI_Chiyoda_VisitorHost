@@ -176,6 +176,7 @@ function routineResetCache_() {
   ROUTINE_INDEX_FROM_ = '';
   ROUTINE_ROWS_CACHE_ = {};
   ROUTINE_GRID_CACHE_ = {};
+  ROUTINE_ROSTER_ = null;
 }
 
 // 「なし」「無し」「休会」などは、指定されていないものとして扱う。
@@ -374,8 +375,282 @@ function routineRecommendations_(v) {
   return out;
 }
 
+// --- 前半スライドの「新メンバー」「更新メンバー」「バイスプレジデントによる報告」「ネットワーキングリーダー」 ---
+// どれもバイスプレジデントが2日前までに書く欄。書き方は人によって揺れるので、形を見て拾う。
+var ROUTINE_NEW_LABELS_ = ['新入会', '新メンバー'];
+var ROUTINE_RENEW_LABELS_ = ['更新式', '更新メンバー'];
+var ROUTINE_VP_LABELS_ = ['バイスプレジデントによる報告'];
+var ROUTINE_NL_LABELS_ = ['ネットワーキングリーダー'];
+
+// 括弧の外と中に分ける（入れ子の括弧・全角半角の混ざった括弧も1つの組にする）
+//   「徳永京平さん（飲食店（ホルモン焼肉））メンバーリスト53番」
+//   → [{外:'徳永京平さん'}, {中:'飲食店（ホルモン焼肉）'}, {外:'メンバーリスト53番'}]
+function routineParenSegs_(s) {
+  var out = [], depth = 0, buf = '';
+  for (var i = 0; i < s.length; i++) {
+    var ch = s.charAt(i);
+    if (ch === '（' || ch === '(') {
+      if (depth === 0) { if (buf) out.push({ text: buf, paren: false }); buf = ''; } else buf += ch;
+      depth++;
+    } else if ((ch === '）' || ch === ')') && depth > 0) {
+      depth--;
+      if (depth === 0) { out.push({ text: buf, paren: true }); buf = ''; } else buf += ch;
+    } else buf += ch;
+  }
+  if (buf) out.push({ text: buf, paren: depth > 0 });
+  return out;
+}
+
+// 名簿の氏名に合わせる。routineMemberName_ より慎重に、名字・氏名がそのまま一致する方を先に採り、
+// 前にカテゴリーなどが付いた書き方（「店舗オフィス岩渕」「占いを使ったインサイトカウンセラー神楽」）は
+// うしろが名字・氏名に一致する方を採る（2文字以上）。
+// 同じ名字の方が2人以上いるときは、書き添えてあるカテゴリー（hint）が名簿のカテゴリーに合う方に決める。決まらなければ空
+function routineRosterName_(text, roster, hint) {
+  var t = routineFoldName_(String(text).replace(/【[^】]*】/g, ''));
+  if (!t) return '';
+  var keys = roster.map(function (m) {
+    return { name: m.name, title: routineFoldName_(m.title || ''),
+             full: routineFoldName_(m.name), sur: routineFoldName_(String(m.name).trim().split(/[\s　]+/)[0]) };
+  });
+  var h = routineFoldName_(String(hint || '').replace(/[()（）【】「」]/g, ''));
+  var one = function (list) {
+    if (list.length === 1) return list[0].name;
+    if (!h || list.length < 2) return '';
+    var byCat = list.filter(function (k) {
+      var ti = k.title.replace(/[()（）【】「」]/g, '');
+      return ti && (ti.indexOf(h) >= 0 || h.indexOf(ti) >= 0);
+    });
+    return byCat.length === 1 ? byCat[0].name : '';
+  };
+  var exact = keys.filter(function (k) { return k.full === t; });
+  if (exact.length) return one(exact);
+  var sur = keys.filter(function (k) { return k.sur === t; });
+  if (sur.length) return one(sur);
+  var hit = routineMemberName_(text);
+  if (hit.matched) return hit.name;
+  var best = [], bestLen = 0;
+  keys.forEach(function (k) {
+    [k.full, k.sur].forEach(function (w) {
+      if (w.length < 2 || t.length <= w.length || t.slice(-w.length) !== w) return;
+      if (w.length > bestLen) { best = [k]; bestLen = w.length; }
+      else if (w.length === bestLen && best.indexOf(k) < 0) best.push(k);
+    });
+  });
+  if (best.length > 1 && !h) h = routineFoldName_(t.slice(0, -bestLen));      // 前に付いているのがカテゴリー
+  return one(best);
+}
+// 名簿（氏名とカテゴリー）。1回の実行の中で使い回す
+var ROUTINE_ROSTER_ = null;
+function routineRoster_() {
+  if (ROUTINE_ROSTER_) return ROUTINE_ROSTER_;
+  var list = [];
+  try { list = (getMemberMaster({ membersOnly: true }).members || []).map(function (m) { return { name: m.name, title: m.title || '' }; }); } catch (e) {}
+  if (!list.length) {
+    try { list = getMembersList().map(function (m) { return { name: m.name, title: '' }; }); } catch (e) {}
+  }
+  ROUTINE_ROSTER_ = list;
+  return list;
+}
+
+// 括弧の中が「カテゴリー」らしいか（番号・年数・日付・よみがな・但し書きは違う）
+function routineCategoryIn_(t) {
+  var s = String(t || '').trim(), m = s.match(/カテゴリー\s*[：:]?\s*([^\s　、,，]+)/);
+  if (m) return m[1];
+  if (!s || /[0-9０-９]|番|年|月|日|時点|代理|予定|メンバーリスト|さん/.test(s)) return '';
+  if (/^[ぁ-ゖー・\s　]+$/.test(s)) return '';                 // よみがな（ひらがなだけ）
+  return s;
+}
+// 名前らしい文字か（「対面BOD」「該当者なし」のような書き込みを外す）
+function routineNameLike_(t) {
+  var s = String(t || '').replace(/[\s　]/g, '');
+  return s.length >= 1 && s.length <= 10 && !/[A-Za-zＡ-Ｚａ-ｚ0-9０-９]/.test(s)
+      && !/該当|なし|無し|受賞|以上|次は|最後|お二人|おふたり|ふたり|招待|部門|ビジター|連続|初の|抑え|予定|休会|カテゴリー/.test(s);
+}
+
+// 「15 新入会」「16 更新式(更新メンバー)」の欄 → [{ raw, name, matched, years, category }]
+//   本間さん、平松さん、谷口さん
+//   徳永京平さん（飲食店（ホルモン焼肉））メンバーリスト53番
+//   （業務用冷凍冷蔵設備) 福元 良平さん ⏎（LPに特化してWebデザイン）村井 絢香さん
+//   鈴村さん（1年更新）、加納さん（1年更新）          … 更新は「1年」「2年」も読む（書いていなければ 0）
+//   内装業　店舗オフィス岩渕さん（1年）               … 前に業種・カテゴリーが付く
+//   岩渕裕太（いしぶちゆうすけ）さん                   … よみがなの括弧のあとに「さん」
+//   小西さん（伊豆澤さんは10/7）                      … 括弧の中のお名前は数えない
+//   青木周一さん（…） ⏎ 遠藤さんのあと、31番に入ります … 「○○さんのあと」のような文の中のお名前も数えない
+//   深井 宗二郎（ふかた そういちろう）（法人コスト削減） … どこにも「さん」が無ければ、括弧の外をお名前とみなす
+// category は、名簿に無い方（まだ名簿に入っていない新メンバー）のときに使う
+function routineMemberList_(v) {
+  var s = String(v == null ? '' : v);
+  if (routineIsBlank_(s.replace(/[\s　]/g, ''))) return [];
+  var roster = routineRoster_(), out = [], seen = {};
+  var add = function (rawName, shown, years, category) {
+    var nm = String(rawName).replace(/【[^】]*】/g, '').replace(/^[\s　、,，・･と]+|[\s　、,，・･]+$/g, '');
+    if (!nm || routineIsBlank_(nm.replace(/[\s　]/g, ''))) return;
+    var full = routineRosterName_(nm, roster, category), key = full || routineFoldName_(nm);
+    if (!full && !routineNameLike_(nm.replace(/^.*[\s　]/, ''))) return;
+    if (seen[key]) return;
+    seen[key] = true;
+    out.push({ raw: shown, name: full, matched: !!full, years: years || 0, category: full ? '' : (category || '') });
+  };
+  var lines = s.split(/[\r\n]+/).map(function (l) { return l.replace(/[※＊].*$/, '').trim(); });
+  var honor = /(さん|様|さま|氏)/;
+  if (lines.some(function (l) { return honor.test(routineParenSegs_(l).filter(function (x) { return !x.paren; }).map(function (x) { return x.text; }).join('')); })) {
+    lines.forEach(function (line) {
+      if (!line || routineIsBlank_(line.replace(/[\s　]/g, ''))) return;
+      var segs = routineParenSegs_(line);
+      for (var i = 0; i < segs.length; i++) {
+        if (segs[i].paren) continue;
+        var text = segs[i].text, re = /(さん|様|さま|氏)/g, m, cut = 0;
+        while ((m = re.exec(text)) !== null) {
+          var after = text.substring(m.index + m[0].length);
+          var chunk = text.substring(cut, m.index), lead = cut === 0;
+          cut = m.index + m[0].length;
+          if (/^[のはがをにへもで]/.test(after)) continue;                 // 「遠藤さんのあと」
+          chunk = chunk.replace(/^.*[、,，。；;：:／\/]/, '');                 // 区切りより前（「法人コスト削減：」など）
+          var reading = '';
+          if (!chunk.trim() && lead && i >= 2 && segs[i - 1].paren && !segs[i - 2].paren) {
+            chunk = segs[i - 2].text.replace(/^.*[、,，。；;：:／\/]/, '');   // 「岩渕裕太（いしぶちゆうすけ）さん」
+            reading = segs[i - 1].text;
+          }
+          var next = !after.trim() ? segs[i + 1] : null;
+          var ym = (next && next.paren ? next.text : after).match(/^[\s　]*([0-9０-９])\s*年/);
+          var years = ym ? parseInt(String(ym[1]).normalize('NFKC'), 10) : 0;
+          var prev = lead && !reading && i > 0 && segs[i - 1].paren ? segs[i - 1].text : '';
+          var cat = routineCategoryIn_(next && next.paren ? next.text : '') || routineCategoryIn_(prev);
+          add(chunk, chunk.trim() + (reading ? '（' + reading + '）' : '') + m[0], years, cat);
+        }
+      }
+    });
+    return out;
+  }
+  // どこにも「さん」が無い書き方：括弧の外の文字を「、」で区切って、それぞれお名前とみなす
+  lines.forEach(function (line) {
+    if (!line || routineIsBlank_(line.replace(/[\s　]/g, ''))) return;
+    var segs = routineParenSegs_(line), cat = '';
+    var catM = line.match(/カテゴリー\s*[：:]?\s*([^\s　、,，（(]+(?:[（(][^）)]*[）)])?)/);
+    if (catM) cat = catM[1];
+    segs.forEach(function (x) { if (x.paren && !cat) cat = routineCategoryIn_(x.text); });
+    var plain = segs.filter(function (x) { return !x.paren; }).map(function (x) { return x.text; }).join('').replace(/カテゴリー.*$/, '');
+    plain.split(/[、,，・･／\/]+/).forEach(function (p) {
+      var t = p.replace(/^.*[：:]/, '').trim();
+      if (t) add(t, t, 0, cat);
+    });
+  });
+  return out;
+}
+
+// 3,080 のような数（「,」をそろえる）。数でなければそのまま
+function routineNum_(s) {
+  var t = String(s == null ? '' : s).normalize('NFKC').replace(/[,\s]/g, '');
+  if (!/^\d+$/.test(t)) return String(s == null ? '' : s).trim();
+  return t.replace(/^0+(?=\d)/, '').replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+// 「54億0,272万円」→「54億272万円」、「4,000万円」→ そのまま。億・万・円の形にそろえる
+function routineYen_(s) {
+  var t = String(s == null ? '' : s).normalize('NFKC').replace(/\s/g, '');
+  var m = t.match(/^(?:([\d,]+)億)?(?:([\d,]+)万)?([\d,]+)?円?$/);
+  if (!m || !(m[1] || m[2] || m[3])) return t;
+  return (m[1] ? routineNum_(m[1]) + '億' : '') + (m[2] ? routineNum_(m[2]) + '万' : '') + (m[3] ? routineNum_(m[3]) : '') + '円';
+}
+
+// 「42 バイスプレジデントによる報告」の欄（読み上げる文がそのまま書いてある）から、スライドの数字を拾う。
+//   チャプター設立以来、月間リファーラル数の平均は308件、2026年8月の月間リファーラル数は281件(70件/週）
+//   2026年3月から2026年8月の半年間のリファーラル数の合計は1,927件となります。
+//   （クリック）チャプターが発足されてから交わされたビジネスのサンキュー額つまり売上は、 54億8,074万円となります。
+// → { avg:'308', month:'2026-08', count:'281', perWeek:'70', from:'2026-03', to:'2026-08', total:'1,927', thanks:'54億8,074万円' }
+function routineVpReport_(v) {
+  var s = String(v == null ? '' : v).normalize('NFKC').replace(/[\r\n]+/g, ' ');
+  if (routineIsBlank_(s.replace(/\s/g, ''))) return null;
+  var out = {}, m, ym = function (y, mo) { return y + '-' + ('0' + mo).slice(-2); };
+  if ((m = s.match(/月間リファーラル数の平均\s*(?:は|:)?\s*([\d,]+)\s*件/))) out.avg = routineNum_(m[1]);
+  if ((m = s.match(/(\d{4})\s*年\s*(\d{1,2})\s*月の月間リファーラル数\s*(?:は|:)?\s*([\d,]+)\s*件(?:\s*\(\s*([\d,]+)\s*件\s*\/\s*週\s*\))?/))) {
+    out.month = ym(m[1], m[2]); out.count = routineNum_(m[3]); out.perWeek = m[4] ? routineNum_(m[4]) : '';
+  }
+  if ((m = s.match(/(\d{4})\s*年\s*(\d{1,2})\s*月から\s*(\d{4})\s*年\s*(\d{1,2})\s*月(?:まで)?の[^\d]*?(?:は|:)\s*(?:ちょうど|約)?\s*([\d,]+)\s*件/))) {
+    out.from = ym(m[1], m[2]); out.to = ym(m[3], m[4]); out.total = routineNum_(m[5]);
+  }
+  if ((m = s.match(/サンキュー額[^\d]*?((?:[\d,]+\s*億\s*)?(?:[\d,]+\s*万\s*)?(?:[\d,]+\s*)?円)/))) out.thanks = routineYen_(m[1]);
+  return Object.keys(out).length ? out : null;
+}
+
+// ネットワーキングリーダーの部門（スライドのページも、この言葉で見分ける）
+var NL_KINDS_ = [
+  { key: 'ceu',     label: 'CEU',              re: /CEU/i },
+  { key: 'thanks',  label: 'サンキュー',        re: /サンキュー/ },
+  { key: 'ext',     label: '外部リファーラル',  re: /外部\s*リファーラル/ },
+  { key: 'oto',     label: '1to1',             re: /1\s*to\s*1|ワントゥーワン/i },
+  { key: 'visitor', label: 'ビジター招待数',    re: /ビジター\s*招待/ }
+];
+// 「24 ネットワーキングリーダー」の欄（月初の回に、発表の原稿がそのまま書いてある。ほかの週は「ー」）。
+//   2026年8月のネットワーキングリーダーの発表をさせて頂きます。
+//   先月のCEU部門は23ポイントで、エンタ―テイメントショ―：泉さんです。
+//   なんと！4,000万円の売上に貢献頂きました、生命保険(法人)：丘野さんです！
+//   外部リファーラル部門。17件で、わたくし、ベリーダンス：山岸です。          … 「わたくし」はバイスプレジデント本人
+//   1to1の回数ですが、今回はおふたりいらっしゃいます。21回で、鍼灸師：梅中さんと、…：若松さんです！
+// → { month:'2026-08', items: [{ key, label, value:'23', unit:'ポイント', winners:[{ raw, name, matched, category }] }] }
+//   数は、部門の見出しのあとの最初の「数＋単位」。受賞者は、そのあとの「…です」までに書かれた方
+function routineNetworkingLeaders_(v) {
+  var s = String(v == null ? '' : v).normalize('NFKC').replace(/[\r\n]+/g, ' ');
+  if (routineIsBlank_(s.replace(/\s/g, '')) || !/[\d]/.test(s)) return null;
+  var out = { month: '', items: [] }, m = s.match(/(\d{4})\s*年\s*(\d{1,2})\s*月の\s*ネットワーキングリーダー/);
+  if (m) out.month = m[1] + '-' + ('0' + m[2]).slice(-2);
+  // 締めの言葉（「それでは、今回の受賞者を代表し…」）から先は読まない
+  var endAt = s.search(/それでは[、,]?\s*今回の受賞者|受賞者を代表|今月は代表して|(?:素晴らしい|大きな)貢献を頂きました/);
+  var body = endAt >= 0 ? s.substring(0, endAt) : s, roster = routineRoster_();
+  var starts = [];
+  NL_KINDS_.forEach(function (k) {
+    var at = body.search(k.re);
+    if (at >= 0) starts.push({ kind: k, at: at });
+  });
+  starts.sort(function (a, b) { return a.at - b.at; });
+  starts.forEach(function (st, i) {
+    var sec = body.substring(st.at, i + 1 < starts.length ? starts[i + 1].at : body.length);
+    var vm = sec.match(/((?:[\d,]+\s*億\s*)?[\d,]+\s*(?:万\s*)?)(円|件|回|名|人|ポイント|PT|pt|P)(?![a-z])/);
+    if (!vm) return;
+    var item = { key: st.kind.key, label: st.kind.label, winners: [],
+                 value: st.kind.key === 'thanks' ? routineYen_(vm[1] + vm[2]) : routineNum_(vm[1]),
+                 unit: st.kind.key === 'thanks' ? '' : vm[2] };
+    var rest = sec.substring(sec.indexOf(vm[0]) + vm[0].length), stop = rest.search(/です|でした/);
+    var seg = stop >= 0 ? rest.substring(0, stop) : rest;
+    if (/該当者?なし|いらっしゃらな/.test(seg)) { out.items.push(item); return; }
+    seg.split(/(?:さん|様)\s*(?:と\s*)?[、,]?\s*|\s*と\s*[、,]\s*/).forEach(function (piece) {
+      var p = piece.trim(), self = /わたくし|私/.test(p);
+      p = p.replace(/わたくし|私/g, '').replace(/^[\s、,!]*(?:で|が)?[\s、,!]*/, '')
+           .replace(/^(?:なんと|またもや|こちらも|この部門も|今回も|今月も|そして)[\s、,!]*/, '').trim();
+      if (!p) return;
+      var colon = p.lastIndexOf(':'), cat = '', raw;
+      if (colon >= 0) { cat = p.substring(0, colon); raw = p.substring(colon + 1); }
+      else {
+        var no = p.lastIndexOf('の');                                    // 古い書き方「贈答用生鮮食品の船越さん」
+        if (no >= 0 && p.length - no - 1 >= 1 && p.length - no - 1 <= 8) { cat = p.substring(0, no); raw = p.substring(no + 1); }
+        else raw = p;
+      }
+      raw = raw.replace(/^.*[、,]/, '').trim();
+      cat = cat.replace(/^.*[、,]/, '').trim();
+      if (!raw || !routineNameLike_(raw)) return;
+      var full = routineRosterName_(raw, roster, cat);
+      item.winners.push({ raw: raw + (self ? '' : 'さん'), name: full, matched: !!full, category: cat, self: self });
+    });
+    out.items.push(item);
+  });
+  return out.items.length ? out : null;
+}
+
+// その月の最初の定例会か（休会日の週は飛ばす。前の週に同じ月の開催があれば、最初ではない）
+function routineFirstOfMonth_(d) {
+  var hol = [];
+  try { hol = getHolidays(); } catch (e) {}
+  for (var k = 1; k <= 5; k++) {
+    var p = new Date(d.getTime()); p.setDate(p.getDate() - 7 * k);
+    if (p.getMonth() !== d.getMonth()) return true;
+    if (hol.indexOf(fmtDate_(p)) < 0) return false;
+  }
+  return true;
+}
+
 // 開催日の欄を読む。画面から直接呼べる。
-function getRoutineInfo(dateStr) {
+// opts.firstHalf … 前半スライドの画面から。新メンバー・更新メンバー・バイスプレジデントによる報告・
+//                  ネットワーキングリーダーの欄も読む（バイスプレジデントによる報告が空欄なら、前の回の記載を使う）
+function getRoutineInfo(dateStr, opts) {
   try {
     var t = parseDate_(dateStr);
     if (!t) return { ok: false, found: false, message: '開催日を解釈できませんでした。' };
@@ -422,12 +697,40 @@ function getRoutineInfo(dateStr) {
              generalPolicy: routinePolicyNo_(policy.value), generalPolicyRaw: policy.value,
              recommendations: routineRecommendations_(reco.value), recommendationsRaw: reco.value,
              regionGuestsRaw: routineText_(region.value),
-             weeklyStartRaw: routineText_(weekly.value) };
+             weeklyStartRaw: routineText_(weekly.value),
+             firstHalf: (opts && opts.firstHalf) ? routineFirstHalf_(t, pick) : null };
   } catch (e) {
     console.error('[ROUTINE] ' + (e && e.stack ? e.stack : e));
     return { ok: false, found: false, message: 'ルーティンチェックシートの読み取りに失敗しました: '
              + (e && e.message ? e.message : e) };
   }
+}
+
+// 前半スライドだけで使う欄（getRoutineInfo の opts.firstHalf）
+function routineFirstHalf_(t, pick) {
+  var nw = pick(ROUTINE_NEW_LABELS_), rn = pick(ROUTINE_RENEW_LABELS_);
+  var vp = pick(ROUTINE_VP_LABELS_), nl = pick(ROUTINE_NL_LABELS_);
+  var vpRep = routineVpReport_(vp.value), vpFrom = vpRep ? fmtDate_(t) : '';
+  if (!vpRep) {
+    // その日の欄がまだ空なら、いちばん近い前の回の記載（「できれば前週をコピペ」の運用のため）
+    var rows = {}, key = fmtDate_(t), best = '';
+    try { rows = routineRowValues_(ROUTINE_VP_LABELS_); } catch (e) {}
+    Object.keys(rows).forEach(function (k) { if (k < key && k > best && routineVpReport_(rows[k])) best = k; });
+    if (best) { vpRep = routineVpReport_(rows[best]); vpFrom = best; }
+  }
+  var nlRep = routineNetworkingLeaders_(nl.value);
+  if (nlRep) {
+    var vice = '';
+    try { vice = roleHolders_(t).vice || ''; } catch (e) {}
+    nlRep.items.forEach(function (it) {
+      it.winners.forEach(function (w) { if (w.self && !w.matched && vice) { w.name = vice; w.matched = true; } });
+    });
+  }
+  return { newMembers: routineMemberList_(nw.value), newMembersRaw: routineText_(nw.value),
+           renewMembers: routineMemberList_(rn.value), renewMembersRaw: routineText_(rn.value),
+           vpReport: vpRep, vpReportFrom: vpFrom,
+           networkingLeaders: nlRep, networkingLeadersRaw: routineText_(nl.value),
+           firstOfMonth: routineFirstOfMonth_(t) };
 }
 
 // 開催日をまとめて引く（画面の初期表示で、候補ぶんを一度に取るため）
