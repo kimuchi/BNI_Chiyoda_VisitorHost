@@ -117,6 +117,19 @@ function saveChapterSettings(s) {
     CHAPTER_CACHE_ = null;
     var msg = 'チャプターの設定を保存しました（' + chapterLabel_() + '・いまの期 ' + term + '期・毎週' + chapterWeekdayLabel_() + '曜日）。';
     if (delta) msg += '\n期の番号を付け直したので、登録してある役職・チームの期も同じだけずらしました。';
+    // 空のスプレッドシートから始めたとき（初回の準備。setup_srv.js）は、ルーティンチェックシートもここで作る
+    // （期の番号と開催日が、この設定で決まるため）。期を付け直したら、作ったシートの名前の期もずらす
+    if (chapterFresh_()) {
+      try {
+        var renamed = setupShiftRoutineNames_(delta), made = setupEnsureRoutineSheets_().filter(function (r) { return r.made; });
+        if (renamed.length) msg += '\nルーティンチェックシートの名前の期もずらしました（' + renamed.join('、') + '）。';
+        if (made.length) msg += '\nルーティンチェックシートを作りました: ' + made.map(function (r) { return '「' + r.name + '」'; }).join('、');
+      } catch (e) {
+        console.error('[CHAPTER] setup ' + (e && e.stack ? e.stack : e));
+        msg += '\nルーティンチェックシートを作れませんでした（⚙️ 設定 > 足りないシートを作る で、もう一度お試しください）: '
+          + (e && e.message ? e.message : e);
+      }
+    }
     return { ok: true, message: msg, settings: getChapterSettings() };
   } catch (e) {
     console.error('[CHAPTER] save ' + (e && e.stack ? e.stack : e));
