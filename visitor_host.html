@@ -12,6 +12,10 @@
     .priority-input { width: 45px; padding: 3px 4px; font-size: 12px; border: 1px solid #ccc; border-radius: 3px; text-align: center; }
     .priority-label { font-size: 10px; color: #888; white-space: nowrap; }
     .btn-save { background: #4caf50; color: white; padding: 12px; width: 100%; border: none; font-weight: bold; font-size: 15px; border-radius: 4px; margin-top: 15px; cursor: pointer; }
+    .readbar { border: 1px solid #f0c9a4; background: #fff8f1; border-radius: 4px; padding: 8px 10px; margin-bottom: 12px; font-size: 13px; }
+    .readbar select { font-size: 12px; max-width: 100%; }
+    .readbar button { font-size: 12px; padding: 4px 10px; cursor: pointer; }
+    .readnote { font-size: 12px; color: #555; margin-top: 6px; }
   </style>
 </head>
 <body>
@@ -19,6 +23,13 @@
   <div class="hint">
     チェック: ビジターホストとして記憶され、AI割り振りで優先的にファシリ・オリエン担当に選ばれます。<br>
     優先順位: 数値が小さいほどオリエンに優先的に割り振られます。空欄は最低優先です。
+  </div>
+
+  <!-- 役職ごとの入力の「役職・委員会（半期ごと）」で登録したビジターホストを読み取る。読み取ったあとは手で直せる -->
+  <div class="readbar" id="readBar" style="display:none;">
+    <b>役職から読み取る</b>：<select id="roleTerm"></select>
+    <button type="button" onclick="readRoles()">読み取る</button>
+    <div class="readnote" id="readNote"></div>
   </div>
 
   <div style="display:flex; gap:10px; font-size:11px; color:#666; margin-bottom:8px; padding:0 5px;">
@@ -34,8 +45,26 @@
     var members = [];
     var savedHosts = [];
     var savedPriorities = {};
+    var roleInfo = null;
+
+    function el(id) { return document.getElementById(id); }
+    function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) { return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+    function nm(s) { return String(s == null ? '' : s).replace(/[\s　]+/g, ''); }
 
     window.onload = function() {
+      // 役職ごとの入力で登録した、期ごとのビジターホスト（今の期・次の期）
+      google.script.run.withSuccessHandler(function(r) {
+        if (!r || !r.ok) return;
+        roleInfo = r;
+        el('roleTerm').innerHTML = r.terms.map(function(t) {
+          return '<option value="' + t.term + '"' + (t.term === r.pick ? ' selected' : '') + '>' + t.term + '期（' + esc(t.label) + '）'
+            + (t.term === r.now ? '・今の期' : '・次の期') + '：' + t.names.length + '名' + (t.registered ? '' : '（未登録）') + '</option>';
+        }).join('');
+        el('readNote').innerText = r.handover
+          ? '期の終わり（引継ぎの時期）は次の期の方がビジターホストをするので、次の期を選んであります。'
+          : '役職ごとの入力の「役職・委員会（半期ごと）」で登録した、ビジターホストとビジターホストコーディネーターを読み取ります。';
+        el('readBar').style.display = '';
+      }).withFailureHandler(function() {}).getVisitorHostsFromRoles();
       google.script.run.withSuccessHandler(function(list) {
         members = list;
         google.script.run.withSuccessHandler(function(hosts) {
@@ -50,24 +79,46 @@
 
     function render() {
       var container = document.getElementById('memberList');
-      container.innerHTML = '';
-
       if(members.length === 0) {
         container.innerHTML = "メンバーリストがありません。先に「メンバーリスト(OCR)の更新」を行ってください。";
         return;
       }
-
+      var html = '';
       for(var i = 0; i < members.length; i++) {
         var m = members[i];
-        var isChecked = savedHosts.includes(m.no) ? 'checked' : '';
+        var isChecked = savedHosts.indexOf(m.no) >= 0 ? ' checked' : '';
         var priorityVal = savedPriorities[m.no] !== undefined ? savedPriorities[m.no] : '';
-
-        var div = document.createElement('div');
-        div.className = 'member-item';
-        div.innerHTML = '<label><input type="checkbox" id="chk_' + m.no + '" value="' + m.no + '" ' + isChecked + '> ' + m.no + ' : ' + m.name + '</label>' +
-          '<input type="number" id="pri_' + m.no + '" class="priority-input" value="' + priorityVal + '" min="1" placeholder="-">';
-        container.appendChild(div);
+        html += '<div class="member-item"><label><input type="checkbox" id="chk_' + esc(m.no) + '" value="' + esc(m.no) + '"' + isChecked + '> '
+          + esc(m.no) + ' : ' + esc(m.name) + '</label>'
+          + '<input type="number" id="pri_' + esc(m.no) + '" class="priority-input" value="' + esc(priorityVal) + '" min="1" placeholder="-"></div>';
       }
+      container.innerHTML = html;
+    }
+
+    // 選んだ期のビジターホストにチェックを入れる（ほかの方のチェックは外す。優先順位はそのまま）。
+    // 読み取ったあとも手で直せる。保存するまでは設定は変わらない
+    function readRoles() {
+      if (!roleInfo) return;
+      var term = parseInt(el('roleTerm').value, 10), t = null;
+      for (var i = 0; i < roleInfo.terms.length; i++) if (roleInfo.terms[i].term === term) t = roleInfo.terms[i];
+      if (!t || !t.names.length) {
+        el('readNote').innerText = term + '期のビジターホストが登録されていません。役職ごとの入力の「役職・委員会（半期ごと）」で登録してください。';
+        return;
+      }
+      var want = {}, found = {}, hit = 0, miss = [];
+      t.names.forEach(function(n) { want[nm(n)] = true; });
+      members.forEach(function(m) {
+        var c = el('chk_' + m.no);
+        if (!c) return;
+        c.checked = !!want[nm(m.name)];
+        if (c.checked) { hit++; found[nm(m.name)] = true; }
+      });
+      t.names.forEach(function(n) { if (!found[nm(n)]) miss.push(n); });
+      el('readNote').innerText = term + '期のビジターホスト ' + hit + '名にチェックを入れました（ほかの方のチェックは外しました。優先順位はそのままです）。'
+        + (t.registered ? '' : t.from ? '（' + term + '期の委員会・チームは未登録のため、' + t.from + '期の顔ぶれです）'
+                                       : '（委員会・チームが未登録のため、ビジターホストコーディネーターだけです）')
+        + (miss.length ? '\nメンバーリストに見つからない方：' + miss.join('、') : '')
+        + '\n確かめて、必要なら手で直してから「設定を保存する」を押してください。';
     }
 
     function save() {

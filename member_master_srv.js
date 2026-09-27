@@ -153,7 +153,7 @@ function toDateStr_(v) {
 // opts.membersOnly … 名簿の行だけ返す（表紙・業種区分マスタを読まないぶん速い。サーバーの中から使う）
 function getMemberMaster(opts) {
   try {
-    // 期が替わっていたら、担当者（半期ごと）を「役職」に反映してから読む（role_input_srv.js）
+    // 期が替わっていたら、役職・委員会（半期ごと）を「役職」に反映してから読む（role_input_srv.js）
     if (!(opts && opts.membersOnly) && typeof roleRosterAutoSync_ === 'function') roleRosterAutoSync_();
     var sh = ensureMemberSheet_(), data = sh.getDataRange().getValues(), members = [];
     var col = function (r, i) { return String(r[i] == null ? '' : r[i]).trim(); };

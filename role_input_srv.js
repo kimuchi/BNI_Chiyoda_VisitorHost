@@ -176,12 +176,7 @@ function roleHolderTerms_() {
 
 // ある期の担当者 → { term, label, registered（その期として保存してある）, from（使った期）, holders }
 function roleHoldersOfTerm_(all, term) {
-  var terms = Object.keys(all).map(function (t) { return parseInt(t, 10); })
-    .filter(function (t) { return t > 0; }).sort(function (a, b) { return a - b; });
-  var use = all[term] ? term : null, i;
-  for (i = terms.length - 1; use === null && i >= 0; i--) if (terms[i] < term) use = terms[i];
-  for (i = 0; use === null && i < terms.length; i++) if (terms[i] > term) use = terms[i];
-  var src = (use === null ? null : all[use]) || {}, out = {};
+  var use = roleTermPick_(all, term), src = (use === null ? null : all[use]) || {}, out = {}, i;
   for (i = 0; i < ROLE_DEFS_.length; i++) {
     var k = ROLE_DEFS_[i].key;
     out[k] = (typeof src[k] === 'string') ? src[k] : '';
@@ -189,40 +184,132 @@ function roleHoldersOfTerm_(all, term) {
   return { term: term, label: roleTermLabel_(term), registered: use === term, from: use, holders: out };
 }
 
+// 期ごとのもの（all … { 期: 中身 }）のうち、ある期に使う期：その期、無ければいちばん近い前の期、それも無ければ次の期
+function roleTermPick_(all, term) {
+  if (all[term]) return term;
+  var terms = Object.keys(all).map(function (t) { return parseInt(t, 10); })
+    .filter(function (t) { return t > 0 && all[t]; }).sort(function (a, b) { return a - b; }), i;
+  for (i = terms.length - 1; i >= 0; i--) if (terms[i] < term) return terms[i];
+  for (i = 0; i < terms.length; i++) if (terms[i] > term) return terms[i];
+  return null;
+}
+
 // その日の担当者 { president: '…', … }（日を渡さなければ今日）
 function roleHolders_(date) {
   return roleHoldersOfTerm_(roleHolderTerms_(), roleTermOf_(date || new Date())).holders;
 }
 
-// 画面の「担当者」に出す期：開催日の期と、その前後の期（登録してある期も、開催日の期の前後2つまで）
-function roleHolderTermList_(all, term) {
-  var list = [term - 1, term, term + 1];
-  Object.keys(all).forEach(function (t) {
+// 画面の「役職・委員会」に出す期：開催日の期と、その前後の期（登録してある期も、開催日の期の前後2つまで）。
+// 期ごとに、担当者（holders）と委員会・チーム（teams）を返す
+function roleHolderTermList_(all, term, allTeams) {
+  var teams = allTeams || roleTeamTerms_(), list = [term - 1, term, term + 1];
+  Object.keys(all).concat(Object.keys(teams)).forEach(function (t) {
     var n = parseInt(t, 10);
     if (n > 0 && Math.abs(n - term) <= 2 && list.indexOf(n) < 0) list.push(n);
   });
   list.sort(function (a, b) { return a - b; });
-  return list.map(function (t) { return roleHoldersOfTerm_(all, t); });
+  return list.map(function (t) { return roleTermEntry_(all, teams, t); });
+}
+function roleTermEntry_(all, teams, term) {
+  var e = roleHoldersOfTerm_(all, term), tm = roleTeamsOfTerm_(teams, term);
+  e.teams = tm.teams; e.teamsRegistered = tm.registered; e.teamsFrom = tm.from;
+  return e;
 }
 
-// map … { president: '熊谷 龍威', … }。空文字は「未設定」
-// term … 期（数字。無ければ今日の期）。dateStr … 画面の開催日（返す一覧をその期に合わせる）
-function saveRoleHolders(map, term, dateStr) {
-  try {
-    var t = parseInt(term, 10);
-    if (!(t > 0 && t < 1000)) t = roleTermOf_(new Date());
-    var all = roleHolderTerms_(), cur = roleHoldersOfTerm_(all, t).holders, m = map || {}, i;
-    for (i = 0; i < ROLE_DEFS_.length; i++) {
-      var k = ROLE_DEFS_[i].key;
-      if (typeof m[k] === 'string') cur[k] = m[k].replace(/[\r\n]+/g, ' ').trim();
+// --- 委員会・チーム（半期ごと）---
+// ビジターホスト・メンバーシップ委員会なども、期が替わると顔ぶれが全部替わる。期ごとに、委員会・チームの名前と
+// 顔ぶれを持つ（スクリプトのプロパティ BNI_ROLE_TEAMS_24 = { teams: [{ name, members: [氏名…] }] }。
+// 期ごとに分けて持つのは、1つのプロパティに入る大きさに限りがあるため）。
+// まだ登録していない期は、担当者と同じく、いちばん近い前の期（無ければ次の期）のものを出す
+var ROLE_TEAMS_KEY_ = 'BNI_ROLE_TEAMS_';
+var ROLE_TEAMS_DEFAULT_ = ['ビジターホスト', 'メンバーシップ委員会'];
+
+// 保存してある期ごとの委員会・チーム（{ 24: [{ name, members }], … }）
+function roleTeamTerms_() {
+  var all = {}, props = PropertiesService.getScriptProperties().getProperties() || {};
+  for (var k in props) {
+    if (k.indexOf(ROLE_TEAMS_KEY_) !== 0) continue;
+    var t = parseInt(k.slice(ROLE_TEAMS_KEY_.length), 10), v = null;
+    if (!(t > 0)) continue;
+    try { v = JSON.parse(props[k]); } catch (e) { v = null; }
+    if (v && Object.prototype.toString.call(v.teams) === '[object Array]') all[t] = v.teams;
+  }
+  return all;
+}
+// ある期の委員会・チーム → { term, registered, from, teams: [{ name, members }] }（登録が1つも無ければ既定の名前だけ）
+function roleTeamsOfTerm_(all, term) {
+  var use = roleTermPick_(all, term);
+  var src = use === null ? ROLE_TEAMS_DEFAULT_.map(function (n) { return { name: n, members: [] }; }) : all[use];
+  return { term: term, registered: use === term, from: use, teams: roleTeamsClean_(src) };
+}
+// 画面から受け取った委員会・チームをそろえる（名前の空白・重なり、同じ方の重なりを除く）
+function roleTeamsClean_(teams) {
+  var out = [], names = {};
+  for (var i = 0; i < (teams || []).length && out.length < 30; i++) {
+    var t = teams[i] || {}, name = String(t.name == null ? '' : t.name).replace(/[\r\n]+/g, ' ').trim();
+    if (!name || names[roleNorm_(name)]) continue;
+    names[roleNorm_(name)] = true;
+    var members = [], seen = {};
+    for (var j = 0; j < (t.members || []).length && members.length < 200; j++) {
+      var n = String(t.members[j] == null ? '' : t.members[j]).replace(/[\r\n]+/g, ' ').trim(), k = normName_(n);
+      if (n && !seen[k]) { seen[k] = true; members.push(n); }
     }
-    all[t] = cur;
-    // 古い期は、新しい方から ROLE_HOLDERS_KEEP_TERMS_ 期ぶんだけ残す（保存できる大きさに限りがあるため）
-    var keep = Object.keys(all).map(function (x) { return parseInt(x, 10); }).filter(function (x) { return x > 0; })
-      .sort(function (a, b) { return b - a; }).slice(0, ROLE_HOLDERS_KEEP_TERMS_);
-    var out = {};
-    for (i = 0; i < keep.length; i++) out[keep[i]] = all[keep[i]];
-    PropertiesService.getScriptProperties().setProperty(ROLE_HOLDERS_TERMS_KEY_, JSON.stringify(out));
+    out.push({ name: name, members: members });
+  }
+  return out;
+}
+// その日の期の委員会・チーム
+function roleTeams_(date) {
+  return roleTeamsOfTerm_(roleTeamTerms_(), roleTermOf_(date || new Date())).teams;
+}
+
+// 割り振り（ビジターホスト・優先順位の設定）の「役職から読み取る」：今の期と次の期の、ビジターホストの顔ぶれ
+// （委員会・チームの「ビジターホスト」と、ビジターホストコーディネーター）。
+// 引継ぎの時期（期の最後の月）は次の期の方がビジターホストをするので、次の期が登録してあれば次の期を選んでおく
+function getVisitorHostsFromRoles() {
+  try {
+    var today = new Date(), now = roleTermOf_(today), allH = roleHolderTerms_(), allT = roleTeamTerms_();
+    var terms = [now, now + 1].map(function (t) {
+      var h = roleHoldersOfTerm_(allH, t), tm = roleTeamsOfTerm_(allT, t), names = [], seen = {};
+      var add = function (n) { var k = normName_(n); if (n && !seen[k]) { seen[k] = true; names.push(n); } };
+      if (h.holders.vhc) add(h.holders.vhc);
+      tm.teams.forEach(function (x) { if (/ビジ(ター)?ホス/.test(x.name)) x.members.forEach(add); });
+      return { term: t, label: roleTermLabel_(t), registered: tm.registered, from: tm.from, names: names };
+    });
+    var m = today.getMonth() + 1, handover = (m === 9 || m === 3) && terms[1].registered;
+    return { ok: true, now: now, pick: handover ? now + 1 : now, handover: handover, terms: terms };
+  } catch (e) {
+    return { ok: false, message: '役職を読み取れませんでした: ' + (e && e.message ? e.message : e) };
+  }
+}
+
+// map … { president: '熊谷 龍威', … }。空文字は「未設定」。null なら担当者は変えない
+// term … 期（数字。無ければ今日の期）。dateStr … 画面の開催日（返す一覧をその期に合わせる）
+// teams … 委員会・チーム [{ name, members: [氏名…] }]。渡したときだけ、その期の委員会・チームとして保存する
+function saveRoleHolders(map, term, dateStr, teams) {
+  try {
+    var t = parseInt(term, 10), props = PropertiesService.getScriptProperties(), i;
+    if (!(t > 0 && t < 1000)) t = roleTermOf_(new Date());
+    var all = roleHolderTerms_(), cur = roleHoldersOfTerm_(all, t).holders, out = all;
+    if (map) {
+      for (i = 0; i < ROLE_DEFS_.length; i++) {
+        var k = ROLE_DEFS_[i].key;
+        if (typeof map[k] === 'string') cur[k] = map[k].replace(/[\r\n]+/g, ' ').trim();
+      }
+      all[t] = cur;
+      // 古い期は、新しい方から ROLE_HOLDERS_KEEP_TERMS_ 期ぶんだけ残す（保存できる大きさに限りがあるため）
+      var keep = Object.keys(all).map(function (x) { return parseInt(x, 10); }).filter(function (x) { return x > 0; })
+        .sort(function (a, b) { return b - a; }).slice(0, ROLE_HOLDERS_KEEP_TERMS_);
+      out = {};
+      for (i = 0; i < keep.length; i++) out[keep[i]] = all[keep[i]];
+      props.setProperty(ROLE_HOLDERS_TERMS_KEY_, JSON.stringify(out));
+    }
+    if (teams && teams.length !== undefined) {
+      props.setProperty(ROLE_TEAMS_KEY_ + t, JSON.stringify({ teams: roleTeamsClean_(teams) }));
+      var tkeep = Object.keys(roleTeamTerms_()).map(function (x) { return parseInt(x, 10); })
+        .sort(function (a, b) { return b - a; });
+      for (i = ROLE_HOLDERS_KEEP_TERMS_; i < tkeep.length; i++) props.deleteProperty(ROLE_TEAMS_KEY_ + tkeep[i]);
+    }
     // メンバー名簿の「役職」：いま名簿に反映してある期を直したときと、今の期の担当者を（期が替わってから）
     // 登録したときは、名簿も直す
     var st = roleRosterState_(), now = roleTermOf_(new Date()), roster = null;
@@ -230,21 +317,24 @@ function saveRoleHolders(map, term, dateStr) {
       try { roster = roleRosterApply_(t, st); st.seen = now; roleRosterSaveState_(st); }
       catch (e) { console.warn('[ROLE] 名簿の役職を直せませんでした: ' + (e && e.message ? e.message : e)); }
     }
-    var d = parseDate_(dateStr || ''), mt = d ? roleTermOf_(d) : t;
-    return { ok: true, term: t, holders: cur, current: roleHoldersOfTerm_(out, mt), terms: roleHolderTermList_(out, mt),
+    var d = parseDate_(dateStr || ''), mt = d ? roleTermOf_(d) : t, allT = roleTeamTerms_();
+    return { ok: true, term: t, holders: cur, current: roleTermEntry_(out, allT, mt), terms: roleHolderTermList_(out, mt, allT),
              roster: roster, rosterState: roleRosterStateView_(st),
-             message: t + '期（' + roleTermLabel_(t) + '）の担当者を保存しました。'
+             message: t + '期（' + roleTermLabel_(t) + '）の' + (teams ? '役職・委員会' : '担当者') + 'を保存しました。'
                + (roster && roster.changes.length ? 'メンバー名簿の「役職」も直しました（' + roster.changes.length + '名）。' : '') };
   } catch (e) {
     return { ok: false, message: '担当者の保存に失敗しました: ' + (e && e.message ? e.message : e) };
   }
 }
 
-// --- 担当者を、メンバー名簿の「役職」に反映する ---
-// 期が替わったら、その期の担当者を名簿の「役職」の列に書く。期が替わったあと、名簿・メンバーブック・
+// --- 役職・委員会を、メンバー名簿の「役職」に反映する ---
+// 期が替わったら、その期の役職・委員会を名簿の「役職」の列に書く。期が替わったあと、名簿・メンバーブック・
 // 役職ごとの入力などを最初に開いたときに行う（roleRosterAutoSync_）。
-// 「担当者（半期ごと）」の「名簿の役職に反映」で、いつでも（次の期の担当者を前もってでも）反映できる。
-//   ・担当者の行     … 役職を、担当している役職の名前にする（2つ以上なら「・」でつなぐ）
+// 「役職・委員会（半期ごと）」の「名簿の役職に反映」で、いつでも（次の期を前もってでも）反映できる。
+// その期の委員会・チームを登録してあれば、役職の欄を全部その期の内容にする（期が替わると顔ぶれは全部替わるため）：
+//   ・13の役職の名前と、入っている委員会・チームの名前を「・」でつなぐ（どれにも入っていない方は空欄）
+// 委員会・チームが未登録の期は、13の役職だけを直す：
+//   ・担当者の行     … 役職を、担当している役職の名前にする
 //   ・担当者でない行 … 役職が13の役職の名前だけ（前の期の担当者など）なら空欄にする
 //   ・それ以外の行   … 「ビジターホスト」「WEB」など、13の役職の名前以外が入っている行は触らない
 var ROLE_ROSTER_STATE_KEY_ = 'BNI_ROLE_ROSTER_STATE';   // { applied: 反映した期, at: 反映した日, seen: 確かめた期 }
@@ -280,14 +370,21 @@ function roleRosterOnlyLabels_(s) {
   return n > 0;
 }
 
-// 名簿の「役職」を、ある期の担当者どおりにするときの変更（名簿はまだ書き換えない）
+// 名簿の「役職」を、ある期の役職・委員会どおりにするときの変更（名簿はまだ書き換えない）
 function roleRosterPlan_(term) {
-  var holders = roleHoldersOfTerm_(roleHolderTerms_(), term).holders, byName = {}, i;
+  var holders = roleHoldersOfTerm_(roleHolderTerms_(), term).holders, byName = {}, i, j;
+  // その期の委員会・チームを登録してあり（誰か1人は入っている）ときは、役職の欄を全部その期の内容にする
+  var tm = roleTeamsOfTerm_(roleTeamTerms_(), term);
+  var full = tm.registered && tm.teams.some(function (t) { return t.members.length > 0; });
+  var entry = function (nm) { var k = normName_(nm); return (byName[k] = byName[k] || { name: nm, labels: [], found: false }); };
   for (i = 0; i < ROLE_DEFS_.length; i++) {
     var nm = holders[ROLE_DEFS_[i].key];
-    if (!nm) continue;
-    var k = normName_(nm);
-    (byName[k] = byName[k] || { name: nm, labels: [], found: false }).labels.push(ROLE_DEFS_[i].label);
+    if (nm) entry(nm).labels.push(ROLE_DEFS_[i].label);
+  }
+  if (full) {
+    for (i = 0; i < tm.teams.length; i++) {
+      for (j = 0; j < tm.teams[i].members.length; j++) entry(tm.teams[i].members[j]).labels.push(tm.teams[i].name);
+    }
   }
   var sh = ensureMemberSheet_(), col = MEMBER_HEADERS_.indexOf('役職') + 1;
   var data = sh.getDataRange().getValues(), changes = [], column = [];
@@ -296,22 +393,23 @@ function roleRosterPlan_(term) {
     var cur = String(data[r][col - 1] == null ? '' : data[r][col - 1]).trim(), to = cur;
     var h = name ? byName[normName_(name)] : null;
     if (h) { h.found = true; to = h.labels.join('・'); }
-    else if (name && cur && roleRosterOnlyLabels_(cur)) to = '';
+    else if (name && cur && (full || roleRosterOnlyLabels_(cur))) to = '';
     column.push([to !== cur ? to : data[r][col - 1]]);
     if (to !== cur) changes.push({ name: name, from: cur, to: to });
   }
   var notFound = [];
   for (var key in byName) if (!byName[key].found) notFound.push(byName[key].name);
-  return { term: term, label: roleTermLabel_(term), sheet: sh, col: col, column: column, changes: changes, notFound: notFound };
+  return { term: term, label: roleTermLabel_(term), full: full, sheet: sh, col: col, column: column, changes: changes, notFound: notFound };
 }
 function roleRosterResult_(plan, applied) {
   var n = plan.changes.length, msg = '';
   if (applied) {
-    msg = n ? 'メンバー名簿の「役職」を、' + plan.term + '期の担当者に合わせて直しました（' + n + '名）。'
-            : 'メンバー名簿の「役職」は、' + plan.term + '期の担当者どおりでした。';
+    var what = plan.full ? '役職・委員会' : '担当者';
+    msg = n ? 'メンバー名簿の「役職」を、' + plan.term + '期の' + what + 'に合わせて直しました（' + n + '名）。'
+            : 'メンバー名簿の「役職」は、' + plan.term + '期の' + what + 'どおりでした。';
   }
-  if (plan.notFound.length) msg += (msg ? '\n' : '') + '名簿に見つからない担当者：' + plan.notFound.join('、');
-  return { ok: true, term: plan.term, label: plan.label, changes: plan.changes, notFound: plan.notFound, message: msg };
+  if (plan.notFound.length) msg += (msg ? '\n' : '') + '名簿に見つからない方：' + plan.notFound.join('、');
+  return { ok: true, term: plan.term, label: plan.label, full: plan.full, changes: plan.changes, notFound: plan.notFound, message: msg };
 }
 // 反映する。st（反映の記録）に、反映した期と日を書く（保存は呼ぶ側）
 function roleRosterApply_(term, st) {
@@ -331,7 +429,8 @@ function roleRosterAutoSync_() {
   try {
     var now = roleTermOf_(new Date()), st = roleRosterState_(), res = null;
     if (st.seen === now) return null;
-    if (roleHoldersOfTerm_(roleHolderTerms_(), now).registered && !(st.applied >= now)) {
+    var ready = roleHoldersOfTerm_(roleHolderTerms_(), now).registered || roleTeamsOfTerm_(roleTeamTerms_(), now).registered;
+    if (ready && !(st.applied >= now)) {
       res = roleRosterApply_(now, st);
       console.log('[ROLE] 期が替わったので反映: ' + res.message);
     }
@@ -344,8 +443,8 @@ function roleRosterAutoSync_() {
   }
 }
 
-// 名簿を取り込んだあと（Spreading・メンバーリスト(OCR)）：役職を、反映してある期の担当者に合わせ直す。
-// 取り込んだ役職が前の期のままでも、13の役職は「担当者（半期ごと）」の登録どおりになる。お知らせの文を返す
+// 名簿を取り込んだあと（Spreading・メンバーリスト(OCR)）：役職を、反映してある期の役職・委員会に合わせ直す。
+// 取り込んだ役職が前の期のままでも、「役職・委員会（半期ごと）」の登録どおりになる。お知らせの文を返す
 function roleRosterAfterImport_() {
   try {
     var st = roleRosterState_();
@@ -353,7 +452,7 @@ function roleRosterAfterImport_() {
     var res = roleRosterApply_(st.applied, st);
     roleRosterSaveState_(st);
     return res.changes.length
-      ? '\n\n13の役職は、「担当者（半期ごと）」の' + st.applied + '期の担当者に合わせ直しました（' + res.changes.length + '名）。'
+      ? '\n\n役職は、「役職・委員会（半期ごと）」の' + st.applied + '期の内容に合わせ直しました（' + res.changes.length + '名）。'
       : '';
   } catch (e) {
     console.warn('[ROLE] 取り込みのあと、役職を合わせ直せませんでした: ' + (e && e.message ? e.message : e));
@@ -550,12 +649,12 @@ function roleBuildContext_(target, roleKey) {
   var key = fmtDate_(target), idx = routineIndexFor_(key), hit = idx[key] || null;
   var today = new Date(); today.setHours(0, 0, 0, 0);
   // 担当者は、この開催日の期（半期）のもの
-  var holderAll = roleHolderTerms_(), holderTerm = roleHoldersOfTerm_(holderAll, roleTermOf_(target));
+  var holderAll = roleHolderTerms_(), teamAll = roleTeamTerms_(), holderTerm = roleTermEntry_(holderAll, teamAll, roleTermOf_(target));
   var holders = holderTerm.holders, sheetOf = roleSheetCache_();
   var no = '';
   var ctx = { ok: true, date: key, display: roleMd_(target), today: fmtDate_(today), estimatedFor: roleKey || '',
               found: !!hit, sheetName: hit ? hit.name : '', roles: [], items: {}, order: [], unknown: [],
-              holderTerm: holderTerm, holderTerms: roleHolderTermList_(holderAll, holderTerm.term),
+              holderTerm: holderTerm, holderTerms: roleHolderTermList_(holderAll, holderTerm.term, teamAll),
               members: [], version: (typeof SYSTEM_VERSION_ === 'string') ? SYSTEM_VERSION_ : '' };
   try { ctx.members = (getMemberMaster({ membersOnly: true }).members || []).map(function (m) { return m.name; }); } catch (e) {}
   if (!hit) {
