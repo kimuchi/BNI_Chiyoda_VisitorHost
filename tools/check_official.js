@@ -233,7 +233,8 @@ if (made.meetingFirst && made.memberPresen) {
   const f = zipOf(out), ss = slidesOf(f), all = ss.map((p) => text(f[p]));
   ck(all[0].includes('BNI サンプルチャプター') && all[0].includes('第42回') && all[0].includes('2026年10月13日'), '前半：表紙: ' + all[0]);
   const mem = all.find((t) => t.includes('メンバーシップ委員会による報告')) || '';
-  ck(mem.includes('結婚相談所') && mem.includes('相続コンサルタント') && mem.includes('ITコンサルタント') && !mem.includes('{{'),
+  ck(mem.includes('結婚相談所') && mem.includes('相続コンサルタント') && mem.includes('ITコンサルタント') && !mem.includes('{{')
+     && !/First\s*&(amp;)?\s*last name/i.test(mem),
      '前半：メンバーシップ委員会の表: ' + mem.slice(0, 160));
   const mainI = all.findIndex((t) => t.startsWith('メインプレゼンテーション') && t.includes('見本　一郎'));
   ck(mainI >= 0 && all[mainI].includes('見本　花子') && all[mainI].includes('【社会保険労務士】'), '前半：メインプレゼン: ' + (all[mainI] || '').slice(0, 120));

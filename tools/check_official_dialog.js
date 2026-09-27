@@ -7,6 +7,8 @@
 //   ・公式ファイルのリンク：共有リンク・IDから読む。Googleスライドに変換されたもの・pptxでないものは断る
 //   ・画面：まだ登録していない雛形にだけチェックが入る。登録してあるものを作り直すときは確かめてから。
 //     チェックした雛形を1つずつ順に作り、結果を行ごとに出す。途中で失敗しても残りを続ける
+//   ・入口：初期設定のときだけ使うので、メニュー・ホーム画面・ウェブアプリのトップには出さない。
+//     BNI 素材フォルダの画面の小さなリンクから開く（スプレッドシートではダイアログ、ウェブアプリでは ?p=official_templates）
 
 const fs = require('fs');
 const path = require('path');
@@ -97,10 +99,40 @@ ck(/作って登録しました（5件）/.test(els.msg.innerText) && /作れな
 step('登録してあるものも作り直す', () => { els.c_intro.checked = true; run('go()'); });
 ck(page.log.confirms.length === 1 && /いま登録してある雛形の代わり/.test(page.log.confirms[0] || ''), '作り直す前に確かめない: ' + J(page.log.confirms));
 
+// --- 入口：メニューには出さず、BNI 素材フォルダの画面の小さなリンクから ---
+const menuSrc = fs.readFileSync(path.join(ROOT, 'コード.js'), 'utf8');
+ck(!/addItem\([^)]*openOfficialTemplatesDialog/.test(menuSrc), 'スプレッドシートのメニューに「公式ファイルから雛形を作る」がある');
+ck(!/openOfficialTemplatesDialog/.test(fs.readFileSync(path.join(ROOT, 'home_srv.js'), 'utf8')), 'ホーム画面に「公式ファイルから雛形を作る」がある');
+{
+  const wsb = { console, ScriptApp: { getService: () => ({ getUrl: () => 'https://script.google.com/macros/s/TEST/exec' }) } };
+  vm.createContext(wsb);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'webapp_srv.js'), 'utf8'), wsb, { filename: 'webapp_srv.js' });
+  const top = vm.runInContext('WEBAPP_PAGES_', wsb).flatMap((g) => g.items).map((x) => x.key);
+  const alias = vm.runInContext('WEBAPP_ALIASES_', wsb).map((x) => x.key);
+  ck(top.indexOf('official_templates') < 0 && alias.indexOf('official_templates') >= 0,
+     'ウェブアプリ：トップページには出さず ?p=official_templates で開く: ' + J({ top: top.includes('official_templates'), alias }));
+}
+const assetCalls = [];
+const asset = loadPage('asset_settings.html', { fails, server: {
+  getAssetSettings: () => ({ folderId: 'F1', reachable: true, folderUrl: '#', folderName: '素材', subFolders: [] }),
+  openOfficialTemplatesDialog: () => { assetCalls.push('dialog'); },
+} });
+asset.step('素材フォルダの画面を開く', () => asset.window.onload());
+const linkHtml = fs.readFileSync(path.join(ROOT, 'asset_settings.html'), 'utf8');
+ck(/公式ファイルから雛形を作る<\/a>\s*（初期設定のときに使います。ふだんは使いません）/.test(linkHtml), '素材フォルダの画面に小さなリンクと「初期設定のとき」の案内が無い');
+asset.step('スプレッドシートでリンクを押す', () => asset.run('openOfficial()'));
+ck(J(assetCalls) === J(['dialog']), 'スプレッドシート：リンクで公式ファイルの画面（ダイアログ）を開かない: ' + J(assetCalls));
+const opens = [];
+asset.window.open = (u, t) => { opens.push([u, t]); };
+asset.sandbox.WEBAPP_URL = 'https://script.google.com/macros/s/TEST/exec';
+asset.step('ウェブアプリでリンクを押す', () => asset.run('openOfficial()'));
+ck(J(opens) === J([['https://script.google.com/macros/s/TEST/exec?p=official_templates', '_top']]) && assetCalls.length === 1,
+   'ウェブアプリ：リンクで ?p=official_templates を開かない: ' + J(opens));
+
 console.log(`公式ファイルから雛形の画面: 検査 ${checks} 件`);
 if (fails.length) {
   console.log(`NG: ${fails.length} 件`);
   fails.forEach((f) => console.log('   ' + f));
   process.exit(1);
 }
-console.log('OK: 公式ファイルのリンク（変換済み・pptx以外・開けない）・登録状況・チェックの初期値・順に作る・失敗しても続ける・作り直す前の確認');
+console.log('OK: 公式ファイルのリンク（変換済み・pptx以外・開けない）・登録状況・チェックの初期値・順に作る・失敗しても続ける・作り直す前の確認・入口（メニューに出さず、素材フォルダの小さなリンクから）');

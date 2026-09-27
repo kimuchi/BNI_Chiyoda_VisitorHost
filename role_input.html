@@ -367,8 +367,9 @@
    var ht = holderTermOf(cur) || { term:cur, holders:{}, registered:true, teams:[], teamsRegistered:true };
    var notes = [];
    if(!ht.registered && ht.from) notes.push(ht.term+'期の担当者はまだ登録されていません。'+ht.from+'期の担当者を出しています。');
-   if(!ht.teamsRegistered && ht.teamsFrom) notes.push(ht.term+'期のチームのメンバーはまだ登録されていません。'+ht.teamsFrom+'期の顔ぶれを出しています。');
-   else if(!ht.teamsRegistered) notes.push('チームのメンバーはまだ登録されていません。');
+   // チームの顔ぶれは期ごと。まだ登録していない期は空のまま（前の期のメンバーは引き継がない）
+   if(!ht.teamsRegistered) notes.push(ht.term+'期のチームのメンバーはまだ登録されていません'
+     +(ht.teamsLast ? '（期が替わると顔ぶれが替わるので、'+ht.teamsLast+'期のメンバーは引き継ぎません。チームの名前だけ使います）' : '')+'。');
    if(notes.length) notes.push('直して保存すると、'+ht.term+'期のものになります。');
    el('holderNote').innerText = notes.join('');
    holderEdit = {};
@@ -498,11 +499,14 @@
  // 開催日の期の役職・チームがまだ無く、前の期のものを出しているとき（期が替わったとき）に知らせる
  function renderHolderWarn(){
    var ht = ctx.holderTerm, w = el('holderWarn');
-   var h = ht && !ht.registered && ht.from && ht.from < ht.term, t = ht && !ht.teamsRegistered && ht.teamsFrom && ht.teamsFrom < ht.term;
+   // t … 前の期にチームを登録していて（チームを使っている）、開催日の期はまだ
+   var h = ht && !ht.registered && ht.from && ht.from < ht.term, t = ht && !ht.teamsRegistered && ht.teamsLast && ht.teamsLast < ht.term;
    if(h || t){
      w.style.display='block';
-     w.innerHTML = '⚠ '+ht.term+'期（'+esc(ht.label)+'）の'+(h&&t?'役職・チーム':h?'担当者':'チームのメンバー')+'がまだ登録されていません。'
-       +'いまは'+(h?ht.from:ht.teamsFrom)+'期のものを出しています。いちばん下の「役職・チーム（半期ごと）」で登録してください。';
+     w.innerHTML = '⚠ '+ht.term+'期（'+esc(ht.label)+'）の'+(h&&t?'担当者とチームのメンバー':h?'担当者':'チームのメンバー')+'がまだ登録されていません。'
+       +(h?'担当者は、いまは'+ht.from+'期の方を出しています。':'')
+       +(t?'チームのメンバーは、前の期から引き継ぎません。':'')
+       +'いちばん下の「役職・チーム（半期ごと）」で登録してください。';
    } else { w.style.display='none'; w.innerHTML=''; }
  }
  function saveHolders(){

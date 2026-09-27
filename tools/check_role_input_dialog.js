@@ -218,13 +218,19 @@ step('直したまま期を切り替える', () => {
   els.holderTerm.value = '25'; run('changeHolderTerm()');
 });
 ck(/保存していない役職・チームの変更があります/.test(page.log.confirms.slice(-1)[0] || '') && els.holderTerm.value === '25'
-   && /25期のチームのメンバーはまだ登録されていません。24期の顔ぶれを出しています/.test(els.holderNote.innerText),
-   '期の切り替え: ' + (page.log.confirms.slice(-1)[0] || '') + ' / ' + els.holderNote.innerText);
+   && /25期のチームのメンバーはまだ登録されていません（期が替わると顔ぶれが替わるので、24期のメンバーは引き継ぎません。チームの名前だけ使います）/.test(els.holderNote.innerText)
+   && !/class="chip"/.test(els.teamTable.innerHTML) && /広報チーム/.test(els.teamTable.innerHTML),
+   '期の切り替え（前の期のメンバーを引き継がない）: ' + (page.log.confirms.slice(-1)[0] || '') + ' / ' + els.holderNote.innerText
+   + ' / chips=' + (els.teamTable.innerHTML.match(/class="chip"/g) || []).length);
 step('24期に戻す', () => { els.holderTerm.value = '24'; run('changeHolderTerm()'); });
 // 期が替わったのに、新しい期の担当者がまだ無いときは、一覧の上で知らせる
 step('新しい期の担当者が未登録', () => run("ctx.holderTerm={term:26,label:'2027年10月〜2028年3月',registered:false,from:25,holders:{}}; showOverview(true)"));
-ck(shown(els.holderWarn) && /26期（2027年10月〜2028年3月）の担当者がまだ登録されていません。いまは25期のものを出しています/.test(els.holderWarn.innerHTML),
+ck(shown(els.holderWarn) && /26期（2027年10月〜2028年3月）の担当者がまだ登録されていません。担当者は、いまは25期の方を出しています。/.test(els.holderWarn.innerHTML),
    '新しい期のお知らせ: ' + els.holderWarn.innerHTML);
+// チームを使っているチャプターで、新しい期のチームがまだのとき（前の期のメンバーは引き継がない）
+step('新しい期のチームが未登録', () => run("ctx.holderTerm={term:26,label:'2027年10月〜2028年3月',registered:true,from:26,holders:{},teamsRegistered:false,teamsFrom:null,teamsLast:25}; showOverview(true)"));
+ck(shown(els.holderWarn) && /26期（2027年10月〜2028年3月）のチームのメンバーがまだ登録されていません。チームのメンバーは、前の期から引き継ぎません。/.test(els.holderWarn.innerHTML),
+   '新しい期のチームのお知らせ: ' + els.holderWarn.innerHTML);
 
 // ===================== URLで役職を指定して開く =====================
 page = open('ec');

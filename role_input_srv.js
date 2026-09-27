@@ -253,7 +253,7 @@ function roleHolderTermList_(all, term, allTeams) {
 }
 function roleTermEntry_(all, teams, term) {
   var e = roleHoldersOfTerm_(all, term), tm = roleTeamsOfTerm_(teams, term);
-  e.teams = tm.teams; e.teamsRegistered = tm.registered; e.teamsFrom = tm.from;
+  e.teams = tm.teams; e.teamsRegistered = tm.registered; e.teamsFrom = tm.from; e.teamsLast = tm.last;
   return e;
 }
 
@@ -263,7 +263,8 @@ function roleTermEntry_(all, teams, term) {
 // 期が替わると顔ぶれが全部替わるので、期ごとに持つ（スクリプトのプロパティ BNI_ROLE_TEAMS_24 =
 // { teams: [{ key, name, leader, members: [{ name, note }] }] }。期ごとに分けるのは、1つのプロパティに入る
 // 大きさに限りがあるため）。役職のチームのリーダーは担当者なので、ここには持たない。
-// まだ登録していない期は、担当者と同じく、いちばん近い前の期（無ければ次の期）のものを出す
+// まだ登録していない期は、顔ぶれ（メンバー・リーダー）を引き継がない（空のまま。前後の期の方は出さない）。
+// チームの名前と足したチームだけ、いちばん近い前の期（無ければ次の期）のものを使う（毎期作り直さなくてよいように）
 var ROLE_TEAMS_KEY_ = 'BNI_ROLE_TEAMS_';
 // 既定のチーム（並びはチーム一覧の画面と同じ）。name は初期値で、画面で直せる
 var ROLE_TEAM_DEFS_ = [
@@ -296,10 +297,11 @@ function roleTeamTerms_() {
   }
   return all;
 }
-// ある期のチーム → { term, registered, from, teams }
+// ある期のチーム → { term, registered, from（顔ぶれを使った期。未登録の期は null）, last（名前を使った期）, teams }
 function roleTeamsOfTerm_(all, term) {
-  var use = roleTermPick_(all, term);
-  return { term: term, registered: use === term, from: use, teams: roleTeamsNormalize_(use === null ? [] : all[use]) };
+  var use = roleTermPick_(all, term), teams = roleTeamsNormalize_(use === null ? [] : all[use]);
+  if (use !== term) teams = teams.map(function (t) { return { key: t.key, name: t.name, leader: '', members: [] }; });
+  return { term: term, registered: use === term, from: use === term ? term : null, last: use, teams: teams };
 }
 // チームをそろえる：既定のチーム（メンバーシップ委員会と役職ごとのチーム）はいつも既定の並びで出し、
 // 足したチームはそのうしろ。名前・メンバーの空欄や重なりは除く。

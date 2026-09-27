@@ -299,8 +299,13 @@ const officialStatus = { ok: true, file: { id: 'x', name: 'BNI公式スライド
     .map(([kind, label, file], i) => Object.assign({ kind, label, registered: false, fileName: '', url: '', fromOfficial: false },
       i < 5 ? officialMade(kind, file) : {})),
   seconds: { weekly: 30, startup: 150, visitor: 20, referral: 7 }, chapter: 'Activeチャプター' };
+// BNI 素材フォルダ：設定済み（3つのフォルダもある）。いちばん下に「公式ファイルから雛形を作る」の小さなリンク
+const assetStatus = { folderId: '1AbCdEfGhIjKlMnOpQrStUvWxYz012345', reachable: true, folderUrl: '#', folderName: 'BNI Activeチャプター 素材',
+  subFolders: [['template', '01_テンプレート'], ['photo', '02_メンバー写真'], ['output', '03_生成物']]
+    .map(([kind, name]) => ({ kind, name, exists: true, url: '#' })) };
 const answersSettings = { getMemberMaster: { any: masterAnswer }, getHolidays: { any: F.getHolidays() }, getBigTemplateStatus: { any: bigStatus },
-                          getChapterSettings: { any: F.getChapterSettings() }, getOfficialTemplateStatus: { any: officialStatus } };
+                          getChapterSettings: { any: F.getChapterSettings() }, getOfficialTemplateStatus: { any: officialStatus },
+                          getAssetSettings: { any: assetStatus } };
 
 // ---- トークスクリプト（既定のひな形。9/30 は上の架空の参加者・チェックシートの値で作る）----
 for (const f of ['talk_script_default.js', 'talk_script_srv.js']) {
@@ -403,6 +408,7 @@ const SHOTS = [
   { name: 'holiday', file: () => writePage('holiday', readHtml('holiday.html'), answersSettings), width: 520, height: 560 },
   { name: 'chapter_settings', file: () => writePage('chapter_settings', readHtml('chapter_settings.html'), answersSettings), width: 600, height: 1010 },
   { name: 'big_templates', file: () => writePage('big_templates', readHtml('big_templates.html'), answersSettings), width: 900, height: 700, wait: 700 },
+  { name: 'asset_settings', file: () => writePage('asset_settings', readHtml('asset_settings.html'), answersSettings), width: 620, height: 500, wait: 500, full: true },
   { name: 'official_templates', file: () => writePage('official_templates', readHtml('official_templates.html'), answersSettings), width: 760, height: 700, wait: 700, full: true },
 ];
 function readHtml(f) { return fs.readFileSync(path.join(ROOT, f), 'utf8'); }
