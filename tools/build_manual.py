@@ -192,7 +192,19 @@ TEMPLATE = """<!DOCTYPE html>
     </div>
 {body}
   </div>
-  <a class="top" href="#top">▲ 目次へ</a>
+  <a class="top" href="#top" target="_self">▲ 目次へ</a>
+  <script>
+    // 目次などのページ内のリンクは、この中で見出しまで動かすだけにする。
+    // Apps Script の画面は枠（iframe）の中で表示され、<base target="_top"> のままだと
+    // 外側の画面ごと移動して「ページが開かない」になるため
+    document.addEventListener('click', function (e) {{
+      var a = e.target && e.target.closest ? e.target.closest('a[href^="#"]') : null;
+      if (!a) return;
+      var id = a.getAttribute('href').slice(1), t = id ? document.getElementById(id) : null;
+      e.preventDefault();
+      if (t) t.scrollIntoView({{ behavior: 'smooth', block: 'start' }});
+    }});
+  </script>
 </body>
 </html>
 """
@@ -204,7 +216,7 @@ def main():
     md = io.open(src, encoding="utf-8").read()
     body, toc = convert(md)
     toc_html = "\n".join(
-        '        <li><a href="#%s">%s</a></li>' % (slug(n), html.escape(t)) for n, t in toc
+        '        <li><a href="#%s" target="_self">%s</a></li>' % (slug(n), html.escape(t)) for n, t in toc
     )
     io.open(dst, "w", encoding="utf-8").write(
         TEMPLATE.format(toc=toc_html, body=body)
