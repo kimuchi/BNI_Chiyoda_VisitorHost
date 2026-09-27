@@ -666,7 +666,7 @@ function premtgDropSlide_(parts, path) {
 // 作る前に中身を確かめる（まとめの文・役職のページの割り付け・空欄の項目・使うひな形）
 function getPreMeetingPreview(dateStr) {
   try {
-    ROUTINE_INDEX_ = null;
+    routineResetCache_();
     var target = parseDate_(dateStr);
     if (!target) return { ok: false, message: '開催日が分かりません。' };
     var data = premtgData_(target);
@@ -695,7 +695,7 @@ function getPreMeetingPreview(dateStr) {
 // 事前MTG（朝イチMTG）のパワポを作って、03_生成物 に保存する
 function generatePreMeetingSlides(dateStr) {
   try {
-    ROUTINE_INDEX_ = null;
+    routineResetCache_();
     var target = parseDate_(dateStr);
     if (!target) return { ok: false, message: '開催日が分かりません。' };
     var data = premtgData_(target);

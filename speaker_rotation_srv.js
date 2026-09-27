@@ -132,27 +132,33 @@ function rotMeetingDates_(from, count, holidays) {
   return out;
 }
 
-// 今日以降でいちばん近い開催日（休会日を除く）
+// 次の開催日（きょう以降で休会日でない回。getMeetingCandidates と同じ数え方）。
+// 休会日は呼ぶ側で読んだものを使う（休会日のシートを何度も読まないように）
 function rotNextMeeting_(holidays) {
-  var c = getMeetingCandidates();
-  if (c.length) return parseDate_(c[0].dateValue);
-  var d = new Date(); d.setHours(0, 0, 0, 0);
+  var today = new Date(); today.setHours(0, 0, 0, 0);
+  var d = new Date(MEETING_BASE_DATE_ + ' 00:00:00');
+  for (var i = 0; i < 2000; i++) {
+    if (d.getTime() >= today.getTime() && holidays.indexOf(fmtDate_(d)) < 0) return d;
+    d.setDate(d.getDate() + 7);
+  }
+  d = new Date(today.getTime());
   while (d.getDay() !== 3) d.setDate(d.getDate() + 1);
   return rotMeetingDates_(d, 1, holidays)[0];
 }
 
 // ルーティンチェックシートの「メインプレゼン」→ { 'yyyy/MM/dd': [氏名, 氏名] }（書いてある回＝確定）
-function rotRoutineMains_() {
+//   fromKey … この日より前の回しか載っていないシート（昔の期）は読まない
+function rotRoutineMains_(fromKey) {
   var out = {}, rows = {};
-  try { rows = routineRowValues_(['メインプレゼン']); } catch (e) { rows = {}; }
+  try { rows = routineRowValues_(['メインプレゼン'], fromKey); } catch (e) { rows = {}; }
   for (var k in rows) {
     var ps = routineMainPresenters_(rows[k]);
     if (ps.length) out[k] = ps.map(function (p) { return p.name || p.raw; });
   }
   return out;
 }
-function rotRoutineNumbers_() {
-  try { return routineRowValues_(['定例会回数']); } catch (e) { return {}; }
+function rotRoutineNumbers_(fromKey) {
+  try { return routineRowValues_(['定例会回数'], fromKey); } catch (e) { return {}; }
 }
 // ルーティンチェックシートに列がある開催日（{ 'yyyy/MM/dd': true }）
 function rotRoutineDates_() {
@@ -163,8 +169,8 @@ function rotRoutineDates_() {
 
 // 起点を「メインプレゼンがまだ空の、いちばん近い開催日」まで進める（割り当ては変わらない）。
 // 並び順を直したとき、確定した回が動かないように
-function rotRebase_(st, skip, holidays, mains) {
-  var next = rotNextMeeting_(holidays), dates = rotMeetingDates_(next, 60, holidays), open = next;
+function rotRebase_(st, skip, holidays, mains, next) {
+  var dates = rotMeetingDates_(next, 60, holidays), open = next;
   for (var i = 0; i < dates.length; i++) { if (!mains[fmtDate_(dates[i])]) { open = dates[i]; break; } }
   var a = rotAnchorDate_(st, holidays);
   if (open.getTime() <= a.getTime()) return { rebased: false, open: open };
@@ -213,12 +219,16 @@ function rotWeeks_(st, from, count, env) {
   return out;
 }
 
-function rotEnv_() {
+// 割り当てに要るもの。ルーティンチェックシートは from（その日）以降の回が載っているシートだけ読む。
+//   from … Date。無ければ次の開催日
+function rotEnv_(from) {
   var members = [];
-  try { members = getMemberMaster().members || []; } catch (e) {}
+  try { members = getMemberMaster({ membersOnly: true }).members || []; } catch (e) {}
   var holidays = [];
   try { holidays = getHolidays(); } catch (e) {}
-  return { members: members, holidays: holidays, mains: rotRoutineMains_(), numbers: rotRoutineNumbers_() };
+  var start = from || rotNextMeeting_(holidays), key = fmtDate_(start);
+  return { members: members, holidays: holidays, start: start,
+           mains: rotRoutineMains_(key), numbers: rotRoutineNumbers_(key) };
 }
 
 // 次回のメインプレゼンターのご案内（Facebookに投稿する文。ツールと同じ文面）
@@ -243,11 +253,11 @@ function rotFbText_(week, secretary) {
 // 管理画面の中身：並び順・対象外・起点・これからの予定・Facebookの文
 function getSpeakerRotation() {
   try {
-    ROUTINE_ROWS_CACHE_ = {};
+    routineResetCache_();
     var st = rotLoad_(), env = rotEnv_();
     env.skip = rotSkip_(st);
-    var rb = rotRebase_(st, env.skip, env.holidays, env.mains);
-    var next = rotNextMeeting_(env.holidays);
+    var next = env.start;
+    var rb = rotRebase_(st, env.skip, env.holidays, env.mains, next);
     var weeks = rotWeeks_(st, next, ROT_LIST_WEEKS_, env);
     var inOrder = {}, inMaster = {}, missing = [];
     for (var i = 0; i < st.order.length; i++) inOrder[rotNorm_(st.order[i])] = true;
@@ -349,7 +359,8 @@ function getSpeakerRotationWeeks(dateStr) {
   try {
     var d = parseDate_(dateStr);
     if (!d) return { ok: false, message: '開催日が分かりません。' };
-    var st = rotLoad_(), env = rotEnv_();
+    routineResetCache_();
+    var st = rotLoad_(), env = rotEnv_(d);
     env.skip = rotSkip_(st);
     return { ok: true, weeks: rotWeeks_(st, d, ROT_SLIDE_WEEKS_, env), header: st.header, notes: st.notes };
   } catch (e) {
