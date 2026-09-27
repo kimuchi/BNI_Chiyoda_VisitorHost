@@ -114,7 +114,7 @@ const sandbox = {
 sandbox.global = sandbox;
 vm.createContext(sandbox);
 // member_presen_srv.js は写真の取り込み（mpAddPhoto_）を使うため読み込む
-for (const f of ['ooxml.js', 'routine_srv.js', 'member_presen_srv.js', 'referral_srv.js',
+for (const f of ['ooxml.js', 'chapter_srv.js', 'routine_srv.js', 'member_presen_srv.js', 'referral_srv.js',
                  'splice_srv.js', 'meeting_slides_srv.js', 'speaker_rotation_srv.js']) {
   vm.runInContext(fs.readFileSync(path.join(__dirname, '..', f), 'utf8'), sandbox, { filename: f });
 }

@@ -61,7 +61,7 @@ BNI_Chiyoda_VisitorHost/
 │   └ role_input.html         #   入力状況の一覧・役職ごとの入力・スピーカーローテーション（?p=role_input&role=vice など）
 ├── speaker_rotation_srv.js   # スピーカーローテーション（メインプレゼンの順番。前半スライドの表もここで作る）
 ├── premtg_srv.js             # 事前MTG（朝イチMTG）のパワポ（画面は role_input.html の一覧。入口は役職ごとの入力と同じ）
-│   └ premtg_template.html    #   既定のひな形（templates/BNI_テンプレート_事前MTG.pptx をbase64にしたもの）
+│   └ premtg_template.html    #   既定のひな形（docs/templates/BNI_テンプレート_事前MTG.pptx をbase64にしたもの）
 ├── archive.html              # シートの整理（アーカイブ）
 │
 │  ── スライド・冊子 ──
@@ -113,7 +113,8 @@ BNI_Chiyoda_VisitorHost/
 ├── docs/images/              # マニュアルのスクリーンショット（WebP。架空のデータで撮ったもの。
 │                             #   Google認証の auth*.webp は実際の画面で、メールアドレスと顔写真を見本に置き換えたもの）
 ├── docs/samples/             # 見本（チャプター名を {チャプター} にしたトークスクリプトのひな形など）
-├── templates/                # ビジター用・事前MTGのpptxテンプレート（大きなテンプレートはDriveに置く。templates/README.md）
+├── docs/templates/           # スライドの雛形（ビジター用・事前MTG。大きな雛形はDriveに置く。docs/templates/README.md）
+├── docs/SETUP.md             # 初期導入の手順（新しいチャプターが空のスプレッドシートから始めるとき）
 └── tools/                    # 検査・生成スクリプト（GASには送らない）
     │  ── 毎回走らせる検査 ──
     ├── check_gas_names.py    #   名前の衝突・参照先HTMLの検査
@@ -121,6 +122,7 @@ BNI_Chiyoda_VisitorHost/
     ├── check_manual_links.py #   マニュアルの導線 ↔ 実際のメニュー
     ├── build_manual.py       #   MANUAL.md → manual.html（docs/images の画像を埋め込む）
     ├── make_manual_shots.js  #   マニュアルのスクリーンショットを架空のデータで撮り直す（Chromium・Pillow を使う）
+    ├── clean_pptx_meta.py    #   pptxのファイルの情報（作成者・コメントの作成者・変更の記録・縮小画像）を消す／--check で確かめる
     │  ── 画面をNodeで動かす（ブラウザ無し）──
     ├── lib_minidom.js        #   画面をNodeで動かすための簡易DOM
     ├── check_meeting_dialog.js  # 定例会スライドの画面（前半・後半・ウィークリープレゼン）

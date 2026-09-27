@@ -12,7 +12,7 @@
 //
 // ひな形 … 「⚙️ 設定 ＞ 大きなスライド」の「事前MTG（朝イチMTG）」に登録したpptx。
 //          登録していなければ、同梱の既定のひな形（premtg_template.html。これまでと同じデザイン）で作る。
-//          差し込み口（{{月日}}・{{共有事項1}} など）は templates/README.md に。
+//          差し込み口（{{月日}}・{{共有事項1}} など）は docs/templates/README.md に。
 //
 // 画面は role_input.html（入力状況の一覧の「事前MTG（朝イチMTG）のパワポ」）。
 
