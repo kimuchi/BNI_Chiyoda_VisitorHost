@@ -411,19 +411,29 @@ function saveSpeakerRotationImage(base64, fileName) {
 // --- 定例会スライド（前半）の「スピーカーローテーション」のページ ---
 // 書記兼会計が作っていた表の画像を、スライドの表に置き換える。
 // ページは「スピーカーローテーション」の文字で探し、いちばん大きい画像の場所に表と注意書きを置く。
+// 画像の無いページ（公式ファイルから作った雛形は、見本の表）なら、いちばん大きい表の場所に置く。
 //   rot … { weeks: [...], header, notes }（getSpeakerRotationWeeks の結果）
 function applySpeakerRotation_(parts, rot) {
   if (!rot || !rot.weeks || !rot.weeks.length) return null;
-  var path = null, p;
+  var path = null, tag = 'p:pic', p, x;
+  var isRot = function (xml) { return xml && slideText_(xml).replace(/[\s　]/g, '').indexOf('スピーカーローテーション') >= 0; };
   for (p in parts) {
     if (!/^ppt\/slides\/slide\d+\.xml$/.test(p)) continue;
-    var x = xmlOf_(parts, p);
-    if (x && slideText_(x).replace(/[\s　]/g, '').indexOf('スピーカーローテーション') >= 0 && x.indexOf('<p:pic>') >= 0) { path = p; break; }
+    x = xmlOf_(parts, p);
+    if (isRot(x) && x.indexOf('<p:pic>') >= 0) { path = p; break; }
+  }
+  if (!path) {
+    for (p in parts) {
+      if (!/^ppt\/slides\/slide\d+\.xml$/.test(p)) continue;
+      x = xmlOf_(parts, p);
+      if (isRot(x) && /<a:tbl>/.test(x)) { path = p; tag = 'p:graphicFrame'; break; }
+    }
   }
   if (!path) return { message: '「スピーカーローテーション」のページ（表の画像）が見つからないので、表は作りませんでした。' };
-  var xml = xmlOf_(parts, path), pics = findTagRanges_(xml, 'p:pic'), best = null, i;
+  var xml = xmlOf_(parts, path), pics = findTagRanges_(xml, tag), best = null, i;
   for (i = 0; i < pics.length; i++) {
     var seg = xml.substring(pics[i].start, pics[i].end);
+    if (tag === 'p:graphicFrame' && !/<a:tbl>/.test(seg)) continue;
     var id = (seg.match(/<p:cNvPr[^>]*\sid="(\d+)"/) || [])[1];
     var g = seg.match(/<a:off x="(-?\d+)" y="(-?\d+)"\s*\/>\s*<a:ext cx="(\d+)" cy="(\d+)"/);
     if (!id || !g) continue;

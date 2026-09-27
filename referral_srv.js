@@ -51,7 +51,7 @@ function presenterShapes_(xml, slideW) {
   low.sort(function (a, b) { return a.x - b.x; });
   var label = null, next = null;
   for (i = 0; i < low.length; i++) {
-    if (!label && low[i].text.indexOf('NEXT') >= 0) label = low[i];
+    if (!label && /NEXT|次の(発表者|プレゼンター)/.test(low[i].text)) label = low[i];
     else if (!next) next = low[i];
   }
   return {
@@ -80,7 +80,9 @@ function rfFindModels_(parts, title) {
   for (p in parts) {
     if (!/^ppt\/slides\/slide\d+\.xml$/.test(p)) continue;
     var xml = xmlOf_(parts, p);
-    if (!xml || slideText_(xml).indexOf(title || RF_TITLE_) < 0) continue;
+    // 題名の文字か、図形の名前（公式ファイルから作ったひな形は、日本語の題名の図形に REFERRAL PRESENTATION の名前）で見分ける
+    if (!xml || (slideText_(xml).indexOf(title || RF_TITLE_) < 0
+                 && xml.indexOf(' name="' + (title || RF_TITLE_) + '"') < 0)) continue;
     out.push({ path: p, xml: xml, no: parseInt(p.replace(/\D+/g, ''), 10) });
   }
   out.sort(function (a, b) { return a.no - b.no; });
@@ -255,6 +257,12 @@ function rfLayoutBoxes_(parts, title) {
   var co = readShapeGeomEmu_(xml, SH.company);
   var ca = SH.category ? readShapeGeomEmu_(xml, SH.category) : null;
   if (!co) return null;
+  // 公式ファイルから作ったひな形（会社名の図形の名前が Referral Company）は、枠と文字の大きさをそのまま使う
+  var r = findShapeRange_(xml, SH.company);
+  if (r && SH.category && /<p:cNvPr\b[^>]*\sname="Referral Company"/.test(xml.substring(r.start, r.end))) {
+    var own = presenterBoxesOf_(xml, SH.company, SH.category);
+    if (own) { own.hasNext = !!SH.nextName; own.slides = models.length; return own; }
+  }
   return { companyTall: co, categoryLow: ca ? ca.y : 0, categoryWidth: ca ? ca.cx : 0,
            hasNext: !!SH.nextName, slides: models.length };
 }

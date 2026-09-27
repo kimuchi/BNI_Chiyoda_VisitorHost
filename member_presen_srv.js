@@ -235,9 +235,14 @@ function getMemberPresenContext() {
 
     // カウントダウンの秒数（チャプターの設定）。ウィークリーとスタートアッププレゼンで使う
     var sec = chapterPresenSeconds_();
+    // 公式ファイルから作った雛形など、枠の寸法が違うテンプレートでは、その寸法で会社名を組む
+    var boxes = null;
+    if (tpl && tpl.registered) {
+      try { boxes = templateMemo_(MP_TEMPLATE_KIND_, 'mpLayout', mpLayoutBoxes_); } catch (e) { boxes = null; }
+    }
     return { ok: true, members: members, blocks: cycle, candidates: cands,
              template: tpl, rowsPerPage: MP_ROWS_PER_OVERVIEW_,
-             seconds: { weekly: sec.weekly, startup: sec.startup },
+             seconds: { weekly: sec.weekly, startup: sec.startup }, layoutBoxes: boxes,
              unusedCategories: unusedCategoryRows_(members).map(function (r) { return r.block; }) };
   } catch (e) {
     console.error('[MPRESEN] ' + (e && e.stack ? e.stack : e));
@@ -362,9 +367,10 @@ function mpIndividualSlide_(tplXml, tplRels, item, photo) {
   // カテゴリー：会社名の枠の真下に置く。
   // 会社名が3行になると、2行ぶんの決め打ちでは文字が重なってしまうため、
   // 画面側が実際の行数と文字の大きさから出した位置を使う。
+  var own = mpOwnLayout_(tplXml), cg = own ? readShapeGeomEmu_(tplXml, MP_INDIVIDUAL_.category) : null;
   xml = setShapeGeomEmu_(xml, MP_INDIVIDUAL_.category,
-    { x: MP_CATEGORY_X_, cx: MP_CATEGORY_CX_,
-      y: item.categoryTop || (item.companyTall ? MP_CATEGORY_TOP_LOW_ : MP_CATEGORY_TOP_) });
+    { x: cg ? cg.x : MP_CATEGORY_X_, cx: cg ? cg.cx : MP_CATEGORY_CX_,
+      y: item.categoryTop || (cg ? cg.y : (item.companyTall ? MP_CATEGORY_TOP_LOW_ : MP_CATEGORY_TOP_)) });
   xml = setBodyAnchorInShape_(xml, MP_INDIVIDUAL_.category, 't');
   xml = noAutofitInShape_(xml, MP_INDIVIDUAL_.category);
   xml = setParagraphsInShape_(xml, MP_INDIVIDUAL_.category, item.categoryLines || ['']);
@@ -384,6 +390,35 @@ function mpIndividualSlide_(tplXml, tplRels, item, photo) {
     xml = removeShape_(xml, MP_INDIVIDUAL_.nextLabel);
   }
   return mpApplyPhoto_(xml, tplRels, MP_INDIVIDUAL_, photo);
+}
+
+// 枠の寸法をテンプレートから採るか。公式ファイルから作った雛形は、会社名の図形の名前が
+// 「Member Company」（official_build_srv.js）。それ以外（Activeチャプターの雛形）は、元ツールの寸法で組む
+function mpOwnLayout_(xml) {
+  var r = findShapeRange_(xml, MP_INDIVIDUAL_.company);
+  return !!r && /<p:cNvPr\b[^>]*\sname="Member Company"/.test(xml.substring(r.start, r.end));
+}
+
+// テンプレートの個人ページの、会社名・カテゴリーの枠と文字の大きさ（画面の組版に渡す）。
+// 元ツールの寸法で組むテンプレートなら null
+function mpLayoutBoxes_(map) {
+  var iv = mpFindModelSlide_(map, [MP_INDIVIDUAL_.photo, MP_INDIVIDUAL_.nameBox, MP_INDIVIDUAL_.company,
+                                   MP_INDIVIDUAL_.category, MP_INDIVIDUAL_.nextName, MP_INDIVIDUAL_.nextLabel]);
+  if (!iv || !mpOwnLayout_(iv.xml)) return null;
+  return presenterBoxesOf_(iv.xml, MP_INDIVIDUAL_.company, MP_INDIVIDUAL_.category);
+}
+
+// 会社名・カテゴリーの枠（EMU）と文字の大きさ（pt）→ 画面の setLayoutBoxes() に渡す形
+function presenterBoxesOf_(xml, companyId, categoryId) {
+  var co = readShapeGeomEmu_(xml, companyId), ca = readShapeGeomEmu_(xml, categoryId);
+  if (!co || !ca) return null;
+  var ptOf = function (id) {
+    var r = findShapeRange_(xml, id), seg = r ? xml.substring(r.start, r.end) : '';
+    var m = seg.match(/<a:rPr\b[^>]*\ssz="(\d+)"/) || seg.match(/<a:endParaRPr\b[^>]*\ssz="(\d+)"/);
+    return m ? parseInt(m[1], 10) / 100 : 0;
+  };
+  return { companyDefault: co, categoryTop: ca.y, categoryWidth: ca.cx, companyPt: ptOf(companyId) || 44,
+           categoryPt: ptOf(categoryId) || 44 };
 }
 
 // === カウントダウンと自動送り ===

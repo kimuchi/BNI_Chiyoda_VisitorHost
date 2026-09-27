@@ -70,6 +70,15 @@ function getHomeStatus() {
                    : '未登録', '管理する', 'openMemberPhotoDialog');
   } catch (e) { add('photos', 'メンバー写真', false, '確認できませんでした', '管理する', 'openMemberPhotoDialog'); }
 
+  // 公式ファイルから作る雛形（ビジター用・メンバープレゼン・定例会）。雛形がそろっていれば準備できている
+  try {
+    var os = getOfficialTemplateStatus(), odone = (os.kinds || []).filter(function (k) { return k.registered; }).length;
+    var ofile = os.file && !os.file.error ? os.file.name : '';
+    add('official', '雛形（公式ファイルから）', odone === (os.kinds || []).length,
+        (ofile ? '公式ファイル: ' + ofile + '・' : '公式ファイル未設定・') + '雛形 ' + odone + ' / ' + (os.kinds || []).length + ' 件 登録済み',
+        '作る', 'openOfficialTemplatesDialog');
+  } catch (e) { add('official', '雛形（公式ファイルから）', false, '確認できませんでした', '作る', 'openOfficialTemplatesDialog'); }
+
   // ビジター用テンプレート
   try {
     var ts = getTemplateStatus().templates, done = 0;
