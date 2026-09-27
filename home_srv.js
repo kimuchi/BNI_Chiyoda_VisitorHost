@@ -10,11 +10,20 @@ function openHomeDialog() {
 
 // 各機能を「使える状態か」を点検する。失敗しても画面は出したいので個別にtry/catchする
 function getHomeStatus() {
-  var st = { ok: true, checks: [], latest: {} };
+  var st = { ok: true, checks: [], latest: {}, title: '' };
   function add(key, label, ready, detail, fixLabel, fixFn) {
     st.checks.push({ key: key, label: label, ready: !!ready, detail: detail || '',
                      fixLabel: fixLabel || '', fixFn: fixFn || '' });
   }
+
+  // チャプター（名前・期・回数）。空のスプレッドシートから始めたときは、まず設定してもらう
+  try {
+    var ch = chapterInfo_(), next = (getMeetingCandidates()[0] || {}).display || '';
+    st.title = chapterSystemTitle_();
+    add('chapter', 'チャプター', ch.saved || !chapterFresh_(),
+        chapterLabel_() + '・いまの期 ' + roleTermOf_(new Date()) + '期' + (next ? '・次回 ' + next : '')
+        + (ch.saved ? '' : '（初期値）'), '設定する', 'openChapterSettingsDialog');
+  } catch (e) { add('chapter', 'チャプター', false, '確認できませんでした', '設定する', 'openChapterSettingsDialog'); }
 
   // 素材フォルダ
   try {

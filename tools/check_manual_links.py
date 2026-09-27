@@ -50,6 +50,13 @@ def main():
         for a in loose[:5]:
             print('  ' + a)
         sys.exit(1)
+    # リンクの書き方：manual.html に変換できるのは [文字](https://…) だけ。[文字](#…) は記号のまま出てしまう
+    anchors = [(i + 1, l.strip()) for i, l in enumerate(man.split('\n')) if re.search(r'\]\(#', l)]
+    if anchors or re.search(r'\]\((https?://[^)\s]+)\)', re.sub(r'<[^>]+>', '', page.split('</style>')[-1])):
+        print('NG: MANUAL.md のリンクが manual.html で記号のまま出ます（ページ内リンク [文字](#…) は使えません）')
+        for no, l in anchors[:5]:
+            print('  MANUAL.md:%d  %s' % (no, l[:80]))
+        sys.exit(1)
     # 画像：MANUAL.md の画像がそろっていて、manual.html に同じ数だけ（幅・高さつきで）埋め込まれているか
     shots = re.findall(r'^!\[[^\]]*\]\(([^)\s]+)\)\s*$', man, re.M)
     missing = [s for s in shots if not os.path.isfile(os.path.join(ROOT, s))]

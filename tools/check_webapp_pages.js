@@ -45,7 +45,7 @@ const sandbox = {
 };
 sandbox.global = sandbox;
 vm.createContext(sandbox);
-vm.runInContext(fs.readFileSync(path.join(ROOT, 'webapp_srv.js'), 'utf8'), sandbox, { filename: 'webapp_srv.js' });
+for (const f of ['chapter_srv.js', 'webapp_srv.js']) vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), sandbox, { filename: f });
 const F = sandbox;
 const PAGES = vm.runInContext('WEBAPP_PAGES_', sandbox);
 const ALIASES = vm.runInContext('WEBAPP_ALIASES_', sandbox);

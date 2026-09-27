@@ -56,10 +56,13 @@ def figure(alt, rel):
 
 
 def inline(text):
-    """行内記法（太字・コード）をHTMLに変換する。"""
+    """行内記法（太字・コード・外へのリンク）をHTMLに変換する。
+    リンクは [文字](https://…) だけ（別のタブで開く）。ページ内のリンク [文字](#…) は使えない
+    （見出しの id は sec1, sec2 … なので。tools/check_manual_links.py で止める）。"""
     out = html.escape(text)
     out = re.sub(r"`([^`]+)`", r"<code>\1</code>", out)
     out = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", out)
+    out = re.sub(r"\[([^\]]+)\]\((https?://[^)\s]+)\)", r'<a href="\2" target="_blank" rel="noopener">\1</a>', out)
     return out
 
 

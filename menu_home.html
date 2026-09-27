@@ -35,7 +35,7 @@
  #msg{margin-top:8px;font-size:12px;font-weight:bold;}
 </style></head>
 <body>
- <h2>BNI 名簿システム</h2>
+ <h2 id="title">BNI 名簿システム</h2>
  <div class="sub">やりたいことを選んでください。メニューバーの「名簿システム」からも同じ操作ができます。</div>
 
  <div class="wrap">
@@ -85,6 +85,7 @@
      <h3>設定</h3>
      <div class="d">ふだんの作業では触りません。初回や、内容が変わったときだけ。</div>
      <div class="btns">
+       <button class="btn" onclick="go('openChapterSettingsDialog')"><b>チャプター</b><span>名前・リージョン・期・定例会の回数と曜日</span></button>
        <button class="btn" onclick="go('openAssetSettingsDialog')"><b>BNI 素材フォルダ</b><span>写真・テンプレ・生成物の保存先</span></button>
        <button class="btn" onclick="go('openMemberMasterDialog')"><b>メンバー名簿</b><span>冊子・スライド用のメンバー情報</span></button>
        <button class="btn" onclick="go('openMemberPhotoDialog')"><b>メンバー写真</b><span>氏名で自動照合されます</span></button>
@@ -126,6 +127,7 @@
  function fail(e){ document.getElementById('checks').innerHTML='<span style="color:#d00;">確認できませんでした: '+esc((e&&e.message)?e.message:e)+'</span>'; }
 
  function render(st){
+   if(st.title) document.getElementById('title').textContent = st.title;
    document.getElementById('checks').innerHTML = st.checks.map(function(c){
      return '<div class="chk"><span class="mark '+(c.ready?'y':'n')+'">'+(c.ready?'✓':'!')+'</span>'
        +'<span class="t"><b>'+esc(c.label)+'</b><i>'+esc(c.detail)+'</i></span>'

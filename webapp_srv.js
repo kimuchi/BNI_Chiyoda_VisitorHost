@@ -60,6 +60,7 @@ var WEBAPP_PAGES_ = [
     { key: 'archive',           label: 'アーカイブして整理する', desc: '古い開催日のシートを隠します' }
   ]},
   { group: '設定', items: [
+    { key: 'chapter_settings',  label: 'チャプター',             desc: '名前・リージョン・期・定例会の回数と曜日' },
     { key: 'asset_settings',    label: 'BNI 素材フォルダ',       desc: '写真やテンプレートの保存先' },
     { key: 'member_master',     label: 'メンバー名簿',           desc: 'すべての機能が参照する正本' },
     { key: 'member_photos',     label: 'メンバー写真',           desc: '氏名で自動照合されます' },
@@ -124,8 +125,11 @@ function doGet(e) {
       // まったく別の場所へ飛んで真っ白になる。必ず絶対URLを使う。
       t.appUrl = getWebAppUrl_();
       t.version = (typeof SYSTEM_VERSION_ === 'string') ? SYSTEM_VERSION_ : '';
+      // 見出しと下の行はチャプターの設定から（chapter_srv.js）
+      t.title = chapterSystemTitle_();
+      t.footer = chapterFooter_();
       return t.evaluate()
-        .setTitle('Activeチャプター 名簿システム')
+        .setTitle(t.title)
         .addMetaTag('viewport', 'width=device-width, initial-scale=1');
     }
 

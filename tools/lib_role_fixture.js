@@ -150,7 +150,7 @@ function makeRoleServer(routinePath, membersPath) {
   };
   sandbox.global = sandbox;
   vm.createContext(sandbox);
-  for (const f of ['コード.js', 'ooxml.js', 'splice_srv.js', 'referral_srv.js', 'big_templates_srv.js',
+  for (const f of ['コード.js', 'chapter_srv.js', 'ooxml.js', 'splice_srv.js', 'referral_srv.js', 'big_templates_srv.js',
                    'member_master_srv.js', 'routine_srv.js', 'member_presen_srv.js', 'meeting_slides_srv.js',
                    'visitor_post_srv.js', 'role_input_srv.js', 'speaker_rotation_srv.js', 'premtg_srv.js']) {
     vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), sandbox, { filename: f });

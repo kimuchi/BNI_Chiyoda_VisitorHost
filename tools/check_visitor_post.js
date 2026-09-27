@@ -26,7 +26,7 @@ const srv = {
   PropertiesService: { getScriptProperties: () => ({ getProperty: () => null }) },
 };
 vm.createContext(srv);
-for (const f of ['コード.js', 'visitor_post_srv.js']) {
+for (const f of ['コード.js', 'chapter_srv.js', 'visitor_post_srv.js']) {
   vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), srv, { filename: f });
 }
 srv.getHolidays = () => HOLIDAYS;
