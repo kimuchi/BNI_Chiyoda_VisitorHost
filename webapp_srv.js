@@ -34,7 +34,8 @@ function getSS_() {
 
 // ウェブアプリに出す機能の一覧。キーは表示するHTMLファイル名（URLの ?p= に入る）。
 // 同じ画面を別の開き方で出すときは、file に画面のHTMLファイル名、params に画面へ渡す値を書く
-// （事前MTG … ?p=premtg で role_input.html を view=premtg で開く）。
+// （事前MTG … ?p=premtg で role_input.html を view=premtg で開く。
+//   スピーカーローテーション … ?p=rotation で role_input.html を role=secretary・view=rotation で開く）。
 // トップページのリンクは ?p=キー だけにする。リンクに「&view=…」を <?= ?> で足すと、
 // Apps Script が & や = をURL用に置き換えて（%26 %3D）、開く画面が分からなくなるため。
 var WEBAPP_PAGES_ = [
@@ -42,6 +43,8 @@ var WEBAPP_PAGES_ = [
     { key: 'role_input',        label: '役職ごとの入力（定例会の準備）', desc: '次回の定例会について役職ごとに入力します。入力状況も一目で分かります' },
     { key: 'premtg', file: 'role_input', params: { view: 'premtg' },
       label: '事前MTG（朝イチMTG）のパワポ', desc: '役職ごとの入力（共有事項・お願い事項など）から作ります' },
+    { key: 'rotation', file: 'role_input', params: { role: 'secretary', view: 'rotation' },
+      label: 'スピーカーローテーション（書記兼会計）', desc: 'メインプレゼンの順番・Facebookの案内文。前半スライドの表もここから作られます' },
     { key: 'dialog',            label: 'CSVから名簿・PDF作成',   desc: '参加者のCSVを取り込んで名簿とPDFを作ります' },
     { key: 'email',             label: 'メールの確認・一括送信', desc: '案内メールをまとめて送ります' },
     { key: 'allocation',        label: 'ルーム・オリエン割り振り表', desc: 'ビジターごとの担当を決めます' },

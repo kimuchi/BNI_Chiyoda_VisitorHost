@@ -521,7 +521,7 @@ clasp deploy -i &lt;デプロイID&gt; -d &quot;更新&quot;
 <h3>ほかの方と同時に入力したとき</h3>
 <p>保存するときに、<strong>画面を開いたあとでルーティンチェックシートが書き換えられていた項目は、上書きしません</strong> （お知らせが出て、入力した内容は画面に残ります）。開催日を選び直して、シートの内容を確かめてから直してください。 数式が入っている欄と、ほかの役職の項目も保存しません。</p>
 <h3>スピーカーローテーション（書記兼会計）</h3>
-<p><strong>メニュー</strong>: <code>名簿システム</code> &gt; <code>📝 役職ごとの入力（定例会の準備）</code> &gt; <code>スピーカーローテーション（書記兼会計）</code> （書記兼会計の入力画面の <strong>「🔁 スピーカーローテーションの管理」</strong> からも開けます）</p>
+<p><strong>メニュー</strong>: <code>名簿システム</code> &gt; <code>📝 役職ごとの入力（定例会の準備）</code> &gt; <code>スピーカーローテーション（書記兼会計）</code> （書記兼会計の入力画面の <strong>「🔁 スピーカーローテーションの管理」</strong> からも開けます。 ウェブアプリでは、トップページの「毎週の作業」にある <strong>スピーカーローテーション（書記兼会計）</strong>）</p>
 <p>「MP選出・ローテーション管理ツール」でしていた、<strong>メインプレゼンの順番の管理</strong>をここで行います。</p>
 <ul>
 <li><strong>並び順</strong>の上から順に、開催ごとに <strong>2名ずつ</strong> 割り当てます。最後まで行ったら最初に戻ります</li>
@@ -600,7 +600,7 @@ clasp deploy -i &lt;デプロイID&gt; -d &quot;更新&quot;
 <li>使うひな形は「中身を確かめる」の下に出ます。ひな形の作りの詳しい決まりは <code>templates/README.md</code> にあります</li>
 </ul>
 <h3>役職ごとの入口（ウェブアプリのURL）</h3>
-<p>ウェブアプリのURL（<code>…/exec</code>）の最後に <code>?p=role_input&amp;role=記号</code> を付けると、その役職の入力画面が直接開きます。 各役職の方へのご案内やブックマークに使えます（例: <code>…/exec?p=role_input&amp;role=vice</code>）。 スピーカーローテーションは <code>…/exec?p=role_input&amp;role=secretary&amp;view=rotation</code>、 事前MTGのパワポは <code>…/exec?p=premtg</code> で直接開けます。</p>
+<p>ウェブアプリのURL（<code>…/exec</code>）の最後に <code>?p=role_input&amp;role=記号</code> を付けると、その役職の入力画面が直接開きます。 各役職の方へのご案内やブックマークに使えます（例: <code>…/exec?p=role_input&amp;role=vice</code>）。 スピーカーローテーションは <code>…/exec?p=rotation</code>、事前MTGのパワポは <code>…/exec?p=premtg</code> で直接開けます。</p>
 <table><thead><tr><th>役職</th><th>記号</th><th>役職</th><th>記号</th></tr></thead><tbody>
 <tr><td>プレジデント</td><td><code>president</code></td><td>webマスター</td><td><code>web</code></td></tr>
 <tr><td>バイスプレジデント</td><td><code>vice</code></td><td>メンバーサポート委員</td><td><code>support</code></td></tr>

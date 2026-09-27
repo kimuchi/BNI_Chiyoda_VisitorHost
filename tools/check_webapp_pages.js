@@ -70,6 +70,11 @@ for (const it of items) {
 opened = null;
 F.doGet({ parameter: { p: 'premtg' } });
 ck(opened && opened.name === 'role_input' && opened.params.view === 'premtg', '?p=premtg: ' + JSON.stringify(opened));
+// スピーカーローテーション：書記兼会計の画面から、ローテーションの管理を開く
+opened = null;
+F.doGet({ parameter: { p: 'rotation' } });
+ck(opened && opened.name === 'role_input' && opened.params.role === 'secretary' && opened.params.view === 'rotation',
+   '?p=rotation: ' + JSON.stringify(opened && { name: opened.name, params: opened.params }));
 // URLに書いた値が優先・これまでのURLもそのまま使える
 opened = null;
 F.doGet({ parameter: { p: 'role_input', role: 'vice' } });
@@ -100,4 +105,4 @@ if (fails.length) {
   fails.forEach((f) => console.log('   ' + f));
   process.exit(1);
 }
-console.log('OK: キー・画面のHTML・?p= での開き方（事前MTG・役職の指定）・トップページのリンク');
+console.log('OK: キー・画面のHTML・?p= での開き方（事前MTG・スピーカーローテーション・役職の指定）・トップページのリンク');
