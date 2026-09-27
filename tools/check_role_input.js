@@ -16,7 +16,7 @@ const fails = [];
 let checks = 0;
 function ck(ok, msg) { checks++; if (!ok) fails.push(msg); }
 
-const { F, sandbox, sheets, members, SUB_FOR } = makeRoleServer(process.argv[2], process.argv[3]);
+const { F, sandbox, sheets, members, SUB_FOR, props } = makeRoleServer(process.argv[2], process.argv[3]);
 const roleOf = (ctx, key) => ctx.roles.find((r) => r.key === key);
 const itemsOf = (ctx, key) => roleOf(ctx, key).items.map((id) => ctx.items[id]);
 // 項目名は完全一致で探し、無ければ先頭一致（「遅刻・欠席担当(7:00開始)」）
@@ -236,6 +236,49 @@ ck(roleOf(res.context, 'mentor').status.state === 'done', 'メンターコーデ
 // ===================== 担当者・担当が分からない項目 =====================
 res = F.saveRoleHolders({ president: '見本 太郎', nobody: 'x' });
 ck(res.ok && F.roleHolders_().president === '見本 太郎' && F.roleHolders_().vice === '船木 雄大', '担当者の保存');
+
+// 担当者は半期ごと（4〜9月・10〜3月。2026年9月までが23期、10月からが24期）
+const termOf = (d) => F.roleTermOf_(F.parseDate_(d));
+const holderOn = (d, k) => F.roleHolders_(F.parseDate_(d))[k];
+ck(termOf('2026/09/30') === 23 && termOf('2026/10/07') === 24 && termOf('2027/03/31') === 24 && termOf('2027/04/07') === 25
+   && termOf('2026/04/01') === 23 && termOf('2026/03/25') === 22,
+   '期の分け方: ' + ['2026/03/25', '2026/04/01', '2026/09/30', '2026/10/07', '2027/03/31', '2027/04/07'].map(termOf).join(','));
+ck(F.roleTermLabel_(23) === '2026年4月〜9月' && F.roleTermLabel_(24) === '2026年10月〜2027年3月', '期の月: ' + F.roleTermLabel_(24));
+// いま保存したのは今日（9/26）の期＝23期。24期は、期ごとにする前の担当者（初期値）のまま
+ck(holderOn('2026/09/30', 'president') === '見本 太郎' && holderOn('2026/10/07', 'president') === '熊谷 龍威',
+   '23期と24期の担当者が分かれていない: ' + holderOn('2026/10/07', 'president'));
+const c24 = F.getRoleInputContext('2026/10/07', '');
+ck(c24.holderTerm.term === 24 && c24.holderTerm.registered && roleOf(c24, 'president').holder === '熊谷 龍威'
+   && c24.holderTerms.map((t) => t.term).join(',') === '23,24,25' && !c24.holderTerms[2].registered && c24.holderTerms[2].from === 24,
+   '10/7 の担当者の期: ' + JSON.stringify(c24.holderTerms.map((t) => [t.term, t.registered, t.from])));
+// 次の期（25期）を前もって登録する。24期の回はそのまま
+res = F.saveRoleHolders({ president: '次期 花子' }, 25, '2026/10/07');
+const t25 = (res.terms || []).find((t) => t.term === 25) || {};
+ck(res.ok && res.term === 25 && res.current.term === 24 && res.current.holders.president === '熊谷 龍威'
+   && t25.registered && t25.holders.president === '次期 花子' && t25.holders.vice === '船木 雄大' && /25期（2027年4月〜9月）/.test(res.message),
+   '25期の登録: ' + JSON.stringify(res).slice(0, 240));
+ck(holderOn('2027/04/07', 'president') === '次期 花子' && holderOn('2027/03/31', 'president') === '熊谷 龍威', '25期の担当者が4月から使われない');
+// 登録していない先の期（26期）は前の期（25期）の担当者。画面は「まだ登録されていません」と知らせる
+const h26 = F.roleHoldersOfTerm_(F.roleHolderTerms_(), 26);
+ck(!h26.registered && h26.from === 25 && h26.holders.president === '次期 花子', '26期（未登録）: ' + JSON.stringify(h26).slice(0, 160));
+// 事前MTGの役職のページ・ローテーションの案内文も、その回の期の担当者
+ck(F.premtgData_(F.parseDate_('2026/09/30')).roles.find((r) => r.key === 'president').holder === '見本 太郎'
+   && F.premtgData_(F.parseDate_('2026/10/07')).roles.find((r) => r.key === 'president').holder === '熊谷 龍威', '事前MTGの担当者の期');
+res = F.saveRoleHolders({ secretary: '見本 書記' }, 24, '2026/10/07');
+let rotNow = F.getSpeakerRotation();
+ck(rotNow.weeks[0].secretary === '原田 雅人' && rotNow.weeks[1].secretary === '見本 書記' && /書記兼会計の原田 雅人まで/.test(rotNow.fbText),
+   'ローテーションの案内文の書記兼会計: ' + rotNow.weeks.slice(0, 2).map((w) => w.date + ' ' + w.secretary).join(' / '));
+F.saveRoleHolders({ secretary: '原田 雅人' }, 24, '2026/10/07');
+// 期ごとにする前に保存していた担当者は、24期の担当者として読む
+{
+  const keep = props.BNI_ROLE_HOLDERS_TERMS;
+  delete props.BNI_ROLE_HOLDERS_TERMS;
+  props.BNI_ROLE_HOLDERS = JSON.stringify({ president: '前の 保存', vice: '' });
+  ck(holderOn('2026/10/07', 'president') === '前の 保存' && holderOn('2026/10/07', 'vice') === '' && holderOn('2026/10/07', 'secretary') === '原田 雅人'
+     && holderOn('2026/09/30', 'president') === '前の 保存', '前の形の担当者: ' + JSON.stringify(F.roleHolders_(F.parseDate_('2026/10/07'))).slice(0, 120));
+  props.BNI_ROLE_HOLDERS_TERMS = keep;
+  delete props.BNI_ROLE_HOLDERS;
+}
 const rUnk = rowOfTitle(s24, '割振表');
 s24._grid[rUnk][5] = 'VH・広報';
 ctx = F.getRoleInputContext('2026/10/07', '*');
@@ -252,4 +295,4 @@ if (fails.length) {
   fails.slice(0, 40).forEach((f) => console.log('   ' + f));
   process.exit(1);
 }
-console.log('OK: 項目（担当の列から）・推定・入力状況・保存（行の追加・衝突・数式・役職の制限）');
+console.log('OK: 項目（担当の列から）・推定・入力状況・保存（行の追加・衝突・数式・役職の制限）・担当者（半期ごと）');

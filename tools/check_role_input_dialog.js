@@ -17,7 +17,7 @@ const server = {
   getSystemVersion: () => 'test',
   getRoleInputContext: (d, r) => { calls.push(['ctx', d, r]); return S.F.getRoleInputContext(d, r); },
   saveRoleInput: (d, r, e) => { calls.push(['save', d, r, e]); return S.F.saveRoleInput(d, r, e); },
-  saveRoleHolders: (m) => { calls.push(['holders', m]); return S.F.saveRoleHolders(m); },
+  saveRoleHolders: (m, t, d) => { calls.push(['holders', m, t, d]); return S.F.saveRoleHolders(m, t, d); },
   getSpeakerRotation: () => { calls.push(['rot']); return S.F.getSpeakerRotation(); },
   saveSpeakerRotation: (d) => { calls.push(['rotSave', d]); return S.F.saveSpeakerRotation(d); },
   importSpeakerRotation: (j) => { calls.push(['rotImport', j]); return S.F.importSpeakerRotation(j); },
@@ -110,15 +110,39 @@ step('一覧に戻る', () => run('showOverview()'));
 ck(page.log.confirms.length === confirmsBefore, '保存したのに「保存していない入力があります」が出た');
 ck(shown(els.overview), '一覧に戻らない');
 
-// 担当者を変える
+// 担当者は半期ごと（4〜9月・10〜3月）。9/30 は23期。まだ登録していないので、24期の担当者を出している
+const termTexts = () => els.holderTerm.options.map((o) => o.text).join(' / ');
+const presidentCard = () => (els.cards.innerHTML.match(/プレジデント<\/span><div class="who">([^<]*)</) || [])[1];
+ck(els.holderTerm.value === '23' && /23期（2026年4月〜9月）・この開催日・未登録/.test(termTexts()) && /24期（2026年10月〜2027年3月）/.test(termTexts()),
+   '担当者の期の選択: ' + termTexts());
+ck(/23期の担当者はまだ登録されていません。24期の担当者を出しています/.test(els.holderNote.innerText) && !shown(els.holderWarn),
+   '未登録の期の説明: ' + els.holderNote.innerText + ' / ' + els.holderWarn.innerHTML);
+// 担当者を変える（23期として保存）
 step('担当者を変える', () => { els.hd_0.value = els.hd_0.options[2].value; run('saveHolders()'); });
 const newHolder = els.hd_0.options[2] ? els.hd_0.options[2].value : '';
-ck(calls.some((c) => c[0] === 'holders' && c[1].president === newHolder), '担当者の保存が呼ばれていない');
-ck(newHolder && els.cards.innerHTML.indexOf(newHolder) >= 0, 'カードの担当者が変わらない');
+const hc23 = calls.filter((c) => c[0] === 'holders').pop();
+ck(hc23 && hc23[1].president === newHolder && hc23[2] === 23 && hc23[3] === '2026/09/30', '担当者の保存: ' + JSON.stringify(hc23 && hc23.slice(2)));
+ck(newHolder && presidentCard() === newHolder, 'カードの担当者が変わらない: ' + presidentCard());
+ck(els.holderNote.innerText === '' && /23期（2026年4月〜9月）の担当者を保存しました/.test(els.holderMsg.innerText), '保存のお知らせ: ' + els.holderMsg.innerText);
 
-// 開催日を変える（10/7 は 24期のシート）
+// 開催日を変える（10/7 は 24期のシート。担当者も24期）
 step('10/7 に変える', () => { els.meeting.value = '2026/10/07'; run('changeMeeting()'); });
 ck(/24期/.test(els.sheetNote.innerText) && /第536回/.test(els.sheetNote.innerText), '10/7 に変わらない: ' + els.sheetNote.innerText);
+ck(els.holderTerm.value === '24' && els.hd_0.value === '熊谷 龍威' && presidentCard() === '熊谷 龍威',
+   '10/7（24期）の担当者: ' + els.holderTerm.value + ' ' + presidentCard());
+// 次の期（25期）の担当者を前もって登録する。10/7 のカードは24期のまま
+step('25期を選ぶ', () => { els.holderTerm.value = '25'; run('renderHolders()'); });
+ck(/25期の担当者はまだ登録されていません。24期の担当者を出しています/.test(els.holderNote.innerText) && els.hd_0.value === '熊谷 龍威',
+   '25期を選んだとき: ' + els.holderNote.innerText);
+step('25期のプレジデントを登録', () => { els.hd_0.value = els.hd_0.options[3].value; run('saveHolders()'); });
+const hc25 = calls.filter((c) => c[0] === 'holders').pop();
+ck(hc25 && hc25[2] === 25 && hc25[3] === '2026/10/07' && els.holderTerm.value === '25' && els.holderNote.innerText === ''
+   && els.hd_0.value === hc25[1].president, '25期の保存: ' + JSON.stringify(hc25 && hc25.slice(2)) + ' ' + els.holderTerm.value);
+ck(presidentCard() === '熊谷 龍威', '25期を登録したら、10/7（24期）のカードが変わった: ' + presidentCard());
+// 期が替わったのに、新しい期の担当者がまだ無いときは、一覧の上で知らせる
+step('新しい期の担当者が未登録', () => run("ctx.holderTerm={term:26,label:'2027年10月〜2028年3月',registered:false,from:25,holders:{}}; showOverview(true)"));
+ck(shown(els.holderWarn) && /26期（2027年10月〜2028年3月）の担当者がまだ登録されていません。いまは25期の担当者を出しています/.test(els.holderWarn.innerHTML),
+   '新しい期のお知らせ: ' + els.holderWarn.innerHTML);
 
 // ===================== URLで役職を指定して開く =====================
 page = open('ec');
@@ -266,4 +290,4 @@ if (fails.length) {
   fails.slice(0, 30).forEach((f) => console.log('   ' + f));
   process.exit(1);
 }
-console.log('OK: 一覧（入力状況・担当者）／役職の入力（推定・前回・人数・保存・シートへの書き込み）／URLでの役職指定／スピーカーローテーション（Facebookの文と画像）／事前MTGのパワポ');
+console.log('OK: 一覧（入力状況・担当者（半期ごと））／役職の入力（推定・前回・人数・保存・シートへの書き込み）／URLでの役職指定／スピーカーローテーション（Facebookの文と画像）／事前MTGのパワポ');

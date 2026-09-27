@@ -92,6 +92,7 @@
 
  <div id="overview" style="display:none;">
    <div class="summary" id="summary"></div>
+   <div class="warn" id="holderWarn" style="display:none;"></div>
    <div class="box" id="premtgBox">
      <div style="display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;">
        <b style="font-size:13px;">📽 事前MTG（朝イチMTG）のパワポ</b>
@@ -105,11 +106,15 @@
    </div>
    <div class="cards" id="cards"></div>
    <div id="unknownNote"></div>
-   <div class="box">
-     <div style="font-weight:bold;font-size:12.5px;">担当者</div>
-     <div class="muted">役職の担当者（期が替わったとき）を直せます。一覧のカードに出ます。</div>
+   <div class="box" id="holderBox">
+     <div style="font-weight:bold;font-size:12.5px;">担当者（半期ごと）</div>
+     <div class="muted">役職の担当者は、半期（4月〜9月・10月〜3月）ごとに登録します。
+       一覧のカード、事前MTGのパワポ（役職のページの名前・写真）、ローテーションの案内文に使います。
+       次の期の担当者も、期を選んで前もって登録できます。</div>
+     <div style="margin:6px 0 2px;"><label>期：<select id="holderTerm" onchange="renderHolders()"></select></label></div>
+     <div class="muted" id="holderNote"></div>
      <div id="holderTable"></div>
-     <button onclick="saveHolders()">担当者を保存</button> <span id="holderMsg" class="muted"></span>
+     <button onclick="saveHolders()">この期の担当者を保存</button> <span id="holderMsg" class="muted"></span>
    </div>
  </div>
 
@@ -241,6 +246,7 @@
 
  function setContext(c){
    ctx = c;
+   el('holderTerm').innerHTML='';                        // 担当者の期は、開催日の期から
    fillMeetingBar(c);
    if(view && roleOf(view)) openRole(view); else { view=''; showOverview(true); }
    if(VIEW_PARAM==='rotation' && view==='secretary' && !rotOpened){ rotOpened=true; openRotation(); }
@@ -311,25 +317,50 @@
        + '<br>シートの「担当」を、プレジ・バイス・書記兼会計・VH・EC・WEB などの書き方に直してください。</div>'
      : '';
    renderHolders();
+   renderHolderWarn();
  }
 
+ // 担当者（半期ごと）：選んだ期の担当者を出す（最初は開催日の期）
+ function holderTermOf(term){ return (ctx.holderTerms||[]).filter(function(t){ return t.term===term; })[0] || null; }
  function renderHolders(){
+   var sel = el('holderTerm'), mine = ctx.holderTerm || null, cur = parseInt(sel.value, 10);
+   if(!holderTermOf(cur)) cur = mine ? mine.term : 0;
+   sel.innerHTML = (ctx.holderTerms||[]).map(function(t){
+     return '<option value="'+t.term+'"'+(t.term===cur?' selected':'')+'>'+t.term+'期（'+esc(t.label)+'）'
+       +(mine && t.term===mine.term?'・この開催日':'')+(t.registered?'':'・未登録')+'</option>';
+   }).join('');
+   var ht = holderTermOf(cur) || { term:cur, holders:{}, registered:true };
+   el('holderNote').innerText = (!ht.registered && ht.from)
+     ? ht.term+'期の担当者はまだ登録されていません。'+ht.from+'期の担当者を出しています。直して保存すると、'+ht.term+'期の担当者になります。'
+     : '';
    var names = (ctx.members||[]).slice();
    el('holderTable').innerHTML = '<table class="holders">' + (ctx.roles||[]).map(function(r, i){
-     var opts = ['<option value="">（未設定）</option>'], has=false;
-     names.forEach(function(n){ if(n===r.holder) has=true; opts.push('<option value="'+esc(n)+'"'+(n===r.holder?' selected':'')+'>'+esc(n)+'</option>'); });
-     if(r.holder && !has) opts.splice(1,0,'<option value="'+esc(r.holder)+'" selected>'+esc(r.holder)+'</option>');
+     var h = ht.holders[r.key]||'', opts = ['<option value="">（未設定）</option>'], has=false;
+     names.forEach(function(n){ if(n===h) has=true; opts.push('<option value="'+esc(n)+'"'+(n===h?' selected':'')+'>'+esc(n)+'</option>'); });
+     if(h && !has) opts.splice(1,0,'<option value="'+esc(h)+'" selected>'+esc(h)+'</option>');
      return '<tr><td>'+esc(r.label)+'</td><td><select id="hd_'+i+'">'+opts.join('')+'</select></td></tr>';
    }).join('') + '</table>';
  }
+ // 開催日の期の担当者がまだ無く、前の期の担当者を出しているとき（期が替わったとき）に知らせる
+ function renderHolderWarn(){
+   var ht = ctx.holderTerm, w = el('holderWarn');
+   if(ht && !ht.registered && ht.from && ht.from < ht.term){
+     w.style.display='block';
+     w.innerHTML = '⚠ '+ht.term+'期（'+esc(ht.label)+'）の担当者がまだ登録されていません。いまは'+ht.from+'期の担当者を出しています。'
+       +'いちばん下の「担当者（半期ごと）」で登録してください。';
+   } else { w.style.display='none'; w.innerHTML=''; }
+ }
  function saveHolders(){
-   var map={};
+   var map={}, term=parseInt(el('holderTerm').value, 10);
    (ctx.roles||[]).forEach(function(r, i){ var s=el('hd_'+i); if(s) map[r.key]=s.value; });
    el('holderMsg').innerText='保存しています…';
    google.script.run.withSuccessHandler(function(res){
      el('holderMsg').innerText = res.message || '';
-     if(res.ok){ (ctx.roles||[]).forEach(function(r){ r.holder = res.holders[r.key]||''; }); showOverview(true); el('holderMsg').innerText=res.message; }
-   }).withFailureHandler(fail).saveRoleHolders(map);
+     if(!res.ok) return;
+     ctx.holderTerms = res.terms || ctx.holderTerms;
+     if(res.current){ ctx.holderTerm = res.current; (ctx.roles||[]).forEach(function(r){ r.holder = res.current.holders[r.key]||''; }); }
+     showOverview(true); el('holderMsg').innerText=res.message;
+   }).withFailureHandler(fail).saveRoleHolders(map, term, ctx.date);
  }
 
  // --- 役職ごとの入力 ---
@@ -767,13 +798,13 @@
      +'スピーカーの繋がりたい方を、是非ビジターとしてお呼びしましょう！\n'
      +'➋今後4週間のメイン・プレゼンターは添付画像の通りです。\n'
      +'➌推薦のことばをお待ちしています。（特にメインプレゼンター宛！）\n'
-     +'毎週月曜日の正午までに、PDFにて書記兼会計の'+(rot.secretary||'（書記兼会計）')+'までご提出下さい';
+     +'毎週月曜日の正午までに、PDFにて書記兼会計の'+(w.secretary||rot.secretary||'（書記兼会計）')+'までご提出下さい';
  }
  function renderFb(){
    if(!rot || !(rot.weeks||[]).length) return;
    var i=parseInt(el('rotFbWeek').value,10); if(!(i>=0)) i=0;
    var ws=rot.weeks.slice(i, i+ROT_IMG_WEEKS).map(function(w){
-     return { date:w.date, no:w.no, label:w.label, md:w.md, people:weekPeople(w) };
+     return { date:w.date, no:w.no, label:w.label, md:w.md, secretary:w.secretary, people:weekPeople(w) };
    });
    el('rotFb').value = fbTextOf(ws[0], ws[0].people);
    rotImgName = String(ws[0].date).replace(/\//g,'')+'_スピーカーローテーション.png';
