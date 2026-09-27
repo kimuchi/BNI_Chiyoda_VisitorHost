@@ -185,7 +185,7 @@ function makeRoleServer(routinePath, membersPath) {
   vm.runInContext('Date = this.Date;', sandbox);
 
   const F = sandbox;
-  return { F, sandbox, sheets, members, MEMBERS, SUB_FOR, props };
+  return { F, sandbox, sheets, members, MEMBERS, SUB_FOR, props, makeSheet };
 }
 
 module.exports = { makeRoleServer, makeBlob };

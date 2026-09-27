@@ -50,8 +50,17 @@ def main():
         for a in loose[:5]:
             print('  ' + a)
         sys.exit(1)
+    # 画像：MANUAL.md の画像がそろっていて、manual.html に同じ数だけ（幅・高さつきで）埋め込まれているか
+    shots = re.findall(r'^!\[[^\]]*\]\(([^)\s]+)\)\s*$', man, re.M)
+    missing = [s for s in shots if not os.path.isfile(os.path.join(ROOT, s))]
+    figs = re.findall(r'<figure class="shot"><img src="data:image/[a-z]+;base64,[A-Za-z0-9+/=]+"[^>]*>', page)
+    sized = [f for f in figs if re.search(r' width="\d+" height="\d+"', f)]
+    if missing or len(figs) != len(shots) or len(sized) != len(figs):
+        print('NG: マニュアルの画像: 無いファイル %s ／ MANUAL.md %d 枚・manual.html %d 枚（幅・高さつき %d 枚）。'
+              'python3 tools/build_manual.py で作り直してください' % (missing, len(shots), len(figs), len(sized)))
+        sys.exit(1)
     print('OK: マニュアルの導線はすべて実際のメニュー項目と一致しています（メニュー %d 項目）。'
-          '目次などのページ内リンク %d 個は、マニュアルの中だけで動きます' % (len(labels), len(inner)))
+          '目次などのページ内リンク %d 個は、マニュアルの中だけで動きます。画像 %d 枚' % (len(labels), len(inner), len(shots)))
 
 
 if __name__ == '__main__':

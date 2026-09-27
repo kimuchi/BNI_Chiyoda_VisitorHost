@@ -6,7 +6,11 @@
 manual.html を作り直し、両方をコミットする。
 
     python3 tools/build_manual.py
+
+画像は MANUAL.md に 1行で ![説明](docs/images/名前.webp) と書く。manual.html には画像を埋め込む
+（Apps Script の画面は、別に置いた画像ファイルを読めないため）。画像は tools/make_manual_shots.js で撮る。
 """
+import base64
 import html
 import io
 import os
@@ -15,6 +19,39 @@ import sys
 
 SRC = "MANUAL.md"
 DST = "manual.html"
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+MIME = {".webp": "image/webp", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif"}
+
+
+def image_size(raw):
+    """WebP・PNG の幅と高さ（分からなければ None）。"""
+    if raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
+        kind = raw[12:16]
+        if kind == b"VP8 ":
+            return (int.from_bytes(raw[26:28], "little") & 0x3FFF, int.from_bytes(raw[28:30], "little") & 0x3FFF)
+        if kind == b"VP8L":
+            b = int.from_bytes(raw[21:25], "little")
+            return ((b & 0x3FFF) + 1, ((b >> 14) & 0x3FFF) + 1)
+        if kind == b"VP8X":
+            return (int.from_bytes(raw[24:27], "little") + 1, int.from_bytes(raw[27:30], "little") + 1)
+    if raw[:8] == b"\x89PNG\r\n\x1a\n":
+        return (int.from_bytes(raw[16:20], "big"), int.from_bytes(raw[20:24], "big"))
+    return None
+
+
+def figure(alt, rel):
+    """画像を埋め込んだ <figure>。画像が無ければ止める（マニュアルに穴が空かないように）。
+    幅と高さを書いておく（目次から飛んだあとに画像が読み込まれて、見出しが押し出されないように）。"""
+    path = os.path.join(ROOT, rel)
+    if not os.path.isfile(path):
+        sys.exit("NG: MANUAL.md の画像が見つかりません: " + rel)
+    raw = io.open(path, "rb").read()
+    size = image_size(raw)
+    wh = ' width="%d" height="%d"' % size if size else ""
+    mime = MIME.get(os.path.splitext(path)[1].lower(), "application/octet-stream")
+    return ('<figure class="shot"><img src="data:%s;base64,%s" alt="%s"%s>'
+            '<figcaption>%s</figcaption></figure>'
+            % (mime, base64.b64encode(raw).decode("ascii"), html.escape(re.sub(r"[`*]", "", alt)), wh, inline(alt)))
 
 
 def inline(text):
@@ -75,6 +112,13 @@ def convert(md):
         # 空行
         if not line.strip():
             close_all(); i += 1; continue
+
+        # 画像（1行だけの ![説明](パス)）
+        m = re.match(r"^!\[([^\]]*)\]\(([^)\s]+)\)\s*$", line.strip())
+        if m:
+            close_all()
+            body.append(figure(m.group(1), m.group(2)))
+            i += 1; continue
 
         # 水平線
         if re.match(r"^---+$", line):
@@ -172,6 +216,10 @@ TEMPLATE = """<!DOCTYPE html>
     th, td {{ border: 1px solid #dde2e8; padding: 7px 9px; text-align: left; vertical-align: top; }}
     th {{ background: #f2f6ff; }}
     hr {{ border: none; border-top: 1px solid #e5e5e5; margin: 22px 0; }}
+    figure.shot {{ margin: 12px 0 18px; }}
+    figure.shot img {{ display: block; max-width: 100%; height: auto; border: 1px solid #dde3ea; border-radius: 6px;
+                       box-shadow: 0 1px 4px rgba(0,0,0,.08); }}
+    figure.shot figcaption {{ font-size: 12px; color: #667; margin-top: 5px; }}
     .toc {{ background: #f7f9fc; border: 1px solid #dde3ea; border-radius: 6px; padding: 12px 16px; margin: 14px 0 6px; }}
     .toc b {{ display: block; margin-bottom: 6px; color: #0055ff; }}
     .toc ol {{ margin: 0 0 0 20px; }}
@@ -211,8 +259,7 @@ TEMPLATE = """<!DOCTYPE html>
 
 
 def main():
-    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    src, dst = os.path.join(root, SRC), os.path.join(root, DST)
+    src, dst = os.path.join(ROOT, SRC), os.path.join(ROOT, DST)
     md = io.open(src, encoding="utf-8").read()
     body, toc = convert(md)
     toc_html = "\n".join(

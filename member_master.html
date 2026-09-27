@@ -87,9 +87,11 @@
  var members=[], cats=[];
  window.onload=load;
  function esc(x){var d=document.createElement('span');d.textContent=x==null?'':x;return d.innerHTML;}
- function load(){ busy(true,'読み込み中...'); google.script.run.withSuccessHandler(function(r){
+ // keepMsg … 取り込みなどのあとに読み直すときは、そのお知らせを消さない
+ function load(keepMsg){ busy(true, keepMsg ? '' : '読み込み中...'); google.script.run.withSuccessHandler(function(r){
      busy(false);
      if(!r.ok){ show(r.message,false); return; }
+     if(!keepMsg) show('', null);
      members=r.members||[]; cats=r.categories||[]; render();
    }).withFailureHandler(fail).getMemberMaster(); }
 
@@ -135,7 +137,7 @@
  function busy(b,t){ var bs=document.querySelectorAll('button'); for(var i=0;i<bs.length;i++) bs[i].disabled=b; if(t) show(t,null); }
  function show(t,ok){ var m=document.getElementById('msg'); m.innerText=t; m.style.color= ok===true?'green':(ok===false?'#d00':'#0055ff'); }
  function fail(e){ show('エラー: '+((e&&e.message)?e.message:e),false); busy(false); }
- function done(r){ show(r.message, !!r.ok); busy(false); if(r.ok) load(); }
+ function done(r){ show(r.message, !!r.ok); busy(false); if(r.ok) load(true); }
 
  function save(){ busy(true,'保存中...'); google.script.run.withSuccessHandler(function(r){ show(r.message,!!r.ok); busy(false); }).withFailureHandler(fail).saveMemberMaster(members,null); }
  function migrate(){ if(!confirm('旧「メンバーリスト」シートの内容をこの名簿へ移し、旧シートを非表示にします。よろしいですか？')) return; busy(true,'移行中...'); google.script.run.withSuccessHandler(done).withFailureHandler(fail).migrateMemberListSheet(); }

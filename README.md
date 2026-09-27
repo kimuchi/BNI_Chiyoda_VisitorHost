@@ -100,14 +100,16 @@ BNI_Chiyoda_VisitorHost/
 ├── api_settings.html         # Gemini API・モデル
 │
 ├── MANUAL.md                 # 利用マニュアル（正本）
-├── manual.html               # ↑から生成。画面に出すもの
+├── manual.html               # ↑から生成。画面に出すもの（画像も埋め込む）
+├── docs/images/              # マニュアルのスクリーンショット（WebP。架空のデータで撮ったもの）
 ├── templates/                # ビジター用・事前MTGのpptxテンプレート（大きなテンプレートはDriveに置く。templates/README.md）
 └── tools/                    # 検査・生成スクリプト（GASには送らない）
     │  ── 毎回走らせる検査 ──
     ├── check_gas_names.py    #   名前の衝突・参照先HTMLの検査
     ├── check_html.py         #   divの対応・スクリプトの構文・共通部品の読み込み漏れ
     ├── check_manual_links.py #   マニュアルの導線 ↔ 実際のメニュー
-    ├── build_manual.py       #   MANUAL.md → manual.html
+    ├── build_manual.py       #   MANUAL.md → manual.html（docs/images の画像を埋め込む）
+    ├── make_manual_shots.js  #   マニュアルのスクリーンショットを架空のデータで撮り直す（Chromium・Pillow を使う）
     │  ── 画面をNodeで動かす（ブラウザ無し）──
     ├── lib_minidom.js        #   画面をNodeで動かすための簡易DOM
     ├── check_meeting_dialog.js  # 定例会スライドの画面（前半・後半・ウィークリープレゼン）
@@ -350,7 +352,7 @@ clasp deployments
 
 ### 更新が反映されたかの確かめ方
 
-`コード.js` の `SYSTEM_VERSION_`（例: `2026-09-27m`）が、ウェブアプリのトップページの下と
+`コード.js` の `SYSTEM_VERSION_`（例: `2026-09-27n`）が、ウェブアプリのトップページの下と
 「定例会スライド（前半）」「定例会スライド（後半）」の画面の右上に **「版 …」** として出ます。
 機能を変えたらこの値を変え、`clasp push`・`clasp deploy` のあとに画面で確かめてください。
 

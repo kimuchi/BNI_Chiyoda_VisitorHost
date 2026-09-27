@@ -1,6 +1,8 @@
 # Documentation
 README.md
 MANUAL.md
+# マニュアルの画像（manual.html に埋め込んでいるので、GASには送らない）
+docs/**
 
 # Build scripts (not part of the Apps Script project)
 tools/**
