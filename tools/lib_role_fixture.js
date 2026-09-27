@@ -154,6 +154,20 @@ function makeRoleServer(routinePath, membersPath) {
                    'visitor_post_srv.js', 'role_input_srv.js', 'speaker_rotation_srv.js', 'premtg_srv.js']) {
     vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), sandbox, { filename: f });
   }
+  // メンバー名簿のシート（担当者を「役職」に反映する検査用）。名簿の方の役職は空欄にし、
+  // 役職の書き方を確かめる行は架空の方で足す
+  //   見本 前任 … 13の役職の名前だけ（前の期の担当者）→ 担当者でなければ空欄になる
+  //   見本 兼任 … 13の役職の名前を2つ → 空欄になる
+  //   見本 ウェブ … 全角で書いた役職の名前 → 空欄になる
+  //   見本 経歴・見本 ホスト … 13の役職の名前以外も入っている → そのまま
+  const HEAD = vm.runInContext('MEMBER_HEADERS_', sandbox).slice(), RC = HEAD.indexOf('役職');
+  const rosterRow = (no, name, role) => { const r = HEAD.map(() => ''); r[0] = no; r[2] = name; r[RC] = role; return r; };
+  const ROSTER_EXTRA = [['見本 前任', 'バイスプレジデント'], ['見本 兼任', 'BCP委員・スプレディング委員'], ['見本 ウェブ', 'Ｗｅｂマスター'],
+                        ['見本 経歴', 'ビジホス　過去の経験は、書記兼会計、トレーニング委員'], ['見本 ホスト', 'ビジターホスト']];
+  sheets.push(makeSheet('メンバー名簿', [HEAD].concat(
+    members.map((m) => rosterRow(m.no, m.name, '')),
+    ROSTER_EXTRA.map((x, i) => rosterRow(String(90 + i), x[0], x[1])))));
+
   // 業種区分マスタは初期値（member_master_srv.js の DEFAULT_CATEGORIES_）を使う
   sandbox.getCategoryMaster = () => vm.runInContext('DEFAULT_CATEGORIES_', sandbox)
     .map((r) => ({ key: r[0], label: r[1], block: r[4], order: r[5] }));

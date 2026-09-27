@@ -203,6 +203,7 @@ function importSpreadingMembers(memberJson, renumber) {
            + plan.missing.map(function (x) { return x.name; }).join('、');
     }
     msg += '\n\n写真・一言コメント・紹介してほしい人・協業したい人・更新期限日はそのまま残しています。';
+    if (typeof roleRosterAfterImport_ === 'function') msg += roleRosterAfterImport_();
     console.log('[SPREADING] updated=' + updated + ' added=' + added);
     return { ok: true, message: msg, updated: updated, added: added, total: cur.length };
   } catch (e) {

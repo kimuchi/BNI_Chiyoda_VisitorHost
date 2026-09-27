@@ -109,12 +109,14 @@
    <div class="box" id="holderBox">
      <div style="font-weight:bold;font-size:12.5px;">担当者（半期ごと）</div>
      <div class="muted">役職の担当者は、半期（4月〜9月・10月〜3月）ごとに登録します。
-       一覧のカード、事前MTGのパワポ（役職のページの名前・写真）、ローテーションの案内文に使います。
+       一覧のカード、事前MTGのパワポ（役職のページの名前・写真）、ローテーションの案内文、メンバー名簿の「役職」に使います。
        次の期の担当者も、期を選んで前もって登録できます。</div>
      <div style="margin:6px 0 2px;"><label>期：<select id="holderTerm" onchange="renderHolders()"></select></label></div>
      <div class="muted" id="holderNote"></div>
      <div id="holderTable"></div>
-     <button onclick="saveHolders()">この期の担当者を保存</button> <span id="holderMsg" class="muted"></span>
+     <button onclick="saveHolders()">この期の担当者を保存</button>
+     <button onclick="rosterRoles()">名簿の役職に反映</button> <span id="holderMsg" class="muted"></span>
+     <div class="muted" id="rosterNote" style="margin-top:6px;"></div>
    </div>
  </div>
 
@@ -340,6 +342,39 @@
      if(h && !has) opts.splice(1,0,'<option value="'+esc(h)+'" selected>'+esc(h)+'</option>');
      return '<tr><td>'+esc(r.label)+'</td><td><select id="hd_'+i+'">'+opts.join('')+'</select></td></tr>';
    }).join('') + '</table>';
+   renderRosterNote();
+ }
+ // メンバー名簿の「役職」への反映の様子
+ function renderRosterNote(){
+   var s = ctx.rosterState || {};
+   el('rosterNote').innerText = (ctx.rosterSync ? '✅ '+ctx.rosterSync+'\n' : '')
+     + (s.applied ? 'メンバー名簿の「役職」には、'+s.applied+'期（'+s.label+'）の担当者を反映しています'+(s.at?'（'+s.at+'）':'')+'。'
+                  : 'メンバー名簿の「役職」には、まだ反映していません。')
+     + '期が替わると、新しい期の担当者を自動で反映します（13の役職の名前だけを直し、「ビジターホスト」などほかの書き方は残します）。';
+ }
+ // 選んでいる期の担当者を、画面で直したまま保存していないか
+ function holdersDirty(){
+   var ht = holderTermOf(parseInt(el('holderTerm').value, 10));
+   return !!ht && (ctx.roles||[]).some(function(r, i){ var s=el('hd_'+i); return !!s && s.value !== (ht.holders[r.key]||''); });
+ }
+ // 選んでいる期の担当者を、メンバー名簿の「役職」に反映する（直すところを確かめてから）
+ function rosterRoles(){
+   var term = parseInt(el('holderTerm').value, 10);
+   if(holdersDirty()){ el('holderMsg').innerText='担当者の変更を保存していません。先に「この期の担当者を保存」を押してください。'; return; }
+   el('holderMsg').innerText='メンバー名簿を確かめています…';
+   google.script.run.withSuccessHandler(function(p){
+     if(!p || !p.ok){ el('holderMsg').innerText=(p&&p.message)||'確かめられませんでした。'; return; }
+     var miss = p.notFound.length ? '名簿に見つからない担当者：'+p.notFound.join('、') : '';
+     if(!p.changes.length){ el('holderMsg').innerText='メンバー名簿の「役職」は、もう'+term+'期の担当者どおりです。'+(miss?'（'+miss+'）':''); return; }
+     var lines = p.changes.map(function(c){ return '・'+c.name+'：'+(c.from||'（空欄）')+' → '+(c.to||'（空欄）'); });
+     if(!confirm('メンバー名簿の「役職」を、'+term+'期（'+p.label+'）の担当者に合わせて直します。\n\n'+lines.join('\n')
+                 +(miss?'\n\n'+miss:'')+'\n\nよろしいですか？')){ el('holderMsg').innerText=''; return; }
+     el('holderMsg').innerText='直しています…';
+     google.script.run.withSuccessHandler(function(res){
+       el('holderMsg').innerText = (res && res.message) || '';
+       if(res && res.ok){ ctx.rosterState = res.state; ctx.rosterSync = ''; renderRosterNote(); }
+     }).withFailureHandler(fail).applyRoleHoldersToRoster(term);
+   }).withFailureHandler(fail).previewRoleHoldersRoster(term);
  }
  // 開催日の期の担当者がまだ無く、前の期の担当者を出しているとき（期が替わったとき）に知らせる
  function renderHolderWarn(){
@@ -358,6 +393,7 @@
      el('holderMsg').innerText = res.message || '';
      if(!res.ok) return;
      ctx.holderTerms = res.terms || ctx.holderTerms;
+     if(res.rosterState){ ctx.rosterState = res.rosterState; ctx.rosterSync = ''; }
      if(res.current){ ctx.holderTerm = res.current; (ctx.roles||[]).forEach(function(r){ r.holder = res.current.holders[r.key]||''; }); }
      showOverview(true); el('holderMsg').innerText=res.message;
    }).withFailureHandler(fail).saveRoleHolders(map, term, ctx.date);
