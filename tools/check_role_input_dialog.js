@@ -18,6 +18,8 @@ const server = {
   getRoleInputContext: (d, r) => { calls.push(['ctx', d, r]); return S.F.getRoleInputContext(d, r); },
   saveRoleInput: (d, r, e) => { calls.push(['save', d, r, e]); return S.F.saveRoleInput(d, r, e); },
   saveRoleHolders: (m, t, d) => { calls.push(['holders', m, t, d]); return S.F.saveRoleHolders(m, t, d); },
+  previewRoleHoldersRoster: (t) => { calls.push(['rosterPreview', t]); return S.F.previewRoleHoldersRoster(t); },
+  applyRoleHoldersToRoster: (t) => { calls.push(['rosterApply', t]); return S.F.applyRoleHoldersToRoster(t); },
   getSpeakerRotation: () => { calls.push(['rot']); return S.F.getSpeakerRotation(); },
   saveSpeakerRotation: (d) => { calls.push(['rotSave', d]); return S.F.saveSpeakerRotation(d); },
   importSpeakerRotation: (j) => { calls.push(['rotImport', j]); return S.F.importSpeakerRotation(j); },
@@ -139,6 +141,24 @@ const hc25 = calls.filter((c) => c[0] === 'holders').pop();
 ck(hc25 && hc25[2] === 25 && hc25[3] === '2026/10/07' && els.holderTerm.value === '25' && els.holderNote.innerText === ''
    && els.hd_0.value === hc25[1].president, '25期の保存: ' + JSON.stringify(hc25 && hc25.slice(2)) + ' ' + els.holderTerm.value);
 ck(presidentCard() === '熊谷 龍威', '25期を登録したら、10/7（24期）のカードが変わった: ' + presidentCard());
+// メンバー名簿の「役職」に反映する。いまは23期（今の期）を保存したときに反映した23期の担当者
+step('24期を選ぶ', () => { els.holderTerm.value = '24'; run('renderHolders()'); });
+ck(/23期（2026年4月〜9月）の担当者を反映しています（2026\/09\/26）/.test(els.rosterNote.innerText) && /自動で反映します/.test(els.rosterNote.innerText),
+   '名簿への反映の様子: ' + els.rosterNote.innerText);
+// 担当者の変更を保存していないときは、先に保存してもらう
+step('保存せずに反映しようとする', () => { els.hd_1.value = els.hd_1.options[4].value; run('rosterRoles()'); });
+ck(/先に「この期の担当者を保存」/.test(els.holderMsg.innerText) && !calls.some((c) => c[0] === 'rosterPreview'), '保存していない変更があるのに反映した');
+step('選び直す', () => run('renderHolders()'));
+const nConf = page.log.confirms.length;
+step('名簿の役職に反映', () => run('rosterRoles()'));
+const conf = page.log.confirms[nConf] || '';
+ck(/24期（2026年10月〜2027年3月）の担当者に合わせて直します/.test(conf) && /・熊谷 龍威：（空欄） → プレジデント/.test(conf)
+   && new RegExp('・' + newHolder + '：プレジデント → （空欄）').test(conf), '反映の前の確かめ: ' + conf.slice(0, 300));
+ck(calls.some((c) => c[0] === 'rosterApply' && c[1] === 24) && /24期の担当者に合わせて直しました（\d+名）/.test(els.holderMsg.innerText)
+   && /24期（2026年10月〜2027年3月）の担当者を反映しています/.test(els.rosterNote.innerText),
+   '名簿の役職に反映したあと: ' + els.holderMsg.innerText + ' / ' + els.rosterNote.innerText);
+step('もう一度反映', () => run('rosterRoles()'));
+ck(/もう24期の担当者どおりです/.test(els.holderMsg.innerText) && page.log.confirms.length === nConf + 1, '2回目の反映: ' + els.holderMsg.innerText);
 // 期が替わったのに、新しい期の担当者がまだ無いときは、一覧の上で知らせる
 step('新しい期の担当者が未登録', () => run("ctx.holderTerm={term:26,label:'2027年10月〜2028年3月',registered:false,from:25,holders:{}}; showOverview(true)"));
 ck(shown(els.holderWarn) && /26期（2027年10月〜2028年3月）の担当者がまだ登録されていません。いまは25期の担当者を出しています/.test(els.holderWarn.innerHTML),
@@ -290,4 +310,4 @@ if (fails.length) {
   fails.slice(0, 30).forEach((f) => console.log('   ' + f));
   process.exit(1);
 }
-console.log('OK: 一覧（入力状況・担当者（半期ごと））／役職の入力（推定・前回・人数・保存・シートへの書き込み）／URLでの役職指定／スピーカーローテーション（Facebookの文と画像）／事前MTGのパワポ');
+console.log('OK: 一覧（入力状況・担当者（半期ごと）・名簿の役職への反映）／役職の入力（推定・前回・人数・保存・シートへの書き込み）／URLでの役職指定／スピーカーローテーション（Facebookの文と画像）／事前MTGのパワポ');

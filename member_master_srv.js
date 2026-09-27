@@ -153,6 +153,8 @@ function toDateStr_(v) {
 // opts.membersOnly … 名簿の行だけ返す（表紙・業種区分マスタを読まないぶん速い。サーバーの中から使う）
 function getMemberMaster(opts) {
   try {
+    // 期が替わっていたら、担当者（半期ごと）を「役職」に反映してから読む（role_input_srv.js）
+    if (!(opts && opts.membersOnly) && typeof roleRosterAutoSync_ === 'function') roleRosterAutoSync_();
     var sh = ensureMemberSheet_(), data = sh.getDataRange().getValues(), members = [];
     var col = function (r, i) { return String(r[i] == null ? '' : r[i]).trim(); };
     for (var i = 1; i < data.length; i++) {
@@ -543,6 +545,7 @@ function mergeMembersFromOcr_(extracted) {
     var msg = '読み取り ' + extracted.length + '件を「メンバー名簿」に反映しました。'
             + '（更新 ' + updated + '名 / 新規 ' + added + '名 / 名簿は計 ' + cur.length + '名）\n'
             + '写真・一言コメント・日付など、PDFに無い項目は残しています。';
+    if (typeof roleRosterAfterImport_ === 'function') msg += roleRosterAfterImport_();
     console.log('[OCR] merged updated=' + updated + ' added=' + added);
     return { ok: true, message: msg, updated: updated, added: added, total: cur.length };
   } catch (e) {

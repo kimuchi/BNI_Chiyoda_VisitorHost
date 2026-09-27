@@ -279,6 +279,74 @@ F.saveRoleHolders({ secretary: '原田 雅人' }, 24, '2026/10/07');
   props.BNI_ROLE_HOLDERS_TERMS = keep;
   delete props.BNI_ROLE_HOLDERS;
 }
+
+// ===================== 担当者を、メンバー名簿の「役職」に反映する =====================
+{
+  const roster = sheets.find((s) => s.getName() === 'メンバー名簿');
+  const RC = roster._grid[0].indexOf('役職');
+  const roleIn = (n) => { const r = roster._grid.find((row) => row[2] === n); return r ? r[RC] : undefined; };
+  const setRole = (n, v) => { roster._grid.find((row) => row[2] === n)[RC] = v; };
+  const rosterState = () => JSON.parse(props.BNI_ROLE_ROSTER_STATE || '{}');
+  const autoSync = () => { F.ROLE_ROSTER_CHECKED_ = false; return F.roleRosterAutoSync_(); };
+  const fromTo = (res, n) => { const c = (res.changes || []).find((x) => x.name === n); return c ? c.from + '→' + c.to : '（変更なし）'; };
+  // ここまでの保存で23期を反映しているので、名簿と記録を最初に戻す
+  roster._grid.slice(1).forEach((row) => { row[RC] = ''; });
+  [['見本 前任', 'バイスプレジデント'], ['見本 兼任', 'BCP委員・スプレディング委員'], ['見本 ウェブ', 'Ｗｅｂマスター'],
+   ['見本 経歴', 'ビジホス　過去の経験は、書記兼会計、トレーニング委員'], ['見本 ホスト', 'ビジターホスト'],
+   ['熊谷 龍威', '見本の旧役職']].forEach((x) => setRole(x[0], x[1]));
+  delete props.BNI_ROLE_ROSTER_STATE;
+
+  // 確かめる（名簿はまだ直さない）：24期の担当者どおりにするときの変更
+  let p = F.previewRoleHoldersRoster(24);
+  ck(p.ok && fromTo(p, '熊谷 龍威') === '見本の旧役職→プレジデント' && fromTo(p, '船木 雄大') === '→バイスプレジデント'
+     && fromTo(p, '見本 前任') === 'バイスプレジデント→' && fromTo(p, '見本 兼任') === 'BCP委員・スプレディング委員→'
+     && fromTo(p, '見本 ウェブ') === 'Ｗｅｂマスター→' && fromTo(p, '見本 経歴') === '（変更なし）' && fromTo(p, '見本 ホスト') === '（変更なし）'
+     && p.changes.length === 16 && !p.notFound.length,
+     '名簿の役職の変更（24期）: ' + p.changes.map((c) => c.name + ' ' + c.from + '→' + c.to).join(' / '));
+  ck(roleIn('熊谷 龍威') === '見本の旧役職' && !props.BNI_ROLE_ROSTER_STATE, '確かめただけで名簿を直した');
+  // 反映する
+  let res = F.applyRoleHoldersToRoster(24);
+  ck(res.ok && res.changes.length === 16 && /24期の担当者に合わせて直しました（16名）/.test(res.message)
+     && roleIn('熊谷 龍威') === 'プレジデント' && roleIn('原田 雅人') === '書記兼会計' && roleIn('田中 浩子') === 'イベント委員＆1to1促進委員'
+     && roleIn('見本 前任') === '' && roleIn('見本 ウェブ') === '' && roleIn('見本 経歴') === 'ビジホス　過去の経験は、書記兼会計、トレーニング委員'
+     && roleIn('見本 ホスト') === 'ビジターホスト' && res.state.applied === 24 && res.state.at === '2026/09/26',
+     '名簿の役職に反映（24期）: ' + res.message + ' ' + JSON.stringify(res.state));
+  res = F.applyRoleHoldersToRoster(24);
+  ck(res.ok && !res.changes.length && /24期の担当者どおりでした/.test(res.message), '2回目の反映: ' + res.message);
+  // 次の期（24期）を前もって反映してあれば、今の期（23期）に入っても元に戻さない
+  ck(autoSync() === null && roleIn('熊谷 龍威') === 'プレジデント' && rosterState().seen === 23, '前もって反映した次の期を戻した');
+  // 期が替わったら反映する（22期のときに確かめて、22期を反映していたことにする → 23期に入った）
+  props.BNI_ROLE_ROSTER_STATE = JSON.stringify({ applied: 22, seen: 22 });
+  res = autoSync();
+  ck(res && res.term === 23 && fromTo(res, '熊谷 龍威') === 'プレジデント→' && roleIn('原田 雅人') === '書記兼会計'
+     && res.notFound.join() === '見本 太郎' && rosterState().applied === 23 && rosterState().seen === 23,
+     '期が替わったときの反映（23期）: ' + (res && res.message));
+  ck(autoSync() === null, '同じ期のうちに、もう一度反映した');
+  // 今の期の担当者がまだ無いときは反映しない（登録して保存したときに反映する）
+  const keepTerms = props.BNI_ROLE_HOLDERS_TERMS;
+  const only24 = JSON.parse(keepTerms); delete only24['23'];
+  props.BNI_ROLE_HOLDERS_TERMS = JSON.stringify(only24);
+  props.BNI_ROLE_ROSTER_STATE = JSON.stringify({ applied: 22, seen: 22 });
+  ck(autoSync() === null && rosterState().seen === 23 && rosterState().applied === 22, '未登録の期を反映した');
+  res = F.saveRoleHolders({ president: '熊谷 龍威' }, 23, '2026/09/30');
+  ck(res.ok && res.roster && res.roster.term === 23 && roleIn('熊谷 龍威') === 'プレジデント' && /メンバー名簿の「役職」も直しました/.test(res.message)
+     && res.rosterState.applied === 23, '今の期を登録したときの反映: ' + res.message);
+  props.BNI_ROLE_HOLDERS_TERMS = keepTerms;
+  // 反映してある期の担当者を直すと、名簿も直す（前の担当者の役職は空欄に）
+  F.applyRoleHoldersToRoster(24);
+  res = F.saveRoleHolders({ bcp: '岡安 秀明' }, 24, '2026/10/07');
+  ck(res.ok && roleIn('岡安 秀明') === 'BCP委員' && roleIn('竹中 公基') === '' && /メンバー名簿の「役職」も直しました（2名）/.test(res.message),
+     '反映してある期の担当者を直したとき: ' + res.message);
+  // 反映していない期（25期）を直しても、名簿はそのまま
+  res = F.saveRoleHolders({ bcp: '岡安 秀明' }, 25, '2026/10/07');
+  ck(res.ok && !res.roster && roleIn('竹中 公基') === '', '反映していない期を直したのに名簿を直した');
+  F.saveRoleHolders({ bcp: '竹中 公基' }, 24, '2026/10/07');
+  ck(roleIn('竹中 公基') === 'BCP委員' && roleIn('岡安 秀明') === '', '担当者を戻したときの名簿: ' + roleIn('岡安 秀明'));
+  // 取り込み（Spreadingなど）で役職が前の期のままに戻っても、13の役職は担当者に合わせ直す
+  setRole('熊谷 龍威', 'ビジターホスト'); setRole('見本 前任', 'バイスプレジデント');
+  const note = F.roleRosterAfterImport_();
+  ck(roleIn('熊谷 龍威') === 'プレジデント' && roleIn('見本 前任') === '' && /24期の担当者に合わせ直しました（2名）/.test(note), '取り込みのあと: ' + note);
+}
 const rUnk = rowOfTitle(s24, '割振表');
 s24._grid[rUnk][5] = 'VH・広報';
 ctx = F.getRoleInputContext('2026/10/07', '*');
@@ -295,4 +363,4 @@ if (fails.length) {
   fails.slice(0, 40).forEach((f) => console.log('   ' + f));
   process.exit(1);
 }
-console.log('OK: 項目（担当の列から）・推定・入力状況・保存（行の追加・衝突・数式・役職の制限）・担当者（半期ごと）');
+console.log('OK: 項目（担当の列から）・推定・入力状況・保存（行の追加・衝突・数式・役職の制限）・担当者（半期ごと・名簿の役職への反映）');

@@ -223,11 +223,162 @@ function saveRoleHolders(map, term, dateStr) {
     var out = {};
     for (i = 0; i < keep.length; i++) out[keep[i]] = all[keep[i]];
     PropertiesService.getScriptProperties().setProperty(ROLE_HOLDERS_TERMS_KEY_, JSON.stringify(out));
+    // メンバー名簿の「役職」：いま名簿に反映してある期を直したときと、今の期の担当者を（期が替わってから）
+    // 登録したときは、名簿も直す
+    var st = roleRosterState_(), now = roleTermOf_(new Date()), roster = null;
+    if (st.applied === t || (t === now && !(st.applied >= now))) {
+      try { roster = roleRosterApply_(t, st); st.seen = now; roleRosterSaveState_(st); }
+      catch (e) { console.warn('[ROLE] 名簿の役職を直せませんでした: ' + (e && e.message ? e.message : e)); }
+    }
     var d = parseDate_(dateStr || ''), mt = d ? roleTermOf_(d) : t;
     return { ok: true, term: t, holders: cur, current: roleHoldersOfTerm_(out, mt), terms: roleHolderTermList_(out, mt),
-             message: t + '期（' + roleTermLabel_(t) + '）の担当者を保存しました。' };
+             roster: roster, rosterState: roleRosterStateView_(st),
+             message: t + '期（' + roleTermLabel_(t) + '）の担当者を保存しました。'
+               + (roster && roster.changes.length ? 'メンバー名簿の「役職」も直しました（' + roster.changes.length + '名）。' : '') };
   } catch (e) {
     return { ok: false, message: '担当者の保存に失敗しました: ' + (e && e.message ? e.message : e) };
+  }
+}
+
+// --- 担当者を、メンバー名簿の「役職」に反映する ---
+// 期が替わったら、その期の担当者を名簿の「役職」の列に書く。期が替わったあと、名簿・メンバーブック・
+// 役職ごとの入力などを最初に開いたときに行う（roleRosterAutoSync_）。
+// 「担当者（半期ごと）」の「名簿の役職に反映」で、いつでも（次の期の担当者を前もってでも）反映できる。
+//   ・担当者の行     … 役職を、担当している役職の名前にする（2つ以上なら「・」でつなぐ）
+//   ・担当者でない行 … 役職が13の役職の名前だけ（前の期の担当者など）なら空欄にする
+//   ・それ以外の行   … 「ビジターホスト」「WEB」など、13の役職の名前以外が入っている行は触らない
+var ROLE_ROSTER_STATE_KEY_ = 'BNI_ROLE_ROSTER_STATE';   // { applied: 反映した期, at: 反映した日, seen: 確かめた期 }
+var ROLE_ROSTER_CHECKED_ = false;                        // 1回の実行の中では1回だけ確かめる
+
+function roleRosterState_() {
+  var st = null;
+  try { st = JSON.parse(PropertiesService.getScriptProperties().getProperty(ROLE_ROSTER_STATE_KEY_) || 'null'); }
+  catch (e) { st = null; }
+  return (st && typeof st === 'object') ? st : {};
+}
+function roleRosterSaveState_(st) {
+  PropertiesService.getScriptProperties().setProperty(ROLE_ROSTER_STATE_KEY_, JSON.stringify(st));
+}
+// 画面に出す反映の記録
+function roleRosterStateView_(st) {
+  return { applied: st.applied || null, label: st.applied ? roleTermLabel_(st.applied) : '', at: st.at || '' };
+}
+function roleTermArg_(term) {
+  var t = parseInt(term, 10);
+  return (t > 0 && t < 1000) ? t : roleTermOf_(new Date());
+}
+
+// 役職の欄が、13の役職の名前だけでできているか（「バイスプレジデント」「BCP委員・スプレディング委員」など）
+function roleRosterOnlyLabels_(s) {
+  var labels = {}, parts = String(s == null ? '' : s).split(/[・、,，\/／\s　]+/), n = 0, i;
+  for (i = 0; i < ROLE_DEFS_.length; i++) labels[roleNorm_(ROLE_DEFS_[i].label)] = true;
+  for (i = 0; i < parts.length; i++) {
+    if (!parts[i]) continue;
+    if (!labels[roleNorm_(parts[i])]) return false;
+    n++;
+  }
+  return n > 0;
+}
+
+// 名簿の「役職」を、ある期の担当者どおりにするときの変更（名簿はまだ書き換えない）
+function roleRosterPlan_(term) {
+  var holders = roleHoldersOfTerm_(roleHolderTerms_(), term).holders, byName = {}, i;
+  for (i = 0; i < ROLE_DEFS_.length; i++) {
+    var nm = holders[ROLE_DEFS_[i].key];
+    if (!nm) continue;
+    var k = normName_(nm);
+    (byName[k] = byName[k] || { name: nm, labels: [], found: false }).labels.push(ROLE_DEFS_[i].label);
+  }
+  var sh = ensureMemberSheet_(), col = MEMBER_HEADERS_.indexOf('役職') + 1;
+  var data = sh.getDataRange().getValues(), changes = [], column = [];
+  for (var r = 1; r < data.length; r++) {
+    var name = String(data[r][2] == null ? '' : data[r][2]).trim();
+    var cur = String(data[r][col - 1] == null ? '' : data[r][col - 1]).trim(), to = cur;
+    var h = name ? byName[normName_(name)] : null;
+    if (h) { h.found = true; to = h.labels.join('・'); }
+    else if (name && cur && roleRosterOnlyLabels_(cur)) to = '';
+    column.push([to !== cur ? to : data[r][col - 1]]);
+    if (to !== cur) changes.push({ name: name, from: cur, to: to });
+  }
+  var notFound = [];
+  for (var key in byName) if (!byName[key].found) notFound.push(byName[key].name);
+  return { term: term, label: roleTermLabel_(term), sheet: sh, col: col, column: column, changes: changes, notFound: notFound };
+}
+function roleRosterResult_(plan, applied) {
+  var n = plan.changes.length, msg = '';
+  if (applied) {
+    msg = n ? 'メンバー名簿の「役職」を、' + plan.term + '期の担当者に合わせて直しました（' + n + '名）。'
+            : 'メンバー名簿の「役職」は、' + plan.term + '期の担当者どおりでした。';
+  }
+  if (plan.notFound.length) msg += (msg ? '\n' : '') + '名簿に見つからない担当者：' + plan.notFound.join('、');
+  return { ok: true, term: plan.term, label: plan.label, changes: plan.changes, notFound: plan.notFound, message: msg };
+}
+// 反映する。st（反映の記録）に、反映した期と日を書く（保存は呼ぶ側）
+function roleRosterApply_(term, st) {
+  var plan = roleRosterPlan_(term);
+  if (plan.changes.length) plan.sheet.getRange(2, plan.col, plan.column.length, 1).setValues(plan.column);
+  st.applied = term;
+  st.at = fmtDate_(new Date());
+  return roleRosterResult_(plan, true);
+}
+
+// 期が替わったら、その期の担当者を名簿の「役職」に反映する（名簿・役職ごとの入力などを開いたときに呼ぶ）。
+// 同じ期のうちは、2回目からは何もしない。その期の担当者がまだ登録されていなければ反映しない
+// （登録して保存したときに反映する）。次の期の担当者を前もって反映してあれば、そのまま
+function roleRosterAutoSync_() {
+  if (ROLE_ROSTER_CHECKED_) return null;
+  ROLE_ROSTER_CHECKED_ = true;
+  try {
+    var now = roleTermOf_(new Date()), st = roleRosterState_(), res = null;
+    if (st.seen === now) return null;
+    if (roleHoldersOfTerm_(roleHolderTerms_(), now).registered && !(st.applied >= now)) {
+      res = roleRosterApply_(now, st);
+      console.log('[ROLE] 期が替わったので反映: ' + res.message);
+    }
+    st.seen = now;
+    roleRosterSaveState_(st);
+    return res;
+  } catch (e) {
+    console.warn('[ROLE] 担当者をメンバー名簿の役職に反映できませんでした: ' + (e && e.message ? e.message : e));
+    return null;
+  }
+}
+
+// 名簿を取り込んだあと（Spreading・メンバーリスト(OCR)）：役職を、反映してある期の担当者に合わせ直す。
+// 取り込んだ役職が前の期のままでも、13の役職は「担当者（半期ごと）」の登録どおりになる。お知らせの文を返す
+function roleRosterAfterImport_() {
+  try {
+    var st = roleRosterState_();
+    if (!st.applied) return '';
+    var res = roleRosterApply_(st.applied, st);
+    roleRosterSaveState_(st);
+    return res.changes.length
+      ? '\n\n13の役職は、「担当者（半期ごと）」の' + st.applied + '期の担当者に合わせ直しました（' + res.changes.length + '名）。'
+      : '';
+  } catch (e) {
+    console.warn('[ROLE] 取り込みのあと、役職を合わせ直せませんでした: ' + (e && e.message ? e.message : e));
+    return '';
+  }
+}
+
+// 画面から：名簿の「役職」を、ある期の担当者どおりにしたときの変更を確かめる（書き換えない）
+function previewRoleHoldersRoster(term) {
+  try {
+    return roleRosterResult_(roleRosterPlan_(roleTermArg_(term)), false);
+  } catch (e) {
+    return { ok: false, message: 'メンバー名簿を読めませんでした: ' + (e && e.message ? e.message : e) };
+  }
+}
+// 画面から：名簿の「役職」を、ある期の担当者どおりにする
+function applyRoleHoldersToRoster(term) {
+  try {
+    var st = roleRosterState_(), res = roleRosterApply_(roleTermArg_(term), st);
+    st.seen = roleTermOf_(new Date());
+    roleRosterSaveState_(st);
+    res.state = roleRosterStateView_(st);
+    return res;
+  } catch (e) {
+    return { ok: false, message: 'メンバー名簿の役職を直せませんでした: ' + (e && e.message ? e.message : e) };
   }
 }
 
@@ -379,12 +530,15 @@ function roleMd_(d) {
 function getRoleInputContext(dateStr, roleKey) {
   try {
     routineResetCache_();                                    // シートを足した直後などに備え、毎回読み直す
+    var sync = roleRosterAutoSync_();                        // 期が替わっていたら、担当者を名簿の「役職」に反映
     var meetings = roleMeetingChoices_();
     var date = dateStr || (meetings[0] ? meetings[0].dateValue : '');
     var target = parseDate_(date);
     if (!target) return { ok: false, message: '開催日が分かりません。' };
     var ctx = roleBuildContext_(target, roleKey || '');
     ctx.meetings = meetings;
+    ctx.rosterState = roleRosterStateView_(roleRosterState_());
+    if (sync && sync.changes.length) ctx.rosterSync = '期が替わったので、' + sync.message;
     return ctx;
   } catch (e) {
     console.error('[ROLE] ' + (e && e.stack ? e.stack : e));
