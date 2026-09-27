@@ -345,7 +345,56 @@ F.saveRoleHolders({ secretary: '原田 雅人' }, 24, '2026/10/07');
   // 取り込み（Spreadingなど）で役職が前の期のままに戻っても、13の役職は担当者に合わせ直す
   setRole('熊谷 龍威', 'ビジターホスト'); setRole('見本 前任', 'バイスプレジデント');
   const note = F.roleRosterAfterImport_();
-  ck(roleIn('熊谷 龍威') === 'プレジデント' && roleIn('見本 前任') === '' && /24期の担当者に合わせ直しました（2名）/.test(note), '取り込みのあと: ' + note);
+  ck(roleIn('熊谷 龍威') === 'プレジデント' && roleIn('見本 前任') === '' && /24期の内容に合わせ直しました（2名）/.test(note), '取り込みのあと: ' + note);
+
+  // ===================== 委員会・チーム（半期ごと）=====================
+  // まだ登録していない：既定の名前（ビジターホスト・メンバーシップ委員会）だけで、顔ぶれは空
+  let tt = F.roleTeamsOfTerm_(F.roleTeamTerms_(), 24);
+  ck(!tt.registered && tt.from === null && tt.teams.map((t) => t.name).join('・') === 'ビジターホスト・メンバーシップ委員会'
+     && tt.teams.every((t) => !t.members.length), '未登録の委員会・チーム: ' + JSON.stringify(tt));
+  // 24期の委員会・チームを登録する（名前・顔ぶれの重なりや空欄はそろえる。担当者は変えない）
+  res = F.saveRoleHolders(null, 24, '2026/10/07', [
+    { name: 'ビジターホスト', members: ['岡安 秀明', '成毛 幸夫', '岡安　秀明', ''] },
+    { name: ' メンバーシップ委員会 ', members: ['三澤 浩三'] },
+    { name: 'ビジターホスト', members: ['見本 重なり'] },
+    { name: '', members: ['見本 空欄'] },
+    { name: 'メンター', members: ['田中 秀一', '熊谷 龍威'] }]);
+  tt = F.roleTeamsOfTerm_(F.roleTeamTerms_(), 24);
+  ck(res.ok && /24期（2026年10月〜2027年3月）の役職・委員会を保存しました/.test(res.message) && tt.registered
+     && JSON.stringify(tt.teams) === JSON.stringify([{ name: 'ビジターホスト', members: ['岡安 秀明', '成毛 幸夫'] },
+       { name: 'メンバーシップ委員会', members: ['三澤 浩三'] }, { name: 'メンター', members: ['田中 秀一', '熊谷 龍威'] }])
+     && holderOn('2026/10/07', 'president') === '熊谷 龍威',
+     '委員会・チームの保存: ' + res.message + ' ' + JSON.stringify(tt.teams));
+  // 名簿の役職：委員会・チームを登録した期は、役職の欄を全部その期の内容にする（24期は反映してある期なので、保存したときに直す）
+  ck(res.roster && res.roster.full && roleIn('熊谷 龍威') === 'プレジデント・メンター' && roleIn('岡安 秀明') === 'ビジターホスト'
+     && roleIn('三澤 浩三') === 'メンバーシップ委員会' && roleIn('田中 秀一') === 'メンター' && roleIn('原田 雅人') === '書記兼会計'
+     && roleIn('見本 経歴') === '' && roleIn('見本 ホスト') === '' && /メンバー名簿の「役職」も直しました/.test(res.message),
+     '委員会・チームを登録した期の名簿: ' + JSON.stringify(['熊谷 龍威', '岡安 秀明', '見本 経歴', '見本 ホスト'].map(roleIn)));
+  // 25期（未登録）は24期の顔ぶれを出す。画面に渡す期の一覧にも入る
+  const t25b = F.roleTeamsOfTerm_(F.roleTeamTerms_(), 25);
+  ck(!t25b.registered && t25b.from === 24 && t25b.teams[0].members.join('・') === '岡安 秀明・成毛 幸夫', '25期（未登録）の委員会・チーム: ' + JSON.stringify(t25b));
+  F.ROLE_ROSTER_CHECKED_ = true;
+  const c24t = F.getRoleInputContext('2026/10/07', '');
+  const e24 = c24t.holderTerms.find((t) => t.term === 24), e25 = c24t.holderTerms.find((t) => t.term === 25);
+  ck(c24t.holderTerm.teamsRegistered && e24.teams.length === 3 && !e25.teamsRegistered && e25.teamsFrom === 24,
+     '画面に渡す委員会・チーム: ' + JSON.stringify(c24t.holderTerms.map((t) => [t.term, t.teamsRegistered, t.teamsFrom])));
+  // 委員会・チームがみな空の期は、13の役職だけを直す（役職の欄を全部書き直さない）
+  F.saveRoleHolders(null, 25, '2026/10/07', [{ name: 'ビジターホスト', members: [] }]);
+  ck(F.previewRoleHoldersRoster(25).full === false, 'みな空の委員会・チームで、役職の欄を全部書き直そうとした');
+  delete props.BNI_ROLE_TEAMS_25;
+
+  // 割り振り：役職から読み取る。9月（期の最後の月）は引継ぎの時期なので、次の期（24期）を選んでおく
+  let vh = F.getVisitorHostsFromRoles();
+  ck(vh.ok && vh.now === 23 && vh.pick === 24 && vh.handover && vh.terms.map((t) => t.term).join() === '23,24'
+     && vh.terms[1].names.join('、') === '藤田 礼恵、岡安 秀明、成毛 幸夫' && vh.terms[1].registered
+     && !vh.terms[0].registered && vh.terms[0].from === 24,
+     'ビジターホストの読み取り: ' + JSON.stringify(vh));
+  // 次の期の委員会・チームが未登録なら、今の期
+  const keep24 = props.BNI_ROLE_TEAMS_24;
+  delete props.BNI_ROLE_TEAMS_24;
+  vh = F.getVisitorHostsFromRoles();
+  ck(vh.ok && vh.pick === 23 && !vh.handover && vh.terms[1].names.join('、') === '藤田 礼恵', '次の期が未登録のときの読み取り: ' + JSON.stringify(vh));
+  props.BNI_ROLE_TEAMS_24 = keep24;
 }
 const rUnk = rowOfTitle(s24, '割振表');
 s24._grid[rUnk][5] = 'VH・広報';
@@ -363,4 +412,4 @@ if (fails.length) {
   fails.slice(0, 40).forEach((f) => console.log('   ' + f));
   process.exit(1);
 }
-console.log('OK: 項目（担当の列から）・推定・入力状況・保存（行の追加・衝突・数式・役職の制限）・担当者（半期ごと・名簿の役職への反映）');
+console.log('OK: 項目（担当の列から）・推定・入力状況・保存（行の追加・衝突・数式・役職の制限）・役職と委員会（半期ごと・名簿の役職への反映・ビジターホストの読み取り）');
