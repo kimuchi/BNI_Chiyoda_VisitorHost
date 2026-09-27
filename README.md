@@ -198,19 +198,23 @@ clasp push
 デプロイIDは、URLの `/s/` と `/exec` の間の文字列そのものです。
 
 ```
-https://script.google.com/macros/s/AKfycbxeZur-sqvWW_vr3i1A2VPJ8Bd4.../exec
-                                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ これがデプロイID
+https://script.google.com/macros/s/AKfycbwwG3oVenqKtbf0uQtdO1VfORDE.../exec
+                                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ これがデプロイID
 ```
 
 Apps Scriptの `デプロイ` ＞ `デプロイを管理` にも「デプロイ ID」として表示されています。
 
+**今のURLは、定例会情報共有シートに載っているもの（`AKfycbwwG3oV…`）です。**
+以前は `AKfycbxeZur…` に出していました。古いIDに出しても、メンバーが開く画面は変わりません。
+
 > **⚠ `clasp deployments` の一覧から選ぶときは要注意**
 >
 > ```
-> 3 Deployments.
-> - AKfycbwWgjw...  @HEAD
-> - AKfycbxeZur...  @5 - ウェブアプリ
-> - AKfycbzQQQQ...  @2 - 古いもの
+> 4 Deployments.
+> - AKfycbwWgjw...   @HEAD
+> - AKfycbwwG3oV...  @9 - ウェブアプリ（今のURL）
+> - AKfycbxeZur...   @5 - 以前のウェブアプリ
+> - AKfycbzQQQQ...   @2 - 古いもの
 > ```
 >
 > - **`@HEAD` の行は使えません。**テスト用で、バージョンを割り当てられません。
@@ -223,8 +227,8 @@ Apps Scriptの `デプロイ` ＞ `デプロイを管理` にも「デプロイ 
 
 ```json
 "webapp": {
-  "executeAs": "USER_DEPLOYING",
-  "access": "MYSELF"
+  "executeAs": "USER_ACCESSING",
+  "access": "ANYONE"
 }
 ```
 
@@ -273,7 +277,7 @@ clasp deploy -i <デプロイID> -d "更新内容のメモ"
 
 ```bash
 clasp push
-clasp deploy -i AKfycbxeZur-sqvWW_vr3i1A2VPJ8Bd4iJ9QQ_UOlQSrmIa4LSdDsNDogomVsMhxkNQ-TEzXqA -d "更新"
+clasp deploy -i AKfycbwwG3oVenqKtbf0uQtdO1VfORDEXvzMPsZoA3_YiZkqGXt_iiu-RAX9hzBuJjvw7vGu -d "更新"
 ```
 
 ### `Requested entity was not found.` と出るとき
