@@ -1,7 +1,9 @@
 <!DOCTYPE html>
 <html><head><base target="_top">
 <style>
- body{font-family:sans-serif;margin:0;font-size:13px;display:flex;height:100vh;}
+ /* 縦に並べる：ウェブアプリで開いたときは、先頭に「← メニューに戻る」の帯が入る（帯の下に .app が広がる）*/
+ body{font-family:sans-serif;margin:0;font-size:13px;display:flex;flex-direction:column;height:100vh;}
+ .app{flex:1;min-height:0;display:flex;}
  .side{width:300px;border-right:1px solid #ddd;padding:14px;overflow-y:auto;background:#fafbfd;box-sizing:border-box;}
  .main{flex:1;display:flex;flex-direction:column;min-width:0;background:#8a8f98;}
  .pvbar{padding:6px 12px;font-size:12px;color:#fff;background:#5f646c;display:flex;gap:12px;align-items:center;flex-wrap:wrap;}
@@ -31,6 +33,7 @@
  .modal input,.modal textarea,.modal select{width:100%;padding:5px;border:1px solid #ccc;border-radius:3px;font-size:12px;box-sizing:border-box;}
 </style></head>
 <body>
+<div class="app">
 <div class="side">
   <h3>メンバーブック</h3>
   <div class="hint">データは「メンバー名簿」シートです。写真はDriveから氏名で自動照合されます。<br>
@@ -60,6 +63,7 @@
     <label><input type="checkbox" id="pvCover" onchange="render()"> 表紙も表示</label>
   </div>
   <iframe id="pv" title="メンバーブックのプレビュー"></iframe>
+</div>
 </div>
 
 <div class="modal" id="modal"><div class="inner">

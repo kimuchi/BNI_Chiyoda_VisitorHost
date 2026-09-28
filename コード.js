@@ -2,7 +2,7 @@
 
 // 反映されたか確かめるための版。変更したら日付を更新する。
 // clasp push / デプロイが効いているかは、これを画面で見れば分かる。
-var SYSTEM_VERSION_ = '2026-09-28a';
+var SYSTEM_VERSION_ = '2026-09-28b';
 
 function getSystemVersion() { return SYSTEM_VERSION_; }
 
@@ -87,7 +87,7 @@ function onOpen() {
 
 function openCsvDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createTemplateFromFile('dialog').evaluate().setWidth(1000).setHeight(700), 'データの確認・PDF作成'); }
 function openHolidayDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('holiday').setWidth(450).setHeight(400), '休会日の管理'); }
-function openPdfDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('pdf').setWidth(480).setHeight(540), 'メンバーリスト(OCR)登録'); }
+function openPdfDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('pdf').setWidth(620).setHeight(700), 'メンバーリスト(OCR)の読み取り'); }
 
 // === ダイアログを使わないメンバーリスト(OCR)取り込み ===
 // ダイアログの中身は googleusercontent.com という別ドメインのiframeで表示されるため、
@@ -119,11 +119,18 @@ function importMemberListSimple() {
   var r;
   try { r = processMemberListFromDrive(target); }
   catch (e) { r = { ok: false, message: '取り込み中に例外が発生しました: ' + (e && e.message ? e.message : e) }; }
-
-  ui.alert('メンバーリスト(OCR)の取り込み',
-    (r && r.ok ? '✅ ' : '❌ ')
-    + (usedName ? '読み取ったファイル: ' + usedName + '\n\n' : '')
-    + ((r && r.message) || '結果を取得できませんでした。'), ui.ButtonSet.OK);
+  var head = usedName ? '読み取ったファイル: ' + usedName + '\n\n' : '';
+  if (!r || !r.ok || !r.preview) {
+    ui.alert('メンバーリスト(OCR)の取り込み', (r && r.ok ? '✅ ' : '❌ ') + head + ((r && r.message) || '結果を取得できませんでした。'), ui.ButtonSet.OK);
+    return;
+  }
+  // 読み取った内容を見せて、確かめてから名簿に反映する
+  var ans = ui.alert('メンバーリスト(OCR)の取り込み（確認）',
+    head + ocrSummaryText_(r.summary, false) + '\n\nこの内容で「メンバー名簿」に反映しますか？（名簿の行は氏名で探します）',
+    ui.ButtonSet.OK_CANCEL);
+  if (ans !== ui.Button.OK) { ui.alert('メンバーリスト(OCR)の取り込み', '名簿は変えていません。', ui.ButtonSet.OK); return; }
+  var done = applyMemberListOcr(r.extracted);
+  ui.alert('メンバーリスト(OCR)の取り込み', (done && done.ok ? '✅ ' : '❌ ') + ((done && done.message) || '結果を取得できませんでした。'), ui.ButtonSet.OK);
 }
 
 // BNI素材フォルダ直下にある、一番新しいPDFを探す
@@ -752,7 +759,9 @@ function uploadMemberBook(formObject) {
   return uploadMemberBookBlob_(formObject.pdfFile);
 }
 
-// PDF/画像 blob から Gemini でメンバー(No/氏名)を抽出し「メンバーリスト」へ保存（共通処理）
+// PDF/画像 blob から Gemini でメンバーを読み取る（共通処理）。名簿にはまだ書かない：
+// 読み取った内容と、名簿に当てはめた結果（変わる方・足す方・PDFに無い方・番号の重なり）を返し、
+// 画面で確かめてから applyMemberListOcr で反映する（member_master_srv.js）
 function extractMembersFromPdfBlob_(blob) {
   console.log("[OCR] extract start");
   if (!blob) return { ok: false, message: "ファイルを取得できませんでした。" };
@@ -815,8 +824,8 @@ function extractMembersFromPdfBlob_(blob) {
   var parsed = JSON.parse(mm[0]);
   var rawMembers = parsed.members || [];
 
-  // 読み取った内容は「メンバー名簿」へ統合する。写真・一言コメント・日付など
-  // PDFに無い項目は既存の値を残す（毎回の取り込みで消えてしまわないようにする）。
+  // 読み取った内容は、確かめてから「メンバー名簿」へ統合する（氏名で突き合わせる。写真・一言コメント・日付など
+  // PDFに無い項目は既存の値を残す）。
   var extracted = [];
   for (var k = 0; k < rawMembers.length; k++) {
     var item = rawMembers[k] || {};
@@ -835,7 +844,11 @@ function extractMembersFromPdfBlob_(blob) {
   }
   console.log("[OCR] extracted=" + extracted.length);
   if (extracted.length === 0) return { ok: false, message: "メンバー情報を抽出できませんでした。PDF内容やモデル設定をご確認ください。" };
-  return mergeMembersFromOcr_(extracted);
+  var mm = getMemberMaster();
+  if (!mm.ok) return mm;
+  var summary = ocrPlanSummary_(extracted, mm.members || []);
+  return { ok: true, preview: true, extracted: extracted, summary: summary,
+           message: ocrSummaryText_(summary, false) + "\n\nまだ名簿は変えていません。内容を確かめて「名簿に反映」を押してください。" };
 }
 
 // 方式1: ダイアログから直接アップロード（小さめPDF向け）
