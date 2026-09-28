@@ -26,6 +26,9 @@
  #overNote{margin-top:8px;font-size:11px;color:#b26b00;line-height:1.6;}
  #coverNote{margin:-4px 0 8px;font-size:11px;color:#555;line-height:1.6;}
  #driveNote{margin:-4px 0 10px;font-size:11px;color:#555;line-height:1.6;}
+ #photoState{font-size:11px;color:#888;margin-top:4px;}
+ #pdfWait .inner{width:380px;text-align:center;line-height:1.7;}
+ #pdfWaitStep{margin-top:6px;font-size:12px;color:#0055ff;}
  #msg a{font-weight:normal;margin-right:10px;}
  #coverNote .warn{color:#b26b00;}
  .modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:10;}
@@ -35,6 +38,12 @@
  .modal input,.modal textarea,.modal select{width:100%;padding:5px;border:1px solid #ccc;border-radius:3px;font-size:12px;box-sizing:border-box;}
 </style></head>
 <body>
+<!-- PDFを作ってドライブを更新しているあいだは、画面の操作を止める（途中で直した内容がPDFに入らないため・2回押し）-->
+<div class="modal" id="pdfWait"><div class="inner">
+  <b>PDFを作って、ドライブのメンバーブックを更新しています</b>
+  <div id="pdfWaitStep"></div>
+  <div style="font-size:11px;color:#888;margin-top:6px;">終わるまで、この画面の操作はできません（数秒〜数十秒）。</div>
+</div></div>
 <div class="app">
 <div class="side">
   <h3>メンバーブック</h3>
@@ -59,6 +68,7 @@
   <div id="coverNote"></div>
   <div style="font-size:11px;color:#666;margin:8px 0 4px;">メンバー一覧（この順が掲載順）</div>
   <div class="mlist" id="mlist"></div>
+  <div id="photoState"></div>
   <div id="saveState"></div>
   <div id="overNote"></div>
   <div id="msg"></div>
@@ -231,11 +241,12 @@
    (function step(){
      if(!todo.length){ render(); return; }
      var batch=todo.splice(0,15);
+     var ps=document.getElementById('photoState');
+     ps.textContent='写真を読み込んでいます...（'+done+'/'+total+'）';
      google.script.run.withSuccessHandler(function(r){
        if(r&&r.ok){ for(var k in r.map) photos[k]=r.map[k]; }
        done+=batch.length;
-       if(todo.length) show('写真を読み込んでいます...（'+done+'/'+total+'）');
-       else show(members.length+'名を読み込みました。',true);
+       ps.textContent=todo.length?'写真を読み込んでいます...（'+done+'/'+total+'）':'';
        step();
      }).withFailureHandler(function(){ done+=batch.length; step(); }).getMemberPhotoThumbs(batch);
    })();
@@ -474,47 +485,89 @@
  }
  // PDFを作って、ドライブのメンバーブック（メールで送るPDF）を差し替える。アップロードは要らない。
  // 印刷の画面は通さず、この画面の中で作る（memberbook_pdf.html。印刷と同じ見た目・PDFの中で文字の検索もできる）。
- // 写真は、PDFに要る大きさまで縮めてから使う（元の写真は1枚で数MBあるため）
- var drive={}, lastPdf=null;
+ //   ・写真は、全員分の元の写真をそろえてから作る（一覧のサムネイルの読み込みを待たない）。読めなかった回があれば止める
+ //     （写真の欠けたPDFを、メールで送るファイルに出さないため）。写真が無い方（ドライブに無い）は写真なし
+ //   ・写真は、PDFに要る大きさまで縮めてから使う（元の写真は1枚で数MBあるため）
+ //   ・作っているあいだは画面の操作を止める（途中で直した内容はPDFに入らないため）
+ var drive={}, lastPdf=null, noPhoto={};
+ function pdfBusy(on, t){
+   document.getElementById('pdfWait').style.display=on?'flex':'none';
+   document.getElementById('pdfWaitStep').textContent=on?(t||''):'';
+ }
+ function pdfStep(t){ document.getElementById('pdfWaitStep').textContent=t; }
+ function pdfNames(){
+   return members.map(function(m){return m.name;}).concat(cover.pname?[cover.pname]:[])
+     .filter(function(n,i,a){ return n && a.indexOf(n)===i; });
+ }
+ function pdfPhotos(){
+   var need=pdfNames().filter(function(n){ return !photosB64[n] && !noPhoto[n]; }), total=need.length, done=0;
+   return new Promise(function(resolve, reject){
+     (function step(list){
+       if(!list.length){ resolve(); return; }
+       var batch=list.slice(0,10), rest=list.slice(10);
+       pdfStep('写真を読み込んでいます...（'+done+'/'+total+'）');
+       google.script.run.withSuccessHandler(function(r){
+         if(!r||!r.ok||(r.failed&&r.failed.length)){
+           reject(new Error((r&&r.message)||('写真を読めなかった方がいます'+(r&&r.failed&&r.failed.length?'（'+r.failed.join('、')+'）':'')+'。')));
+           return;
+         }
+         for(var k in r.map) photosB64[k]=r.map[k];
+         (r.missing||[]).forEach(function(n){ if(!r.map[n]) noPhoto[n]=true; });
+         done+=batch.length; step(rest);
+       }).withFailureHandler(function(e){ reject(new Error('写真を読み込めませんでした（'+((e&&e.message)?e.message:e)+'）。')); })
+         .getMemberPhotosBase64(batch);
+     })(need);
+   });
+ }
  function makePdf(){
    if(!needLoaded()) return;
    if(!members.length){ show('メンバーがいません。',false); return; }
-   withPhotoData(function(){
-     busy(true); show('PDFを作っています...');
-     mbpSmallPhotos(photosB64).then(function(small){
-       return mbpBuildPdf(bookHtml({ photos: small }), cover.title || 'BNI メンバーブック', function(t){ show(t); });
-     }).then(function(pdf){
-       lastPdf=pdf;
-       sendPdf(false);
-     }).catch(function(e){
-       busy(false);
-       show('PDFを作れませんでした: '+((e&&e.message)?e.message:e)
-         +'\nGoogle Chrome で開き直して、もう一度お試しください。うまくいかないときは「🖨 冊子を印刷」でPDFを保存し、'
-         +'メニューの「メンバーブック(PDF)の更新」からアップロードしてください。',false);
+   pdfBusy(true, '写真をそろえています...');
+   pdfPhotos().then(function(){
+     pdfStep('写真を整えています...');
+     var use={};
+     pdfNames().forEach(function(n){ if(photosB64[n]) use[n]=photosB64[n]; });
+     return mbpSmallPhotos(use);
+   }).then(function(small){
+     return mbpBuildPdf(bookHtml({ photos: small }), cover.title || 'BNI メンバーブック', pdfStep).then(function(pdf){
+       pdf.photos=members.filter(function(m){ return small[m.name]; }).length;
+       return pdf;
      });
+   }).then(function(pdf){
+     lastPdf=pdf;
+     sendPdf(false);
+   }).catch(function(e){
+     pdfBusy(false);
+     show('PDFを作れませんでした（ドライブのメンバーブックは変えていません）: '+((e&&e.message)?e.message:e)
+       +'\nもう一度押してください。続けて失敗するときは、Google Chrome で開き直すか、「🖨 冊子を印刷」でPDFを保存して、'
+       +'メニューの「メンバーブック(PDF)の更新」からアップロードしてください。',false);
    });
  }
  function sendPdf(recreate){
    if(!lastPdf) return;
-   busy(true); show('ドライブのメンバーブックを差し替えています...（'+lastPdf.pages+'ページ・'+(Math.round(lastPdf.bytes/104857.6)/10)+'MB）');
+   pdfBusy(true, 'ドライブのメンバーブックを差し替えています...（'+lastPdf.pages+'ページ・'+(Math.round(lastPdf.bytes/104857.6)/10)+'MB）');
    google.script.run.withSuccessHandler(function(r){
-     busy(false);
+     pdfBusy(false);
      var m=document.getElementById('msg');
      if(!r||!r.ok){
        show((r&&r.message)||'ドライブのメンバーブックを差し替えられませんでした。',false);
        if(r&&r.canRecreate){
          var b=document.createElement('button'); b.className='sub'; b.style.marginTop='8px'; b.textContent='新しく作り直す（URLが変わります）';
-         b.onclick=function(){ if(confirm('新しいファイルを作って、メールで送るメンバーブックとして登録します。\n送ったメールのリンクは古いままになります。よろしいですか？')) sendPdf(true); };
+         b.onclick=function(){ if(confirm('新しいファイルを作って、メールで送るメンバーブックとして登録します（素材フォルダの「03_生成物」に作ります）。\n'
+           +'URLが変わるので、送ったメールのリンクは古いままになります。よろしいですか？')) sendPdf(true); };
          m.appendChild(document.createElement('br')); m.appendChild(b);
        }
        return;
      }
      drive.url=r.url; drive.updated=new Date().toISOString(); renderDriveNote();
+     var nm=members.length, ph=lastPdf.photos;
      m.innerHTML='<span style="color:green;">'+esc(r.message)+'</span><br>'
+       +'<span style="font-size:11px;color:#555;font-weight:normal;">'+lastPdf.pages+'ページ・写真 '+ph+'/'+nm+'名'
+       +(ph<nm?'（写真が無い方：'+esc(members.filter(function(x){ return noPhoto[x.name]; }).map(function(x){ return x.name; }).join('、'))+'）':'')+'</span><br>'
        +'<a href="'+esc(r.url)+'" target="_blank">📄 ドライブで開く</a>'
        +(r.downloadUrl?'<a href="'+esc(r.downloadUrl)+'" target="_blank">⬇ ダウンロード</a>':'');
      m.style.color='';
-   }).withFailureHandler(fail).saveMemberBookPdfToDrive(lastPdf.base64, 'MemberBook.pdf', !!recreate);
+   }).withFailureHandler(function(e){ pdfBusy(false); fail(e); }).saveMemberBookPdfToDrive(lastPdf.base64, 'MemberBook.pdf', !!recreate);
  }
  function renderDriveNote(){
    var el=document.getElementById('driveNote');

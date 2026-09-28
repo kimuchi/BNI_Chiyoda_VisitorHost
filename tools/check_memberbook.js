@@ -219,7 +219,11 @@ const STUB = (members, cats, cover, drive) => `
           url: 'https://drive.test/file/d/MB/view', downloadUrl: 'https://drive.google.com/uc?export=download&id=MB',
           message: 'ドライブのメンバーブック（メールで送るPDF）を差し替えました。URLはそのままです。' }; },
         getMemberPhotoThumbs: function(){ return { ok: true, map: {} }; },
-        getMemberPhotosBase64: function(){ return { ok: true, map: {} }; },
+        // 写真の実体：window.__photos（氏名 → 画像）にある方だけ。window.__photoFail の方は「読めなかった」
+        getMemberPhotosBase64: function(names){
+          var map = {}, missing = [], failed = [], ph = window.__photos || {}, bad = window.__photoFail || [];
+          (names || []).forEach(function(n){ if (bad.indexOf(n) >= 0) failed.push(n); else if (ph[n]) map[n] = ph[n]; else missing.push(n); });
+          return { ok: true, map: map, missing: missing, failed: failed }; },
         saveMemberBookMember: function(o, m){ return { ok: true, message: '「' + m.name + '」を名簿に保存しました。' }; },
         saveMemberBookData: function(){ return { ok: true, message: 'メンバー名簿を保存しました。' }; },
         // プレジデントの項目は、渡した期（t）の設定として保存したことにする
@@ -233,7 +237,7 @@ const STUB = (members, cats, cover, drive) => `
         r[k] = function(){ var args = Array.prototype.slice.call(arguments);
           window.__calls.push({ fn: k, args: JSON.parse(JSON.stringify(args)) });
           var bad = window.__failNext[k] > 0 && window.__failNext[k]--;
-          setTimeout(function(){ ok && ok(bad ? { ok: false, message: '見本の失敗' } : answer[k].apply(null, args)); }, 5); };
+          setTimeout(function(){ ok && ok(bad ? { ok: false, message: '見本の失敗' } : answer[k].apply(null, args)); }, (window.__delay || {})[k] || 5); };
       });
       return r;
     }
@@ -568,6 +572,39 @@ const STUB = (members, cats, cover, drive) => `
     ck(/見本の失敗/.test(t) && /メンバーブック\(PDF\)の更新/.test(t) && (await lastPdfCall()).length === 3, 'PDFを作れないときの知らせ: ' + t);
     ck(await page.evaluate(() => Array.from(document.querySelectorAll('.side button')).every((b) => !b.disabled)), '失敗のあと、ボタンが押せないまま');
     await page.close();
+    // 写真：一覧のサムネイルの読み込みを待たずに押しても、全員分の写真（元の写真）をそろえてから作る。
+    // 作っているあいだは画面を覆って操作を止める。あとから届いたサムネイルの知らせで、結果を消さない
+    {
+      const p3 = await ctx.newPage();
+      const RED = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==';
+      const names = MEMBERS.slice(0, 5).map((m) => m.name);
+      await p3.addInitScript(`window.__delay = { getMemberPhotoThumbs: 2500, saveMemberBookPdfToDrive: 400 }; window.__photos = ${J(Object.fromEntries(names.map((n) => [n, RED])))};`);
+      await p3.addInitScript(STUB(MEMBERS.slice(0, 5), CATS, COVER, { id: 'MB', url: 'https://drive.test/file/d/MB/view' }));
+      await p3.route('https://memberbook.test/', (r) => r.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: editorHtml() }));
+      await p3.goto('https://memberbook.test/', { waitUntil: 'load' });
+      await p3.waitForFunction(() => /5名を読み込みました/.test(document.getElementById('msg').textContent), null, { timeout: 10000 });
+      ck(await p3.evaluate(() => Object.keys(photos).length) === 0, '（前提）サムネイルがまだ届いていない');
+      await p3.click('#btnPdf');
+      ck(await p3.evaluate(() => document.getElementById('pdfWait').style.display) === 'flex', '作っているあいだ画面を覆っていない');
+      await p3.waitForFunction(() => /差し替えました/.test(document.getElementById('msg').textContent), null, { timeout: 60000 });
+      const got = await p3.evaluate(() => ({ asked: [].concat.apply([], window.__calls.filter((c) => c.fn === 'getMemberPhotosBase64').map((c) => c.args[0])),
+        msg: document.getElementById('msg').textContent, wait: document.getElementById('pdfWait').style.display }));
+      ck(J(got.asked.slice().sort()) === J(names.slice().sort()), 'サムネイルを待たずに、全員分の写真をそろえていない: ' + J(got.asked));
+      ck(/写真 5\/5名/.test(got.msg) && got.wait === 'none', '写真の数の知らせ・覆いが消えない: ' + J(got));
+      await p3.waitForTimeout(3000);                    // サムネイル（2.5秒）が届いたあと
+      ck(await p3.evaluate(() => document.getElementById('photoState').textContent === '' && window.__calls.some((c) => c.fn === 'getMemberPhotoThumbs')),
+         '（前提）サムネイルの読み込みが終わっていない');
+      ck(/差し替えました/.test(await p3.evaluate(() => document.getElementById('msg').textContent)), 'あとから届いたサムネイルの知らせで、結果が消えた');
+      // 写真を読めなかった方がいる：ドライブは変えずに止める（写真の欠けたPDFを出さない）
+      await p3.evaluate((n) => { photosB64 = {}; window.__photoFail = [n]; }, names[1]);
+      const before = await p3.evaluate(() => window.__calls.filter((c) => c.fn === 'saveMemberBookPdfToDrive').length);
+      await p3.click('#btnPdf');
+      await p3.waitForFunction(() => /PDFを作れませんでした/.test(document.getElementById('msg').textContent), null, { timeout: 30000 });
+      const t3 = await p3.evaluate(() => ({ msg: document.getElementById('msg').textContent, n: window.__calls.filter((c) => c.fn === 'saveMemberBookPdfToDrive').length,
+        wait: document.getElementById('pdfWait').style.display }));
+      ck(t3.n === before && /変えていません/.test(t3.msg) && t3.msg.includes(names[1]) && t3.wait === 'none', '写真を読めなかったのに差し替えた・知らせ: ' + J(t3));
+      await p3.close();
+    }
     // まだ登録していないとき
     const p2 = await ctx.newPage();
     await p2.addInitScript(STUB(MEMBERS.slice(0, 2), CATS, COVER, {}));

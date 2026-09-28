@@ -86,11 +86,12 @@ function exportMemberBookHtml(html, fileName) {
 // === ドライブのメンバーブック（メールで送るPDF）を、編集画面で作ったPDFで差し替える ===
 // 編集画面の「PDFを作ってドライブを更新」から（PDFは画面の中で作る：memberbook_pdf.html）。アップロードは要らない。
 // 登録してあるファイル（MEMBER_BOOK_ID。「メンバーブック(PDF)の更新」と同じもの）の中身だけを差し替えるので、
-// URL・ファイル名・共有はそのまま（送ったメールのリンクからも新しい版が見られる。前の版はドライブの「版を管理」に残る）。
-//   ・まだ登録していないとき … 新しく作って登録する（リンクを知っている全員が見られるように）
+// URL・ファイル名・共有はそのまま（送ったメールのリンクからも新しい版が見られる。前の版はドライブの「版を管理」に30日残る）。
+//   ・まだ登録していないとき … 新しく作って登録する（素材フォルダの 03_生成物。リンクを知っている全員が見られるように）
 //   ・ゴミ箱にあるとき … 戻してから差し替える
-//   ・開けない・差し替えられないとき（削除した・編集の権限が無いなど）… 新しくは作らずに止める。
-//     URLが変わると、送ったメールのリンクが古いままになるため。recreate を付けて呼んだときだけ新しく作る
+//   ・見つからないとき（削除した）… 新しくは作らずに止め、「新しく作り直す」を出す（recreate を付けて呼んだときだけ作る）
+//   ・編集の権限が無いとき … 持ち主に編集者にしてもらうよう知らせる（作り直しは出さない。作り直すとURLが変わるため）
+//   ・ほか（一時的なエラーなど）… もう一度押してもらう
 function saveMemberBookPdfToDrive(base64, fileName, recreate) {
   var lock = LockService.getScriptLock();
   try {
@@ -100,15 +101,10 @@ function saveMemberBookPdfToDrive(base64, fileName, recreate) {
     var name = String(fileName || 'MemberBook.pdf');
     var blob = Utilities.newBlob(Utilities.base64Decode(base64), 'application/pdf', name);
     if (id && !recreate) {
-      try {
-        var meta = Drive.Files.get(id, { fields: 'id,trashed', supportsAllDrives: true });
-        if (meta && meta.trashed) Drive.Files.update({ trashed: false }, id, null, { supportsAllDrives: true });
-        Drive.Files.update({}, id, blob, { supportsAllDrives: true });   // 中身だけ（名前・共有はそのまま）
-      } catch (e) {
-        console.error('[MBOOK] PDFの差し替え: ' + (e && e.stack ? e.stack : e));
-        return { ok: false, canRecreate: true, message: 'ドライブのメンバーブック（メールで送るPDF）を差し替えられませんでした。\n'
-          + driveHelpHint_(e) + '\n\n登録してあるファイルを削除した・自分に編集の権限が無い、などが考えられます。'
-          + '\n「新しく作り直す」を押すと、新しいファイルを作って登録します（URLが変わるので、送ったメールのリンクは古いままになります）。' };
+      var r = memberBookReplace_(id, blob);
+      if (!r.ok) {
+        return { ok: false, canRecreate: !!r.notFound, message: 'ドライブのメンバーブック（メールで送るPDF）を差し替えられませんでした。\n' + r.message
+          + (r.notFound ? '\n「新しく作り直す」を押すと、新しいファイルを作って登録します（URLが変わるので、送ったメールのリンクは古いままになります）。' : '') };
       }
       var url = props.getProperty('MEMBER_BOOK_URL') || DriveApp.getFileById(id).getUrl();
       props.setProperty('MEMBER_BOOK_UPDATED', new Date().toISOString());

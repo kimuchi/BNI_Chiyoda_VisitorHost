@@ -25,10 +25,12 @@ const ck = (ok, msg) => { checks++; if (!ok) fails.push(msg); };
 const J = (x) => JSON.stringify(x);
 
 // ===================== 1. サーバー（ドライブの差し替え）=====================
+// Drive の作り物：files … id → { trashed, content, name, parents, shared, owner }。
+//   readOnly … 見られるが編集の権限が無いファイル（差し替えると 403）。transient … 差し替えで一時的なエラー
 function server(opts) {
   const o = opts || {};
   const props = Object.assign({}, o.props || {});
-  const files = Object.assign({}, o.files || {});   // id → { trashed, content, name, shared }
+  const files = Object.assign({}, o.files || {});
   const log = [];
   let seq = 0;
   const box = {
@@ -38,65 +40,81 @@ function server(opts) {
     LockService: { getScriptLock: () => ({ tryLock: () => !o.busy, releaseLock() {} }) },
     Utilities: {
       base64Decode: (s) => Array.from(Buffer.from(s, 'base64')).map((b) => (b > 127 ? b - 256 : b)),
+      base64Encode: (a) => Buffer.from(a.map((b) => b & 255)).toString('base64'),
       newBlob: (bytes, type, name) => {
         let nm = name;
         return { _bytes: Buffer.from(bytes.map((b) => b & 255)), getContentType: () => type, getName: () => nm, setName(n) { nm = n; return this; } };
       },
     },
     Drive: { Files: {
-      get: (id) => {
-        log.push(['get', id]);
-        if (o.denied && o.denied.includes(id)) throw new Error('The user does not have sufficient permissions for file ' + id + '.');
-        if (!files[id]) throw new Error('File not found: ' + id + '.');
+      get: (id, args) => {
+        log.push(['get', id, args && args.fields]);
+        if (!files[id]) throw new Error('API call to drive.files.get failed with error: File not found: ' + id + '.');
+        if (args && /owners/.test(args.fields)) return { owners: [{ displayName: files[id].owner || '見本 管理者', emailAddress: 'owner@example.com' }] };
         return { id, trashed: !!files[id].trashed };
       },
-      update: (res, id, blob) => {
-        log.push(['update', id, J(res), blob ? blob._bytes.toString('latin1').slice(0, 8) : null]);
-        if (o.readOnly && o.readOnly.includes(id)) throw new Error('The user does not have sufficient permissions for file ' + id + '.');
-        if (!files[id]) throw new Error('File not found: ' + id + '.');
+      update: (res, id, blob, args) => {
+        log.push(['update', id, J(res), blob ? blob._bytes.toString('latin1').slice(0, 8) : null, J(args || null)]);
+        if (!files[id]) throw new Error('API call to drive.files.update failed with error: File not found: ' + id + '.');
+        if (o.readOnly && o.readOnly.includes(id) && blob) throw new Error('API call to drive.files.update failed with error: The user does not have sufficient permissions for file ' + id + '.');
+        if (o.transient && blob) throw new Error('API call to drive.files.update failed with error: Internal Error');
         if (res && res.trashed === false) files[id].trashed = false;
         if (blob) files[id].content = blob._bytes;
         return { id };
       },
-      create: (res, blob) => {
+      create: (res, blob, args) => {
         const id = 'new' + (++seq);
-        log.push(['create', id, res.name]);
-        files[id] = { name: res.name, content: blob._bytes, trashed: false };
+        log.push(['create', id, res.name, J(res.parents || null), J(args || null)]);
+        files[id] = { name: res.name, parents: res.parents || null, content: blob._bytes, trashed: false };
         return { id };
       },
     } },
     DriveApp: {
       Access: { ANYONE_WITH_LINK: 'ANYONE_WITH_LINK' }, Permission: { VIEW: 'VIEW' },
-      getFileById: (id) => ({
-        getUrl: () => 'https://drive.test/file/d/' + id + '/view',
-        setSharing: (a, p) => { if (o.noShare) throw new Error('共有は組織の設定で禁止'); log.push(['share', id, a, p]); files[id].shared = true; },
-      }),
+      getFileById: (id) => {
+        if (o.photos && id in o.photos) {
+          if (o.photos[id] === 'broken') throw new Error('写真を読めない');
+          return { getBlob: () => ({ getContentType: () => 'image/jpeg', getBytes: () => Array.from(Buffer.from(o.photos[id])) }) };
+        }
+        return {
+          getUrl: () => 'https://drive.test/file/d/' + id + '/view',
+          setSharing: (a, p) => { if (o.noShare) throw new Error('共有は組織の設定で禁止'); log.push(['share', id, a, p]); files[id].shared = true; },
+        };
+      },
     },
   };
   vm.createContext(box);
   for (const f of ['コード.js', 'assets.js', 'memberbook_srv.js']) vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), box, { filename: f });
+  // 素材フォルダの 03_生成物（無いときは作れない → マイドライブ）
+  box.getAssetFolder_ = (kind) => { if (o.noFolder) throw new Error('素材フォルダが無い'); return { getId: () => 'OUT-' + kind }; };
+  box.findPhotoIdForName_ = (n) => (o.photoIds || {})[n] || '';
   return { box, props, files, log };
 }
 const PDF64 = Buffer.from('%PDF-1.4 見本のPDF').toString('base64');
+const reg = { MEMBER_BOOK_ID: 'mb', MEMBER_BOOK_URL: 'https://drive.test/file/d/mb/view' };
+const pdfBlob = (S) => S.box.Utilities.newBlob(Array.from(Buffer.from('%PDF-1.4')), 'application/pdf', 'a.pdf');
 {
-  // まだ無いとき：新しく作って登録（リンク共有）
+  // まだ無いとき：素材フォルダの 03_生成物 に新しく作って登録（リンク共有）
   let S = server();
   let r = S.box.saveMemberBookPdfToDrive(PDF64, 'MemberBook.pdf');
   ck(r.ok && r.created && S.props.MEMBER_BOOK_ID === 'new1' && S.props.MEMBER_BOOK_URL === 'https://drive.test/file/d/new1/view' && r.url === S.props.MEMBER_BOOK_URL,
      'まだ無いとき: ' + J(r) + ' ' + J(S.props));
-  ck(S.files.new1.shared && S.files.new1.content.toString('latin1').startsWith('%PDF') && /新しく作って登録/.test(r.message), 'まだ無いとき（共有・中身・知らせ）: ' + J(S.log));
+  ck(S.files.new1.shared && J(S.files.new1.parents) === J(['OUT-output']) && S.files.new1.content.toString('latin1').startsWith('%PDF') && /新しく作って登録/.test(r.message),
+     'まだ無いとき（置き場所・共有・中身・知らせ）: ' + J(S.log));
   ck(!!S.props.MEMBER_BOOK_UPDATED && /^\d{4}-\d{2}-\d{2}T/.test(S.props.MEMBER_BOOK_UPDATED), '差し替えた日時が残らない: ' + S.props.MEMBER_BOOK_UPDATED);
   ck(r.downloadUrl === 'https://drive.google.com/uc?export=download&id=new1', 'ダウンロードのURL: ' + r.downloadUrl);
+  S = server({ noFolder: true });
+  r = S.box.saveMemberBookPdfToDrive(PDF64);
+  ck(r.ok && r.created && S.files.new1.parents === null, '素材フォルダが無いときはマイドライブに作る: ' + J(S.log));
 
-  // 登録してあるとき：中身だけ差し替える（新しく作らない・URLそのまま）
-  const reg = { MEMBER_BOOK_ID: 'mb', MEMBER_BOOK_URL: 'https://drive.test/file/d/mb/view' };
+  // 登録してあるとき：中身だけ差し替える（新しく作らない・URLそのまま・共有ドライブでも）
   S = server({ props: reg, files: { mb: { name: '配布用.pdf', content: Buffer.from('old'), trashed: false } } });
   r = S.box.saveMemberBookPdfToDrive(PDF64, 'MemberBook.pdf');
   ck(r.ok && !r.created && r.url === reg.MEMBER_BOOK_URL && S.props.MEMBER_BOOK_ID === 'mb' && S.props.MEMBER_BOOK_URL === reg.MEMBER_BOOK_URL,
      '登録してあるとき: ' + J(r) + ' ' + J(S.props));
   ck(!S.log.some((x) => x[0] === 'create') && S.files.mb.content.toString('latin1').startsWith('%PDF') && S.files.mb.name === '配布用.pdf',
      '中身だけ差し替えていない（新しく作った・名前が変わった）: ' + J(S.log));
-  ck(S.log.filter((x) => x[0] === 'update').every((x) => x[2] === '{}'), '差し替えで名前などを書き換えた: ' + J(S.log));
+  ck(S.log.filter((x) => x[0] === 'update').every((x) => x[2] === '{}' && /supportsAllDrives/.test(x[4])), '差し替えで名前などを書き換えた・共有ドライブに対応していない: ' + J(S.log));
   ck(/URLはそのまま/.test(r.message) && !!S.props.MEMBER_BOOK_UPDATED, '差し替えの知らせ・日時: ' + r.message);
 
   // ゴミ箱にあるとき：戻してから差し替える
@@ -104,14 +122,23 @@ const PDF64 = Buffer.from('%PDF-1.4 見本のPDF').toString('base64');
   r = S.box.saveMemberBookPdfToDrive(PDF64);
   ck(r.ok && !r.created && S.files.mb.trashed === false && S.files.mb.content.toString('latin1').startsWith('%PDF'), 'ゴミ箱にあるとき: ' + J(S.log));
 
-  // 開けない（削除した）・編集の権限が無いとき：新しく作らない。登録（URL）はそのまま。作り直せることを知らせる
-  for (const [label, o] of [['削除した', { files: {} }], ['見る権限も無い', { files: { mb: {} }, denied: ['mb'] }], ['編集の権限が無い', { files: { mb: {} }, readOnly: ['mb'] }]]) {
-    S = server(Object.assign({ props: reg }, o));
-    r = S.box.saveMemberBookPdfToDrive(PDF64);
-    ck(!r.ok && r.canRecreate && !S.log.some((x) => x[0] === 'create') && S.props.MEMBER_BOOK_ID === 'mb' && S.props.MEMBER_BOOK_URL === reg.MEMBER_BOOK_URL
-       && !S.props.MEMBER_BOOK_UPDATED, `${label}: 新しく作った・登録が変わった: ` + J(r) + ' ' + J(S.log));
-    ck(/差し替えられませんでした/.test(r.message) && /新しく作り直す/.test(r.message), `${label}: 知らせ: ` + r.message);
-  }
+  // 見つからない（削除した）：新しく作らない。登録（URL）はそのまま。「新しく作り直す」を出す
+  S = server({ props: reg, files: {} });
+  r = S.box.saveMemberBookPdfToDrive(PDF64);
+  ck(!r.ok && r.canRecreate && !S.log.some((x) => x[0] === 'create') && S.props.MEMBER_BOOK_URL === reg.MEMBER_BOOK_URL && !S.props.MEMBER_BOOK_UPDATED,
+     '削除したとき: ' + J(r) + ' ' + J(S.log));
+  ck(/見つかりませんでした/.test(r.message) && /新しく作り直す/.test(r.message), '削除したときの知らせ: ' + r.message);
+  // 編集の権限が無い：持ち主に編集者にしてもらう。作り直しは出さない（URLが変わるため）。権限の許可（OAuth）の案内は出さない
+  S = server({ props: reg, files: { mb: { owner: '見本 管理者' } }, readOnly: ['mb'] });
+  r = S.box.saveMemberBookPdfToDrive(PDF64);
+  ck(!r.ok && !r.canRecreate && !S.log.some((x) => x[0] === 'create') && S.props.MEMBER_BOOK_URL === reg.MEMBER_BOOK_URL,
+     '編集の権限が無いとき: ' + J(r) + ' ' + J(S.log));
+  ck(/権限がありません/.test(r.message) && /見本 管理者/.test(r.message) && /編集者/.test(r.message) && !/動作確認/.test(r.message) && !/「新しく作り直す」を押すと/.test(r.message),
+     '編集の権限が無いときの知らせ: ' + r.message);
+  // 一時的なエラー：もう一度。作り直しは出さない
+  S = server({ props: reg, files: { mb: {} }, transient: true });
+  r = S.box.saveMemberBookPdfToDrive(PDF64);
+  ck(!r.ok && !r.canRecreate && !S.log.some((x) => x[0] === 'create') && /もう一度/.test(r.message), '一時的なエラー: ' + J(r));
   // 「新しく作り直す」：新しく作って、登録を替える
   S = server({ props: reg, files: {} });
   r = S.box.saveMemberBookPdfToDrive(PDF64, 'MemberBook.pdf', true);
@@ -130,13 +157,32 @@ const PDF64 = Buffer.from('%PDF-1.4 見本のPDF').toString('base64');
   // 編集画面に出す様子
   S = server({ props: Object.assign({ MEMBER_BOOK_UPDATED: '2026-09-28T06:00:00.000Z' }, reg) });
   ck(J(S.box.memberBookDriveInfo_()) === J({ id: 'mb', url: reg.MEMBER_BOOK_URL, updated: '2026-09-28T06:00:00.000Z' }), 'ドライブの様子: ' + J(S.box.memberBookDriveInfo_()));
-  // 「メンバーブック(PDF)の更新」（アップロード）：差し替えも、はじめて作るときも日時を残す
+
+  // 「メンバーブック(PDF)の更新」（アップロード）：差し替えはURLそのまま。見つからないときだけ新しく作り、URLが変わったと知らせる。
+  // 編集の権限が無い・一時的なエラーのときは、新しく作らない（勝手にURLが変わらないように）
   S = server({ props: reg, files: { mb: {} } });
-  let u = S.box.uploadMemberBookBlob_(S.box.Utilities.newBlob(Array.from(Buffer.from('%PDF-1.4')), 'application/pdf', 'a.pdf'));
-  ck(u.msg === '更新しました。' && u.url === reg.MEMBER_BOOK_URL && !!S.props.MEMBER_BOOK_UPDATED, 'アップロードで差し替え: ' + J(u));
+  let u = S.box.uploadMemberBookBlob_(pdfBlob(S));
+  ck(/更新しました/.test(u.msg) && u.url === reg.MEMBER_BOOK_URL && !!S.props.MEMBER_BOOK_UPDATED && !S.log.some((x) => x[0] === 'create'), 'アップロードで差し替え: ' + J(u));
   S = server();
-  u = S.box.uploadMemberBookBlob_(S.box.Utilities.newBlob(Array.from(Buffer.from('%PDF-1.4')), 'application/pdf', 'a.pdf'));
+  u = S.box.uploadMemberBookBlob_(pdfBlob(S));
   ck(u.msg === '新規登録しました。' && S.props.MEMBER_BOOK_ID === 'new1' && S.files.new1.shared && !!S.props.MEMBER_BOOK_UPDATED, 'アップロードで新しく登録: ' + J(u));
+  S = server({ props: reg, files: {} });
+  u = S.box.uploadMemberBookBlob_(pdfBlob(S));
+  ck(/見つからない/.test(u.msg) && /URLが変わりました/.test(u.msg) && S.props.MEMBER_BOOK_ID === 'new1', 'アップロード（削除してあった）: ' + J(u));
+  for (const [label, o] of [['編集の権限が無い', { readOnly: ['mb'] }], ['一時的なエラー', { transient: true }]]) {
+    S = server(Object.assign({ props: reg, files: { mb: {} } }, o));
+    u = S.box.uploadMemberBookBlob_(pdfBlob(S));
+    ck(u.error && !u.msg && !S.log.some((x) => x[0] === 'create') && S.props.MEMBER_BOOK_URL === reg.MEMBER_BOOK_URL && !S.props.MEMBER_BOOK_UPDATED,
+       `アップロード（${label}）: 新しく作った・URLが変わった: ` + J(u) + ' ' + J(S.log));
+  }
+  S = server({ noShare: true });
+  u = S.box.uploadMemberBookBlob_(pdfBlob(S));
+  ck(/共有を設定できませんでした/.test(u.msg), 'アップロード（共有できない）の知らせ: ' + J(u));
+
+  // 写真の実体：写真の無い方（missing）と、あるのに読めなかった方（failed）を分ける
+  S = server({ photoIds: { '見本 一郎': 'p1', '見本 花子': 'p2' }, photos: { p1: 'JPEG', p2: 'broken' } });
+  const ph = S.box.getMemberPhotosBase64(['見本 一郎', '見本 花子', '見本 三郎']);
+  ck(ph.ok && Object.keys(ph.map).join() === '見本 一郎' && J(ph.missing) === J(['見本 三郎']) && J(ph.failed) === J(['見本 花子']), '写真の実体: ' + J(ph));
 }
 
 // ===================== 2. 画面の中で作るPDF =====================
@@ -209,7 +255,13 @@ for (let i = 0; i < 22; i++) {
     refer: ['税理士・弁護士', '新しく店舗を出す飲食店のオーナー', LONG.repeat(3), LONG.repeat(9), '司法書士'][k],
     collab: ['司法書士', '保険・不動産・士業', LONG.repeat(2), LONG.repeat(9), ''][k] });
 }
-const COVER = { title: 'BNI 見本 chapter Member Book', term: '24期', pname: '見本 会長', prole: '見本チャプター\n第24期プレジデント',
+// 特別な文字：異体字セレクタ付きの名前・濁点が分かれた名前（NFD）・BMP の外の字・PowerPoint の改行（U+000B）などの制御文字
+MEMBERS[19].name = '葛\u{E0100}城 見本';
+MEMBERS[20].name = '見本 カ\u3099ク';
+MEMBERS[21].name = '\u{20BB7}田 見本';
+MEMBERS[19].comment = '一行め\u000B二行め';
+MEMBERS[20].company = '見本\u000C商事';
+const COVER = { title: 'BNI 見本 chapter Member Book \u{20BB7}', term: '24期', pname: '見本 会長', prole: '見本チャプター\n第24期プレジデント',
   ptext: 'あいさつの文です。'.repeat(40), philosophyTitle: 'BNIの理念', philosophy: '理念の本文です。'.repeat(6), aboutTitle: 'チャプターとは？',
   about: '紹介の本文です。'.repeat(5), benefitsTitle: 'メリット', benefits: '1.メリット　2.メリット\n3.メリット',
   scheduleFrom: '7:15', scheduleTo: '9:15', schedule: Array.from({ length: 12 }, (_, i) => '項目' + (i + 1)).join('\n'),
@@ -246,10 +298,17 @@ const strip = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8').replace(/^<scri
     const photos = {};
     members.forEach((m, i) => { if (i % 3 !== 2) photos[m.name] = photo(i * 37, i % 2 ? 2400 : 300, i % 2 ? 3200 : 400); });
     photos[cover.pname] = photo(200, 3000, 2000);
+    // 背景を抜いた（透明な）PNG の写真
+    const png = (() => { const c = document.createElement('canvas'); c.width = 1000; c.height = 1300; const g = c.getContext('2d');
+      g.fillStyle = '#c33'; g.beginPath(); g.arc(500, 500, 300, 0, 7); g.fill(); return c.toDataURL('image/png'); })();
+    photos[members[2].name] = png;
     const size = (d) => new Promise((ok) => { const im = new Image(); im.onload = () => ok([im.naturalWidth, im.naturalHeight]); im.src = d; });
     const small = await mbpSmallPhotos(photos);
     const sizes = {};
     for (const n of Object.keys(small)) sizes[n] = await size(small[n]);
+    const alpha = await new Promise((ok) => { const im = new Image(); im.onload = () => { const c = document.createElement('canvas'); c.width = im.naturalWidth; c.height = im.naturalHeight;
+      const g = c.getContext('2d'); g.drawImage(im, 0, 0); ok(g.getImageData(1, 1, 1, 1).data[3]); }; im.src = small[members[2].name]; });
+    const pngKind = small[members[2].name].slice(0, 15);
     const again = await mbpSmallPhotos(photos);
     const steps = [];
     const html = bookHtml({ photos: small });
@@ -274,15 +333,17 @@ const strip = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8').replace(/^<scri
     const steps2 = [];
     const pdf2 = await mbpBuildPdf(html, cover.title, (t) => steps2.push(t));
     MBP_MAX_BYTES = keep;
-    return { pdf, ms, steps, sizes, sameAgain: Object.keys(small).every((n) => again[n] === small[n]), small: Object.keys(small).length,
+    return { pdf, ms, steps, sizes, alpha, pngKind, sameAgain: Object.keys(small).every((n) => again[n] === small[n]), small: Object.keys(small).length,
              unchangedSmall: small[members[4].name] === photos[members[4].name], loaded, css: css.length, cssRules: (css.match(/@font-face/g) || []).length,
              clipLines, pdf2: { base64: pdf2.base64, bytes: pdf2.bytes }, steps2, html };
   }, { render: strip('memberbook_render.html'), pdfjs: strip('memberbook_pdf.html'), members: MEMBERS, cats: CATS, cover: COVER });
 
-  // 写真を縮める（長い辺 480px まで。小さな写真はそのまま。2回目は覚えたものを使う）
-  ck(R.small === 16, '写真の数: ' + R.small);
-  ck(Object.values(R.sizes).every(([w, h]) => Math.max(w, h) <= 480), '写真が縮んでいない: ' + J(R.sizes));
-  ck(J(R.sizes[MEMBERS[1].name]) === J([360, 480]) && J(R.sizes[COVER.pname]) === J([480, 320]), '縮めた写真の大きさ（縦横の比はそのまま）: ' + J(R.sizes));
+  // 写真を縮める（短い辺 360px まで。小さな写真はそのまま。2回目は覚えたものを使う）。透明な PNG は透明のまま
+  ck(R.small === 17, '写真の数: ' + R.small);
+  ck(Object.values(R.sizes).every(([w, h]) => Math.min(w, h) <= 360), '写真が縮んでいない: ' + J(R.sizes));
+  ck(J(R.sizes[MEMBERS[1].name]) === J([360, 480]) && J(R.sizes[COVER.pname]) === J([540, 360]) && J(R.sizes[MEMBERS[2].name]) === J([360, 468]),
+     '縮めた写真の大きさ（縦横の比はそのまま・短い辺で）: ' + J(R.sizes));
+  ck(R.pngKind === 'data:image/png;' && R.alpha === 0, '透明な PNG の写真が白く塗られた: ' + J([R.pngKind, R.alpha]));
   ck(R.unchangedSmall && R.sameAgain, '小さな写真はそのまま・2回目は覚えたもの: ' + J([R.unchangedSmall, R.sameAgain]));
 
   // PDF の作り
@@ -297,18 +358,25 @@ const strip = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8').replace(/^<scri
   const font = Object.values(pdf.objs).find((o) => /\/Subtype\/Type0/.test(o.dict));
   ck(font && /\/Encoding\/UniJIS-UCS2-H/.test(font.dict) && /\/ToUnicode \d+ 0 R/.test(font.dict), '文字の書体（UniJIS-UCS2-H・ToUnicode）: ' + (font && font.dict));
   const info = pdf.info ? pdf.info.dict : '', tt = (info.match(/\/Title<FEFF([0-9A-F]*)>/) || [])[1];
-  ck(tt && ucs2(tt) === COVER.title, 'PDFの題: ' + info);
+  ck(tt && ucs2(tt) === COVER.title, 'PDFの題（BMP の外の字もそのまま）: ' + info);
   ck(R.pdf.bytes < 6 * 1024 * 1024, 'PDFが大きすぎる: ' + R.pdf.bytes);
   ck(R.steps.length === 3 && /3\/3ページ/.test(R.steps[2]), '進み具合の知らせ: ' + J(R.steps));
 
   // 見えない文字（検索・コピー用）
   const flat = (t) => t.replace(/\s/g, '');
-  ck(flat(pages[0].text).includes(flat(COVER.title)) && flat(pages[0].text).includes('タイムスケジュール') && flat(pages[0].text).includes('見本会長'),
+  // 検索用の文字：合成した形（NFC）・異体字セレクタは除く・BMP の外の字は〓・制御文字は除く
+  const searchable = (x) => flat(x.normalize('NFC').replace(/[\uFE00-\uFE0F]|[\u{E0100}-\u{E01EF}]/gu, '').replace(/[\u0000-\u001F]/g, '')
+    .replace(/[\u{10000}-\u{10FFFF}]/gu, '\u3013'));
+  ck(flat(pages[0].text).includes(searchable(COVER.title)) && flat(pages[0].text).includes('タイムスケジュール') && flat(pages[0].text).includes('見本会長'),
      '表紙の文字: ' + pages[0].text.slice(0, 120));
   MEMBERS.forEach((m, i) => {
     const p = pages[1 + Math.floor(i / 18)], t = flat(p.text);
-    ck(t.includes(flat(m.name)) && t.includes(flat(m.company)), `${m.no} ${m.name}: お名前・会社名が文字に無い`);
+    ck(t.includes(searchable(m.name)) && t.includes(searchable(m.company)), `${m.no} ${m.name}: お名前・会社名が文字に無い`);
   });
+  ck(pages[2].lines.some((l) => l.s === '葛城 見本') && pages[2].lines.some((l) => l.s === '見本 ガク') && pages[2].lines.some((l) => l.s === '〓田 見本'),
+     '特別な文字の名前が1行の文字になっていない: ' + J(pages[2].lines.filter((l) => /見本/.test(l.s) && l.s.length < 8).map((l) => l.s)));
+  ck(!pages.some((p) => /[\u0000-\u001F]/.test(p.text.replace(/\n/g, ''))) && flat(pages[2].text).includes('一行め二行め') && flat(pages[2].text).includes('見本商事'),
+     '制御文字（U+000B など）があってもPDFが作れて、文字に制御文字が入らない');
   ck(pages[1].lines.some((l) => l.s === '見本 花子'), 'お名前が1行の文字として入っていない（検索できない）');
   // とても長い一言（入りきらず、枠で上下が切れる）：見えている行だけ入る
   ck(!flat(pages[1].text).includes('切れて見えない終わりの文') && !flat(pages[1].text).includes('切れて見えない始めの文')
@@ -370,6 +438,67 @@ const strip = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8').replace(/^<scri
     if (process.env.V) console.log(`  ${i + 1}ページめ: 違う点 ${(d.big * 100).toFixed(3)}%`);
   }
   if (process.env.V) console.log('  PDF: ' + R.pdf.bytes + ' bytes, ' + Math.round(R.ms) + 'ms');
+
+  // 書体のファイルの1つが読めない（404）・届かない（止まる）とき（書体を渡したときだけ）：
+  // 冊子はその字をパソコンの書体で収めるので、PDFでもその字は埋め込まずに同じ書体で描く（入れると字の幅が変わる）。止まっても待ち続けない
+  if (FONT_DIR) {
+    const css = fs.readFileSync(path.join(FONT_DIR, 'css.txt'), 'utf8');
+    const cp = '見'.codePointAt(0), rule = (css.match(/@font-face\s*\{[^}]*\}/g) || []).find((b) => {
+      const ur = (b.match(/unicode-range:\s*([^;]+);/) || [])[1] || '';
+      return ur.split(',').some((t) => { const m = t.trim().replace(/^U\+/i, '').split('-').map((x) => parseInt(x, 16)); return cp >= m[0] && cp <= (m[1] || m[0]); });
+    });
+    const bad = rule.match(/url\(\s*['"]?([^'")]+)/)[1];
+    for (const mode of ['404', '止まる']) {
+      const c3 = await browser.newContext({ deviceScaleFactor: 1 });
+      await routeFonts(c3);
+      await c3.route((u) => u.href === bad, (r) => { if (mode === '404') r.fulfill({ status: 404, body: '' }); /* 止まる：返さない */ });
+      const p3 = await c3.newPage();
+      await p3.route('https://mb.test/', (r) => r.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: '<!DOCTYPE html><html><body></body></html>' }));
+      await p3.goto('https://mb.test/');
+      const t0 = Date.now();
+      const give = new Promise((ok) => setTimeout(() => ok({ ok: false, message: '60秒たっても終わらない' }), 60000));
+      const F3 = await Promise.race([give, p3.evaluate(async ({ render, pdfjs, members, cats, cover }) => {
+        window.members = members; window.cats = cats; window.cover = cover; window.photosB64 = {};
+        window.catOf = (k) => cats.find((c) => c.key === k) || null;
+        (0, eval)(render); (0, eval)(pdfjs);
+        try { const r = await mbpBuildPdf(bookHtml({ photos: {} }), cover.title, () => {}); return { ok: true, base64: r.base64 }; }
+        catch (e) { return { ok: false, message: String(e && e.message || e) }; }
+      }, { render: strip('memberbook_render.html'), pdfjs: strip('memberbook_pdf.html'), members: MEMBERS.slice(0, 18), cats: CATS, cover: COVER })]);
+      const sec = (Date.now() - t0) / 1000;
+      ck(F3.ok && sec < 40, `書体のファイルが${mode}とき: PDFを作れない・時間がかかりすぎる（${sec.toFixed(1)}秒）: ` + (F3.message || ''));
+      if (F3.ok && mode === '404') {
+        // 冊子（同じく書体の1つが読めない）と見比べる
+        const pg = pagesOf(readPdf(Buffer.from(F3.base64, 'base64')))[1];
+        const c4 = await browser.newContext({ deviceScaleFactor: 2.5 });
+        await routeFonts(c4);
+        await c4.route((u) => u.href === bad, (r) => r.fulfill({ status: 404, body: '' }));
+        const p4 = await c4.newPage();
+        const html = await p3.evaluate(() => bookHtml({ photos: {} }));
+        await p4.route('https://mb.test/book', (r) => r.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: html }));
+        await p4.goto('https://mb.test/book');
+        await p4.waitForFunction(() => document.documentElement.getAttribute('data-fitted') === '1', null, { timeout: 30000 });
+        await p4.addStyleTag({ content: '.page{margin:0!important;box-shadow:none!important;} body{padding:0!important;background:#fff!important;}' });
+        await p4.evaluate(() => document.querySelectorAll('.page').forEach((p, j) => { p.style.display = j === 1 ? '' : 'none'; }));
+        const shot = (await (await p4.$$('.page'))[1].screenshot()).toString('base64');
+        const d = await p4.evaluate(async ({ a, b }) => {
+          const load = (src) => new Promise((ok) => { const im = new Image(); im.onload = () => ok(im); im.src = src; });
+          const [ia, ib] = await Promise.all([load('data:image/png;base64,' + a), load('data:image/jpeg;base64,' + b)]);
+          const W = 198, H = 280, px = (im) => { const c = document.createElement('canvas'); c.width = W * 10; c.height = H * 10; const g = c.getContext('2d'); g.drawImage(im, 0, 0);
+            const d = g.getImageData(0, 0, W * 10, H * 10).data, out = new Float32Array(W * H);
+            for (let y = 0; y < H * 10; y++) for (let x = 0; x < W * 10; x++) { const k = (y * W * 10 + x) * 4; out[Math.floor(y / 10) * W + Math.floor(x / 10)] += (0.299 * d[k] + 0.587 * d[k + 1] + 0.114 * d[k + 2]) / 100; }
+            return out; };
+          const x = px(ia), y = px(ib); let big = 0;
+          for (let k = 0; k < x.length; k++) if (Math.abs(x[k] - y[k]) > 24) big++;
+          return big / (W * H);
+        }, { a: shot, b: pg.image.jpeg.toString('base64') });
+        ck(d < 0.02, `書体のファイルが読めないとき: 冊子と見た目が違う（${(d * 100).toFixed(2)}%）`);
+        if (process.env.V) console.log(`  書体の1つが読めないとき: 違う点 ${(d * 100).toFixed(3)}%`);
+        await c4.close();
+      }
+      if (process.env.V) console.log(`  書体のファイルが${mode}とき: ${sec.toFixed(1)}秒`);
+      await c3.close();
+    }
+  }
   await browser.close();
 
   console.log(`メンバーブックのPDF（画面の中で作る・ドライブの差し替え）: 検査 ${checks} 件` + (FONT_DIR ? '（書体を埋め込む）' : '（パソコンの書体）'));
