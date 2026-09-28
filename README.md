@@ -131,7 +131,8 @@ BNI_Chiyoda_VisitorHost/
     ├── make_manual_shots.js  #   マニュアルのスクリーンショットを架空のデータで撮り直す（Chromium・Pillow を使う）
     ├── clean_pptx_meta.py    #   pptxのファイルの情報（作成者・コメントの作成者・変更の記録・縮小画像）を消す／--check で確かめる
     ├── check_memberbook.js   #   メンバーブック（Chromium で組版を測る：長い文字を枠に収める・会社での役職とBNIの役職／
-    │                         #     編集画面の「反映」ですぐ名簿に保存）。Googleフォントを写したディレクトリを渡すとその書体で測る
+    │                         #     編集画面の「反映」ですぐ名簿に保存／期ごとのプレジデント設定）。Googleフォントを写したディレクトリを渡すとその書体で測る
+    ├── check_allocation_ai.js #  割り振り表の「AIに提案させる」（待機メンバーの情報はメンバー名簿から文字で渡す・送らない情報・返事の反映）
     │  ── 画面をNodeで動かす（ブラウザ無し）──
     ├── lib_minidom.js        #   画面をNodeで動かすための簡易DOM
     ├── check_meeting_dialog.js  # 定例会スライドの画面（前半・後半・ウィークリープレゼン）
@@ -404,7 +405,7 @@ clasp deployments
 
 ### 更新が反映されたかの確かめ方
 
-`コード.js` の `SYSTEM_VERSION_`（例: `2026-09-27z`）が、ウェブアプリのトップページの下と
+`コード.js` の `SYSTEM_VERSION_`（例: `2026-09-28a`）が、ウェブアプリのトップページの下と
 「定例会スライド（前半）」「定例会スライド（後半）」の画面の右上に **「版 …」** として出ます。
 機能を変えたらこの値を変え、`clasp push`・`clasp version`・`clasp deploy` のあとに画面で確かめてください。
 

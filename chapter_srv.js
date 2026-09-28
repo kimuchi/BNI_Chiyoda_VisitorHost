@@ -118,7 +118,8 @@ function getChapterSettings() {
 
 // s … { name, region, term（いまの期）, meetingBaseDate, meetingBaseCount,
 //       seconds: { weekly, startup, visitor, referral }（秒。無ければ今の値のまま）}
-// 期の番号を付け直したときは、期ごとに保存してある役職・チームも同じだけずらす（中身が別の期に見えないように）
+// 期の番号を付け直したときは、期ごとに保存してある役職・チーム・メンバーブックのプレジデント設定も同じだけずらす
+// （中身が別の期に見えないように）
 function saveChapterSettings(s) {
   try {
     s = s || {};
@@ -143,7 +144,12 @@ function saveChapterSettings(s) {
 
     var passed = roleTermOf_(new Date()) - old.termBase;         // 2026年4月〜9月から、いまの期まで何期進んだか
     var termBase = term - passed, delta = termBase - old.termBase;
-    if (delta) roleShiftTerms_(delta);
+    if (delta) {
+      // メンバーブックの期ごとのプレジデント設定も（member_master_srv.js）。担当者より先にずらす
+      // （期ごとにする前の1件を引き継ぐとき、ずらす前の担当者と比べて既定かどうかを決めるため）
+      coverShiftTerms_(delta);
+      roleShiftTerms_(delta);
+    }
     PropertiesService.getScriptProperties().setProperty(CHAPTER_KEY_, JSON.stringify({
       name: name, region: region, termBase: termBase,
       meetingBaseDate: chapterFmt_(d), meetingBaseCount: count, seconds: seconds
@@ -153,7 +159,7 @@ function saveChapterSettings(s) {
       + '\nプレゼンの秒数: ' + Object.keys(CHAPTER_SECONDS_DEFAULTS_).map(function (k) {
         return CHAPTER_SECONDS_LABELS_[k] + ' ' + chapterSecondsLabel_(seconds[k]);
       }).join('・');
-    if (delta) msg += '\n期の番号を付け直したので、登録してある役職・チームの期も同じだけずらしました。';
+    if (delta) msg += '\n期の番号を付け直したので、登録してある役職・チームと、メンバーブックのプレジデント設定の期も同じだけずらしました。';
     // 空のスプレッドシートから始めたとき（初回の準備。setup_srv.js）は、ルーティンチェックシートもここで作る
     // （期の番号と開催日が、この設定で決まるため）。期を付け直したら、作ったシートの名前の期もずらす
     if (chapterFresh_()) {

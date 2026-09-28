@@ -164,7 +164,7 @@
       
       document.getElementById('workspace').style.display = 'none';
       document.getElementById('loading').style.display = 'block';
-      document.getElementById('loading').innerHTML = 'Gemini AI が PDFを読み込み、シナジーを考慮した最適な配置を考案中です...<br><span style="font-size:12px; font-weight:normal;">数分かかる場合があります。そのままお待ちください。</span>';
+      document.getElementById('loading').innerHTML = 'Gemini AI が メンバー名簿の情報（カテゴリー・紹介してほしい人・協業したい人など）をもとに、シナジーを考慮した最適な配置を考案中です...<br><span style="font-size:12px; font-weight:normal;">数分かかる場合があります。そのままお待ちください。</span>';
 
       google.script.run.withSuccessHandler(function(newState) {
         state = newState;

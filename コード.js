@@ -2,7 +2,7 @@
 
 // 反映されたか確かめるための版。変更したら日付を更新する。
 // clasp push / デプロイが効いているかは、これを画面で見れば分かる。
-var SYSTEM_VERSION_ = '2026-09-27z';
+var SYSTEM_VERSION_ = '2026-09-28a';
 
 function getSystemVersion() { return SYSTEM_VERSION_; }
 
@@ -1452,6 +1452,35 @@ function exportAllocationSheetToPdf(sheet, fileName, fileIdPropKey) {
   return pdfFile.getUrl();
 }
 
+// AI自動割り振りに渡す待機メンバーのプロフィール。メンバー名簿（メンバーブックと同じ中身）から作る。
+// 空の項目は入れない（送る量を減らす）。ふりがな・メモ・日付・写真は送らない。名簿に居ない方は番号と氏名だけ
+function allocationMemberProfiles_(pool) {
+  var master = [], labels = {}, byBoth = {}, byName = {}, byNo = {};
+  try { master = getMemberMaster({ membersOnly: true }).members || []; } catch (e) { master = []; }
+  try { (getCategoryMaster() || []).forEach(function (c) { labels[c.key] = c.label || c.key; }); } catch (e) {}
+  master.forEach(function (m) {
+    if (m.no && m.name) byBoth[String(m.no).trim() + '|' + normName_(m.name)] = m;
+    if (m.name) byName[normName_(m.name)] = m;
+    if (m.no) byNo[String(m.no).trim()] = m;
+  });
+  return (pool || []).map(function (p) {
+    var out = { no: String(p.no), name: p.name };
+    // 番号と氏名の組で探す（同じ氏名の方が2人いても取り違えない）。無ければ氏名、それも無ければ番号
+    var m = byBoth[String(p.no).trim() + '|' + normName_(p.name)] || byName[normName_(p.name)] || byNo[String(p.no).trim()] || null;
+    if (!m) return out;
+    var put = function (k, v) { v = String(v == null ? '' : v).replace(/\s+/g, ' ').trim(); if (v) out[k] = v; };
+    put('業種区分', labels[m.cat] || m.cat);
+    put('カテゴリー', m.title);
+    put('会社名', m.company);
+    put('会社での役職', m.position);
+    put('BNIの役職', m.role);
+    put('一言', m.comment);
+    put('紹介してほしい人', m.refer);
+    put('協業したい人', m.collab);
+    return out;
+  });
+}
+
 function callGeminiAutoAllocation(currentState, maxRoomSize) {
   var props = PropertiesService.getScriptProperties();
   var apiKey = props.getProperty('GEMINI_API_KEY');
@@ -1496,22 +1525,33 @@ function callGeminiAutoAllocation(currentState, maxRoomSize) {
 
   currentState.roomAlloc = {};
 
-  var docParts = [];
-  var memberBookId = props.getProperty('MEMBER_BOOK_ID');
-  if(memberBookId) {
-    try {
-      var mbBlob = DriveApp.getFileById(memberBookId).getBlob();
-      docParts.push({ "inlineData": { "mimeType": "application/pdf", "data": Utilities.base64Encode(mbBlob.getBytes()) } });
-    } catch(e) {}
+  // 待機メンバーの情報は、メンバー名簿（メンバーブックと同じ中身）から文字のまま渡す。
+  // 以前はメンバーブックのPDFをGeminiに読ませていたが、名簿の文字なら読み違いが無く、いつも最新で、送る量も小さい。
+  // 名簿に一言・紹介・協業がまったく入っていない（メンバーブックの内容を名簿で持っていない）ときだけ、これまでどおりPDFも渡す
+  var profiles = allocationMemberProfiles_(currentState.pool || []);
+  var docParts = [], usedPdf = false;
+  if (!profiles.some(function (x) { return x['一言'] || x['紹介してほしい人'] || x['協業したい人']; })) {
+    var memberBookId = props.getProperty('MEMBER_BOOK_ID');
+    if (memberBookId) {
+      try {
+        var mbBlob = DriveApp.getFileById(memberBookId).getBlob();
+        docParts.push({ "inlineData": { "mimeType": "application/pdf", "data": Utilities.base64Encode(mbBlob.getBytes()) } });
+        usedPdf = true;
+      } catch(e) {}
+    }
   }
-  var aiDocs = getAiDocuments();
+  var aiDocs = getAiDocuments(), usedDocs = 0;
   for (var d = 0; d < aiDocs.length; d++) {
     try {
       var docBlob = DriveApp.getFileById(aiDocs[d].id).getBlob();
       var mime = docBlob.getContentType() || "application/pdf";
       docParts.push({ "inlineData": { "mimeType": mime, "data": Utilities.base64Encode(docBlob.getBytes()) } });
+      usedDocs++;
     } catch(e) {}
   }
+  var sources = ['待機メンバーのプロフィール（メンバー名簿の内容）'];
+  if (usedPdf) sources.push('添付されたメンバーブックPDF');
+  if (usedDocs) sources.push('添付された参考資料');
 
   var maskedVisitors = currentState.visitors.map(function(v) {
     return {
@@ -1523,7 +1563,9 @@ function callGeminiAutoAllocation(currentState, maxRoomSize) {
   });
 
   var promptText = "あなたはプロのビジネス交流会コーディネーターです。\n" +
-    "以下のビジター情報、利用可能な待機メンバー、および添付されたメンバーブックPDFや参考資料の内容を総合的に参考にして、最適な「ルームメンバー」を決定してください。\n\n" +
+    "以下のビジター情報と、" + sources.join("・") + "を総合的に参考にして、最適な「ルームメンバー」を決定してください。\n\n" +
+    "【つながりの考え方】ビジターのカテゴリー・メモと、メンバーの「カテゴリー」「会社名」「一言」「紹介してほしい人」「協業したい人」を見比べ、" +
+    "ビジターを紹介し合えそう・協業できそうなメンバーを、そのビジターのルームに入れてください。\n\n" +
     "【制約条件（厳格に守ること）】\n" +
     "1. 「ファシリテーター」と「オリエンテーション」はシステムで決定済みです。出力には「room」の配列のみを含めてください。\n" +
     "2. 各ルームの総人数がなるべく同じになるよう、各ルームの人数を【厳格に平均化】して「ルームメンバー(room)」を割り振ってください。\n" +
@@ -1534,7 +1576,7 @@ function callGeminiAutoAllocation(currentState, maxRoomSize) {
     "7. 出力する値（room）は、必ず待機メンバーリストにある【メンバーNo（例: 05, 12 など）】のみを出力してください。\n\n" +
     "【データ】\n" +
     "ビジター: " + JSON.stringify(maskedVisitors) + "\n" +
-    "待機メンバー: " + JSON.stringify(currentState.pool.map(function(m){return {no:String(m.no), name:m.name}})) + "\n" +
+    "待機メンバー（プロフィール）: " + JSON.stringify(profiles) + "\n" +
     "既存のファシリ配置（この人達はroomに使えません）: " + JSON.stringify(currentState.facilAlloc) + "\n\n" +
     "出力は必ず以下のJSONフォーマットのみを返してください。\n" +
     "{\n" +

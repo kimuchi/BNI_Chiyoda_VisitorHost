@@ -17,7 +17,7 @@ function getMemberBookData() {
   try {
     var m = getMemberMaster();
     if (!m.ok) return m;
-    return { ok: true, members: m.members, cover: m.cover, categories: m.categories };
+    return { ok: true, members: m.members, cover: m.cover, categories: m.categories, presidents: coverPresidentList_(m.cover.termNo) };
   } catch (e) {
     console.error('[MBOOK] ' + (e && e.stack ? e.stack : e));
     return { ok: false, message: '読み込みに失敗しました: ' + (e && e.message ? e.message : e) };

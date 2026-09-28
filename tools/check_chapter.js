@@ -7,8 +7,8 @@
 //   ・名前を変えると、ウェブアプリの題名・下の行、メニュー画面の見出し、メールの件名と送り主の初期値、
 //     メンバーブックの表紙の初期値が変わる。コードに「Activeチャプター」と書いた所が残っていない
 //   ・定例会の基準（日と回数）を変えると、開催日の候補（曜日・回数）と回数の数え方・次の開催日が変わる
-//   ・いまの期を変えると、期の番号と、期ごとに保存してある担当者・チーム・名簿へ反映した期の記録が同じだけずれる
-//     （同じ半期の担当者がそのまま出る）。戻すと元どおり
+//   ・いまの期を変えると、期の番号と、期ごとに保存してある担当者・チーム・名簿へ反映した期の記録・
+//     メンバーブックのプレジデント設定が同じだけずれる（同じ半期の担当者・挨拶文がそのまま出る）。戻すと元どおり
 //   ・入力の誤り（名前が空・期が数字でない・日付が読めない・回数が0）は保存しない
 //   ・役職の担当者の初期値はコードに持たない（何も保存していなければ空欄）
 //   ・空のスプレッドシートから始めたとき（初回の準備の記録が fresh）は、メニュー画面の「準備の状況」でチャプターの設定を促す
@@ -107,6 +107,14 @@ props.BNI_ROLE_ROSTER_STATE = J({ applied: 24, at: '2026/10/01', seen: 23 });
 const teams24 = props.BNI_ROLE_TEAMS_24;
 const before = { h930: F.roleHolders_(D(2026, 9, 30)), h1007: F.roleHolders_(D(2026, 10, 7)), t1007: F.roleTeams_(D(2026, 10, 7)) };
 ck(teams24 && Object.keys(JSON.parse(props.BNI_ROLE_HOLDERS_TERMS)).sort().join() === '23,24', '準備（23期・24期の担当者と24期のチーム）: ' + props.BNI_ROLE_HOLDERS_TERMS);
+// メンバーブックのプレジデント設定（期ごと）：期ごとにする前の1件（23期。氏名は23期のプレジデントの担当者と同じ）。
+// まだ一度も保存していないまま期の番号を付け直しても、氏名は「既定（担当者）」のまま引き継ぐ
+const PRES = () => Object.keys(props).filter((k) => /^BNI_MB_PRESIDENT_\d+$/.test(k))
+  .reduce((o, k) => Object.assign(o, { [k.replace('BNI_MB_PRESIDENT_', '')]: JSON.parse(props[k]) }), {});
+const pres23 = holders(0).president;
+props.BNI_MB_COVER = J({ term: '23期', pname: pres23, ptext: '23期の挨拶' });
+ck(F.getCoverInfo_(23).pname === pres23 && F.getCoverInfo_(23).ptext === '23期の挨拶' && !Object.keys(PRES()).length,
+   '準備（メンバーブックのプレジデント設定：以前の1件）: ' + J(F.getCoverInfo_(23)));
 
 // ===== 4. 別のチャプター（名前・期・曜日を変える）=====
 let r = F.saveChapterSettings({ name: 'BNI Brave チャプター', region: '', term: '５', meetingBaseDate: '2026-10-06', meetingBaseCount: '１００' });
@@ -119,6 +127,11 @@ ck(F.roleTermOf_(D(2026, 9, 26)) === 5 && F.roleTermOf_(D(2026, 10, 7)) === 6 &&
    && F.roleTermLabel_(6) === '2026年10月〜2027年3月', '期の番号の付け直し: ' + F.roleTermOf_(D(2026, 9, 26)));
 ck(Object.keys(JSON.parse(props.BNI_ROLE_HOLDERS_TERMS)).sort().join() === '5,6', '担当者の期がずれていない: ' + Object.keys(JSON.parse(props.BNI_ROLE_HOLDERS_TERMS)));
 ck(props.BNI_ROLE_TEAMS_6 === teams24 && !('BNI_ROLE_TEAMS_24' in props), 'チームの期がずれていない: ' + Object.keys(props).filter((k) => /TEAMS/.test(k)));
+ck(J(PRES()) === J({ 5: { ptext: '23期の挨拶' } }) && F.getCoverInfo_(5).pname === pres23 && F.getCoverInfo_(5).ptext === '23期の挨拶'
+   && F.getCoverInfo_(5).prole === 'Braveチャプター\n第5期プレジデント' && F.getCoverInfo_().termNo === 5,
+   'メンバーブックのプレジデント設定の期がずれていない・氏名を固定してしまう: ' + J(PRES()));
+F.saveMemberBookCover({ ptext: '24期の挨拶' }, 6);
+ck(/プレジデント設定の期も同じだけずらしました/.test(r.message), '期をずらした知らせ: ' + r.message);
 const rs = JSON.parse(props.BNI_ROLE_ROSTER_STATE);
 ck(rs.applied === 6 && rs.seen === 5 && rs.at === '2026/10/01', '名簿へ反映した期の記録: ' + props.BNI_ROLE_ROSTER_STATE);
 ck(J(F.roleHolders_(D(2026, 9, 30))) === J(before.h930) && J(F.roleHolders_(D(2026, 10, 7))) === J(before.h1007)
@@ -147,6 +160,8 @@ r = F.saveChapterSettings({ name: 'Active chapter', region: 'BNI東京千代田�
 ck(r.ok && F.chapterLabel_() === 'Activeチャプター', '戻せない: ' + J(r));
 ck(Object.keys(JSON.parse(props.BNI_ROLE_HOLDERS_TERMS)).sort().join() === '23,24' && props.BNI_ROLE_TEAMS_24 === teams24 && !('BNI_ROLE_TEAMS_6' in props)
    && JSON.parse(props.BNI_ROLE_ROSTER_STATE).applied === 24, '期を戻したあとの保存先: ' + Object.keys(props).filter((k) => /ROLE/.test(k)));
+ck(J(PRES()) === J({ 23: { ptext: '23期の挨拶' }, 24: { ptext: '24期の挨拶' } }) && F.getCoverInfo_(24).ptext === '24期の挨拶'
+   && F.getCoverInfo_(23).pname === pres23, '期を戻したあとのプレジデント設定: ' + J(PRES()));
 ck(J(F.roleHolders_(D(2026, 10, 7))) === J(before.h1007) && F.getMeetingCandidates()[0].display === '2026/9/30(水) 第' + no930 + '回',
    '期・曜日を戻したあとの担当者・候補');
 ck(!/ずらしました/.test(F.saveChapterSettings({ name: 'Active', region: 'BNI東京千代田リージョン', term: 23, meetingBaseDate: '2026/03/18', meetingBaseCount: 509 }).message),

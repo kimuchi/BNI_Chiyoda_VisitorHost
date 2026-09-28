@@ -65,6 +65,86 @@ const J = (x) => JSON.stringify(x);
      '名簿の列: ' + J(box.MEMBER_HEADERS_));
 }
 
+// ===================== 1b. プレジデント設定（期ごと）=====================
+// 期ごとに保存する。以前の1件はその期のものとして読む。既定（氏名＝その期のプレジデントの担当者・肩書き）は保存しない。
+// 表紙のほかの文章は期によらず1件。期の番号を付け直すとずれる
+{
+  const props = {};
+  const RealDate = Date;
+  let today = new RealDate('2026-09-28T09:00:00');                   // 23期（2026年4月〜9月）の終わり
+  const box = { console, normName_: (s) => String(s == null ? '' : s).normalize('NFKC').replace(/[\s　]/g, ''),
+    PropertiesService: { getScriptProperties: () => ({
+      getProperty: (k) => (k in props ? props[k] : null), setProperty: (k, v) => { props[k] = String(v); },
+      getProperties: () => Object.assign({}, props), deleteProperty: (k) => { delete props[k]; } }) } };
+  box.Date = class extends RealDate { constructor(...a) { if (a.length) super(...a); else super(today.getTime()); } static now() { return today.getTime(); } };
+  vm.createContext(box);
+  vm.runInContext('Date = this.Date;', box);
+  for (const f of ['chapter_srv.js', 'role_input_srv.js', 'member_master_srv.js', 'memberbook_srv.js']) {
+    vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), box, { filename: f });
+  }
+  // 期ごとのプロパティ（BNI_MB_PRESIDENT_24 など）をまとめて読む
+  const PRES = () => {
+    const o = {};
+    Object.keys(props).filter((k) => /^BNI_MB_PRESIDENT_\d+$/.test(k)).forEach((k) => { o[k.replace('BNI_MB_PRESIDENT_', '')] = JSON.parse(props[k]); });
+    return o;
+  };
+  const PRESJ = () => J(PRES());
+  // 以前の1件（23期のプレジデントの設定と、表紙のほかの文章）。24期の担当者は登録済み
+  props.BNI_MB_COVER = J({ title: '見本の題', term: '23期', pname: '見本 一郎', prole: 'Activeチャプター\n第23期プレジデント',
+    ptext: '23期の挨拶', philosophy: '見本の理念' });
+  props.BNI_ROLE_HOLDERS_TERMS = J({ 24: { president: '見本 二郎' } });
+  let c = box.getCoverInfo_();
+  ck(c.termNo === 23 && c.term === '23期' && c.pname === '見本 一郎' && c.ptext === '23期の挨拶' && c.title === '見本の題' && c.philosophy === '見本の理念',
+     '以前の1件を、いまの期（23期）の設定として読む: ' + J(c));
+  let list = box.coverPresidentList_();
+  ck(J(list.map((p) => [p.term, p.saved, p.current])) === J([[22, false, false], [23, true, true], [24, false, false]]), '選べる期: ' + J(list.map((p) => [p.term, p.saved, p.current])));
+  // 24期（まだ保存していない）：氏名は24期のプレジデントの担当者、肩書きは既定、挨拶文は空
+  c = box.getCoverInfo_(24);
+  ck(c.term === '24期' && c.pname === '見本 二郎' && c.prole === 'Activeチャプター\n第24期プレジデント' && c.ptext === '', '保存していない期: ' + J(c));
+  ck(box.getCoverInfo_(25).pname === '', '担当者を登録していない期は、前の期のプレジデントを出さない: ' + box.getCoverInfo_(25).pname);
+  // 24期の挨拶を保存（氏名・肩書きは既定のまま）→ 既定は保存しない。23期はそのまま。ほかの文章は1件に
+  let r = box.saveMemberBookCover({ title: '新しい題', pname: '見本 二郎', prole: 'Activeチャプター\n第24期プレジデント', ptext: '24期の挨拶',
+    philosophy: '見本の理念' }, 24);
+  ck(r.ok && r.cover.termNo === 24 && r.cover.ptext === '24期の挨拶' && r.presidents.some((p) => p.term === 24 && p.saved), '24期の保存: ' + J(r));
+  ck(J(PRES()) === J({ 23: { pname: '見本 一郎', ptext: '23期の挨拶' }, 24: { ptext: '24期の挨拶' } }), '期ごとの保存の中身: ' + PRESJ());
+  const shared = JSON.parse(props.BNI_MB_COVER);
+  ck(shared.title === '新しい題' && !('pname' in shared) && !('ptext' in shared) && !('prole' in shared) && !('term' in shared), '表紙の1件からプレジデントの項目を外す: ' + props.BNI_MB_COVER);
+  c = box.getCoverInfo_(23);
+  ck(c.ptext === '23期の挨拶' && c.pname === '見本 一郎' && c.title === '新しい題', '24期を保存しても23期はそのまま: ' + J(c));
+  // 10月になると、いまの期は24期
+  today = new RealDate('2026-10-01T09:00:00');
+  c = box.getCoverInfo_();
+  ck(c.termNo === 24 && c.ptext === '24期の挨拶' && c.pname === '見本 二郎', '期が替わると、その期の設定: ' + J(c));
+  // 担当者を直すと、既定のままの氏名も変わる。既定と違う氏名は保存する
+  props.BNI_ROLE_HOLDERS_TERMS = J({ 24: { president: '見本 次郎' } });
+  ck(box.getCoverInfo_(24).pname === '見本 次郎', '担当者を直したあとの氏名: ' + box.getCoverInfo_(24).pname);
+  box.saveMemberBookCover({ pname: '見本 別名' }, 24);
+  ck(box.getCoverInfo_(24).pname === '見本 別名' && PRES()[24].pname === '見本 別名', '既定と違う氏名: ' + PRESJ());
+  // 定型文を初期値に戻しても、期ごとのプレジデント設定は残る
+  r = box.resetMemberBookCoverText(24);
+  ck(r.ok && r.cover.title === 'BNI Active chapter Member Book' && r.cover.ptext === '24期の挨拶' && box.getCoverInfo_(23).ptext === '23期の挨拶',
+     '定型文を戻したあと: ' + J([r.cover.title, r.cover.ptext]));
+  // メンバーブックHTMLの取り込み（表紙の「期」「氏名」「挨拶文」）は、その期に入る
+  box.saveCoverInfo_({ term: 22, pname: '見本 三郎', ptext: '22期の挨拶' });
+  ck(box.getCoverInfo_(22).ptext === '22期の挨拶' && box.getCoverInfo_(22).pname === '見本 三郎' && box.getCoverInfo_(24).ptext === '24期の挨拶',
+     '取り込んだ表紙の期: ' + PRESJ());
+  // 期の番号を付け直すと（+2）、期ごとの設定もずれる。既定の肩書きは新しい番号で
+  box.coverShiftTerms_(2);
+  ck(J(Object.keys(PRES()).sort()) === J(['24', '25', '26']) && box.coverPresidentOf_(26).ptext === '24期の挨拶'
+     && box.coverPresidentOf_(26).prole === 'Activeチャプター\n第26期プレジデント' && !('BNI_MB_PRESIDENT_22' in props), '期の番号の付け直し: ' + PRESJ());
+  // 期ごとにする前の1件のまま、期の番号を付け直したとき（前の番号の期として読んでからずらす）
+  for (const k of Object.keys(props)) delete props[k];
+  props.BNI_MB_COVER = J({ term: '23期', pname: '見本 一郎', ptext: '23期の挨拶' });
+  box.coverShiftTerms_(1);
+  ck(J(PRES()) === J({ 24: { pname: '見本 一郎', ptext: '23期の挨拶' } }), '以前の1件のまま付け直したとき: ' + PRESJ());
+  // 期ごとに別のプロパティ（1つ 9KB の上限にかからない）。長い挨拶文を20期ぶん保存しても、どれも保存できる
+  let big = true;
+  for (let t = 30; t < 50; t++) big = big && box.saveMemberBookCover({ ptext: t + '期の挨拶。'.repeat(1) + 'あ'.repeat(600) }, t).ok;
+  const sizes = Object.keys(props).filter((k) => /^BNI_MB_PRESIDENT_\d+$/.test(k)).map((k) => Buffer.byteLength(props[k], 'utf8'));
+  ck(big && sizes.length === 21 && Math.max(...sizes) < 9000 && box.getCoverInfo_(49).ptext.indexOf('49期の挨拶。') === 0,
+     '長い挨拶文を何期ぶんも保存したとき: ' + J({ big, n: sizes.length, max: Math.max(...sizes) }));
+}
+
 // ===================== 2・3. 組版と編集画面（Chromium）=====================
 // 作り物の名簿。長さの違う文をわざと混ぜる（1行で収まる・小さくすれば1行・2行にする・どうしても入らない）
 const LONG = 'とても長い文章がここに入ります。';
@@ -113,23 +193,34 @@ function editorHtml() {
   return fs.readFileSync(path.join(ROOT, 'memberbook_editor.html'), 'utf8')
     .replace(/<\?!=\s*HtmlService\.createHtmlOutputFromFile\('memberbook_render'\)\.getContent\(\);\s*\?>/, () => render);
 }
+// 期ごとのプレジデント設定（サーバーの coverPresidentList_ と同じ形）。24期が、いまの期
+const PRESIDENTS = [
+  { term: 24, label: '24期', range: '2026年10月〜2027年3月', current: true, saved: true, pname: '見本 一郎', prole: '見本チャプター\n第24期プレジデント', ptext: '24期の挨拶です。' },
+  { term: 25, label: '25期', range: '2027年4月〜9月', current: false, saved: false, pname: '見本 二郎', prole: '見本チャプター\n第25期プレジデント', ptext: '' },
+];
 // google.script.run の代わり（呼ばれた関数と引数を window.__calls に残す）
 const STUB = (members, cats, cover) => `
   window.__calls = [];
   window.__failNext = window.__failNext || {};        // 関数名 → 何回失敗させるか（ok:false を返す）
-  window.__data = ${J({ members, cats, cover })};
+  window.__data = ${J({ members, cats, presidents: PRESIDENTS,
+    cover: Object.assign({}, cover, { termNo: 24, term: '24期', pname: PRESIDENTS[0].pname, prole: PRESIDENTS[0].prole, ptext: PRESIDENTS[0].ptext }) })};
   (function(){
     function runner(){
       var ok = null, ng = null, r = {};
       r.withSuccessHandler = function(f){ ok = f; return r; };
       r.withFailureHandler = function(f){ ng = f; return r; };
       var answer = {
-        getMemberBookData: function(){ return { ok: true, members: JSON.parse(JSON.stringify(window.__data.members)), categories: window.__data.cats, cover: window.__data.cover }; },
+        getMemberBookData: function(){ return { ok: true, members: JSON.parse(JSON.stringify(window.__data.members)), categories: window.__data.cats,
+          cover: Object.assign({}, window.__data.cover), presidents: JSON.parse(JSON.stringify(window.__data.presidents)) }; },
         getMemberPhotoThumbs: function(){ return { ok: true, map: {} }; },
         getMemberPhotosBase64: function(){ return { ok: true, map: {} }; },
         saveMemberBookMember: function(o, m){ return { ok: true, message: '「' + m.name + '」を名簿に保存しました。' }; },
         saveMemberBookData: function(){ return { ok: true, message: 'メンバー名簿を保存しました。' }; },
-        saveMemberBookCover: function(c){ return { ok: true, cover: c, message: '保存しました' }; },
+        // プレジデントの項目は、渡した期（t）の設定として保存したことにする
+        saveMemberBookCover: function(c, t){
+          window.__data.presidents = window.__data.presidents.map(function(p){
+            return p.term === t ? Object.assign({}, p, { saved: true, pname: c.pname, prole: c.prole, ptext: c.ptext }) : p; });
+          return { ok: true, cover: Object.assign({}, c, { termNo: t, term: t + '期' }), presidents: window.__data.presidents, message: '保存しました' }; },
         exportMemberBookHtml: function(){ return { ok: true, message: '保存しました', url: '#' }; }
       };
       Object.keys(answer).forEach(function(k){
@@ -332,6 +423,43 @@ const STUB = (members, cats, cover) => `
     await page.evaluate(() => { members[0].refer = 'とても長い文章がここに入ります。'.repeat(9); render(); });
     await page.waitForFunction(() => /入りきらない欄/.test(document.getElementById('overNote').textContent), null, { timeout: 20000 });
     ck(/最も紹介して欲しいカテゴリー/.test(await page.textContent('#overNote')), '入りきらない欄のお知らせ: ' + await page.textContent('#overNote'));
+    // 表紙・プレジデント設定（期ごと）：開いたときは、いまの期。期を切り替えると、その期の内容・冊子も切り替わる
+    {
+      ck(/24期/.test(await page.textContent('#coverNote')), '左の表紙の知らせに、冊子に出す期が無い: ' + await page.textContent('#coverNote'));
+      await page.check('#pvCover');
+      await pv.locator('html[data-fitted="1"]').waitFor({ timeout: 20000 });
+      await page.evaluate(() => openCover());
+      ck(await page.inputValue('#c_termNo') === '24' && await page.inputValue('#c_ptext') === '24期の挨拶です。'
+         && await page.locator('#c_termNo option').count() === 2, '開いたときの期・挨拶文');
+      await page.selectOption('#c_termNo', '25');
+      ck(await page.inputValue('#c_pname') === '見本 二郎' && await page.inputValue('#c_ptext') === '', '25期に切り替えたときの中身');
+      await page.waitForFunction(() => { try { return /25期 プレジデント挨拶/.test(document.getElementById('pv').contentDocument.body.textContent); } catch (e) { return false; } }, null, { timeout: 20000 });
+      ck(/25期のプレジデント挨拶がまだありません/.test(await page.textContent('#coverNote')), '挨拶文の無い期の知らせ: ' + await page.textContent('#coverNote'));
+      // 変えて保存していないまま期を切り替えると聞く（ここでは OK で切り替える）
+      const n1 = dialogs.length;
+      await page.fill('#c_ptext', '捨てる挨拶');
+      await page.selectOption('#c_termNo', '24');
+      ck(dialogs.length === n1 + 1 && /保存していません/.test(dialogs[dialogs.length - 1]) && await page.inputValue('#c_ptext') === '24期の挨拶です。',
+         '保存していない挨拶文のまま期を切り替えたとき: ' + J(dialogs.slice(n1)));
+      // 25期の挨拶を入れて保存 → 25期として保存する
+      await page.selectOption('#c_termNo', '25');
+      await page.fill('#c_ptext', '25期の挨拶です。');
+      const b5 = await page.evaluate(() => window.__calls.length);
+      await page.click('#coverModal button:has-text("保存")');
+      await page.waitForFunction((n) => window.__calls.slice(n).some((c) => c.fn === 'saveMemberBookCover'), b5);
+      call = await page.evaluate(() => window.__calls.filter((c) => c.fn === 'saveMemberBookCover').pop());
+      ck(call.args[1] === 25 && call.args[0].ptext === '25期の挨拶です。' && call.args[0].pname === '見本 二郎', '25期の保存: ' + J(call.args));
+      await page.waitForFunction(() => document.getElementById('coverModal').style.display === 'none');
+      ck(!/まだありません/.test(await page.textContent('#coverNote')), '保存したあとも「挨拶がまだ」と出る: ' + await page.textContent('#coverNote'));
+      // 閉じるとき、保存していない変更があれば聞く（OK＝保存して閉じる）
+      await page.evaluate(() => openCover());
+      await page.fill('#c_title', '閉じる前に直した題');
+      const n2 = dialogs.length, b6 = await page.evaluate(() => window.__calls.length);
+      await page.click('#coverModal button:has-text("閉じる")');
+      await page.waitForFunction((n) => window.__calls.slice(n).some((c) => c.fn === 'saveMemberBookCover'), b6);
+      ck(dialogs.length === n2 + 1 && /保存していない変更があります/.test(dialogs[dialogs.length - 1]), '表紙を閉じるときの確認: ' + J(dialogs.slice(n2)));
+      await page.uncheck('#pvCover');
+    }
     // 業種区分マスタに無い区分の方：開いても区分は空にならず、何も変えずに閉じても聞かれない
     {
       const n0 = dialogs.length;
@@ -385,11 +513,12 @@ const STUB = (members, cats, cover) => `
     await page.route('https://memberbook.test/', (r) => r.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: editorHtml() }));
     await page.goto('https://memberbook.test/', { waitUntil: 'load' });
     await page.waitForFunction(() => /見本の失敗/.test(document.getElementById('msg').textContent), null, { timeout: 10000 });
-    await page.evaluate(() => { addM(); save(); });
+    await page.evaluate(() => { addM(); save(); openCover(); saveCover(); });
     await page.waitForTimeout(1500);
     const st = await page.evaluate(() => ({ n: members.length, modal: document.getElementById('modal').style.display,
-      saves: window.__calls.filter((c) => /^save/.test(c.fn)).length }));
-    ck(st.n === 0 && st.modal !== 'flex' && st.saves === 0, '名簿を読み込めなかったのに、追加・保存できた: ' + J(st));
+      cover: document.getElementById('coverModal').style.display,
+      saves: window.__calls.filter((c) => /^save|^reset/.test(c.fn)).length }));
+    ck(st.n === 0 && st.modal !== 'flex' && st.cover !== 'flex' && st.saves === 0, '名簿を読み込めなかったのに、追加・保存・表紙の保存ができた: ' + J(st));
     await page.close();
   }
   await browser.close();
