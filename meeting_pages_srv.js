@@ -304,13 +304,24 @@ function fpEthicsPages_(parts, blocks, res) {
   for (var i = lastAll + 1; i < order.length && !model; i++) if (isEthics(order[i])) model = order[i];
   for (var j = 0; j < order.length && !model; j++) if (isEthics(order[j])) model = order[j];
   if (!model) return;
-  var modelXml = setSlideShow_(xmlOf_(parts, model), true);
+  var modelXml = setSlideShow_(xmlOf_(parts, model), true), modelText = riNorm_(slideText_(modelXml)), used = [];
   blocks.forEach(function (b) {
     order = slideOrder_(parts);
     var at = lastOf(b), next = order[at + 1], path = next && isEthics(next) ? next : null;
     if (!path) path = fpClonePages_(parts, model, 1, order[at], modelXml)[0];
     putXml_(parts, path, setSlideShow_(xmlOf_(parts, path), b.any));
+    used.push(path);
     res.ethics.push({ kind: b.kind, path: path, shown: b.any, added: path !== next });
+  });
+  // まとまりのすぐうしろに無い同じ倫理規定のページ（まとまりの前・あいだに別のページがある・2枚目の写し）は隠す。
+  // 残すと、倫理規定が余分に出る（誰もいない日にも出る・続けて2回出る）
+  slideOrder_(parts).forEach(function (p) {
+    if (used.indexOf(p) >= 0) return;
+    var x = xmlOf_(parts, p);
+    if (x && riNorm_(slideText_(x)) === modelText) {
+      putXml_(parts, p, setSlideShow_(x, false));
+      res.ethics.push({ kind: 'extra', path: p, shown: false, added: false });
+    }
   });
 }
 // 「新メンバー」「更新メンバー」の見出しの下の「氏名」の枠に、上から順にお名前を入れる（余った枠は空に）

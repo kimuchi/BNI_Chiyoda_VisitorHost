@@ -25,9 +25,13 @@ const J = (x) => JSON.stringify(x);
   const grid = [HEAD15.slice(),
     ['1', '企業サポート', '見本 一郎', 'みほん', '税理士', '見本会計', 'ビジターホスト', 'メモ1', 'p1.jpg', '古い一言', '古い紹介', '古い協業', '2024/01/01', '', '2027/01/01'],
     ['2', '不動産関連', '見本 花子', 'みほん', '売買仲介', '花子不動産', '', '', '', '', '', '', '', '', '']];
+  let maxCols = 15;                                   // 列を詰めた古い名簿（15列しかない）
   const sheet = {
     getLastRow: () => grid.length,
+    getMaxColumns: () => maxCols,
+    insertColumnsAfter(after, n) { maxCols += n; },
     getRange(r, c, nr, nc) {
+      if (c - 1 + nc > maxCols) throw new Error('The coordinates of the range are outside the dimensions of the sheet.');
       return {
         getValues: () => Array.from({ length: nr }, (_, i) => Array.from({ length: nc }, (_, j) => ((grid[r - 1 + i] || [])[c - 1 + j] ?? ''))),
         setValues(v) { v.forEach((row, i) => { grid[r - 1 + i] = grid[r - 1 + i] || []; row.forEach((x, j) => { grid[r - 1 + i][c - 1 + j] = x; }); }); return this; },
@@ -45,7 +49,7 @@ const J = (x) => JSON.stringify(x);
   let r = box.saveMemberBookMember('見本 一郎', { cat: '企業サポート', name: '見本　一郎', title: '税理士（相続）', company: '見本会計事務所',
     position: '代表取締役', role: 'ビジターホスト', comment: '新しい一言', refer: '税理士', collab: '協業したい人・弁護士' });
   ck(r.ok && !r.added, '1人ぶんの保存: ' + J(r));
-  ck(grid[0].length === 16 && grid[0][15] === '会社での役職', '古い名簿に「会社での役職」の列が足されていない: ' + J(grid[0]));
+  ck(grid[0].length === 16 && grid[0][15] === '会社での役職' && maxCols === 16, '古い名簿に「会社での役職」の列が足されていない: ' + J(grid[0]) + ' ' + maxCols);
   ck(J(grid[1]) === J(['1', '企業サポート', '見本　一郎', 'みほん', '税理士（相続）', '見本会計事務所', 'ビジターホスト', 'メモ1', 'p1.jpg',
     '新しい一言', '税理士', '協業したい人・弁護士', '2024/01/01', '', '2027/01/01', '代表取締役']), '書き換えた行: ' + J(grid[1]));
   ck(J(grid[2].slice(0, 6)) === J(['2', '不動産関連', '見本 花子', 'みほん', '売買仲介', '花子不動産']), 'ほかの方の行が変わった: ' + J(grid[2]));
@@ -112,6 +116,7 @@ function editorHtml() {
 // google.script.run の代わり（呼ばれた関数と引数を window.__calls に残す）
 const STUB = (members, cats, cover) => `
   window.__calls = [];
+  window.__failNext = window.__failNext || {};        // 関数名 → 何回失敗させるか（ok:false を返す）
   window.__data = ${J({ members, cats, cover })};
   (function(){
     function runner(){
@@ -130,7 +135,8 @@ const STUB = (members, cats, cover) => `
       Object.keys(answer).forEach(function(k){
         r[k] = function(){ var args = Array.prototype.slice.call(arguments);
           window.__calls.push({ fn: k, args: JSON.parse(JSON.stringify(args)) });
-          setTimeout(function(){ ok && ok(answer[k].apply(null, args)); }, 5); };
+          var bad = window.__failNext[k] > 0 && window.__failNext[k]--;
+          setTimeout(function(){ ok && ok(bad ? { ok: false, message: '見本の失敗' } : answer[k].apply(null, args)); }, 5); };
       });
       return r;
     }
@@ -171,9 +177,9 @@ const STUB = (members, cats, cover) => `
                    text: t.textContent, box: er, tbox: tr,
                    inside: e.hasAttribute('data-over') || (tr.w <= er.w + 1 && tr.h <= er.h + 1) };
         });
-        out.cards.push({ cell: cr, f, bg: getComputedStyle(c.querySelector('.hd')).backgroundColor });
+        out.cards.push({ cell: cr, f, no: rect(c.querySelector('.no')), bg: getComputedStyle(c.querySelector('.hd')).backgroundColor });
       });
-      const lg = Array.from(document.querySelectorAll('.cv-lgi span')).map((s) => s.textContent);
+      const lg = Array.from(document.querySelectorAll('.cv-lgi .it')).map((s) => s.textContent);
       out.legend = lg;
       out.blocks = Array.from(document.querySelectorAll('.fitblock')).map((e) => ({ c: e.className, z: e.firstElementChild.style.zoom, over: e.hasAttribute('data-over') }));
       out.title = document.querySelector('.cv-ttl span').textContent;
@@ -213,6 +219,9 @@ const STUB = (members, cats, cover) => `
       if (k === 3) ck(c.f.co.wrap, tag + ': 長い会社名が2行になっていない');
       // 会社での役職・BNIの役職は、あるときだけ。どちらもお名前の上で、重ならない
       ck(!!c.f.ps === !!m.position && !!c.f.bn === !!m.role, tag + ': 会社での役職・BNIの役職の出し方');
+      // 会社での役職・BNIの役職の文字は、左上の番号の四角に重ならない
+      const cross = (a, b) => a.x < b.r - 0.5 && a.r > b.x + 0.5 && a.y < b.b - 0.5 && a.b > b.y + 0.5;
+      ['ps', 'bn', 'nm'].forEach((x) => { if (c.f[x]) ck(!cross(c.f[x].tbox, c.no), `${tag}: ${x} が番号の四角に重なる`); });
       const stack = ['ps', 'bn', 'nm'].filter((x) => c.f[x]).map((x) => c.f[x].tbox);
       for (let s = 1; s < stack.length; s++) ck(stack[s].y >= stack[s - 1].b - 1, tag + ': 役職とお名前が重なる');
       ck(c.f.co.tbox.b <= (c.f.ps || c.f.bn || c.f.nm).tbox.y + 0.5, tag + ': 会社名とその下の行が重なる');
@@ -222,12 +231,52 @@ const STUB = (members, cats, cover) => `
     await page.close();
   }
 
+  // ---------- 2b. 表紙の長い肩書き・業種区分が11以上・一言の改行 ----------
+  {
+    const page = await ctx.newPage();
+    await page.setContent('<html><body></body></html>');
+    const render = fs.readFileSync(path.join(ROOT, 'memberbook_render.html'), 'utf8').replace(/^<script>|<\/script>\s*$/g, '');
+    const cats11 = CATS.concat([['暮らしサービス', '#255e5e'], ['士業・コンサルティング・その他の専門サービス', '#7030a0']].map(([key, bg]) => ({ key, label: key, bg })));
+    const mem = cats11.map((c, i) => Object.assign({}, MEMBERS[0], { no: String(i + 1), name: '見本 ' + (i + 1), cat: c.key,
+      comment: i === 0 ? '一行目の一言\n二行目の一言' : '見本の一言です' }));
+    const cov = Object.assign({}, COVER, { prole: '株式会社見本コンサルティンググループ 代表取締役\n見本チャプター\n第24期プレジデント\n（2026年4月〜9月）',
+      pname: 'Mihon Taro Alexander Christopher Wellington' });
+    const html = await page.evaluate(({ render, members, cats, cover }) => {
+      window.members = members; window.cats = cats; window.cover = cover; window.photosB64 = {};
+      window.catOf = (k) => cats.find((c) => c.key === k) || null;
+      (0, eval)(render);
+      return bookHtml({ photos: {} });
+    }, { render, members: mem, cats: cats11, cover: cov });
+    await page.setContent(html, { waitUntil: 'load' });
+    await page.waitForFunction(() => document.documentElement.getAttribute('data-fitted') === '1', null, { timeout: 30000 });
+    const R = await page.evaluate(() => {
+      const r = (e) => e.getBoundingClientRect(), pg = r(document.querySelector('.page.cover'));
+      const prs = document.querySelector('.cv-prs .r'), zi = prs.firstElementChild;
+      const box = prs.closest('.cv-box'), lbl = box.querySelector('.cv-lbl'), ptx = box.querySelector('.cv-ptx');
+      const txt = Array.from(zi.querySelectorAll('.rl,.nm')).map(r);
+      return {
+        prsZoom: +zi.style.zoom, prsOver: prs.hasAttribute('data-over'),
+        prsTop: Math.min(...txt.map((x) => x.top)), prsBottom: Math.max(...txt.map((x) => x.bottom)),
+        lblBottom: r(lbl).bottom, ptxTop: r(ptx).top,
+        legend: Array.from(document.querySelectorAll('.cv-lgi .it')).map((e) => ({ b: r(e).bottom, over: !!e.querySelector('[data-over]'), text: e.textContent })),
+        pageBottom: pg.bottom,
+        cm: (() => { const e = document.querySelector('.page:not(.cover) .c .cm'); return { br: e.querySelectorAll('br').length, over: e.hasAttribute('data-over'), wrap: e.classList.contains('wrap') }; })(),
+      };
+    });
+    ck(R.prsZoom < 1 && !R.prsOver && R.prsTop >= R.lblBottom - 0.5 && R.prsBottom <= R.ptxTop + 0.5,
+       '表紙：長いプレジデントの肩書き・お名前が、見出しや挨拶文に重なる: ' + J(R));
+    ck(R.legend.length === 11 && R.legend.every((x) => x.b <= R.pageBottom + 0.5 && !x.over), '業種区分が11のとき、説明がページからはみ出す・入らない: ' + J(R.legend));
+    ck(R.cm.br === 1 && !R.cm.over, '一言の改行が残っていない・入らない: ' + J(R.cm));
+    await page.close();
+  }
+
   // ---------- 3. 編集画面 ----------
   {
     const page = await ctx.newPage();
     const dialogs = [];
     page.on('dialog', async (d) => { dialogs.push(d.message()); await d.accept(); });
-    await page.addInitScript(STUB(MEMBERS.slice(0, 5), CATS, COVER));
+    const EM = MEMBERS.slice(0, 5).map((m, i) => (i === 4 ? Object.assign({}, m, { cat: '研修教育' }) : m));   // 5人目は古い業種区分
+    await page.addInitScript(STUB(EM, CATS, COVER));
     await page.route('https://memberbook.test/', (r) => r.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: editorHtml() }));
     await page.goto('https://memberbook.test/', { waitUntil: 'load' });
     await page.waitForFunction(() => /5名を読み込みました/.test(document.getElementById('msg').textContent), null, { timeout: 10000 });
@@ -283,12 +332,64 @@ const STUB = (members, cats, cover) => `
     await page.evaluate(() => { members[0].refer = 'とても長い文章がここに入ります。'.repeat(9); render(); });
     await page.waitForFunction(() => /入りきらない欄/.test(document.getElementById('overNote').textContent), null, { timeout: 20000 });
     ck(/最も紹介して欲しいカテゴリー/.test(await page.textContent('#overNote')), '入りきらない欄のお知らせ: ' + await page.textContent('#overNote'));
+    // 業種区分マスタに無い区分の方：開いても区分は空にならず、何も変えずに閉じても聞かれない
+    {
+      const n0 = dialogs.length;
+      await page.evaluate(() => openM(4));
+      ck(await page.inputValue('#e_cat') === '研修教育', '業種区分マスタに無い区分が空になる: ' + await page.inputValue('#e_cat'));
+      await page.click('button:has-text("閉じる")');
+      ck(dialogs.length === n0, '業種区分マスタに無い区分の方で、変えていないのに聞かれた');
+    }
+    // 1人ぶんの保存に失敗 → ほかの方の保存が通っても「保存できませんでした」は消えない（名簿に保存で消える）
+    // 氏名を直して失敗した方は、次の「反映」でも直す前の氏名で探す（行が2つにならない）
+    {
+      const nameOf = (i) => page.evaluate((j) => members[j].name, i);
+      const orig2 = await nameOf(2);
+      await page.evaluate(() => { window.__failNext.saveMemberBookMember = 1; });
+      await page.evaluate(() => openM(2));
+      await page.fill('#e_name', '見本 改名');
+      await page.click('button:has-text("反映")');
+      await page.waitForFunction(() => /保存できませんでした/.test(document.getElementById('saveState').textContent));
+      await page.evaluate(() => openM(3));
+      await page.fill('#e_comment', 'ほかの方の一言');
+      const b3 = await page.evaluate(() => window.__calls.length);
+      await page.click('button:has-text("反映")');
+      await page.waitForFunction((n) => window.__calls.length > n, b3);
+      await page.waitForTimeout(100);
+      ck(/保存できませんでした/.test(await page.textContent('#saveState')), '前の保存の失敗が、ほかの方の保存で消えた: ' + await page.textContent('#saveState'));
+      await page.evaluate(() => openM(2));
+      await page.fill('#e_comment', '改名した方の一言');
+      const b4 = await page.evaluate(() => window.__calls.length);
+      await page.click('button:has-text("反映")');
+      await page.waitForFunction((n) => window.__calls.length > n, b4);
+      call = await page.evaluate(() => window.__calls[window.__calls.length - 1]);
+      ck(call.fn === 'saveMemberBookMember' && call.args[0] === orig2 && call.args[1].name === '見本 改名',
+         '氏名を直して失敗した方の次の保存が、直す前の氏名で探していない: ' + J(call.args[0]) + ' ' + orig2);
+      await page.evaluate(() => save());
+      await page.waitForFunction(() => /名簿に保存済み/.test(document.getElementById('saveState').textContent));
+    }
     // 印刷：冊子を開くと、収めたあとに印刷の画面を開く（ここでは開いたページの中身を確かめる）
     const popup = page.waitForEvent('popup');
     await page.evaluate(() => { window.print = () => {}; printBook(); });
     const w = await popup;
     await w.waitForFunction(() => document.documentElement.getAttribute('data-fitted') === '1', null, { timeout: 30000 });
     ck(await w.locator('.page').count() === 2 && await w.locator('.c.pick').count() === 0, '印刷の冊子（表紙＋1ページ・押せるカードは無し）');
+    await page.close();
+  }
+  // ---------- 3b. 名簿を読み込めなかったとき：追加・保存をさせない（名簿が空で上書きされるため）----------
+  {
+    const page = await ctx.newPage();
+    page.on('dialog', (d) => d.accept());
+    await page.addInitScript('window.__failNext = { getMemberBookData: 1 };');
+    await page.addInitScript(STUB(MEMBERS.slice(0, 5), CATS, COVER));
+    await page.route('https://memberbook.test/', (r) => r.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: editorHtml() }));
+    await page.goto('https://memberbook.test/', { waitUntil: 'load' });
+    await page.waitForFunction(() => /見本の失敗/.test(document.getElementById('msg').textContent), null, { timeout: 10000 });
+    await page.evaluate(() => { addM(); save(); });
+    await page.waitForTimeout(1500);
+    const st = await page.evaluate(() => ({ n: members.length, modal: document.getElementById('modal').style.display,
+      saves: window.__calls.filter((c) => /^save/.test(c.fn)).length }));
+    ck(st.n === 0 && st.modal !== 'flex' && st.saves === 0, '名簿を読み込めなかったのに、追加・保存できた: ' + J(st));
     await page.close();
   }
   await browser.close();

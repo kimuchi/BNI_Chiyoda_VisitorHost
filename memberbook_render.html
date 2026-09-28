@@ -18,6 +18,8 @@ var MB_CIRCLE = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳';
 function mbCircle(i){ return i < MB_CIRCLE.length ? MB_CIRCLE.charAt(i) : String(i+1); }
 
 var MB_RED = '#D61717';
+// 会社での役職・BNIの役職の行（左端はカードの左から4pt）が、左上の番号の四角（右端はカードの左から34.2pt）を避ける幅
+var MB_NO_AVOID = 32;
 var MB_FONT = '"Noto Serif JP","Source Han Serif JP","Source Han Serif","源ノ明朝","Yu Mincho","YuMincho","Hiragino Mincho ProN","MS PMincho",serif';
 // 書体の読み込みは、ページの中のスクリプト（mbFitWhenReady）が行う。<link> で読むと、つながりにくいときに
 // ページ全体が止まってしまう（印刷画面が開かない）ため
@@ -28,8 +30,10 @@ var MB_FONT_LINK = '<link rel="preconnect" href="https://fonts.googleapis.com">'
 // 枠に収める欄：<div class="… fit" data-max="8" data-min="6" data-min2="5"><span>文字</span></div>
 //   data-max … いつもの大きさ（pt）。1行のまま data-min まで小さくする
 //   data-min2 … それでも入らなければ2行にして、ここまで小さくする（無ければ1行のまま）
-function mbFitBox(txt, cls, max, min, min2){
+//   avoid … 左からこの幅（pt）には文字を置かない（mbFitAll の data-avoid）
+function mbFitBox(txt, cls, max, min, min2, avoid){
   return '<div class="'+cls+' fit" data-max="'+max+'" data-min="'+min+'"'+(min2?' data-min2="'+min2+'"':'')
+    +(avoid?' data-avoid="'+avoid+'"':'')
     +' style="font-size:'+max+'pt;"><span>'+txt+'</span></div>';
 }
 
@@ -67,17 +71,19 @@ function mbBookCss(){
   +'.cv-trm{position:absolute;left:4.5pt;right:6pt;top:23pt;bottom:4pt;overflow:hidden;}'
   +'.cv-trm .t{color:'+MB_RED+';font-size:10pt;line-height:1.28;}'
   +'.cv-trm .d{font-size:9pt;line-height:1.33;}'
-  +'.cv-prs{position:absolute;left:4pt;right:6pt;top:22pt;height:60pt;display:flex;gap:7pt;align-items:center;}'
+  +'.cv-prs{position:absolute;left:4pt;right:6pt;top:24pt;height:58pt;display:flex;gap:7pt;align-items:center;}'
   +'.cv-prs img,.cv-prs .noimg{width:50pt;height:58pt;object-fit:cover;object-position:center top;background:#eee;flex-shrink:0;}'
-  +'.cv-prs .r{flex:1;min-width:0;text-align:center;font-weight:400;}'
+  +'.cv-prs .r{flex:1;min-width:0;align-self:stretch;overflow:hidden;display:flex;flex-direction:column;text-align:center;font-weight:400;}'
+  +'.cv-prs .r>.zi{margin:auto 0;}'
   +'.cv-prs .rl{font-size:10pt;line-height:1.35;}'
   +'.cv-prs .nm{font-size:12pt;margin-top:3pt;}'
   +'.cv-ptx{position:absolute;left:5pt;right:7pt;top:88pt;bottom:6pt;overflow:hidden;font-size:7.9pt;line-height:1.33;font-weight:400;text-align:justify;}'
   +'.cv-lg{position:absolute;left:12pt;right:8pt;top:773pt;bottom:4pt;}'
   +'.cv-lg .cv-lbl{left:9pt;top:0;height:17pt;line-height:17pt;font-size:9.8pt;font-weight:400;}'
   +'.cv-lgi{position:absolute;left:0;right:0;top:19pt;display:flex;flex-wrap:wrap;row-gap:5.5pt;}'
-  +'.cv-lgi span{display:flex;align-items:center;gap:5pt;width:20%;font-size:11pt;font-weight:400;white-space:nowrap;}'
+  +'.cv-lgi .it{display:flex;align-items:center;gap:5pt;width:20%;font-weight:400;white-space:nowrap;}'
   +'.cv-lgi i{width:16pt;height:16pt;display:inline-block;flex-shrink:0;}'
+  +'.cv-lgi .lgt{flex:1;min-width:0;height:16pt;justify-content:flex-start;text-align:left;}'
 
   /* --- メンバーのカード（3列×6行。1枚 70mm×49.5mm）--- */
   +'.grid{position:absolute;left:0;top:0;width:210mm;height:297mm;display:grid;'
@@ -97,6 +103,7 @@ function mbBookCss(){
   +'.c .bn{height:8.5pt;}'
   /* 会社での役職・BNIの役職・お名前の3行があるときは、会社名の下から詰めて並べる */
   +'.c .mid.full{top:29.2pt;height:36pt;}.c .mid.full .ps{height:8.6pt;}.c .mid.full .bn{height:8pt;}'
+  +'.c .mid.low{top:34.8pt;height:30.2pt;}'
   /* 業種・会社名が1行に入らないときは2行（行の間を詰める）*/
   +'.c .cat.wrap,.c .co.wrap{line-height:1.08;}'
   +'.c .bn>span{background:'+MB_RED+';color:#fff;border-radius:1.5pt;padding:0 2.5pt;line-height:1.35;}'
@@ -122,8 +129,11 @@ function mbCoverHtml(cv, presidentPhoto, usedCats){
  for(var i=0;i<tl.length;i+=2){
    trm += '<div class="t">'+mbCircle(i/2)+mbEsc(tl[i])+'</div><div class="d">'+mbEsc(tl[i+1]||'')+'</div>';
  }
+ // 業種区分の説明は2行まで（1行5つ。11以上のときは1行に入る数を増やし、文字を小さくする）。長い名前も枠に収める
+ var nCat = (usedCats||[]).length, cols = Math.max(5, Math.ceil(nCat / 2)), lgPt = Math.round(11 * 5 / cols * 10) / 10;
  var lg = (usedCats||[]).map(function(c){
-   return '<span><i style="background:'+mbEsc(c.bg||'#ccc')+'"></i>'+mbEsc(c.label||c.key)+'</span>';
+   return '<div class="it" style="width:'+(100/cols)+'%;"><i style="background:'+mbEsc(c.bg||'#ccc')+'"></i>'
+     +mbFitBox(mbEsc(c.label||c.key), 'lgt', lgPt, Math.min(lgPt, 6), 4.5)+'</div>';
  }).join('');
 
  return '<div class="page cover">'
@@ -152,7 +162,7 @@ function mbCoverHtml(cv, presidentPhoto, usedCats){
     +'<div class="cv-lbl" style="font-weight:400;">'+mbEsc(cv.term)+' プレジデント挨拶</div>'
     +'<div class="cv-prs">'
       +(presidentPhoto ? '<img src="'+presidentPhoto+'">' : '<div class="noimg"></div>')
-      +'<div class="r"><div class="rl">'+mbBr(cv.prole)+'</div><div class="nm">'+mbEsc(cv.pname)+'</div></div>'
+      +'<div class="r fitblock" data-min="0.55"><div class="zi"><div class="rl">'+mbBr(cv.prole)+'</div><div class="nm">'+mbEsc(cv.pname)+'</div></div></div>'
     +'</div>'
     +'<div class="cv-ptx fitblock" data-min="0.6"><div class="zi">'+mbBr(cv.ptext)+'</div></div>'
   +'</div>'
@@ -170,44 +180,71 @@ function mbCardHtml(m, no, photo, idx){
   +mbFitBox(mbEsc(m.title), 'cat', 7, 4.5, 3.8)
   +mbFitBox(mbEsc(m.company), 'co', 7, 4.5, 3.8)
   +'<div class="mid'+(m.position && m.role ? ' full' : '')+'">'
-    +(m.position ? mbFitBox(mbEsc(m.position), 'ps', 7, 5) : '')
-    +(m.role ? mbFitBox(mbEsc(m.role), 'bn', 6, 4) : '')
+    +(m.position ? mbFitBox(mbEsc(m.position), 'ps', 7, 4.25, 0, MB_NO_AVOID) : '')
+    +(m.role ? mbFitBox(mbEsc(m.role), 'bn', 6, 3.8, 0, MB_NO_AVOID).replace(' data-avoid=', m.position ? ' data-avoid=' : ' data-lower="1" data-avoid=') : '')
     +mbFitBox(mbEsc(m.name), 'nm', 14, 9)
   +'</div>'
-  +mbFitBox(mbEsc(m.comment), 'cm', 8, 6, 4.8)
+  +mbFitBox(mbBr(m.comment), 'cm', 8, 6, 4.8)
   +'<div class="bar b1">最も紹介して欲しいカテゴリー</div>'
-  +mbFitBox(mbEsc(m.refer), 'rf', 8, 5.5, 4.6)
+  +mbFitBox(mbBr(m.refer), 'rf', 8, 5.5, 4.6)
   +'<div class="bar b2">協業したいカテゴリー</div>'
-  +mbFitBox(mbEsc(m.collab), 'cb', 8, 5.5, 4.6)
+  +mbFitBox(mbBr(m.collab), 'cb', 8, 5.5, 4.6)
  +'</div>';
 }
 
 // --- 文字を枠に収める（書体を読み込んだあとに、実際の幅で測る）---
-// この関数は冊子のHTMLにもそのまま埋め込む（印刷・配布用HTML・画面のプレビューで同じ動き）
+// この関数は冊子のHTMLにもそのまま埋め込む（印刷・配布用HTML・画面のプレビューで同じ動き）。何度呼んでも同じ結果になる
+//   data-avoid … 左からこの幅（pt）には文字を置かない（会社での役職・BNIの役職の行は、左上の番号の四角にかかる）。
+//                真ん中に置いて四角に重なるときだけ、四角の右に寄せて収め直す
+//   data-lower … （BNIの役職だけの方）四角の右に入らなければ、お名前ごと四角の下に下げる（親の .mid に low）
 function mbFitAll(doc){
   var q = function(sel){ return Array.prototype.slice.call(doc.querySelectorAll(sel)); };
-  q('.fit').forEach(function(el){
-    var t = el.firstElementChild; if(!t || !t.textContent) return;
+  var fit = function(el, t){
     var max = parseFloat(el.getAttribute('data-max')), min = parseFloat(el.getAttribute('data-min'));
-    var min2 = parseFloat(el.getAttribute('data-min2') || '0'), W = el.clientWidth, H = el.clientHeight, s;
+    var min2 = parseFloat(el.getAttribute('data-min2') || '0'), cs = doc.defaultView.getComputedStyle(el);
+    var W = el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight), H = el.clientHeight, s;
     el.classList.remove('wrap'); t.style.maxWidth = '';
     for(s = max; s >= min - 0.001; s -= 0.25){
       el.style.fontSize = s + 'pt';
-      if(t.offsetWidth <= W + 0.5 && t.offsetHeight <= H + 0.5) return;
+      if(t.offsetWidth <= W + 0.5 && t.offsetHeight <= H + 0.5) return true;
     }
     if(min2){
       el.classList.add('wrap'); t.style.maxWidth = W + 'px';
       for(s = min; s >= min2 - 0.001; s -= 0.25){
         el.style.fontSize = s + 'pt';
-        if(t.offsetHeight <= H + 0.5 && t.scrollWidth <= W + 0.5) return;
+        if(t.offsetHeight <= H + 0.5 && t.scrollWidth <= W + 0.5) return true;
       }
     }
-    el.setAttribute('data-over', '1');                 // いちばん小さくしても入らない（はみ出た分は枠で切る）
+    return false;
+  };
+  // 文字（span）が、そのカードの番号の四角に重なるか
+  var hitsNo = function(el, t){
+    var c = el.closest ? el.closest('.c') : null, n = c ? c.querySelector('.no') : null;
+    if(!n) return false;
+    var a = t.getBoundingClientRect(), b = n.getBoundingClientRect();
+    return a.left < b.right - 0.5 && a.right > b.left + 0.5 && a.top < b.bottom - 0.5 && a.bottom > b.top + 0.5;
+  };
+  q('.fit').forEach(function(el){
+    var t = el.firstElementChild; if(!t || !t.textContent) return;
+    var av = parseFloat(el.getAttribute('data-avoid') || '0'), low = el.getAttribute('data-lower') ? el.parentNode : null;
+    el.removeAttribute('data-over'); el.style.paddingLeft = '';
+    if(low) low.classList.remove('low');
+    var ok = fit(el, t);
+    if(av && (!ok || hitsNo(el, t))){
+      el.style.paddingLeft = av + 'pt';                 // 四角の右に寄せて収め直す
+      ok = fit(el, t);
+      if(!ok && low){                                  // それでも入らない帯は、行ごと四角の下に下げて、幅いっぱいで収める
+        low.classList.add('low'); el.style.paddingLeft = '';
+        ok = fit(el, t) && !hitsNo(el, t);
+      }
+    }
+    if(!ok) el.setAttribute('data-over', '1');         // いちばん小さくしても入らない（はみ出た分は枠で切る）
   });
   // 何行もある欄（表紙）：中身（.zi）をまとめて縮める（zoom）。枠の大きさは変えない
   q('.fitblock').forEach(function(el){
     var zi = el.firstElementChild, min = parseFloat(el.getAttribute('data-min') || '0.6'), z;
     if(!zi) return;
+    el.removeAttribute('data-over');
     for(z = 1; z >= min - 0.001; z -= 0.025){
       zi.style.zoom = z;
       if(el.scrollHeight <= el.clientHeight + 1 && el.scrollWidth <= el.clientWidth + 1) return;
@@ -216,8 +253,8 @@ function mbFitAll(doc){
   });
 }
 // 書体（Googleフォント）を読み込んでから収める。読めないとき・8秒たっても届かないときは、パソコンの明朝体で収める
-// （あとから書体が届いたら、収め直す）
-function mbFitWhenReady(win, cssUrl, done){
+// （あとから書体が届いたら、収め直して refit を呼ぶ）
+function mbFitWhenReady(win, cssUrl, done, refit){
   var doc = win.document, finished = false;
   var go = function(){ if(finished) return; finished = true; try{ mbFitAll(doc); }catch(e){} if(done) done(); };
   var fonts = function(){
@@ -231,7 +268,7 @@ function mbFitWhenReady(win, cssUrl, done){
     var l = doc.createElement('link');
     l.rel = 'stylesheet'; l.href = cssUrl; l.onload = fonts; l.onerror = go;
     (doc.head || doc.documentElement).appendChild(l);
-    doc.fonts.addEventListener('loadingdone', function(){ if(finished) try{ mbFitAll(doc); }catch(e){} });
+    doc.fonts.addEventListener('loadingdone', function(){ if(finished) try{ mbFitAll(doc); if(refit) refit(); }catch(e){} });
   }catch(e){ fonts(); }
   setTimeout(go, 8000);
 }
@@ -253,7 +290,7 @@ function bookHtml(opts){
    + 'mbFitWhenReady(window, ' + JSON.stringify(MB_FONT_CSS) + ', function(){ document.documentElement.setAttribute("data-fitted","1");'
    + (o.autoPrint ? ' setTimeout(function(){ window.focus(); window.print(); }, 200);' : '')
    + (o.pick ? ' try{ parent.postMessage({ mbFitted: 1 }, "*"); }catch(e){}' : '')
-   + ' });\n'
+   + ' }' + (o.pick ? ', function(){ try{ parent.postMessage({ mbFitted: 1 }, "*"); }catch(e){} }' : '') + ');\n'
    + (o.pick ? 'document.addEventListener("click", function(e){ var c = e.target.closest ? e.target.closest(".c.pick") : null;'
              + ' if(c) parent.postMessage({ mbOpen: +c.getAttribute("data-i") }, "*"); });\n' : '');
  return '<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8">'

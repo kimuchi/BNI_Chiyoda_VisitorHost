@@ -24,7 +24,12 @@ function getMemberBookData() {
   }
 }
 
-function saveMemberBookData(members, cover) { return saveMemberMaster(members, cover); }
+// 編集画面から一覧をまとめて保存する（並べ替え・削除・追加）。空の一覧は受け付けない
+// （画面が名簿を読み込めていないまま保存すると、名簿が消えてしまうため）
+function saveMemberBookData(members, cover) {
+  if (!members || !members.length) return { ok: false, message: 'メンバーが0名のため保存しませんでした。画面を開き直してください。' };
+  return saveMemberMaster(members, cover);
+}
 
 // 1人ぶんだけ名簿に書く（メンバーブックの編集画面の「反映」。押したらすぐ名簿に残る）。
 // 直す前の氏名（origName）で行を探し、編集画面で直せる列だけを書き換える（ほかの列・ほかの方の行には触らない）。
@@ -37,6 +42,7 @@ function saveMemberBookMember(origName, m) {
     if (!m || !String(m.name || '').trim()) return { ok: false, message: '氏名が空です。' };
     if (!lock.tryLock(15000)) return { ok: false, message: 'ほかの方が保存中です。少し待ってから、もう一度「反映」を押してください。' };
     var sh = ensureMemberSheet_(), n = MEMBER_HEADERS_.length;
+    if (sh.getMaxColumns() < n) sh.insertColumnsAfter(sh.getMaxColumns(), n - sh.getMaxColumns());
     // 以前の名簿には「会社での役職」の列が無い → 見出しを足す
     var head = sh.getRange(1, 1, 1, n).getValues()[0];
     if (String(head[n - 1] || '') !== MEMBER_HEADERS_[n - 1]) {

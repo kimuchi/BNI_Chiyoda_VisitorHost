@@ -545,6 +545,51 @@ if (!SECOND) {
     const vis = order.filter(shown);
     vis.forEach((p, i) => { if (i && isEth(p)) pck(!isEth(vis[i - 1]), `倫理規定：表示のページが2枚続いている（${vis[i - 1]}・${p}）`); });
     pck((info.members.ethics || []).length >= 1, '倫理規定：知らせが無い');
+    // 雛形の並びが違っても（倫理規定がまとまりの前・あいだに別のページ・2枚目の写しがある）、
+    // 表示の倫理規定は「人がいるまとまり」の数だけで、続けて出ない。4つの並び × 4つの人数で、雛形を読み直して作る
+    const fresh = () => {
+      const q = {};
+      (function walk(d) {
+        for (const n of fs.readdirSync(d)) {
+          const x = path.join(d, n);
+          if (fs.statSync(x).isDirectory()) walk(x); else q[path.relative(DIR, x).replace(/\\/g, '/')] = fileBlob(x);
+        }
+      })(DIR);
+      return q;
+    };
+    const t0 = fresh(), o0 = F.slideOrder_(t0), ethOf = (q, p) => /倫理規定/.test(F.slideText_(F.xmlOf_(q, p) || ''));
+    const blk = (k) => o0.filter((p) => F.fpMemberKind_(F.xmlOf_(t0, p) || '') === k && F.fpMemberUnit_(F.xmlOf_(t0, p), sz.W, sz.H));
+    const R0 = blk('renew'), N0 = blk('new'), E0 = o0.find((p) => ethOf(t0, p));
+    if (R0.length && N0.length && E0) {
+      const reorder = (q, fn) => {
+        const prs = F.xmlOf_(q, 'ppt/presentation.xml'), ids = prs.match(/<p:sldId\b[^>]*\/>/g), o = F.slideOrder_(q);
+        const out = fn(ids.map((x, i) => ({ x, p: o[i] })));
+        F.putXml_(q, 'ppt/presentation.xml', prs.replace(/<p:sldIdLst>[\s\S]*?<\/p:sldIdLst>/, '<p:sldIdLst>' + out.map((y) => y.x).join('') + '</p:sldIdLst>'));
+      };
+      const move = (arr, p, before) => {
+        const [it] = arr.splice(arr.findIndex((y) => y.p === p), 1);
+        arr.splice(before ? arr.findIndex((y) => y.p === before) : arr.length, 0, it);
+        return arr;
+      };
+      const other = o0.find((p) => !ethOf(t0, p) && !R0.includes(p) && !N0.includes(p) && o0.indexOf(p) > o0.indexOf(E0) + 1) || o0[0];
+      const LAYOUTS = {
+        'いつもの並び': null,
+        '倫理規定がまとまりの前': (q) => reorder(q, (a) => move(a, E0, R0[0])),
+        '新メンバーと倫理規定のあいだに別のページ': (q) => reorder(q, (a) => move(a, other, E0)),
+        '倫理規定の写しが2枚': (q) => F.fpClonePages_(q, E0, 1, E0),
+      };
+      const ppl = (n) => Array.from({ length: n }, (_, i) => ({ name: MEMBERS[i].name, raw: MEMBERS[i].name, years: 1 }));
+      const LISTS = { 両方: [1, 1], 更新だけ: [1, 0], 新だけ: [0, 1], だれもいない: [0, 0] };
+      Object.entries(LAYOUTS).forEach(([ln, fn]) => Object.entries(LISTS).forEach(([cn, [r, n]]) => {
+        const q = fresh();
+        if (fn) fn(q);
+        F.applyMemberPages_(q, { renewMembers: ppl(r), newMembers: ppl(n) }, { by: {}, seq: 0 });
+        const vis2 = F.slideOrder_(q).filter((p) => !/<p:sld\b[^>]*\sshow="0"/.test(F.xmlOf_(q, p) || ''));
+        const ve = vis2.filter((p) => ethOf(q, p));
+        pck(ve.length === r + n, `倫理規定（${ln}・${cn}）：表示の倫理規定が ${ve.length}枚（${r + n}枚のはず）`);
+        vis2.forEach((p, i) => { if (i && ethOf(q, p)) pck(!ethOf(q, vis2[i - 1]), `倫理規定（${ln}・${cn}）：表示のページが2枚続いている`); });
+      }));
+    }
   }
   // バイスプレジデントによる報告：数字と速報の日付
   if (vpReport) {
