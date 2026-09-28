@@ -6,9 +6,11 @@
 var MEMBER_SHEET_ = 'メンバー名簿';
 // メンバーリスト(OCR)で読むPDFの列（No/氏名/ふりがな/カテゴリー/会社名/役職/メモ）と、
 // メンバーブックで使う項目を1枚に統合した。これが全機能の正本になる。
+// 「役職」はBNIの役職（役職・チーム（半期ごと）から期ごとに入る。Spreadingの position もこれ）。
+// 「会社での役職」は、代表取締役・支店長などの会社での肩書き（メンバーブックに載せる）。あとから足した列なので最後にある
 var MEMBER_HEADERS_ = ['No', '業種区分', '氏名', 'ふりがな', 'カテゴリー', '会社名', '役職', 'メモ',
                        '写真ファイル名', '一言コメント', '紹介してほしい人', '協業したい人',
-                       '入会日', '更新日', '更新期限日'];
+                       '入会日', '更新日', '更新期限日', '会社での役職'];
 var COVER_SHEET_ = 'メンバーブック表紙';
 var CAT_SHEET_ = '業種区分マスタ';
 
@@ -175,7 +177,8 @@ function getMemberMaster(opts) {
         collab:    col(r, 11),
         joinDate:   toDateStr_(r[12]),
         renewDate:  toDateStr_(r[13]),
-        expireDate: toDateStr_(r[14])
+        expireDate: toDateStr_(r[14]),
+        position:  col(r, 15)     // 会社での役職（肩書き）
       });
     }
     if (opts && opts.membersOnly) return { ok: true, members: members };
@@ -200,7 +203,7 @@ function saveMemberMaster(members, cover) {
       rows.push([m.no || '', m.cat || '', m.name || '', m.kana || '', m.title || '',
                  m.company || '', m.role || '', m.memo || '', m.photoFile || '',
                  m.comment || '', m.refer || '', m.collab || '',
-                 m.joinDate || '', m.renewDate || '', m.expireDate || '']);
+                 m.joinDate || '', m.renewDate || '', m.expireDate || '', m.position || '']);
     }
     if (rows.length) sh.getRange(2, 1, rows.length, MEMBER_HEADERS_.length).setValues(rows);
     if (cover) saveCoverInfo_(cover);
@@ -386,7 +389,7 @@ function resetMemberBookCoverText() {
 // （以前は取り込みのたびに名簿を丸ごと書き換えており、
 //   ふりがな・No・写真・入会日など、取り込み元に無い項目が消えていた）
 var MEMBER_FIELDS_ = ['no', 'cat', 'kana', 'title', 'company', 'role', 'memo', 'photoFile',
-                      'comment', 'refer', 'collab', 'joinDate', 'renewDate', 'expireDate'];
+                      'comment', 'refer', 'collab', 'joinDate', 'renewDate', 'expireDate', 'position'];
 
 function mergeMembersInto_(incoming) {
   var cur = getMemberMaster().members || [], byName = {}, i, f;
@@ -400,7 +403,7 @@ function mergeMembersInto_(incoming) {
     if (idx === undefined) {
       var row = { no: '', cat: '', name: e.name, kana: '', title: '', company: '', role: '', memo: '',
                   photoFile: '', comment: '', refer: '', collab: '',
-                  joinDate: '', renewDate: '', expireDate: '' };
+                  joinDate: '', renewDate: '', expireDate: '', position: '' };
       for (f = 0; f < MEMBER_FIELDS_.length; f++) {
         if (e[MEMBER_FIELDS_[f]]) row[MEMBER_FIELDS_[f]] = e[MEMBER_FIELDS_[f]];
       }
@@ -465,7 +468,7 @@ function importMemberBookHtml(base64) {
 }
 
 // タブ区切りテキストから取り込む（見出し行は任意）
-// 列: No / 業種区分 / 氏名 / ふりがな / カテゴリー / 会社名 / 役職 / メモ / 写真 / 一言 / 紹介 / 協業 / 入会日 / 更新日 / 更新期限日
+// 列: No / 業種区分 / 氏名 / ふりがな / カテゴリー / 会社名 / 役職 / メモ / 写真 / 一言 / 紹介 / 協業 / 入会日 / 更新日 / 更新期限日 / 会社での役職
 function importMemberTsv(text, replaceAll) {
   try {
     if (!text || !String(text).trim()) return { ok: false, message: '貼り付けられたデータが空です。' };
@@ -481,7 +484,8 @@ function importMemberTsv(text, replaceAll) {
         title: (c[4] || '').trim(), company: (c[5] || '').trim(), role: (c[6] || '').trim(),
         memo: (c[7] || '').trim(), photoFile: (c[8] || '').trim(), comment: (c[9] || '').trim(),
         refer: (c[10] || '').trim(), collab: (c[11] || '').trim(),
-        joinDate: (c[12] || '').trim(), renewDate: (c[13] || '').trim(), expireDate: (c[14] || '').trim()
+        joinDate: (c[12] || '').trim(), renewDate: (c[13] || '').trim(), expireDate: (c[14] || '').trim(),
+        position: (c[15] || '').trim()
       });
     }
     if (!members.length) return { ok: false, message: '取り込める行がありませんでした。タブ区切りで、3列目が氏名になっているかご確認ください。' };

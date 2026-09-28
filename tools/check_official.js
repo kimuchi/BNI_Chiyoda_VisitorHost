@@ -298,7 +298,11 @@ if (made.meetingFirst && made.memberPresen) {
   sb.editMeetingSlides_(parts2, map, rules, { memberPages: { newMembers: [], renewMembers: [] }, networkingLeaders: { show: false, items: [] } });
   const hid = (t) => sb.slideOrder_(parts2).map((p) => sb.xmlOf_(parts2, p)).filter((x) => sb.slideText_(x).includes(t))
     .every((x) => /<p:sld\b[^>]*\sshow="0"/.test(x));
-  ck(hid('新規および更新メンバー') && hid('ネットワーキングリーダー'), '前半：いない日のページが非表示になっていない');
+  ck(hid('新規および更新メンバー') && hid('ネットワーキングリーダー') && hid('倫理規定'), '前半：いない日のページ（倫理規定も）が非表示になっていない');
+  // 新規および更新メンバーのいる日：そのすぐうしろの倫理規定は表示（複製はしない）
+  const ordF = ss.map((p) => text(f[p])), iNm = ordF.findIndex((t) => t.includes('新規および更新メンバー'));
+  ck(iNm >= 0 && ordF[iNm + 1].includes('倫理規定') && !/<p:sld\b[^>]*\sshow="0"/.test(f[ss[iNm + 1]].toString('utf8'))
+     && ordF.filter((t) => t.includes('倫理規定')).length === 1, '前半：新規および更新メンバーのあとの倫理規定');
 }
 
 // ===== 6. 定例会（後半）=====
