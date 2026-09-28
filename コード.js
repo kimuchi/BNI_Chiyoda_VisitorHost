@@ -2,7 +2,7 @@
 
 // 反映されたか確かめるための版。変更したら日付を更新する。
 // clasp push / デプロイが効いているかは、これを画面で見れば分かる。
-var SYSTEM_VERSION_ = '2026-09-28c';
+var SYSTEM_VERSION_ = '2026-09-28d';
 
 function getSystemVersion() { return SYSTEM_VERSION_; }
 
@@ -727,17 +727,79 @@ function exportSheetToPdf(sheet, fileName, fileIdPropKey) {
   return pdfFile.getUrl();
 }
 
+// 差し替えは中身だけ（URLはそのまま）。登録してあるファイルが見つからない（削除した）ときだけ新しく作る（URLが変わる）。
+// 権限が無いなど、ほかの理由で差し替えられないときは新しく作らない（勝手にURLが変わり、送ったメールのリンクが古いままになるため）
 function uploadMemberBookBlob_(blob) {
   var props = PropertiesService.getScriptProperties(), fileId = props.getProperty('MEMBER_BOOK_ID');
-  if (fileId) { try { Drive.Files.update({}, fileId, blob); return { msg: "更新しました。", url: props.getProperty('MEMBER_BOOK_URL') }; } catch(e) { fileId = null; } }
-  if (!fileId) {
-    var file = Drive.Files.create({name: 'MemberBook.pdf', mimeType: 'application/pdf'}, blob);
-    DriveApp.getFileById(file.id).setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-    props.setProperty('MEMBER_BOOK_ID', file.id);
-    var url = DriveApp.getFileById(file.id).getUrl();
-    props.setProperty('MEMBER_BOOK_URL', url);
-    return { msg: "新規登録しました。", url: url };
+  if (fileId) {
+    var r = memberBookReplace_(fileId, blob);
+    if (r.ok) {
+      props.setProperty('MEMBER_BOOK_UPDATED', new Date().toISOString());
+      return { msg: "更新しました（URLはそのままです）。", url: props.getProperty('MEMBER_BOOK_URL') };
+    }
+    if (!r.notFound) return { error: r.message };
   }
+  var made = memberBookCreate_(blob);
+  props.setProperty('MEMBER_BOOK_UPDATED', new Date().toISOString());
+  return { msg: (fileId ? "登録してあったファイルが見つからないため、新しく作って登録しました（URLが変わりました。これからのメールには新しいURLが入ります）。"
+                        : "新規登録しました。")
+               + (made.shared ? "" : "\n※ リンクの共有を設定できませんでした（組織の設定など）。ドライブで共有を確かめてください。"), url: made.url };
+}
+// 登録してあるメンバーブックの中身だけを差し替える（ゴミ箱にあれば戻してから）。
+// 戻り値 { ok } か { ok: false, notFound: 見つからない（削除した）, message: 知らせ }
+function memberBookReplace_(id, blob) {
+  var trashed = false;
+  try {
+    var meta = Drive.Files.get(id, { fields: 'id,trashed', supportsAllDrives: true });
+    trashed = !!(meta && meta.trashed);
+    if (trashed) Drive.Files.update({ trashed: false }, id, null, { supportsAllDrives: true });
+    Drive.Files.update({}, id, blob, { supportsAllDrives: true });   // 中身だけ（名前・共有はそのまま）
+    return { ok: true };
+  } catch (e) {
+    var msg = String(e && e.message ? e.message : e);
+    console.error('[MBOOK] 差し替え: ' + msg);
+    if (/not ?found|見つか/i.test(msg)) {
+      return { ok: false, notFound: true, message: '登録してあるメンバーブック（メールで送るPDF）のファイルが見つかりませんでした（削除した・ゴミ箱を空にした など）。' };
+    }
+    // このアプリへのGoogleドライブの許可（認可）が足りない：許可し直してもらう（ファイルの権限の話ではない）
+    if (/authentication scopes|permission to call|authorization is required|認可|承認/i.test(msg)) {
+      return { ok: false, message: driveHelpHint_(new Error('Googleドライブへの許可が足りません（' + msg + '）')) };
+    }
+    // 持ち主がゴミ箱に入れた：戻せるのは持ち主だけ
+    if (trashed && /permission|権限|forbidden/i.test(msg)) {
+      return { ok: false, message: 'メンバーブック（メールで送るPDF）のファイルが、持ち主のゴミ箱に入っています。持ち主に、ゴミ箱から戻してもらってください。\n（' + msg + '）' };
+    }
+    if (/permission|権限|forbidden|access denied|アクセスが拒否/i.test(msg)) {
+      var owner = '';
+      try {
+        var o = Drive.Files.get(id, { fields: 'owners(displayName,emailAddress)', supportsAllDrives: true });
+        owner = (o && o.owners && o.owners[0]) ? (o.owners[0].displayName || o.owners[0].emailAddress || '') : '';
+      } catch (x) {}
+      return { ok: false, message: 'メンバーブック（メールで送るPDF）のファイルを差し替える権限がありません。\n'
+        + 'ファイルの持ち主' + (owner ? '（' + owner + ' さん）' : '') + 'に、このファイルの「編集者」にしてもらってから、もう一度お試しください。\n'
+        + '（新しく作り直すとURLが変わり、送ったメールのリンクが古いままになるので、作り直さないでください）\n（' + msg + '）' };
+    }
+    return { ok: false, message: 'メンバーブック（メールで送るPDF）を差し替えられませんでした（' + msg + '）。少し待ってから、もう一度お試しください。' };
+  }
+}
+// メンバーブック（メールで送るPDF）のファイルを新しく作り、リンクを知っている全員が見られるようにして登録する。
+// 置き場所は素材フォルダの「03_生成物」（共有フォルダなら、ほかの役員も差し替えられる）。素材フォルダが無ければマイドライブ
+function memberBookCreate_(blob) {
+  var props = PropertiesService.getScriptProperties(), res = { name: 'MemberBook.pdf', mimeType: 'application/pdf' }, file;
+  try { res.parents = [getAssetFolder_('output').getId()]; } catch (e) {}
+  try { file = Drive.Files.create(res, blob, { supportsAllDrives: true }); }
+  catch (e) {
+    if (!res.parents) throw e;                          // 03_生成物 に書けない（見るだけの共有など）：マイドライブに作る
+    console.warn('[MBOOK] 03_生成物に作れません: ' + (e && e.message ? e.message : e));
+    delete res.parents;
+    file = Drive.Files.create(res, blob, { supportsAllDrives: true });
+  }
+  var f = DriveApp.getFileById(file.id), shared = true;
+  try { f.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch (e) { shared = false; }
+  var url = f.getUrl();
+  props.setProperty('MEMBER_BOOK_ID', file.id);
+  props.setProperty('MEMBER_BOOK_URL', url);
+  return { id: file.id, url: url, shared: shared };
 }
 
 // ダイアログからは base64 文字列で受け取る（フォーム＋ファイル送信は環境により

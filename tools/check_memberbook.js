@@ -2,7 +2,9 @@
 //   1. 名簿への1人ぶんの保存（saveMemberBookMember）… 直せる列だけ書き換える・居なければ足す・古い名簿に列を足す
 //   2. 組版（Chromium で実際に描いて測る）… 1ページ18名（3列×6行・ページいっぱい）、長い文字を枠に収める
 //      （はみ出さない・ほかの欄に重ならない）、会社での役職とBNIの役職、表紙、業種区分の説明は使っている区分だけ
-//   3. 編集画面 … 「反映」ですぐ名簿に保存・閉じるときに反映していない変更を聞く・並べ替えは自動で保存・プレビューのカードを押すと編集
+//   3. 編集画面 … 「反映」ですぐ名簿に保存・閉じるときに反映していない変更を聞く・並べ替えは自動で保存・プレビューのカードを押すと編集・
+//      「PDFを作ってドライブを更新」（PDFを画面の中で作って送る・差し替えられないときは確かめてから作り直す・作れないときの案内）
+//      （PDFの中身と、サーバーの差し替えは check_memberbook_pdf.js）
 //
 //   node tools/check_memberbook.js [Googleフォントを写したディレクトリ（css.txt と gstatic/）]
 //   フォントのディレクトリを渡さなければ、パソコンにある書体で描く（収め方の確かめはどちらでもできる）
@@ -189,9 +191,9 @@ async function routeFonts(ctx) {
 
 // 編集画面のHTML（テンプレートの include を中身に置き換える）
 function editorHtml() {
-  const render = fs.readFileSync(path.join(ROOT, 'memberbook_render.html'), 'utf8');
   return fs.readFileSync(path.join(ROOT, 'memberbook_editor.html'), 'utf8')
-    .replace(/<\?!=\s*HtmlService\.createHtmlOutputFromFile\('memberbook_render'\)\.getContent\(\);\s*\?>/, () => render);
+    .replace(/<\?!=\s*HtmlService\.createHtmlOutputFromFile\('([\w]+)'\)\.getContent\(\);\s*\?>/g,
+      (m, name) => fs.readFileSync(path.join(ROOT, name + '.html'), 'utf8'));
 }
 // 期ごとのプレジデント設定（サーバーの coverPresidentList_ と同じ形）。24期が、いまの期
 const PRESIDENTS = [
@@ -199,10 +201,11 @@ const PRESIDENTS = [
   { term: 25, label: '25期', range: '2027年4月〜9月', current: false, saved: false, pname: '見本 二郎', prole: '見本チャプター\n第25期プレジデント', ptext: '' },
 ];
 // google.script.run の代わり（呼ばれた関数と引数を window.__calls に残す）
-const STUB = (members, cats, cover) => `
+const STUB = (members, cats, cover, drive) => `
   window.__calls = [];
   window.__failNext = window.__failNext || {};        // 関数名 → 何回失敗させるか（ok:false を返す）
-  window.__data = ${J({ members, cats, presidents: PRESIDENTS,
+  window.__pdfAnswers = [];                            // saveMemberBookPdfToDrive の返事（空ならうまくいったことにする）
+  window.__data = ${J({ members, cats, presidents: PRESIDENTS, drive: drive || {},
     cover: Object.assign({}, cover, { termNo: 24, term: '24期', pname: PRESIDENTS[0].pname, prole: PRESIDENTS[0].prole, ptext: PRESIDENTS[0].ptext }) })};
   (function(){
     function runner(){
@@ -211,9 +214,16 @@ const STUB = (members, cats, cover) => `
       r.withFailureHandler = function(f){ ng = f; return r; };
       var answer = {
         getMemberBookData: function(){ return { ok: true, members: JSON.parse(JSON.stringify(window.__data.members)), categories: window.__data.cats,
-          cover: Object.assign({}, window.__data.cover), presidents: JSON.parse(JSON.stringify(window.__data.presidents)) }; },
+          cover: Object.assign({}, window.__data.cover), presidents: JSON.parse(JSON.stringify(window.__data.presidents)), drive: window.__data.drive }; },
+        saveMemberBookPdfToDrive: function(){ return window.__pdfAnswers.shift() || { ok: true, created: false,
+          url: 'https://drive.test/file/d/MB/view', downloadUrl: 'https://drive.google.com/uc?export=download&id=MB',
+          message: 'ドライブのメンバーブック（メールで送るPDF）を差し替えました。URLはそのままです。' }; },
         getMemberPhotoThumbs: function(){ return { ok: true, map: {} }; },
-        getMemberPhotosBase64: function(){ return { ok: true, map: {} }; },
+        // 写真の実体：window.__photos（氏名 → 画像）にある方だけ。window.__photoFail の方は「読めなかった」
+        getMemberPhotosBase64: function(names){
+          var map = {}, missing = [], failed = [], gone = [], ph = window.__photos || {}, bad = window.__photoFail || [], lost = window.__photoGone || [];
+          (names || []).forEach(function(n){ if (bad.indexOf(n) >= 0) failed.push(n); else if (lost.indexOf(n) >= 0) gone.push(n); else if (ph[n]) map[n] = ph[n]; else missing.push(n); });
+          return { ok: true, map: map, missing: missing, gone: gone, failed: failed }; },
         saveMemberBookMember: function(o, m){ return { ok: true, message: '「' + m.name + '」を名簿に保存しました。' }; },
         saveMemberBookData: function(){ return { ok: true, message: 'メンバー名簿を保存しました。' }; },
         // プレジデントの項目は、渡した期（t）の設定として保存したことにする
@@ -227,7 +237,7 @@ const STUB = (members, cats, cover) => `
         r[k] = function(){ var args = Array.prototype.slice.call(arguments);
           window.__calls.push({ fn: k, args: JSON.parse(JSON.stringify(args)) });
           var bad = window.__failNext[k] > 0 && window.__failNext[k]--;
-          setTimeout(function(){ ok && ok(bad ? { ok: false, message: '見本の失敗' } : answer[k].apply(null, args)); }, 5); };
+          setTimeout(function(){ ok && ok(bad ? { ok: false, message: '見本の失敗' } : answer[k].apply(null, args)); }, (window.__delay || {})[k] || 5); };
       });
       return r;
     }
@@ -521,6 +531,143 @@ const STUB = (members, cats, cover) => `
     ck(st.n === 0 && st.modal !== 'flex' && st.cover !== 'flex' && st.saves === 0, '名簿を読み込めなかったのに、追加・保存・表紙の保存ができた: ' + J(st));
     await page.close();
   }
+  // ---------- 3c. PDFを作ってドライブを更新（アップロードしない）----------
+  {
+    const page = await ctx.newPage();
+    const dialogs = [];
+    page.on('dialog', async (d) => { dialogs.push(d.message()); await d.accept(); });
+    await page.addInitScript(STUB(MEMBERS.slice(0, 5), CATS, COVER, { id: 'MB', url: 'https://drive.test/file/d/MB/view', updated: '2026-09-20T01:02:00.000Z' }));
+    await page.route('https://memberbook.test/', (r) => r.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: editorHtml() }));
+    await page.goto('https://memberbook.test/', { waitUntil: 'load' });
+    await page.waitForFunction(() => /5名を読み込みました/.test(document.getElementById('msg').textContent), null, { timeout: 10000 });
+    const note = () => page.evaluate(() => document.getElementById('driveNote').innerHTML);
+    let n = await note();
+    ck(/href="https:\/\/drive\.test\/file\/d\/MB\/view"/.test(n) && /最後に差し替え：9\/20 /.test(n), 'ドライブのメンバーブックの様子: ' + n);
+    const lastPdfCall = () => page.evaluate(() => window.__calls.filter((c) => c.fn === 'saveMemberBookPdfToDrive').map((c) => [c.args[0].length, atob(c.args[0].slice(0, 12)), c.args[1], c.args[2]]));
+    await page.click('#btnPdf');
+    await page.waitForFunction(() => /差し替えました/.test(document.getElementById('msg').textContent), null, { timeout: 60000 });
+    let calls = await lastPdfCall();
+    ck(calls.length === 1 && calls[0][1].startsWith('%PDF-1.4') && calls[0][0] > 50000 && calls[0][2] === 'MemberBook.pdf' && calls[0][3] === false,
+       'PDFを作って送っていない（アップロードなしで差し替え）: ' + J(calls));
+    const msg = await page.evaluate(() => document.getElementById('msg').innerHTML);
+    ck(/ドライブで開く/.test(msg) && /uc\?export=download&amp;id=MB/.test(msg), '差し替えたあとのリンク: ' + msg);
+    n = await note();
+    ck(/最後に差し替え/.test(n) && !/9\/20 /.test(n), '差し替えた日時が変わっていない: ' + n);
+    ck(await page.evaluate(() => Array.from(document.querySelectorAll('.side button')).every((b) => !b.disabled)), '終わったのにボタンが押せないまま');
+    // 差し替えられない（削除した・権限が無い）：「新しく作り直す」を押し、確かめてから作り直す
+    await page.evaluate(() => { window.__pdfAnswers.push({ ok: false, canRecreate: true, message: 'ドライブのメンバーブック（メールで送るPDF）を差し替えられませんでした。' }); });
+    await page.click('#btnPdf');
+    await page.waitForFunction(() => /新しく作り直す/.test(document.getElementById('msg').textContent), null, { timeout: 60000 });
+    ck((await lastPdfCall()).length === 2, '差し替えられないときの呼び出し');
+    // 作り直す前に内容が変わった：作り直しは、いまの内容でPDFを作り直してから送る
+    await page.evaluate(() => { members[0].company = '見本 作り直し前に直した会社'; });
+    await page.click('#msg button');
+    await page.waitForFunction(() => window.__calls.filter((c) => c.fn === 'saveMemberBookPdfToDrive').length === 3, null, { timeout: 60000 });
+    calls = await lastPdfCall();
+    const b64 = await page.evaluate(() => window.__calls.filter((c) => c.fn === 'saveMemberBookPdfToDrive').map((c) => c.args[0]));
+    ck(calls[2][3] === true && b64[2] !== b64[1] && dialogs.some((m) => /URL|リンク/.test(m) && /古いまま/.test(m) && /いまの内容/.test(m)),
+       '作り直す（いまの内容で作り直して・確かめてから）: ' + J(calls.map((c) => c.slice(1))) + ' ' + J(dialogs));
+    // PDFを作れない（このブラウザーでは描けない など）：知らせて、印刷からアップロードする道を案内する。ボタンは押せるまま
+    await page.evaluate(() => { window.mbpBuildPdf = () => Promise.reject(new Error('見本の失敗')); });
+    await page.click('#btnPdf');
+    await page.waitForFunction(() => /PDFを作れませんでした/.test(document.getElementById('msg').textContent), null, { timeout: 30000 });
+    const t = await page.evaluate(() => document.getElementById('msg').textContent);
+    ck(/見本の失敗/.test(t) && /メンバーブック\(PDF\)の更新/.test(t) && (await lastPdfCall()).length === 3, 'PDFを作れないときの知らせ: ' + t);
+    ck(await page.evaluate(() => Array.from(document.querySelectorAll('.side button')).every((b) => !b.disabled)), '失敗のあと、ボタンが押せないまま');
+    await page.close();
+    // 写真：一覧のサムネイルの読み込みを待たずに押しても、全員分の写真（元の写真）をそろえてから作る。
+    // 作っているあいだは画面を覆って操作を止める。あとから届いたサムネイルの知らせで、結果を消さない
+    {
+      const p3 = await ctx.newPage();
+      const RED = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==';
+      const names = MEMBERS.slice(0, 5).map((m) => m.name);
+      await p3.addInitScript(`window.__delay = { getMemberPhotoThumbs: 2500, saveMemberBookPdfToDrive: 400 }; window.__photos = ${J(Object.fromEntries(names.map((n) => [n, RED])))};`);
+      await p3.addInitScript(STUB(MEMBERS.slice(0, 5), CATS, COVER, { id: 'MB', url: 'https://drive.test/file/d/MB/view' }));
+      await p3.route('https://memberbook.test/', (r) => r.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: editorHtml() }));
+      await p3.goto('https://memberbook.test/', { waitUntil: 'load' });
+      await p3.waitForFunction(() => /5名を読み込みました/.test(document.getElementById('msg').textContent), null, { timeout: 10000 });
+      ck(await p3.evaluate(() => Object.keys(photos).length) === 0, '（前提）サムネイルがまだ届いていない');
+      await p3.click('#btnPdf');
+      ck(await p3.evaluate(() => document.getElementById('pdfWait').style.display) === 'flex', '作っているあいだ画面を覆っていない');
+      await p3.waitForFunction(() => /差し替えました/.test(document.getElementById('msg').textContent), null, { timeout: 60000 });
+      const got = await p3.evaluate(() => ({ asked: [].concat.apply([], window.__calls.filter((c) => c.fn === 'getMemberPhotosBase64').map((c) => c.args[0])),
+        msg: document.getElementById('msg').textContent, wait: document.getElementById('pdfWait').style.display }));
+      ck(J(got.asked.slice().sort()) === J(names.slice().sort()), 'サムネイルを待たずに、全員分の写真をそろえていない: ' + J(got.asked));
+      ck(/写真 5\/5名/.test(got.msg) && got.wait === 'none', '写真の数の知らせ・覆いが消えない: ' + J(got));
+      await p3.waitForTimeout(3000);                    // サムネイル（2.5秒）が届いたあと
+      ck(await p3.evaluate(() => document.getElementById('photoState').textContent === '' && window.__calls.some((c) => c.fn === 'getMemberPhotoThumbs')),
+         '（前提）サムネイルの読み込みが終わっていない');
+      ck(/差し替えました/.test(await p3.evaluate(() => document.getElementById('msg').textContent)), 'あとから届いたサムネイルの知らせで、結果が消えた');
+      // 写真を読めなかった方がいる：ドライブは変えずに止める（写真の欠けたPDFを出さない）
+      await p3.evaluate((n) => { photosB64 = {}; window.__photoFail = [n]; }, names[1]);
+      const before = await p3.evaluate(() => window.__calls.filter((c) => c.fn === 'saveMemberBookPdfToDrive').length);
+      await p3.click('#btnPdf');
+      await p3.waitForFunction(() => /PDFを作れませんでした/.test(document.getElementById('msg').textContent), null, { timeout: 30000 });
+      const t3 = await p3.evaluate(() => ({ msg: document.getElementById('msg').textContent, n: window.__calls.filter((c) => c.fn === 'saveMemberBookPdfToDrive').length,
+        wait: document.getElementById('pdfWait').style.display }));
+      ck(t3.n === before && /変えていません/.test(t3.msg) && t3.msg.includes(names[1]) && t3.wait === 'none', '写真を読めなかったのに差し替えた・知らせ: ' + J(t3));
+      const uploads = () => p3.evaluate(() => window.__calls.filter((c) => c.fn === 'saveMemberBookPdfToDrive').length);
+      // 知らせを消してから押し、作り終わる（覆いが消える）まで待つ。keys … 押したあとに打つキー
+      const run = async (keys) => {
+        await p3.waitForFunction(() => !pdfRunning, null, { timeout: 60000 });
+        await p3.evaluate(() => { document.getElementById('msg').textContent = ''; });
+        await p3.click('#btnPdf');
+        let during = null;
+        if (keys) {
+          for (const k of keys) await p3.keyboard.press(k);
+          during = await p3.evaluate(() => ({ disabled: Array.from(document.querySelectorAll('.side button')).every((b) => b.disabled),
+            cover: document.getElementById('coverModal').style.display, running: pdfRunning }));
+        }
+        await p3.waitForFunction(() => !pdfRunning && document.getElementById('msg').textContent !== '', null, { timeout: 60000 });
+        return { msg: await p3.evaluate(() => document.getElementById('msg').textContent), during };
+      };
+      // ブラウザーで開けない写真（HEIC を .jpg にしたもの）：止めて、その方を知らせる（印刷からのアップロードは案内しない）
+      await p3.evaluate((n) => { photosB64 = {}; window.__photoFail = []; window.__photos[n] = 'data:image/jpeg;base64,AAAAGGZ0eXBoZWljAAAAAG1pZjE='; }, names[2]);
+      let n0 = await uploads();
+      let t = (await run()).msg;
+      ck(await uploads() === n0 && t.includes(names[2]) && /開けなかった/.test(t) && /メンバー写真/.test(t) && !/冊子を印刷/.test(t), '開けない写真: ' + t);
+      // 写真の一覧にあるのにファイルが無い方（削除した）：写真なしで作り、知らせる
+      await p3.evaluate((n) => { photosB64 = {}; window.__photos[n[2]] = window.__photos[n[0]]; window.__photoGone = [n[3]]; }, names);
+      n0 = await uploads();
+      t = (await run()).msg;
+      ck(await uploads() === n0 + 1 && /差し替えました/.test(t) && /写真 4\/5名/.test(t) && /見つからなかった方/.test(t) && t.includes(names[3]), '写真のファイルが無い方: ' + t);
+      // 全員の写真のファイルが無い（写真のフォルダを見る権限が無い）：止める
+      await p3.evaluate((ns) => { photosB64 = {}; window.__photoGone = ns.slice(); }, names);
+      n0 = await uploads();
+      t = (await run()).msg;
+      ck(await uploads() === n0 && /1枚も開けませんでした/.test(t) && /権限/.test(t), '全員の写真のファイルが無いとき: ' + t);
+      // 作っているあいだに Enter・Space・Tab を押しても、2回目は作らない・ほかの操作もできない（ボタンは押せない）
+      await p3.evaluate(() => { photosB64 = {}; window.__photoGone = []; window.__delay.saveMemberBookPdfToDrive = 1500; });
+      n0 = await uploads();
+      const photo0 = await p3.evaluate(() => window.__calls.filter((c) => c.fn === 'getMemberPhotosBase64').length);
+      const k = await run(['Enter', 'Space', 'Tab', 'Enter', 'Tab', 'Space']);
+      await p3.waitForTimeout(2500);
+      const photo1 = await p3.evaluate(() => window.__calls.filter((c) => c.fn === 'getMemberPhotosBase64').length);
+      ck(await uploads() === n0 + 1 && photo1 - photo0 === 1 && k.during.disabled && k.during.running && k.during.cover !== 'flex' && /差し替えました/.test(k.msg),
+         '作っているあいだのキー操作で、2回作った・ほかの操作ができた: ' + J({ uploads: (await uploads()) - n0, photoCalls: photo1 - photo0, during: k.during }));
+      await p3.close();
+    }
+    // サムネイルの最後の回が読めなかった：「写真を読み込んでいます」を残さない
+    {
+      const p5 = await ctx.newPage();
+      await p5.addInitScript('window.__failNext = { getMemberPhotoThumbs: 1 };');
+      await p5.addInitScript(STUB(MEMBERS.slice(0, 3), CATS, COVER, {}));
+      await p5.route('https://memberbook.test/', (r) => r.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: editorHtml() }));
+      await p5.goto('https://memberbook.test/', { waitUntil: 'load' });
+      await p5.waitForFunction(() => /3名を読み込みました/.test(document.getElementById('msg').textContent), null, { timeout: 10000 });
+      await p5.waitForTimeout(500);
+      ck(await p5.evaluate(() => document.getElementById('photoState').textContent) === '', 'サムネイルが読めなかったのに「写真を読み込んでいます」が残る');
+      await p5.close();
+    }
+    // まだ登録していないとき
+    const p2 = await ctx.newPage();
+    await p2.addInitScript(STUB(MEMBERS.slice(0, 2), CATS, COVER, {}));
+    await p2.route('https://memberbook.test/', (r) => r.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: editorHtml() }));
+    await p2.goto('https://memberbook.test/', { waitUntil: 'load' });
+    await p2.waitForFunction(() => /2名を読み込みました/.test(document.getElementById('msg').textContent), null, { timeout: 10000 });
+    ck(/まだありません/.test(await p2.evaluate(() => document.getElementById('driveNote').textContent)), 'まだ登録していないときの様子');
+    await p2.close();
+  }
   await browser.close();
 
   console.log(`メンバーブック: 検査 ${checks} 件`);
@@ -529,5 +676,6 @@ const STUB = (members, cats, cover) => `
     fails.slice(0, 40).forEach((f) => console.log('   ' + f));
     process.exit(1);
   }
-  console.log('OK: 名簿への1人ぶんの保存・組版（3列×6行・長い文字を枠に収める・会社での役職とBNIの役職・表紙）・編集画面（反映ですぐ保存・閉じるときの確認・並べ替えの自動保存・プレビュー）');
+  console.log('OK: 名簿への1人ぶんの保存・組版（3列×6行・長い文字を枠に収める・会社での役職とBNIの役職・表紙）・編集画面（反映ですぐ保存・閉じるときの確認・並べ替えの自動保存・プレビュー・'
+    + 'PDFを作ってドライブを更新）');
 })().catch((e) => { console.error(e); process.exit(1); });

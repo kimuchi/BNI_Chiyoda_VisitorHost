@@ -17,7 +17,8 @@ function getMemberBookData() {
   try {
     var m = getMemberMaster();
     if (!m.ok) return m;
-    return { ok: true, members: m.members, cover: m.cover, categories: m.categories, presidents: coverPresidentList_(m.cover.termNo) };
+    return { ok: true, members: m.members, cover: m.cover, categories: m.categories, presidents: coverPresidentList_(m.cover.termNo),
+             drive: memberBookDriveInfo_() };
   } catch (e) {
     console.error('[MBOOK] ' + (e && e.stack ? e.stack : e));
     return { ok: false, message: '読み込みに失敗しました: ' + (e && e.message ? e.message : e) };
@@ -80,6 +81,55 @@ function exportMemberBookHtml(html, fileName) {
     console.error('[MBOOK] ' + (e && e.stack ? e.stack : e));
     return { ok: false, message: '保存に失敗しました: ' + (e && e.message ? e.message : e) };
   }
+}
+
+// === ドライブのメンバーブック（メールで送るPDF）を、編集画面で作ったPDFで差し替える ===
+// 編集画面の「PDFを作ってドライブを更新」から（PDFは画面の中で作る：memberbook_pdf.html）。アップロードは要らない。
+// 登録してあるファイル（MEMBER_BOOK_ID。「メンバーブック(PDF)の更新」と同じもの）の中身だけを差し替えるので、
+// URL・ファイル名・共有はそのまま（送ったメールのリンクからも新しい版が見られる。前の版はドライブの「版を管理」に30日残る）。
+//   ・まだ登録していないとき … 新しく作って登録する（素材フォルダの 03_生成物。リンクを知っている全員が見られるように）
+//   ・ゴミ箱にあるとき … 戻してから差し替える
+//   ・見つからないとき（削除した）… 新しくは作らずに止め、「新しく作り直す」を出す（recreate を付けて呼んだときだけ作る）
+//   ・編集の権限が無いとき … 持ち主に編集者にしてもらうよう知らせる（作り直しは出さない。作り直すとURLが変わるため）
+//   ・ほか（一時的なエラーなど）… もう一度押してもらう
+function saveMemberBookPdfToDrive(base64, fileName, recreate) {
+  var lock = LockService.getScriptLock();
+  try {
+    if (!base64) return { ok: false, message: 'PDFのデータが空でした。もう一度お試しください。' };
+    if (!lock.tryLock(20000)) return { ok: false, message: 'ほかの方がメンバーブックを更新中です。少し待ってから、もう一度押してください。' };
+    var props = PropertiesService.getScriptProperties(), id = props.getProperty('MEMBER_BOOK_ID') || '';
+    var name = String(fileName || 'MemberBook.pdf');
+    var blob = Utilities.newBlob(Utilities.base64Decode(base64), 'application/pdf', name);
+    if (id && !recreate) {
+      var r = memberBookReplace_(id, blob);
+      if (!r.ok) {
+        return { ok: false, canRecreate: !!r.notFound, message: 'ドライブのメンバーブック（メールで送るPDF）を差し替えられませんでした。\n' + r.message
+          + (r.notFound ? '\n「新しく作り直す」を押すと、新しいファイルを作って登録します（URLが変わるので、送ったメールのリンクは古いままになります）。' : '') };
+      }
+      var url = props.getProperty('MEMBER_BOOK_URL') || DriveApp.getFileById(id).getUrl();
+      props.setProperty('MEMBER_BOOK_UPDATED', new Date().toISOString());
+      return { ok: true, created: false, url: url, downloadUrl: 'https://drive.google.com/uc?export=download&id=' + id,
+               message: 'ドライブのメンバーブック（メールで送るPDF）を差し替えました。URLはそのままです（送ったメールのリンクからも、新しい版が見られます）。' };
+    }
+    var made = memberBookCreate_(blob.setName(name));
+    props.setProperty('MEMBER_BOOK_UPDATED', new Date().toISOString());
+    return { ok: true, created: true, url: made.url, downloadUrl: 'https://drive.google.com/uc?export=download&id=' + made.id,
+             message: (id ? '新しく作り直して登録しました。これからのメールには、この新しいURLが入ります。'
+                          : 'ドライブにメンバーブック（メールで送るPDF）を新しく作って登録しました。メールには、このURLが入ります。')
+               + (made.shared ? '' : '\n※ リンクの共有を設定できませんでした（組織の設定など）。ドライブで共有を確かめてください。') };
+  } catch (e) {
+    console.error('[MBOOK] ' + (e && e.stack ? e.stack : e));
+    return { ok: false, message: '保存に失敗しました: ' + driveHelpHint_(e) };
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
+// 編集画面に出す、ドライブのメンバーブックの様子（登録の有無・URL・最後に差し替えた日時）
+function memberBookDriveInfo_() {
+  var props = PropertiesService.getScriptProperties();
+  return { id: props.getProperty('MEMBER_BOOK_ID') || '', url: props.getProperty('MEMBER_BOOK_URL') || '',
+           updated: props.getProperty('MEMBER_BOOK_UPDATED') || '' };
 }
 
 // 印刷したPDFをDriveに残したい場合の受け口（ブラウザで保存したPDFを送る）

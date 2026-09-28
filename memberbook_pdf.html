@@ -1,0 +1,365 @@
+<script>
+// === メンバーブックのPDFを、画面の中で作る（印刷の画面を通さない）===
+// ドライブのメンバーブック（メールで送るPDF）を、同じURLのまま差し替えるのに使う（サーバーは saveMemberBookPdfToDrive）。
+//
+//   1. 印刷と同じ冊子（bookHtml）を、見えない枠で開く。書体を読み込んで文字を枠に収める（冊子の中の mbFitWhenReady）
+//   2. 1ページずつ画像にする。ページを SVG の foreignObject に入れ、書体（使う文字の分だけ）も埋め込んで描くので、
+//      ブラウザーの描き方そのまま（プレビュー・印刷と同じ見た目）になる
+//   3. 画像の上に、見えない文字を重ねる（PDFの中で検索・コピーができるように。見た目には出ない）
+//   4. A4 のPDFにする（ページの画像は JPEG）
+//
+// 書体（Googleフォントの Noto Serif JP）は、使う文字が入っている分だけ読み、埋め込む。
+// 書体が読めなかったとき（冊子もパソコンの明朝体で収めたとき）は、埋め込まない（冊子と同じ書体で描く）
+
+// 画像の細かさと画質。ふつうは1つめ（CSSの1px → 2.5px。A4 で約240dpi）。
+// PDFが MBP_MAX_BYTES より大きくなったら、次の設定で作り直す（ドライブへ送れる大きさ・メールで開きやすい大きさに）
+var MBP_QUALITY = [{ scale: 2.5, jpeg: 0.9 }, { scale: 2, jpeg: 0.8 }, { scale: 1.6, jpeg: 0.72 }];
+var MBP_MAX_BYTES = 10 * 1024 * 1024;
+// 写真は、短い辺がこの大きさ（px）になるまで縮めてから使う（枠は約 64pt の正方形で、写真の短い辺で埋まる。2.5倍でも 213px）。
+// 長い辺も、この大きさまで（とても細長い写真で大きくなりすぎないように）
+var MBP_PHOTO_SHORT = 360, MBP_PHOTO_LONG = 4800;
+var MBP_FETCH_MS = 30000;     // 書体を読むのを待つ長さ（つながりが止まったときに、いつまでも待たないように）
+var MBP_PAGE_W = 595.28, MBP_PAGE_H = 841.89;   // A4（pt）
+
+// 冊子のHTMLから、PDF（base64）を作る。onStep(文) … 進み具合。戻り値 Promise<{ base64, pages, bytes }>
+function mbpBuildPdf(html, title, onStep){
+  var step = onStep || function(){};
+  return mbpOpenBook(html).then(function(fr){
+    var doc = fr.contentDocument, pages = Array.prototype.slice.call(doc.querySelectorAll('.page'));
+    var embed = mbpFontsLoaded(doc), cache = {}, texts = pages.map(mbpPageText);
+    var build = function(q, n){
+      var out = [], chain = Promise.resolve();
+      pages.forEach(function(pg, i){
+        chain = chain.then(function(){
+          step('PDFを作っています（' + (i + 1) + '/' + pages.length + 'ページ）...' + (n ? '（小さくして作り直し）' : ''));
+          return (embed ? mbpFontCss(doc, pg.textContent, cache) : Promise.resolve(''))
+            .then(function(fontCss){ return mbpPageImage(pg, fontCss, q.scale, q.jpeg); })
+            .then(function(img){ out.push({ jpeg: img.jpeg, iw: img.w, ih: img.h, lines: texts[i] }); });
+        });
+      });
+      return chain.then(function(){
+        var bytes = mbpPdf(out, title);
+        if(bytes.length > MBP_MAX_BYTES && n + 1 < MBP_QUALITY.length) return build(MBP_QUALITY[n + 1], n + 1);
+        return { base64: mbpBase64(bytes), pages: out.length, bytes: bytes.length };
+      });
+    };
+    return build(MBP_QUALITY[0], 0).then(function(r){ fr.parentNode.removeChild(fr); return r; },
+                                         function(e){ try{ fr.parentNode.removeChild(fr); }catch(x){} throw e; });
+  });
+}
+
+// 写真（氏名 → data: のURL）を、PDFに要る大きさまで縮める。JPEG は JPEG に、ほか（PNG など）は透明なところを残して PNG に。
+// 戻り値 { map: 氏名 → 縮めた写真, bad: ブラウザーで開けなかった写真の方（HEIC を .jpg にしたもの・壊れたファイルなど） }。
+// 開けなかった写真は map に入れない（そのまま冊子に入れると、壊れた画像の印が出る）。縮めたものは覚えておく
+var mbpSmallCache = {};
+function mbpSmallPhotos(photos){
+  var names = Object.keys(photos || {});
+  return Promise.all(names.map(function(n){
+    var src = photos[n], key = n + '|' + String(src).length + '|' + String(src).slice(-32);
+    if(!mbpSmallCache[key]) mbpSmallCache[key] = new Promise(function(resolve){
+      var img = new Image();
+      img.onload = function(){
+        var w = img.naturalWidth, h = img.naturalHeight;
+        var k = Math.min(1, MBP_PHOTO_SHORT / Math.max(1, Math.min(w, h)), MBP_PHOTO_LONG / Math.max(1, w, h));
+        if(!w || !h){ resolve(null); return; }
+        if(k >= 1){ resolve(src); return; }
+        try{
+          var jpeg = /^data:image\/jpe?g/i.test(src), cv = document.createElement('canvas');
+          cv.width = Math.max(1, Math.round(w * k)); cv.height = Math.max(1, Math.round(h * k));
+          var g = cv.getContext('2d');
+          if(jpeg){ g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height); }
+          g.drawImage(img, 0, 0, cv.width, cv.height);
+          resolve(jpeg ? cv.toDataURL('image/jpeg', 0.9) : cv.toDataURL('image/png'));
+        }catch(e){ resolve(src); }
+      };
+      img.onerror = function(){ resolve(null); };
+      img.src = src;
+    });
+    return mbpSmallCache[key].then(function(d){ return [n, d]; });
+  })).then(function(pairs){
+    var o = { map: {}, bad: [] };
+    pairs.forEach(function(x){ if(x[1]) o.map[x[0]] = x[1]; else o.bad.push(x[0]); });
+    return o;
+  });
+}
+
+// 見えない枠で冊子を開き、文字を枠に収め終わるまで待つ（書体が届かないときも、冊子の中で8秒で収める）
+function mbpOpenBook(html){
+  return new Promise(function(resolve, reject){
+    var fr = document.createElement('iframe');
+    fr.setAttribute('aria-hidden', 'true');
+    fr.style.cssText = 'position:fixed;left:-10000px;top:0;width:900px;height:1200px;border:0;visibility:hidden;';
+    document.body.appendChild(fr);
+    var t0 = Date.now();
+    var wait = function(){
+      var d = fr.contentDocument;
+      if(d && d.documentElement && d.documentElement.getAttribute('data-fitted') === '1'){ setTimeout(function(){ resolve(fr); }, 50); return; }
+      if(Date.now() - t0 > 30000){ try{ fr.parentNode.removeChild(fr); }catch(e){} reject(new Error('冊子の組版が終わりませんでした。')); return; }
+      setTimeout(wait, 100);
+    };
+    var d = fr.contentDocument;
+    d.open(); d.write(html); d.close();
+    wait();
+  });
+}
+
+// 冊子の中で Noto Serif JP が読み込めたか（読めていなければ、パソコンの書体で収めてある）。
+// document.fonts.check は、書体の指定そのものが無いときも true を返すので使わない
+function mbpFontsLoaded(doc){
+  var ok = false;
+  try{ doc.fonts.forEach(function(f){ if(/Noto Serif JP/.test(f.family) && f.status === 'loaded') ok = true; }); }catch(e){}
+  return ok;
+}
+
+// unicode-range（「U+3000-303F, U+4E00, U+4??」）に、使う文字（コードポイントの集まり）が1つでも入っているか
+function mbpInRange(range, cps){
+  var parts = String(range).split(',');
+  for(var i = 0; i < parts.length; i++){
+    var s = parts[i].trim().replace(/^U\+/i, ''), lo, hi, m;
+    if(!s) continue;
+    if(s.indexOf('?') >= 0){ lo = parseInt(s.replace(/\?/g, '0'), 16); hi = parseInt(s.replace(/\?/g, 'F'), 16); }
+    else if((m = s.match(/^([0-9a-f]+)-([0-9a-f]+)$/i))){ lo = parseInt(m[1], 16); hi = parseInt(m[2], 16); }
+    else { lo = hi = parseInt(s, 16); }
+    for(var k = 0; k < cps.length; k++) if(cps[k] >= lo && cps[k] <= hi) return true;
+  }
+  return false;
+}
+
+// unicode-range の書き方をそろえる（「U+0000-00FF, U+4??」も「U+0-FF, U+400-4FF」も同じ文字に）
+function mbpRangeKey(range){
+  return String(range || '').split(',').map(function(t){
+    var s = t.trim().replace(/^U\+/i, ''), m;
+    if(!s) return '';
+    if(s.indexOf('?') >= 0) return parseInt(s.replace(/\?/g, '0'), 16).toString(16) + '-' + parseInt(s.replace(/\?/g, 'F'), 16).toString(16);
+    if((m = s.match(/^([0-9a-f]+)-([0-9a-f]+)$/i))) return parseInt(m[1], 16).toString(16) + '-' + parseInt(m[2], 16).toString(16);
+    return parseInt(s, 16).toString(16);
+  }).filter(Boolean).join(',');
+}
+// 待つ長さを決めて読む（止まったつながりで、いつまでも待たないように。中身を読み終えるまでを数える）。how … 'text' か 'blob'
+function mbpFetch(url, how){
+  var ctl = typeof AbortController !== 'undefined' ? new AbortController() : null, late = false;
+  return new Promise(function(resolve, reject){
+    var timer = setTimeout(function(){ late = true; if(ctl) ctl.abort(); reject(new Error('書体を読むのに時間がかかりすぎました')); }, MBP_FETCH_MS);
+    fetch(url, ctl ? { signal: ctl.signal } : {}).then(function(r){
+      if(!r.ok) throw new Error('書体を読めませんでした（' + r.status + '）');
+      return how === 'text' ? r.text() : r.blob();
+    }).then(function(v){ clearTimeout(timer); resolve(v); },
+            function(e){ clearTimeout(timer); if(!late) reject(e && /書体/.test(e.message) ? e : new Error('書体を読めませんでした')); });
+  });
+}
+// 冊子が読んだ書体の CSS（Googleフォント）から、このページの文字が入っている分だけを、埋め込んだ @font-face にする。
+// 冊子が実際に読み込んだ書体（FontFace が loaded のもの）だけを入れる。読めなかった・間に合わなかった書体は、
+// 冊子がパソコンの書体で文字を収めているので、PDFでも同じ書体で描く（入れると字の幅が変わり、枠で切れる）。
+// 同じファイルを太さ違いで使う（可変の書体）ときは、太さがそろっていれば1つの @font-face（太さの幅）にまとめる。読んだ書体は cache で使い回す
+function mbpFontCss(doc, text, cache){
+  var link = doc.querySelector('link[rel="stylesheet"][href*="fonts.googleapis.com"]');
+  var cssUrl = link ? link.href : MB_FONT_CSS;
+  var getCss = cache.css || (cache.css = mbpFetch(cssUrl, 'text'));
+  var seen = {}, cps = [], loaded = {};
+  for(var ch of String(text)){ var c = ch.codePointAt(0); if(!seen[c]){ seen[c] = 1; cps.push(c); } }
+  try{ doc.fonts.forEach(function(f){ if(f.status === 'loaded') loaded[mbpRangeKey(f.unicodeRange) + '|' + f.weight + '|' + f.style] = true; }); }catch(e){}
+  return getCss.then(function(css){
+    var byUrl = {}, order = [];
+    (css.match(/@font-face\s*\{[^}]*\}/g) || []).forEach(function(b){
+      var url = (b.match(/url\(\s*['"]?([^'")]+)['"]?\s*\)/) || [])[1];
+      var fam = ((b.match(/font-family:\s*([^;]+);/) || [])[1] || '').trim();
+      var w = parseInt((b.match(/font-weight:\s*(\d+)/) || [])[1] || '400', 10);
+      var st = ((b.match(/font-style:\s*([^;]+);/) || [])[1] || 'normal').trim();
+      var ur = ((b.match(/unicode-range:\s*([^;]+);/) || [])[1] || '').trim();
+      if(!url || (ur && !mbpInRange(ur, cps))) return;
+      var k = url + '|' + fam + '|' + st;
+      if(!byUrl[k]){ byUrl[k] = { url: url, fam: fam, st: st, ur: ur, all: [], ok: [] }; order.push(k); }
+      byUrl[k].all.push(w);
+      if(loaded[mbpRangeKey(ur) + '|' + w + '|' + st]) byUrl[k].ok.push(w);
+    });
+    order = order.filter(function(k){ return byUrl[k].ok.length; });
+    return Promise.all(order.map(function(k){
+      var f = byUrl[k];
+      cache[f.url] = cache[f.url] || mbpFetch(f.url, 'blob').then(mbpDataUrl);
+      return cache[f.url].then(function(data){
+        var face = function(wt){
+          return '@font-face{font-family:' + f.fam + ';font-style:' + f.st + ';font-weight:' + wt + ';'
+            + 'font-display:block;src:url(' + data + ') format("woff2");' + (f.ur ? 'unicode-range:' + f.ur + ';' : '') + '}';
+        };
+        var lo = Math.min.apply(null, f.ok), hi = Math.max.apply(null, f.ok);
+        if(f.ok.length === f.all.length) return face(lo + (hi > lo ? ' ' + hi : ''));
+        return f.ok.map(function(wt){ return face(wt); }).join('');
+      });
+    })).then(function(rules){ return rules.join(''); });
+  });
+}
+function mbpDataUrl(blob){
+  return new Promise(function(resolve, reject){
+    var r = new FileReader();
+    r.onload = function(){ resolve(String(r.result)); };
+    r.onerror = function(){ reject(new Error('書体を読めませんでした。')); };
+    r.readAsDataURL(blob);
+  });
+}
+
+// 1ページを画像（JPEG）にする。ページの中身と、冊子の CSS・書体を SVG に入れて描く。
+// 言語（lang="ja"）も付ける（付けないと、書体が無い文字に中国語の書体が選ばれて、字の形・位置が変わることがある）
+function mbpPageImage(pg, fontCss, scale, quality){
+  var doc = pg.ownerDocument, r = pg.getBoundingClientRect(), w = r.width, h = r.height;
+  var css = Array.prototype.map.call(doc.querySelectorAll('style'), function(s){ return s.textContent; }).join('');
+  var body = doc.defaultView.getComputedStyle(doc.body);
+  var wrap = '.mbp-w{margin:0;padding:0;background:#fff;font-family:' + body.fontFamily + ';font-weight:' + body.fontWeight + ';color:' + body.color + ';}'
+    + '.page{margin:0!important;box-shadow:none!important;}';
+  // XML に入れられない文字（PowerPoint の改行 U+000B などの制御文字・片割れのサロゲート）は、SVG が読めなくなるので除く
+  var xml = new XMLSerializer().serializeToString(pg)
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g, '')
+    .replace(/[\uD800-\uDFFF]/gu, '\uFFFD');             // u を付けると、組になっていないサロゲートだけに当たる
+  var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '">'
+    + '<foreignObject x="0" y="0" width="' + w + '" height="' + h + '">'
+    + '<div xmlns="http://www.w3.org/1999/xhtml" lang="' + (doc.documentElement.lang || 'ja') + '" class="mbp-w" style="width:' + w + 'px;height:' + h + 'px;">'
+    + '<style><![CDATA[' + fontCss + css + wrap + ']]></style>' + xml + '</div></foreignObject></svg>';
+  // blob: のURLで読むと、キャンバスが「外から来た画像」扱いになり書き出せない（Chrome）。data: のURLで読む
+  return new Promise(function(resolve, reject){
+    var img = new Image(), timer = setTimeout(function(){ img.onload = img.onerror = null; reject(new Error('ページを画像にできませんでした（時間切れ）。')); }, 60000);
+    img.onload = function(){
+      clearTimeout(timer);
+      try{
+        var cv = document.createElement('canvas');
+        cv.width = Math.round(w * scale); cv.height = Math.round(h * scale);
+        var g = cv.getContext('2d');
+        g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height);
+        g.drawImage(img, 0, 0, cv.width, cv.height);
+        var b64 = cv.toDataURL('image/jpeg', quality).split(',')[1];
+        resolve({ jpeg: mbpBytes(b64), w: cv.width, h: cv.height });
+      }catch(e){ reject(new Error('ページを画像にできませんでした（' + (e && e.message || e) + '）。')); }
+    };
+    img.onerror = function(){ clearTimeout(timer); reject(new Error('ページを画像にできませんでした。')); };
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  });
+}
+
+var MBP_JOIN = /^(?:[\u0300-\u036F\u3099\u309A\uFE00-\uFE0F\u200D]|\uDB40[\uDD00-\uDDEF])$/;
+// 見えない文字にする行の文字：合成した形（NFC）にし、異体字セレクタ・制御文字を除く（検索できるように）
+function mbpLineText(s){
+  return String(s).replace(/[\uD800-\uDFFF]/gu, '').normalize('NFC').replace(/[\uFE00-\uFE0F\u200D\u0000-\u001F]|\uDB40[\uDD00-\uDDEF]/g, '');
+}
+// ページの文字を、行ごとに位置つきで取り出す（見えない文字にして重ねる）。位置は pt、上から。
+// 枠からはみ出して見えていない文字（枠で切ってあるところ）は入れない
+function mbpPageText(pg){
+  var doc = pg.ownerDocument, win = doc.defaultView, pr = pg.getBoundingClientRect(), k = 72 / 96, lines = [];
+  var clips = [];                                          // 文字の親から、はみ出しを切る枠をたどる
+  var clipOf = function(el){
+    var box = { l: pr.left, t: pr.top, r: pr.right, b: pr.bottom };
+    for(var e = el; e && e !== pg; e = e.parentElement){
+      var cs = win.getComputedStyle(e);
+      if(cs.overflow !== 'visible' || cs.overflowX !== 'visible' || cs.overflowY !== 'visible'){
+        var b = e.getBoundingClientRect();
+        box = { l: Math.max(box.l, b.left), t: Math.max(box.t, b.top), r: Math.min(box.r, b.right), b: Math.min(box.b, b.bottom) };
+      }
+    }
+    return box;
+  };
+  var walker = doc.createTreeWalker(pg, NodeFilter.SHOW_TEXT, null), range = doc.createRange(), node;
+  while((node = walker.nextNode())){
+    var t = node.nodeValue;
+    if(!t || !t.replace(/\s/g, '')) continue;
+    var clip = clipOf(node.parentElement), cur = null;
+    var flush = function(){ if(cur && cur.s.replace(/\s/g, '')) lines.push(cur); cur = null; };
+    for(var i = 0; i < t.length; ){
+      var c0 = t.charCodeAt(i), c1 = i + 1 < t.length ? t.charCodeAt(i + 1) : 0;
+      var n = (c0 >= 0xD800 && c0 <= 0xDBFF && c1 >= 0xDC00 && c1 <= 0xDFFF) ? 2 : 1, ch = t.substr(i, n);
+      // 濁点などの結合文字・異体字セレクタは、前の字と一緒の1文字（枠が前の字と同じなので、行の続きとして足す）
+      if(cur && MBP_JOIN.test(ch)){ cur.s += ch; i += n; continue; }
+      range.setStart(node, i); range.setEnd(node, i + n); i += n;
+      var rs = range.getClientRects(), r = rs.length ? rs[0] : null;
+      if(!r || (!r.width && !r.height)) continue;
+      var cx = (r.left + r.right) / 2, cy = (r.top + r.bottom) / 2;
+      if(cx < clip.l || cx > clip.r || cy < clip.t || cy > clip.b){ flush(); continue; }
+      if(cur && Math.abs(r.top - cur.top) < r.height * 0.5 && r.left >= cur.right - r.width * 0.5){
+        cur.s += ch; cur.right = Math.max(cur.right, r.right); cur.bottom = Math.max(cur.bottom, r.bottom);
+      } else { flush(); cur = { s: ch, left: r.left, right: r.right, top: r.top, bottom: r.bottom }; }
+    }
+    flush();
+  }
+  return lines.map(function(l){
+    return { s: mbpLineText(l.s), x: (l.left - pr.left) * k, y: (l.top - pr.top) * k, w: (l.right - l.left) * k, h: (l.bottom - l.top) * k };
+  }).filter(function(l){ return l.s.replace(/\s/g, ''); });
+}
+
+// --- PDF を組み立てる（画像のページ＋見えない文字）---
+// 文字は日本語の標準の書体（埋め込まない。HeiseiMin-W3・UniJIS-UCS2-H）で、描かない（Tr 3）。検索・コピーのためだけ。
+// 1文字の送りは全角（1000）なので、行の幅に合わせて横に伸び縮みさせる
+function mbpPdf(pages, title){
+  var parts = [], len = 0, offs = [];
+  var bin = function(s){ var b = new Uint8Array(s.length); for(var i = 0; i < s.length; i++) b[i] = s.charCodeAt(i) & 255; return b; };
+  var put = function(x){ var b = typeof x === 'string' ? bin(x) : x; parts.push(b); len += b.length; };
+  var obj = function(id, dict, stream){
+    offs[id] = len;
+    if(stream){ put(id + ' 0 obj\n' + dict.replace(/>>$/, '/Length ' + stream.length + '>>') + '\nstream\n'); put(stream); put('\nendstream\nendobj\n'); }
+    else put(id + ' 0 obj\n' + dict + '\nendobj\n');
+  };
+  var num = function(v){ return (Math.round(v * 100) / 100).toString(); };
+  var hex = function(s){                                   // UCS-2（BMP の外の文字は〓）
+    var o = '';
+    for(var ch of String(s)){ var c = ch.codePointAt(0); if(c > 0xFFFF) c = 0x3013; o += ('000' + c.toString(16).toUpperCase()).slice(-4); }
+    return o;
+  };
+  var utf16 = function(s){                                 // 題（UTF-16。BMP の外の文字もそのまま）
+    var o = '';
+    for(var i = 0; i < String(s).length; i++) o += ('000' + String(s).charCodeAt(i).toString(16).toUpperCase()).slice(-4);
+    return '<FEFF' + o + '>';
+  };
+  put('%PDF-1.4\n%âãÏÓ\n');
+  var n = pages.length, kids = [];
+  for(var i = 0; i < n; i++) kids.push((7 + i * 3) + ' 0 R');
+  obj(1, '<</Type/Catalog/Pages 2 0 R>>');
+  obj(2, '<</Type/Pages/Kids[' + kids.join(' ') + ']/Count ' + n + '>>');
+  obj(3, '<</Type/Font/Subtype/Type0/BaseFont/HeiseiMin-W3/Encoding/UniJIS-UCS2-H/DescendantFonts[4 0 R]/ToUnicode 6 0 R>>');
+  obj(4, '<</Type/Font/Subtype/CIDFontType0/BaseFont/HeiseiMin-W3/CIDSystemInfo<</Registry(Adobe)/Ordering(Japan1)/Supplement 2>>'
+    + '/FontDescriptor 5 0 R/DW 1000>>');
+  obj(5, '<</Type/FontDescriptor/FontName/HeiseiMin-W3/Flags 6/FontBBox[-123 -257 1001 910]/ItalicAngle 0/Ascent 723/Descent -241'
+    + '/CapHeight 709/StemV 69>>');
+  // 文字の番号（UCS-2）→ Unicode はそのまま
+  var cmap = '/CIDInit/ProcSet findresource begin\n12 dict begin\nbegincmap\n/CIDSystemInfo<</Registry(Adobe)/Ordering(UCS)/Supplement 0>>def\n'
+    + '/CMapName/Adobe-Identity-UCS def\n/CMapType 2 def\n1 begincodespacerange\n<0000><FFFF>\nendcodespacerange\n';
+  for(var a = 0; a < 256; a += 100){
+    var cnt = Math.min(100, 256 - a);
+    cmap += cnt + ' beginbfrange\n';
+    for(var b = a; b < a + cnt; b++){ var hh = ('0' + b.toString(16).toUpperCase()).slice(-2); cmap += '<' + hh + '00><' + hh + 'FF><' + hh + '00>\n'; }
+    cmap += 'endbfrange\n';
+  }
+  cmap += 'endcmap\nCMapName currentdict/CMap defineresource pop\nend\nend\n';
+  obj(6, '<<>>', bin(cmap));
+  pages.forEach(function(p, i){
+    var pid = 7 + i * 3, cid = pid + 1, iid = pid + 2;
+    var c = 'q ' + num(MBP_PAGE_W) + ' 0 0 ' + num(MBP_PAGE_H) + ' 0 0 cm /Im0 Do Q\n';
+    if(p.lines.length){
+      c += 'BT 3 Tr /F1 1 Tf\n';
+      p.lines.forEach(function(l){
+        // 行の高さ（文字の枠）は字の大きさの 1.3〜1.45 倍。字の大きさはその 3/4、ベースラインは上から 8 割のところ
+        var chars = Array.from(l.s).length, size = l.h * 0.75, sx = l.w / Math.max(chars, 1);
+        var base = MBP_PAGE_H - (l.y + l.h * 0.8);
+        c += num(sx) + ' 0 0 ' + num(size) + ' ' + num(l.x) + ' ' + num(base) + ' Tm <' + hex(l.s) + '> Tj\n';
+      });
+      c += 'ET\n';
+    }
+    obj(pid, '<</Type/Page/Parent 2 0 R/MediaBox[0 0 ' + num(MBP_PAGE_W) + ' ' + num(MBP_PAGE_H) + ']'
+      + '/Resources<</XObject<</Im0 ' + iid + ' 0 R>>/Font<</F1 3 0 R>>>>/Contents ' + cid + ' 0 R>>');
+    obj(cid, '<<>>', bin(c));
+    obj(iid, '<</Type/XObject/Subtype/Image/Width ' + p.iw + '/Height ' + p.ih + '/ColorSpace/DeviceRGB/BitsPerComponent 8/Filter/DCTDecode>>', p.jpeg);
+  });
+  var info = 7 + n * 3;
+  obj(info, '<</Title' + utf16(title || 'BNI メンバーブック') + '/Producer(BNI_Chiyoda_VisitorHost)>>');
+  var xref = len, x = 'xref\n0 ' + (info + 1) + '\n0000000000 65535 f \n';
+  for(var j = 1; j <= info; j++) x += ('000000000' + offs[j]).slice(-10) + ' 00000 n \n';
+  put(x + 'trailer\n<</Size ' + (info + 1) + '/Root 1 0 R/Info ' + info + ' 0 R>>\nstartxref\n' + xref + '\n%%EOF\n');
+  var out = new Uint8Array(len), at = 0;
+  parts.forEach(function(p){ out.set(p, at); at += p.length; });
+  return out;
+}
+function mbpBytes(b64){
+  var s = atob(b64), b = new Uint8Array(s.length);
+  for(var i = 0; i < s.length; i++) b[i] = s.charCodeAt(i);
+  return b;
+}
+function mbpBase64(bytes){
+  var s = '';
+  for(var i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+</script>

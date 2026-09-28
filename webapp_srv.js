@@ -54,7 +54,7 @@ var WEBAPP_PAGES_ = [
     { key: 'slides_meeting_first',  label: '定例会スライド（前半）', desc: 'ウィークリープレゼン（メンバーのページ）もここで作ります' },
     { key: 'slides_meeting_second', label: '定例会スライド（後半）', desc: 'リファーラル発表・推薦のことば・抽選・音楽' },
     { key: 'talk_script',       label: 'トークスクリプト（台本）', desc: 'チェックシート・役職・参加者から定例会の台本を作ります。ひな形も編集できます' },
-    { key: 'memberbook_editor', label: 'メンバーブックの編集・PDF出力', desc: '冊子の中身を編集して出力します' },
+    { key: 'memberbook_editor', label: 'メンバーブックの編集・PDF出力', desc: '冊子の中身を編集し、PDFを作ってドライブのメンバーブックも更新します' },
     { key: 'zoom_guide',        label: 'Zoom入室案内の作成',     desc: '表示名のお願いを作ります' }
   ]},
   { group: 'シートの整理', items: [
@@ -69,7 +69,7 @@ var WEBAPP_PAGES_ = [
     { key: 'big_templates',     label: '大きなスライド',         desc: '定例会などDriveリンクで登録' },
     { key: 'spreading',         label: 'Spreadingから名簿を更新', desc: 'MCPで取得した内容を貼り付け' },
     { key: 'pdf',               label: 'メンバーリスト(OCR)の更新', desc: 'PDFから名簿を読み取ります' },
-    { key: 'memberbook',        label: 'メンバーブック(PDF)の更新', desc: '配布用PDFを差し替えます' },
+    { key: 'memberbook',        label: 'メンバーブック(PDF)の更新', desc: 'ほかで作ったPDFをアップロードして差し替えます' },
     { key: 'ai_documents',      label: 'AI参考資料',             desc: '自動割り振りの参考資料' },
     { key: 'holiday',           label: '休会日',                 desc: '開催しない日' },
     { key: 'template',          label: 'メールテンプレート',     desc: '案内メールの文面' },
