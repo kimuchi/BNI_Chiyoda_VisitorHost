@@ -2,7 +2,17 @@
 <html>
 <head><base target="_top"></head>
 <body style="font-family: sans-serif; padding: 20px; font-size:14px;">
-  <p>PDFから番号と氏名を抽出し、「メンバーリスト」シートに保存します（Geminiで解析）。</p>
+  <style>
+    #plan{display:none;border:1px solid #cfd8e3;border-radius:6px;padding:10px 12px;margin-top:14px;background:#fafcff;}
+    #plan h4{margin:10px 0 4px;font-size:13px;}
+    #plan .box{max-height:150px;overflow-y:auto;font-size:12px;line-height:1.6;border:1px solid #eee;background:#fff;padding:4px 8px;}
+    #plan .warn{color:#b26b00;}
+    #plan .bar{margin-top:10px;display:flex;gap:8px;justify-content:flex-end;}
+    #plan button{padding:6px 14px;}
+  </style>
+  <p>PDFから番号・氏名・ふりがな・カテゴリー・会社名・役職・メモを読み取り（Geminiで解析）、<b>確かめてから「メンバー名簿」に反映</b>します。<br>
+    <span style="font-size:12px;color:#555;">名簿の行は<b>氏名</b>で探します（番号では探しません）。番号はPDFの番号に直します。
+    写真・一言コメント・日付など、PDFに無い項目は消えません。反映する前の名簿は控えておき、メンバー名簿の画面の「取り込む前に戻す」で戻せます。</span></p>
 
   <div style="border:1px solid #ddd; border-radius:6px; padding:12px; margin-bottom:14px;">
     <b>方式A：ファイルを選んで解析</b>
@@ -22,6 +32,15 @@
     <button id="btn2" onclick="fromDrive()" style="padding: 6px 14px;">ドライブから解析</button>
   </div>
 
+  <div id="plan">
+    <b>読み取った内容（まだ名簿は変えていません）</b>
+    <div id="planBody"></div>
+    <div class="bar">
+      <button onclick="cancelPlan()">やめる</button>
+      <button id="btnApply" onclick="applyPlan()" style="font-weight:bold;">名簿に反映</button>
+    </div>
+  </div>
+
   <div id="msg" style="margin-top:15px; white-space:pre-wrap; font-weight:bold; color:#0066cc;"></div>
 
   <script>
@@ -33,13 +52,55 @@
     function busy(on, msg) {
       document.getElementById('btn').disabled = on;
       document.getElementById('btn2').disabled = on;
+      document.getElementById('btnApply').disabled = on;
       if (msg) { document.getElementById('msg').style.color = '#0066cc'; document.getElementById('msg').innerText = msg; }
     }
+    function esc(x){ var d=document.createElement('span'); d.textContent = x==null ? '' : x; return d.innerHTML; }
+    var extracted = null;       // 読み取った内容（「名簿に反映」でサーバーに渡す）
     function onOk(res) {
       var ok = res && res.ok;
+      busy(false);
+      if (ok && res.preview) { showPlan(res); return; }
       document.getElementById('msg').innerText = (res && res.message) ? res.message : String(res);
       document.getElementById('msg').style.color = ok ? 'green' : '#d00';
-      busy(false);
+    }
+    // 読み取った内容を名簿に当てはめた結果（変わる方・足す方・PDFに無い方・番号の重なり）
+    function showPlan(res) {
+      extracted = res.extracted; var sm = res.summary, h = '';
+      var sec = function (title, rows, warn) {
+        if (!rows.length) return '';
+        return '<h4' + (warn ? ' class="warn"' : '') + '>' + esc(title) + '（' + rows.length + '）</h4><div class="box">' + rows.join('<br>') + '</div>';
+      };
+      h += '<div style="font-size:12px;margin-top:6px;">読み取り ' + sm.total + '名：変わる方 ' + sm.updates.length + '名・変わらない方 ' + sm.unchanged
+        + '名・新しく足す方 ' + sm.adds.length + '名</div>';
+      h += sec('変わる方（名簿の氏名で突き合わせ）', sm.updates.map(function (u) {
+        return '<b>' + esc(u.name) + '</b>' + (u.near ? '（PDFでは「' + esc(u.pdfName) + '」）' : '') + '：'
+          + u.changes.map(function (c) { return esc(c.field) + ' ' + esc(c.from || '（空）') + ' → ' + esc(c.to); }).join('、');
+      }));
+      h += sec('新しく足す方（名簿に同じ氏名が無い）', sm.adds.map(function (a) { return 'No' + esc(a.no || '?') + ' ' + esc(a.name) + (a.cat ? '（' + esc(a.cat) + '）' : ''); }), true);
+      h += sec('氏名が1文字違う方（名簿の氏名のまま更新します。別の方なら「やめる」）', sm.near.map(function (x) { return 'PDF「' + esc(x.pdf) + '」→ 名簿「' + esc(x.roster) + '」'; }), true);
+      h += sec('PDFに無い方（消しません）', sm.missing.map(function (x) { return (x.no ? 'No' + esc(x.no) + ' ' : '') + esc(x.name); }));
+      h += sec('番号が重なる方（反映したあと、メンバー名簿で直してください）', sm.dupNos.map(function (x) { return 'No' + esc(x.no) + '：' + x.names.map(esc).join('・'); }), true);
+      h += sec('氏名を読み取れなかった行（飛ばします）', sm.noName.map(function (x) { return 'No' + esc(x.no || '?'); }), true);
+      document.getElementById('planBody').innerHTML = h;
+      document.getElementById('plan').style.display = 'block';
+      document.getElementById('msg').innerText = '';
+    }
+    function cancelPlan() {
+      extracted = null;
+      document.getElementById('plan').style.display = 'none';
+      document.getElementById('msg').style.color = '#555';
+      document.getElementById('msg').innerText = '名簿は変えていません。';
+    }
+    function applyPlan() {
+      if (!extracted) return;
+      busy(true, '「メンバー名簿」に反映しています...');
+      google.script.run.withSuccessHandler(function (r) {
+        busy(false);
+        if (r && r.ok) { extracted = null; document.getElementById('plan').style.display = 'none'; }
+        document.getElementById('msg').innerText = (r && r.message) ? r.message : String(r);
+        document.getElementById('msg').style.color = (r && r.ok) ? 'green' : '#d00';
+      }).withFailureHandler(onFail).applyMemberListOcr(extracted);
     }
     function onFail(err) {
       var detail = (err && err.message) ? err.message : String(err);

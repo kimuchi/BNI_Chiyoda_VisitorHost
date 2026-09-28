@@ -40,6 +40,12 @@
    <span id="count" style="color:#666;"></span>
  </div>
 
+ <!-- 取り込む前の名簿の控え（メンバーリスト(OCR)・Spreading・HTML・貼り付け・公式レポートの取り込みの前に控える）-->
+ <div id="backup" class="warn" style="display:none;background:#f4f8ff;border-left-color:#4a7bd0;">
+   <span id="backupText"></span>
+   <button class="sub" onclick="restoreBackup()" style="margin-left:8px;">↩ 取り込む前に戻す</button>
+ </div>
+
  <div id="imp" style="display:none;border:1px solid #ddd;border-radius:6px;padding:12px;margin-bottom:10px;background:#fafbfd;">
    <b>方法1：現行のメンバーブックHTMLから取り込む</b>
    <div style="font-size:12px;color:#666;margin:4px 0 6px;">メンバーブック管理ツールで保存したHTMLから、業種区分・カテゴリー・会社名・一言コメント・紹介／協業を取り込みます。<br>
@@ -91,11 +97,25 @@
  window.addEventListener('beforeunload', function(e){ if(dirty){ e.preventDefault(); e.returnValue=''; return ''; } });
  function esc(x){var d=document.createElement('span');d.textContent=x==null?'':x;return d.innerHTML;}
  // keepMsg … 取り込みなどのあとに読み直すときは、そのお知らせを消さない
+ // 取り込む前の名簿の控え：いつの、何の前か。「取り込む前に戻す」で入れ替える（もう一度押すと戻す前に戻る）
+ function renderBackup(b){
+   var box=document.getElementById('backup');
+   if(!b){ box.style.display='none'; return; }
+   document.getElementById('backupText').textContent='名簿の控えがあります：'+b.at+'（'+b.label+'の前・'+b.rows+'名）。'
+     +'取り込みで名簿がおかしくなったときは、この控えに戻せます。';
+   box.style.display='block';
+ }
+ function restoreBackup(){
+   if(dirty && !confirm('保存していない変更があります。控えに戻すと、その変更は消えます。よろしいですか？')) return;
+   if(!confirm('いまのメンバー名簿を、控えの名簿と入れ替えます（写真・一言・日付なども控えのときの内容になります）。\nもう一度押すと、戻す前の名簿に戻せます。よろしいですか？')) return;
+   busy(true,'控えの名簿に戻しています...');
+   google.script.run.withSuccessHandler(done).withFailureHandler(fail).restoreMemberBackup();
+ }
  function load(keepMsg){ busy(true, keepMsg ? '' : '読み込み中...'); google.script.run.withSuccessHandler(function(r){
      busy(false);
      if(!r.ok){ show(r.message,false); return; }
      if(!keepMsg) show('', null);
-     members=r.members||[]; cats=r.categories||[]; dirty=false; render();
+     members=r.members||[]; cats=r.categories||[]; dirty=false; render(); renderBackup(r.backup);
    }).withFailureHandler(fail).getMemberMaster(); }
 
  function render(){

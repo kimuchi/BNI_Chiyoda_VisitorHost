@@ -182,7 +182,7 @@ function getMemberMaster(opts) {
       });
     }
     if (opts && opts.membersOnly) return { ok: true, members: members };
-    return { ok: true, members: members, cover: getCoverInfo_(), categories: getCategoryMaster() };
+    return { ok: true, members: members, cover: getCoverInfo_(), categories: getCategoryMaster(), backup: getMemberBackupInfo_() };
   } catch (e) {
     console.error('[MEMBER] ' + (e && e.stack ? e.stack : e));
     return { ok: false, message: 'メンバー名簿の読み込みに失敗しました: ' + (e && e.message ? e.message : e), members: [] };
@@ -579,13 +579,14 @@ function importMemberBookHtml(base64) {
     }
 
     var merged = mergeMembersInto_(members);
+    memberBackup_('メンバーブックHTMLの取り込み');
     var res = saveMemberMaster(merged.members, cover);
     if (!res.ok) return res;
     console.log('[MEMBER] html merged updated=' + merged.updated + ' added=' + merged.added);
     var msg = 'メンバーブックHTMLから ' + members.length + '名を読み取りました。'
             + '（更新 ' + merged.updated + '名 / 新規 ' + merged.added + '名 / 名簿は計 ' + merged.members.length + '名）\n'
-            + 'HTMLに無い項目（No・ふりがな・役職・メモ・写真ファイル名・入会日・更新日・更新期限日）は'
-            + 'そのまま残しています。';
+            + 'HTMLに無い項目（No・ふりがな・役職・メモ・写真ファイル名・入会日・更新日・更新期限日・会社での役職）は'
+            + 'そのまま残しています。\n取り込む前の名簿は控えてあります（「取り込む前に戻す」で戻せます）。';
     if (merged.addedNames.length) msg += '\n新しく追加: ' + merged.addedNames.join('、');
     return { ok: true, message: msg, updated: merged.updated, added: merged.added };
   } catch (e) {
@@ -627,9 +628,11 @@ function importMemberTsv(text, replaceAll) {
       note = '更新 ' + merged.updated + '名 / 新規 ' + merged.added + '名。'
            + '貼り付けた表で空欄だった列は、元の内容を残しています';
     }
+    memberBackup_('表計算からの貼り付け');
     var res = saveMemberMaster(out, null);
     if (!res.ok) return res;
-    return { ok: true, message: members.length + '行を取り込みました（' + note + ' / 名簿は計 ' + out.length + '名）。',
+    return { ok: true, message: members.length + '行を取り込みました（' + note + ' / 名簿は計 ' + out.length + '名）。'
+             + '\n取り込む前の名簿は控えてあります（「取り込む前に戻す」で戻せます）。',
              imported: members.length, total: out.length };
   } catch (e) {
     console.error('[MEMBER] ' + (e && e.stack ? e.stack : e));
@@ -638,60 +641,218 @@ function importMemberTsv(text, replaceAll) {
 }
 
 // === メンバーリスト(OCR)の読み取り結果をメンバー名簿へ統合する ===
-// PDFに載っている項目（No・氏名・ふりがな・業種区分・カテゴリー・会社名・役職・メモ）だけを
-// 上書きし、写真・一言コメント・紹介/協業・日付など、PDFに無い項目は既存の値を残す。
-function mergeMembersFromOcr_(extracted) {
+// PDFに載っている項目（No・ふりがな・業種区分・カテゴリー・会社名・役職・メモ）だけを上書きし、
+// 写真・一言コメント・紹介/協業・日付・会社での役職など、PDFに無い項目は既存の値を残す。
+//
+// 名簿の行は【氏名】で探す（番号では探さない）。番号はPDFの番号に直すだけで、行の氏名は書き換えない。
+// 以前は番号で行を探して氏名を書き換えていたため、メンバーが増えて番号がずれると、
+// ある方の行（写真・一言・日付など）が次々と別の方の名前に書き換わってしまった。
+//   1. 同じ氏名（空白・全角半角の違いは無視）
+//   2. 1文字だけ違う氏名（読み取りの誤り・異体字。3文字以上で、名簿に当てはまる方が1人だけのとき）… 氏名は名簿のまま
+//   3. どちらも無ければ、新しい方として足す
+// PDFに載っていない方は消さない（知らせるだけ）。
+
+// 2つの氏名（normName_ 済み）が、1文字だけ違う（置き換え・足りない・多い）か
+function ocrNameNear_(a, b) {
+  if (a === b || Math.abs(a.length - b.length) > 1) return false;
+  var i, d = 0;
+  if (a.length === b.length) {
+    for (i = 0; i < a.length; i++) if (a.charAt(i) !== b.charAt(i) && ++d > 1) return false;
+    return d === 1;
+  }
+  var s = a.length < b.length ? a : b, l = a.length < b.length ? b : a, j = 0;
+  for (i = 0; i < l.length; i++) {
+    if (j < s.length && s.charAt(j) === l.charAt(i)) j++;
+    else if (++d > 1) return false;
+  }
+  return true;
+}
+
+var OCR_FIELDS_ = [['no', 'No'], ['kana', 'ふりがな'], ['cat', '業種区分'], ['title', 'カテゴリー'],
+                   ['company', '会社名'], ['role', '役職'], ['memo', 'メモ']];
+
+// 読み取った方（extracted）を名簿（cur）に当てはめる。名簿はまだ変えない
+function ocrMergePlan_(extracted, cur) {
+  var used = {}, keys = cur.map(function (m) { return normName_(m.name); }), pending = [];
+  var plan = { matches: [], adds: [], noName: [], missing: [] };
+  (extracted || []).forEach(function (e) {
+    var key = normName_(e.name);
+    if (!key) { plan.noName.push(e); return; }
+    for (var i = 0; i < cur.length; i++) {
+      if (!used[i] && keys[i] === key) { used[i] = true; plan.matches.push({ idx: i, e: e, near: false }); return; }
+    }
+    pending.push(e);
+  });
+  pending.forEach(function (e) {
+    var key = normName_(e.name), cand = [];
+    if (key.length >= 3) {
+      for (var i = 0; i < cur.length; i++) if (!used[i] && keys[i].length >= 3 && ocrNameNear_(key, keys[i])) cand.push(i);
+    }
+    if (cand.length === 1) { used[cand[0]] = true; plan.matches.push({ idx: cand[0], e: e, near: true }); }
+    else plan.adds.push(e);
+  });
+  plan.matches.forEach(function (x) {
+    var m = cur[x.idx];
+    x.changes = [];
+    OCR_FIELDS_.forEach(function (f) {
+      var v = x.e[f[0]];
+      if (v && String(v) !== String(m[f[0]] || '')) x.changes.push({ key: f[0], field: f[1], from: String(m[f[0]] || ''), to: String(v) });
+    });
+  });
+  for (var n = 0; n < cur.length; n++) if (!used[n]) plan.missing.push(n);
+  return plan;
+}
+
+// 当てはめた結果を名簿（cur）に書き込み、No順に並べる。番号が重なった方を返す
+function ocrApplyPlan_(plan, cur) {
+  plan.matches.forEach(function (x) {
+    x.changes.forEach(function (c) { cur[x.idx][c.key] = c.to; });
+  });
+  plan.adds.forEach(function (e) {
+    cur.push({ no: e.no, cat: e.cat, name: e.name, kana: e.kana, title: e.title, company: e.company, role: e.role, memo: e.memo,
+               photoFile: '', comment: '', refer: '', collab: '', joinDate: '', renewDate: '', expireDate: '', position: '' });
+  });
+  // PDFに載っていた順（No順）に並べ替える。掲載順＝発表順の意味を持つため
+  cur.sort(function (a, b) {
+    var na = parseInt(a.no, 10), nb = parseInt(b.no, 10);
+    if (isNaN(na) && isNaN(nb)) return 0;
+    if (isNaN(na)) return 1;
+    if (isNaN(nb)) return -1;
+    return na - nb;
+  });
+  var byNo = {};
+  cur.forEach(function (m) { if (m.no) (byNo[m.no] = byNo[m.no] || []).push(m.name); });
+  return Object.keys(byNo).filter(function (k) { return byNo[k].length > 1; })
+    .map(function (k) { return { no: k, names: byNo[k] }; });
+}
+
+// 画面・確認用に、当てはめた結果をまとめる（名簿は変えない）
+function ocrPlanSummary_(extracted, cur) {
+  var plan = ocrMergePlan_(extracted, cur);
+  var copy = cur.map(function (m) { var o = {}; for (var k in m) o[k] = m[k]; return o; });
+  var dup = ocrApplyPlan_(ocrMergePlan_(extracted, copy), copy);
+  return {
+    total: (extracted || []).length,
+    updates: plan.matches.filter(function (x) { return x.changes.length; }).map(function (x) {
+      return { name: cur[x.idx].name, pdfName: x.e.name, near: x.near,
+               changes: x.changes.map(function (c) { return { field: c.field, from: c.from, to: c.to }; }) };
+    }),
+    unchanged: plan.matches.filter(function (x) { return !x.changes.length; }).length,
+    near: plan.matches.filter(function (x) { return x.near; }).map(function (x) { return { no: x.e.no, pdf: x.e.name, roster: cur[x.idx].name }; }),
+    adds: plan.adds.map(function (e) { return { no: e.no, name: e.name, cat: e.cat }; }),
+    missing: plan.missing.map(function (i) { return { no: cur[i].no, name: cur[i].name }; }),
+    noName: plan.noName.map(function (e) { return { no: e.no }; }),
+    dupNos: dup
+  };
+}
+
+// 確認用の文（ダイアログを使わない取り込みの確認・反映したあとの知らせ）
+function ocrSummaryText_(sm, done) {
+  var list = function (a, f) { return a.slice(0, 12).map(f).join('、') + (a.length > 12 ? ' ほか' + (a.length - 12) + '名' : ''); };
+  var t = '読み取り ' + sm.total + '名：変わる方 ' + sm.updates.length + '名 / 変わらない方 ' + sm.unchanged + '名 / 新しく足す方 ' + sm.adds.length + '名';
+  if (sm.adds.length) t += '\n・新しく足す方（名簿に同じ氏名が無い）: ' + list(sm.adds, function (x) { return 'No' + (x.no || '?') + ' ' + x.name; });
+  if (sm.near.length) t += '\n・氏名が1文字違う方（名簿の氏名のまま' + (done ? '更新しました' : '更新します') + '）: '
+    + list(sm.near, function (x) { return 'PDF「' + x.pdf + '」→ 名簿「' + x.roster + '」'; });
+  if (sm.missing.length) t += '\n・PDFに無い方（消しません）: ' + list(sm.missing, function (x) { return (x.no ? 'No' + x.no + ' ' : '') + x.name; });
+  if (sm.dupNos.length) t += '\n・番号が重なる方: ' + list(sm.dupNos, function (x) { return 'No' + x.no + '（' + x.names.join('・') + '）'; });
+  if (sm.noName.length) t += '\n・氏名を読み取れなかった行（飛ばします）: ' + list(sm.noName, function (x) { return 'No' + (x.no || '?'); });
+  return t;
+}
+
+// 読み取った方を名簿に反映する（確認のあと、画面から呼ぶ）。いまの名簿は、書き換える前に控えておく
+function mergeMembersFromOcr_(extracted, label) {
   try {
     var cur = getMemberMaster().members || [];
-    // 既存行を No と氏名の両方から引けるようにする
-    var byNo = {}, byName = {};
-    for (var i = 0; i < cur.length; i++) {
-      if (cur[i].no) byNo[String(cur[i].no)] = i;
-      byName[normName_(cur[i].name)] = i;
-    }
-    var updated = 0, added = 0, used = {};
-    for (var k = 0; k < extracted.length; k++) {
-      var e = extracted[k];
-      var idx = (e.no && byNo[String(e.no)] !== undefined) ? byNo[String(e.no)]
-              : (byName[normName_(e.name)] !== undefined ? byName[normName_(e.name)] : -1);
-      if (idx >= 0) {
-        var m = cur[idx];
-        m.no = e.no || m.no;
-        m.name = e.name || m.name;
-        if (e.kana) m.kana = e.kana;
-        if (e.cat) m.cat = e.cat;
-        if (e.title) m.title = e.title;
-        if (e.company) m.company = e.company;
-        if (e.role) m.role = e.role;
-        if (e.memo) m.memo = e.memo;
-        used[idx] = true; updated++;
-      } else {
-        cur.push({ no: e.no, cat: e.cat, name: e.name, kana: e.kana, title: e.title,
-                   company: e.company, role: e.role, memo: e.memo,
-                   photoFile: '', comment: '', refer: '', collab: '',
-                   joinDate: '', renewDate: '', expireDate: '' });
-        added++;
-      }
-    }
-    // PDFに載っていた順（No順）に並べ替える。掲載順＝発表順の意味を持つため
-    cur.sort(function (a, b) {
-      var na = parseInt(a.no, 10), nb = parseInt(b.no, 10);
-      if (isNaN(na) && isNaN(nb)) return 0;
-      if (isNaN(na)) return 1;
-      if (isNaN(nb)) return -1;
-      return na - nb;
-    });
+    var sm = ocrPlanSummary_(extracted, cur);
+    var plan = ocrMergePlan_(extracted, cur);
+    memberBackup_(label || 'メンバーリスト(OCR)の取り込み');
+    ocrApplyPlan_(plan, cur);
     var res = saveMemberMaster(cur, null);
     if (!res.ok) return res;
-    var msg = '読み取り ' + extracted.length + '件を「メンバー名簿」に反映しました。'
-            + '（更新 ' + updated + '名 / 新規 ' + added + '名 / 名簿は計 ' + cur.length + '名）\n'
-            + '写真・一言コメント・日付など、PDFに無い項目は残しています。';
+    var msg = '「メンバー名簿」に反映しました（名簿は計 ' + cur.length + '名）。\n' + ocrSummaryText_(sm, true)
+            + '\n写真・一言コメント・日付など、PDFに無い項目は残しています。'
+            + '\n取り込む前の名簿は控えてあります（メンバー名簿の画面の「取り込む前に戻す」で戻せます）。';
     if (typeof roleRosterAfterImport_ === 'function') msg += roleRosterAfterImport_();
-    console.log('[OCR] merged updated=' + updated + ' added=' + added);
-    return { ok: true, message: msg, updated: updated, added: added, total: cur.length };
+    console.log('[OCR] merged updated=' + sm.updates.length + ' added=' + sm.adds.length);
+    return { ok: true, message: msg, updated: sm.updates.length, added: sm.adds.length, total: cur.length, summary: sm };
   } catch (e) {
     console.error('[OCR] merge ' + (e && e.stack ? e.stack : e));
     return { ok: false, message: '名簿への反映に失敗しました: ' + (e && e.message ? e.message : e) };
+  }
+}
+
+// 画面の「名簿に反映」。読み取った内容（確認した一覧のもと）を受け取って反映する
+function applyMemberListOcr(extracted) {
+  var lock = LockService.getScriptLock();
+  try {
+    if (!extracted || !extracted.length) return { ok: false, message: '反映する内容がありません。もう一度読み取ってください。' };
+    if (!lock.tryLock(20000)) return { ok: false, message: 'ほかの方が名簿を保存中です。少し待ってから、もう一度押してください。' };
+    return mergeMembersFromOcr_(extracted);
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
+// === 取り込む前の名簿の控え ===
+// 名簿をまとめて書き換える取り込み（メンバーリスト(OCR)・Spreading・メンバーブックHTML・表計算からの貼り付け・
+// BNI公式レポート）の前に、いまの名簿を隠しシートに写しておく。
+// 「取り込む前に戻す」で、その名簿と入れ替える（もう一度押すと、戻す前の名簿に戻る）
+var MEMBER_BACKUP_SHEET_ = 'メンバー名簿_取り込み前';
+var MEMBER_BACKUP_KEY_ = 'BNI_MEMBER_BACKUP';           // { at: 控えた日時, label: 何の前か, rows: 人数 }
+
+function memberBackupSheet_() {
+  var ss = getSS_(), sh = ss.getSheetByName(MEMBER_BACKUP_SHEET_);
+  if (sh) return sh;
+  var active = null;
+  try { active = ss.getActiveSheet(); } catch (e) {}
+  sh = ss.insertSheet(MEMBER_BACKUP_SHEET_);
+  try { sh.hideSheet(); } catch (e) {}
+  try { if (active) ss.setActiveSheet(active); } catch (e) {}   // 作った控えのシートに画面が移らないように
+  return sh;
+}
+function memberCopyGrid_(from, to) {
+  var data = from.getDataRange().getValues();
+  to.clear();
+  if (data.length && data[0].length) to.getRange(1, 1, data.length, data[0].length).setValues(data);
+  return Math.max(0, data.length - 1);
+}
+function memberBackup_(label) {
+  var rows = memberCopyGrid_(ensureMemberSheet_(), memberBackupSheet_());
+  var info = { at: Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy/MM/dd HH:mm'), label: label || '取り込み', rows: rows };
+  PropertiesService.getScriptProperties().setProperty(MEMBER_BACKUP_KEY_, JSON.stringify(info));
+  return info;
+}
+function getMemberBackupInfo_() {
+  try {
+    var info = JSON.parse(PropertiesService.getScriptProperties().getProperty(MEMBER_BACKUP_KEY_) || 'null');
+    if (!info || !getSS_().getSheetByName(MEMBER_BACKUP_SHEET_)) return null;
+    return info;
+  } catch (e) { return null; }
+}
+// 画面の「取り込む前に戻す」。控えの名簿といまの名簿を入れ替える
+function restoreMemberBackup() {
+  var lock = LockService.getScriptLock();
+  try {
+    if (!lock.tryLock(20000)) return { ok: false, message: 'ほかの方が名簿を保存中です。少し待ってから、もう一度押してください。' };
+    var info = getMemberBackupInfo_();
+    if (!info) return { ok: false, message: '戻せる名簿の控えがありません。' };
+    var ss = getSS_(), bk = ss.getSheetByName(MEMBER_BACKUP_SHEET_), sh = ensureMemberSheet_();
+    if (bk.getLastRow() < 1) return { ok: false, message: '控えの名簿が空です。' };
+    var tmp = sh.getDataRange().getValues();
+    var rows = memberCopyGrid_(bk, sh);
+    sh.getRange(1, 1, 1, sh.getLastColumn()).setFontWeight('bold').setBackground('#f2f6ff');
+    sh.setFrozenRows(1);
+    bk.clear();
+    if (tmp.length && tmp[0].length) bk.getRange(1, 1, tmp.length, tmp[0].length).setValues(tmp);
+    var now = { at: Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy/MM/dd HH:mm'), label: '「取り込む前に戻す」を押す前', rows: Math.max(0, tmp.length - 1) };
+    PropertiesService.getScriptProperties().setProperty(MEMBER_BACKUP_KEY_, JSON.stringify(now));
+    return { ok: true, message: info.at + '（' + info.label + '）の名簿に戻しました（' + rows + '名）。'
+             + '\nもう一度押すと、戻す前の名簿に戻ります。', backup: now };
+  } catch (e) {
+    console.error('[MEMBER] restore ' + (e && e.stack ? e.stack : e));
+    return { ok: false, message: '戻せませんでした: ' + (e && e.message ? e.message : e) };
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
   }
 }
 
@@ -731,7 +892,7 @@ function migrateMemberListSheet() {
       old.hideSheet();
       return { ok: true, message: '「メンバーリスト」は空だったため、非表示にしました。' };
     }
-    var res = mergeMembersFromOcr_(src);
+    var res = mergeMembersFromOcr_(src, '旧メンバーリストからの移行');
     if (!res.ok) return res;
     old.hideSheet();
     return { ok: true, message: res.message + '\n旧「メンバーリスト」シートは非表示にしました（データは残っています）。' };
@@ -839,6 +1000,7 @@ function importMembershipReports(files) {
         if (states[key] && states[key].indexOf('Active') === -1) pending.push(members[mi].name + '（' + states[key] + '）');
       }
     }
+    memberBackup_('BNI公式レポートの取り込み');
     var res = saveMemberMaster(members, null);
     if (!res.ok) return res;
 

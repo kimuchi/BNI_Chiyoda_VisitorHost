@@ -10,6 +10,8 @@
 //     前のリンク ?p=premtg は、トップページに出さない入口（WEBAPP_ALIASES_）として開ける
 //   ・公式ファイルから雛形を作る（初期設定のときだけ）も、トップページには出さず ?p=official_templates で開く。
 //     画面には WEBAPP_URL を渡し、BNI 素材フォルダの画面のリンクからそのURLで開く
+//   ・ウェブアプリで開くと、画面の先頭に「← メニューに戻る」の帯が入る。body を横並び（display:flex で
+//     flex-direction が column でない）にしている画面は、帯が左の列になってしまうので、そうなっていない
 //   ・トップページのリンクは ?p=キー だけ。
 //     リンクの ? より後ろに <?= ?> で「&…」を足すと、Apps Script が & や = をURL用に置き換えて（%26 %3D）
 //     開く画面が分からなくなる（事前MTGのリンクがトップページから開けなかった原因）
@@ -60,6 +62,11 @@ for (const it of items.concat(ALIASES)) {
   ck(/^[a-z_]+$/.test(it.key), `キー「${it.key}」にURLで困る文字がある（英小文字と _ だけにする）`);
   ck(fs.existsSync(path.join(ROOT, (it.file || it.key) + '.html')), `「${it.label}」の画面 ${(it.file || it.key)}.html が無い`);
   ck(!it.query, `「${it.label}」に query がある（リンクが崩れる。file と params を使う）`);
+  // 帯（先頭に入る「← メニューに戻る」）が左の列にならない：body を横並びにしていない
+  const html = fs.existsSync(path.join(ROOT, (it.file || it.key) + '.html')) ? fs.readFileSync(path.join(ROOT, (it.file || it.key) + '.html'), 'utf8') : '';
+  const bodyCss = (html.match(/(^|[\s}])body\s*\{[^}]*\}/g) || []).join(' ') + ' ' + ((html.match(/<body[^>]*style="([^"]*)"/i) || [])[1] || '');
+  ck(!/display\s*:\s*(inline-)?flex/.test(bodyCss) || /flex-direction\s*:\s*column/.test(bodyCss),
+     `「${it.label}」（${it.file || it.key}.html）は body を横並びにしている（ウェブアプリの「← メニューに戻る」が左の列になる）`);
 }
 
 // --- ?p=キー で開く ---

@@ -192,6 +192,7 @@ function importSpreadingMembers(memberJson, renumber) {
       return na - nb;
     });
 
+    memberBackup_('Spreadingからの取り込み');
     var res = saveMemberMaster(cur, null);
     if (!res.ok) return res;
 
@@ -202,7 +203,8 @@ function importSpreadingMembers(memberJson, renumber) {
            + '退会された方か、氏名の書き方が違う可能性があります。自動では消していません:\n'
            + plan.missing.map(function (x) { return x.name; }).join('、');
     }
-    msg += '\n\n写真・一言コメント・紹介してほしい人・協業したい人・更新期限日はそのまま残しています。';
+    msg += '\n\n写真・一言コメント・紹介してほしい人・協業したい人・更新期限日はそのまま残しています。'
+         + '\n取り込む前の名簿は控えてあります（メンバー名簿の画面の「取り込む前に戻す」で戻せます）。';
     if (typeof roleRosterAfterImport_ === 'function') msg += roleRosterAfterImport_();
     console.log('[SPREADING] updated=' + updated + ' added=' + added);
     return { ok: true, message: msg, updated: updated, added: added, total: cur.length };
