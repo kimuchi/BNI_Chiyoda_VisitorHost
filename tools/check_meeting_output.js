@@ -532,6 +532,20 @@ if (!SECOND) {
       });
     });
   }
+  // 倫理規定：更新メンバー・新メンバーのまとまりの、それぞれすぐうしろに1枚。人がいるまとまりのうしろだけ表示
+  if (memberPages) {
+    const isEth = (p) => /倫理規定/.test(flat(p));
+    [['renew', '更新メンバー', memberPages.renewMembers], ['new', '新メンバー', memberPages.newMembers]].forEach(([k, label, list]) => {
+      const pages = order.filter((p) => F.fpMemberKind_(F.xmlOf_(parts, p)) === k && F.fpMemberUnit_(F.xmlOf_(parts, p), sz.W, sz.H));
+      if (!pages.length) return;
+      const next = order[Math.max(...pages.map((p) => order.indexOf(p))) + 1];
+      pck(next && isEth(next), `倫理規定：${label}のすぐうしろに倫理規定のページが無い`);
+      if (next && isEth(next)) pck(shown(next) === (list.length > 0), `倫理規定：${label}のあとの倫理規定が${shown(next) ? '表示' : '非表示'}（${list.length}名）`);
+    });
+    const vis = order.filter(shown);
+    vis.forEach((p, i) => { if (i && isEth(p)) pck(!isEth(vis[i - 1]), `倫理規定：表示のページが2枚続いている（${vis[i - 1]}・${p}）`); });
+    pck((info.members.ethics || []).length >= 1, '倫理規定：知らせが無い');
+  }
   // バイスプレジデントによる報告：数字と速報の日付
   if (vpReport) {
     const vpPages = order.filter((p) => /バイスプレジデント/.test(txt(p)) && /報告/.test(txt(p)));

@@ -1,6 +1,7 @@
 // マニュアル（MANUAL.md / manual.html）に載せる画面のスクリーンショットを、架空のデータで撮る。
 //
 //   node tools/make_manual_shots.js <routine.json> [出力先のフォルダ（既定: docs/images）] [撮る画面の名前…]
+//   （メンバーブックの書体：環境変数 FONT_DIR に Googleフォントを写したディレクトリ（css.txt と gstatic/）を渡すと、それで描く）
 //
 // 撮った画面は、幅 960px までに縮めて WebP（画質82）にする（Python の Pillow を使う）。
 // MANUAL.md から ![説明](docs/images/名前.webp) で載せ、python3 tools/build_manual.py で manual.html に埋め込む。
@@ -293,8 +294,10 @@ const answersSlides = {
 const DEF_CATS = vm.runInContext('DEFAULT_CATEGORIES_', S.sandbox);
 const roleOfFake = {};
 Object.keys(HOLDERS_24).forEach((k) => { roleOfFake[HOLDERS_24[k]] = F.roleDefOf_(k).label; });
-const masterAnswer = { ok: true, members: FAKE_MEMBERS.map((m) => Object.assign({ kana: '', role: roleOfFake[m.name] || '', memo: '', photoFile: '',
-    comment: '', refer: '', collab: '', joinDate: '', renewDate: '', expireDate: '' }, m)),
+// 会社での役職（肩書き）
+const MB_POS = ['所長', '代表', '代表取締役', '所長', '講師', '', '代表取締役', '', '', '代表', '', 'チーフデザイナー', '', '代表', '', '', '支店長', ''];
+const masterAnswer = { ok: true, members: FAKE_MEMBERS.map((m, i) => Object.assign({ kana: '', role: roleOfFake[m.name] || '', memo: '', photoFile: '',
+    comment: '', refer: '', collab: '', joinDate: '', renewDate: '', expireDate: '', position: MB_POS[i % MB_POS.length] }, m)),
   categories: DEF_CATS.map((r) => ({ key: r[0], label: r[1], bg: r[2], bg2: r[3], block: r[4], order: r[5] })), cover: {} };
 const bigStatus = F.getBigTemplateStatus();
 (bigStatus.templates || []).forEach((t, i) => {
@@ -316,6 +319,31 @@ const officialStatus = { ok: true, file: { id: 'x', name: 'BNI公式スライド
 const assetStatus = { folderId: '1AbCdEfGhIjKlMnOpQrStUvWxYz012345', reachable: true, folderUrl: '#', folderName: 'BNI Activeチャプター 素材',
   subFolders: [['template', '01_テンプレート'], ['photo', '02_メンバー写真'], ['output', '03_生成物']]
     .map(([kind, name]) => ({ kind, name, exists: true, url: '#' })) };
+// ---- メンバーブックの編集（会社での役職・一言・紹介・協業も架空。写真は見本の絵）----
+const MB_REFER = ['創業3年以内の社長', '従業員10名以上の会社の総務担当', '経理の人手が足りない会社', '相続を考えている方',
+  '研修を検討している人事部長', '海外出張の多い会社員', '住み替えを考えているご家族', '賃貸オーナー'];
+const MB_COLLAB = ['社会保険労務士・司法書士', '税理士・弁護士', '会計事務所', '不動産会社・税理士', 'コーチ・カウンセラー', '旅行会社',
+  'ファイナンシャルプランナー', '工務店・リフォーム会社'];
+const avatar = (i) => 'data:image/svg+xml;base64,' + Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160">'
+  + '<rect width="160" height="160" fill="' + ['#dfe6ee', '#e8e2d8', '#e3ebe1', '#ece0e6'][i % 4] + '"/>'
+  + '<circle cx="80" cy="62" r="30" fill="#9aa5b1"/><path d="M22 160c5-40 30-58 58-58s53 18 58 58z" fill="#9aa5b1"/></svg>').toString('base64');
+const bookMembers = masterAnswer.members.map((m, i) => Object.assign({}, m, {
+  comment: i === 4 ? '会社の研修から個人のキャリア相談まで、働く人の「伸びしろ」を一緒に見つけて、形にするお手伝いをしています'
+    : m.title + 'のことなら、お気軽にご相談ください',
+  refer: i === 2 ? 'IT化を進めたい中小企業の社長、社内にIT担当者がいない会社、DXの補助金を検討している会社' : MB_REFER[i % MB_REFER.length],
+  collab: MB_COLLAB[i % MB_COLLAB.length] }));
+const answersBook = {
+  getMemberBookData: { any: { ok: true, members: bookMembers, categories: masterAnswer.categories, cover: {} } },
+  getMemberPhotoThumbs: { any: { ok: true, map: Object.fromEntries(bookMembers.map((m, i) => [m.name, avatar(i)])) } },
+};
+const bookPage = () => readHtml('memberbook_editor.html')
+  .replace(/<\?!=\s*HtmlService\.createHtmlOutputFromFile\('memberbook_render'\)\.getContent\(\);\s*\?>/, () => readHtml('memberbook_render.html'));
+// プレビュー（iframe）の文字を収め終わるまで待つ
+const bookReady = async (p) => {
+  await p.frameLocator('#pv').locator('html[data-fitted="1"]').waitFor({ timeout: 20000 });
+  await p.waitForTimeout(300);
+};
+
 const answersSettings = { getMemberMaster: { any: masterAnswer }, getHolidays: { any: F.getHolidays() }, getBigTemplateStatus: { any: bigStatus },
                           getChapterSettings: { any: F.getChapterSettings() }, getOfficialTemplateStatus: { any: officialStatus },
                           getAssetSettings: { any: assetStatus } };
@@ -435,6 +463,16 @@ const SHOTS = [
       await p.evaluate(() => { const r = document.getElementById('r26_talk'); if (r) window.scrollTo(0, r.getBoundingClientRect().top + window.scrollY - 140); });
       await p.waitForTimeout(100);
     } },
+  // メンバーブックの編集（全体・プレビューのカードを押して編集を開いたところ）
+  { name: 'memberbook_editor', file: () => writePage('memberbook_editor', bookPage(), answersBook), width: 1150, height: 780, wait: 800,
+    before: bookReady },
+  { name: 'memberbook_modal', file: () => writePage('memberbook_modal', bookPage(), answersBook), width: 1150, height: 900, wait: 800,
+    element: '#modal .inner',
+    before: async (p) => {
+      await bookReady(p);
+      await p.frameLocator('#pv').locator('.c.pick').nth(11).click();
+      await p.waitForTimeout(200);
+    } },
   // 設定
   { name: 'member_master', file: () => writePage('member_master', readHtml('member_master.html'), answersSettings), width: 1280, height: 640, wait: 700 },
   { name: 'holiday', file: () => writePage('holiday', readHtml('holiday.html'), answersSettings), width: 520, height: 560 },
@@ -455,6 +493,20 @@ async function clipOf(p, start, end, maxH) {
   }
   const w = await p.evaluate(() => document.documentElement.clientWidth);
   return { x: 0, y: Math.max(0, a.y - 8), width: w, height: Math.max(40, bottom - a.y + 8) };
+}
+
+// メンバーブックの書体（Googleフォント）。環境変数 FONT_DIR に写したもの（css.txt と gstatic/）があれば、それを返す。
+// 無ければ読まない（パソコンの明朝体で描く）
+async function routeFonts(page) {
+  const dir = process.env.FONT_DIR;
+  if (!dir) { await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort()); return; }
+  const css = fs.readFileSync(path.join(dir, 'css.txt'), 'utf8');
+  await page.route('https://fonts.googleapis.com/**', (r) => r.fulfill({ status: 200, contentType: 'text/css', body: css }));
+  await page.route('https://fonts.gstatic.com/**', (r) => {
+    const f = path.join(dir, 'gstatic', r.request().url().replace('https://fonts.gstatic.com/', '').replace(/\//g, '_'));
+    if (!fs.existsSync(f)) return r.fulfill({ status: 404, body: '' });
+    r.fulfill({ status: 200, contentType: 'font/woff2', body: fs.readFileSync(f), headers: { 'access-control-allow-origin': '*' } });
+  });
 }
 
 function loadPlaywright() {
@@ -486,6 +538,7 @@ for f in sorted(os.listdir(src)):
   for (const s of SHOTS) {
     if (ONLY.length && ONLY.indexOf(s.name) < 0) continue;
     const page = await browser.newPage({ viewport: { width: s.width || 960, height: s.height || 900 }, deviceScaleFactor: 1 });
+    await routeFonts(page);
     await page.goto('file://' + s.file());
     await page.waitForTimeout(s.wait || 500);
     if (s.before) await s.before(page);

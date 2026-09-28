@@ -2,8 +2,11 @@
 <html><head><base target="_top">
 <style>
  body{font-family:sans-serif;margin:0;font-size:13px;display:flex;height:100vh;}
- .side{width:300px;border-right:1px solid #ddd;padding:14px;overflow-y:auto;background:#fafbfd;}
- .main{flex:1;padding:14px;overflow-y:auto;background:#eef1f5;}
+ .side{width:300px;border-right:1px solid #ddd;padding:14px;overflow-y:auto;background:#fafbfd;box-sizing:border-box;}
+ .main{flex:1;display:flex;flex-direction:column;min-width:0;background:#8a8f98;}
+ .pvbar{padding:6px 12px;font-size:12px;color:#fff;background:#5f646c;display:flex;gap:12px;align-items:center;flex-wrap:wrap;}
+ .pvbar label{color:#fff;font-size:12px;}
+ #pv{flex:1;border:none;width:100%;background:#8a8f98;}
  h3{margin:0 0 8px;color:#c0392b;font-size:15px;}
  .hint{font-size:11px;color:#666;line-height:1.6;margin-bottom:10px;}
  button{border:none;padding:8px 13px;border-radius:4px;cursor:pointer;font-weight:bold;font-size:12px;background:#c0392b;color:#fff;}
@@ -16,31 +19,27 @@
  .mrow:hover{background:#f6f9ff;}
  .mrow .n{color:#999;width:22px;text-align:right;}
  .mrow .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;}
- .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;background:#fff;padding:10px;border-radius:5px;}
- .card{border:1px solid #ddd;border-radius:4px;padding:7px;font-size:11px;position:relative;min-height:112px;}
- .card .cn{position:absolute;top:4px;left:5px;color:#bbb;font-size:10px;}
- .card .ph{width:44px;height:44px;border-radius:3px;background:#eee;float:left;margin:0 7px 3px 0;object-fit:cover;}
- .card .cname{font-weight:bold;font-size:12.5px;}
- .card .cco{color:#555;}
- .card .cti{color:#c0392b;font-size:10px;}
- .card .ccm{color:#666;font-size:10px;margin-top:3px;clear:both;}
- .cat{display:inline-block;color:#fff;font-size:9px;padding:1px 6px;border-radius:8px;margin-bottom:3px;}
  #msg{margin-top:10px;font-weight:bold;white-space:pre-wrap;font-size:12px;}
+ #saveState{margin-top:6px;font-size:11px;line-height:1.6;}
+ #overNote{margin-top:8px;font-size:11px;color:#b26b00;line-height:1.6;}
  .modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:10;}
- .modal .inner{background:#fff;padding:18px;border-radius:7px;width:430px;max-height:86vh;overflow-y:auto;}
+ .modal .inner{background:#fff;padding:18px;border-radius:7px;width:460px;max-height:88vh;overflow-y:auto;}
  .modal label{display:block;font-size:11px;color:#555;margin-top:8px;}
+ .modal .note{font-size:10.5px;color:#888;margin-top:2px;line-height:1.5;}
  .modal input,.modal textarea,.modal select{width:100%;padding:5px;border:1px solid #ccc;border-radius:3px;font-size:12px;box-sizing:border-box;}
 </style></head>
 <body>
 <div class="side">
   <h3>メンバーブック</h3>
-  <div class="hint">データは「メンバー名簿」シートです。写真はDriveから氏名で自動照合されます。</div>
+  <div class="hint">データは「メンバー名簿」シートです。写真はDriveから氏名で自動照合されます。<br>
+    右のプレビューは<b>印刷と同じ見た目</b>です。カードを押すと編集できます。
+    <b>「反映」を押すと、その方の内容はすぐ名簿に保存されます</b>（並べ替え・削除も自動で保存）。</div>
   <div class="bar">
-    <button onclick="save()">名簿に保存</button>
     <button class="sub" onclick="addM()">＋ 追加</button>
+    <button class="sub" onclick="save()" title="いまの一覧（並び順も）をまとめて名簿に保存します">名簿に保存</button>
   </div>
   <div class="bar">
-    <button class="sub" onclick="printBook()">🖨 冊子を印刷（PDF）</button>
+    <button onclick="printBook()">🖨 冊子を印刷（PDF）</button>
     <button class="sub" onclick="exportHtml()">配布用HTMLを保存</button>
   </div>
   <div class="bar">
@@ -48,29 +47,37 @@
   </div>
   <div style="font-size:11px;color:#666;margin:8px 0 4px;">メンバー一覧（この順が掲載順）</div>
   <div class="mlist" id="mlist"></div>
+  <div id="saveState"></div>
+  <div id="overNote"></div>
   <div id="msg"></div>
 </div>
 <div class="main">
-  <div style="font-size:12px;color:#666;margin-bottom:6px;">プレビュー（3列・本番と同じ並び）</div>
-  <div class="grid" id="grid"></div>
+  <div class="pvbar">
+    <span>プレビュー（印刷と同じ見た目・カードを押すと編集）</span>
+    <label><input type="checkbox" id="pvCover" onchange="render()"> 表紙も表示</label>
+  </div>
+  <iframe id="pv" title="メンバーブックのプレビュー"></iframe>
 </div>
 
 <div class="modal" id="modal"><div class="inner">
   <b id="mTitle">メンバーの編集</b>
   <label>業種区分</label><select id="e_cat"></select>
   <label>会社名</label><input id="e_company">
-  <label>カテゴリー（肩書・業務内容）</label><input id="e_title">
-  <label>役職</label><input id="e_role">
+  <label>カテゴリー（業務内容）</label><input id="e_title">
+  <label>会社での役職（代表取締役・支店長など）</label><input id="e_position">
+  <label>BNIの役職</label><input id="e_role">
+  <div class="note">役職ごとの入力の「役職・チーム（半期ごと）」から、期が替わったときに入ります（ここで直すと、次に期が替わるまでこの内容です）。</div>
   <label>氏名</label><input id="e_name">
   <label>一言コメント</label><textarea id="e_comment" rows="2"></textarea>
-  <label>紹介してほしい人</label><input id="e_refer">
-  <label>協業したい人</label><input id="e_collab">
+  <label>最も紹介して欲しいカテゴリー</label><input id="e_refer">
+  <label>協業したいカテゴリー</label><input id="e_collab">
+  <div class="note">長い文は、印刷のときに枠に収まる大きさまで文字を小さくします（入りきらないときは、左の一覧の下にお知らせが出ます）。</div>
   <label>掲載順を変更（番号を入れて移動）</label>
   <div style="display:flex;gap:6px;"><input id="e_num" type="number" min="1" style="width:80px;">
     <button class="mini" onclick="moveTo()">移動する</button></div>
   <div style="margin-top:14px;display:flex;gap:6px;justify-content:flex-end;">
     <button class="sub" onclick="closeM()">閉じる</button>
-    <button onclick="applyM()">反映</button>
+    <button onclick="applyM()">反映（名簿に保存）</button>
   </div>
 </div></div>
 
@@ -115,12 +122,56 @@
 </div></div>
 
 <script>
- var members=[], cats=[], cover={}, photos={}, photosB64={}, editing=-1;
+ var members=[], cats=[], cover={}, photos={}, photosB64={}, editing=-1, editingNew=false;
+ var EDIT_KEYS=['company','title','position','role','name','comment','refer','collab'];
  window.onload=load;
  function esc(x){var d=document.createElement('span');d.textContent=x==null?'':x;return d.innerHTML;}
  function show(t,ok){var m=document.getElementById('msg');m.innerText=t;m.style.color=ok===true?'green':(ok===false?'#d00':'#0055ff');}
  function fail(e){ show('エラー: '+((e&&e.message)?e.message:e), false); busy(false); }
  function busy(b){ var bs=document.querySelectorAll('.side button'); for(var i=0;i<bs.length;i++) bs[i].disabled=b; }
+
+ // --- 名簿への保存 ---
+ // 「反映」… その方の行だけをすぐ保存（saveMemberBookMember）。
+ // 並べ替え・削除 … 少し待ってから一覧をまとめて保存（saveMemberBookData）。
+ // 保存は1つずつ順番に送る。保存が済んでいないうちにページを閉じようとしたら、ブラウザの確認を出す。
+ var saveQ=[], saving=false, orderTimer=null, orderDirty=false, lastError='';
+ function pendingSave(){ return saving || saveQ.length>0 || orderDirty; }
+ function renderSaveState(){
+   var el=document.getElementById('saveState');
+   if(lastError){ el.innerHTML='<span style="color:#d00;">⚠ 保存できませんでした：'+esc(lastError)+'<br>「名簿に保存」をもう一度押してください。</span>'; return; }
+   el.innerHTML = pendingSave() ? '<span style="color:#0055ff;">名簿に保存しています…</span>'
+                                : '<span style="color:#188038;">✓ 名簿に保存済み</span>';
+ }
+ function enqueue(fn, args, onOk){ saveQ.push({ fn:fn, args:args, onOk:onOk }); renderSaveState(); pump(); }
+ function pump(){
+   if(saving || !saveQ.length) return;
+   var job=saveQ.shift(); saving=true; renderSaveState();
+   var r=google.script.run.withSuccessHandler(function(res){
+     saving=false;
+     if(!res || !res.ok){ lastError=(res&&res.message)||'不明なエラー'; show(lastError,false); }
+     else { lastError=''; if(job.onOk) job.onOk(res); }
+     renderSaveState(); pump();
+   }).withFailureHandler(function(e){
+     saving=false; lastError=(e&&e.message)?e.message:String(e); show('保存に失敗しました: '+lastError,false);
+     renderSaveState(); pump();
+   });
+   r[job.fn].apply(r, job.args);
+ }
+ // 並べ替え・削除のあと：まとめて保存（続けて何回か動かしても1回で済むよう、少し待つ）
+ function saveOrderSoon(){
+   orderDirty=true; renderSaveState();
+   if(orderTimer) clearTimeout(orderTimer);
+   orderTimer=setTimeout(function(){ orderTimer=null; saveAll(true); }, 1200);
+ }
+ function saveAll(auto){
+   if(orderTimer){ clearTimeout(orderTimer); orderTimer=null; }
+   orderDirty=false;
+   enqueue('saveMemberBookData', [members, null], function(r){ show(auto ? '並び順を名簿に保存しました。' : r.message, true); });
+ }
+ function save(){ saveAll(false); }
+ window.addEventListener('beforeunload', function(e){
+   if(pendingSave() || lastError || modalChanged()){ e.preventDefault(); e.returnValue=''; return ''; }
+ });
 
  function load(){
    busy(true); show('読み込み中...');
@@ -128,7 +179,7 @@
      busy(false);
      if(!r.ok){ show(r.message,false); return; }
      members=r.members||[]; cats=r.categories||[]; cover=r.cover||{};
-     render(); show(members.length+'名を読み込みました。',true);
+     render(); renderSaveState(); show(members.length+'名を読み込みました。',true);
      var names=members.map(function(m){return m.name;});
      if(cover.pname && names.indexOf(cover.pname)<0) names.push(cover.pname);  // プレジデントの写真も
      fetchPhotos(names);
@@ -141,10 +192,10 @@
    if(!names.length) return;
    var todo=names.slice(), total=todo.length, done=0;
    (function step(){
-     if(!todo.length) return;
+     if(!todo.length){ render(); return; }
      var batch=todo.splice(0,15);
      google.script.run.withSuccessHandler(function(r){
-       if(r&&r.ok){ for(var k in r.map) photos[k]=r.map[k]; render(); }
+       if(r&&r.ok){ for(var k in r.map) photos[k]=r.map[k]; }
        done+=batch.length;
        if(todo.length) show('写真を読み込んでいます...（'+done+'/'+total+'）');
        else show(members.length+'名を読み込みました。',true);
@@ -154,6 +205,8 @@
  }
  function catOf(key){ for(var i=0;i<cats.length;i++) if(cats[i].key===key) return cats[i]; return null; }
 
+ // --- プレビュー（印刷と同じ組版。写真はサムネイル）---
+ var pvScroll=0;
  function render(){
    document.getElementById('mlist').innerHTML = members.map(function(m,i){
      return '<div class="mrow"><span class="n">'+(i+1)+'</span>'
@@ -162,30 +215,93 @@
       +'<button class="mini" onclick="mv('+i+',1)">↓</button>'
       +'<button class="mini" onclick="del('+i+')">✕</button></div>';
    }).join('');
-   document.getElementById('grid').innerHTML = members.map(function(m,i){
-     var c=catOf(m.cat), ph=photos[m.name];
-     return '<div class="card" onclick="openM('+i+')"><span class="cn">'+(i+1)+'</span>'
-      + (c?'<div class="cat" style="background:'+esc(c.bg||'#888')+'">'+esc(c.label||c.key)+'</div>':'')
-      + (ph?'<img class="ph" src="'+ph+'">':'<div class="ph"></div>')
-      + '<div class="cti">'+esc(m.title)+'</div>'
-      + '<div class="cname">'+esc(m.name)+'</div>'
-      + '<div class="cco">'+esc(m.company)+'</div>'
-      + '<div class="ccm">'+esc(m.comment)+'</div></div>';
-   }).join('');
+   var pv=document.getElementById('pv');
+   try{ pvScroll = pv.contentWindow ? pv.contentWindow.scrollY : pvScroll; }catch(e){}
+   pv.onload=function(){ try{ pv.contentWindow.scrollTo(0, pvScroll); }catch(e){} };
+   pv.srcdoc = bookHtml({ photos: photos, pick: true, cover: document.getElementById('pvCover').checked });
  }
- function addM(){ members.push({cat:'',company:'',title:'',name:'',photoFile:'',comment:'',refer:'',collab:'',joinDate:'',renewDate:'',expireDate:''}); render(); openM(members.length-1); }
- function del(i){ if(!confirm((members[i].name||'この行')+' を削除しますか？')) return; members.splice(i,1); render(); }
- function mv(i,d){ var j=i+d; if(j<0||j>=members.length) return; var t=members[i]; members[i]=members[j]; members[j]=t; render(); }
+ // プレビューからの知らせ：カードを押した／文字を収め終わった（入りきらない欄を左下に出す）
+ window.addEventListener('message', function(e){
+   var pv=document.getElementById('pv');
+   if(!e.data || e.source!==pv.contentWindow) return;
+   if(typeof e.data.mbOpen==='number') openM(e.data.mbOpen);
+   if(e.data.mbFitted) overNote();
+ });
+ var FIELD_LABEL={cat:'カテゴリー',co:'会社名',ps:'会社での役職',bn:'BNIの役職',nm:'氏名',cm:'一言コメント',rf:'最も紹介して欲しいカテゴリー',cb:'協業したいカテゴリー'};
+ function overNote(){
+   var out=[], doc;
+   try{ doc=document.getElementById('pv').contentWindow.document; }catch(e){ return; }
+   Array.prototype.forEach.call(doc.querySelectorAll('.c.pick'), function(c){
+     var bad=Array.prototype.filter.call(c.querySelectorAll('[data-over]'), function(x){ return true; })
+       .map(function(x){ var k=(x.className.split(' ')[0]); return FIELD_LABEL[k]||k; });
+     if(bad.length){ var m=members[+c.getAttribute('data-i')]; out.push((m?m.name:'')+'（'+bad.join('・')+'）'); }
+   });
+   document.getElementById('overNote').innerHTML = out.length
+     ? '⚠ 文字が多くて、いちばん小さくしても入りきらない欄があります（はみ出た分は切れます）。短くしてください：<br>'+out.map(esc).join('<br>') : '';
+ }
 
- function openM(i){
-   editing=i; var m=members[i];
+ function addM(){
+   members.push({cat:'',company:'',title:'',position:'',role:'',name:'',photoFile:'',comment:'',refer:'',collab:'',joinDate:'',renewDate:'',expireDate:''});
+   render(); openM(members.length-1, true);
+ }
+ function del(i){
+   if(!confirm((members[i].name||'この行')+' を削除しますか？（名簿からも消えます）')) return;
+   members.splice(i,1); render(); saveOrderSoon();
+ }
+ function mv(i,d){ var j=i+d; if(j<0||j>=members.length) return; var t=members[i]; members[i]=members[j]; members[j]=t; render(); saveOrderSoon(); }
+
+ function openM(i, isNew){
+   editing=i; editingNew=!!isNew; var m=members[i];
    document.getElementById('e_cat').innerHTML='<option value=""></option>'+cats.map(function(c){
      return '<option value="'+esc(c.key)+'"'+(c.key===m.cat?' selected':'')+'>'+esc(c.label||c.key)+'</option>';}).join('');
-   ['company','title','role','name','comment','refer','collab'].forEach(function(k){ document.getElementById('e_'+k).value=m[k]||''; });
+   EDIT_KEYS.forEach(function(k){ document.getElementById('e_'+k).value=m[k]||''; });
    document.getElementById('e_num').value=i+1;
+   document.getElementById('mTitle').textContent = isNew ? 'メンバーを追加' : 'メンバーの編集';
    document.getElementById('modal').style.display='flex';
  }
- function closeM(){ document.getElementById('modal').style.display='none'; editing=-1; }
+ // 画面の入力が、まだ反映していない内容になっているか
+ function modalChanged(){
+   if(editing<0 || document.getElementById('modal').style.display!=='flex') return false;
+   var m=members[editing];
+   if(!m) return false;
+   if((document.getElementById('e_cat').value||'')!==(m.cat||'')) return true;
+   return EDIT_KEYS.some(function(k){ return (document.getElementById('e_'+k).value||'')!==(m[k]||''); });
+ }
+ function hideM(){ document.getElementById('modal').style.display='none'; editing=-1; editingNew=false; }
+ // 閉じる：反映していない変更があれば、保存するか聞く（以前は黙って消えていた）
+ function closeM(){
+   if(modalChanged()){
+     if(confirm('反映していない変更があります。名簿に保存しますか？\n\n［OK］保存して閉じる　［キャンセル］保存しないで閉じる')){ applyM(); return; }
+   }
+   if(editingNew && editing>=0 && !members[editing].name){ members.splice(editing,1); render(); }  // 追加をやめた空の行
+   hideM();
+ }
+ function applyM(){
+   if(editing<0) return;
+   var m=members[editing], orig=editingNew ? '' : (m.name||'');
+   var name=document.getElementById('e_name').value.trim();
+   if(!name){ alert('氏名を入れてください。'); return; }
+   m.cat=document.getElementById('e_cat').value;
+   EDIT_KEYS.forEach(function(k){ m[k]=document.getElementById('e_'+k).value; });
+   m.name=name;
+   var sent={cat:m.cat}, isNew=editingNew;
+   EDIT_KEYS.forEach(function(k){ sent[k]=m[k]; });
+   hideM(); render();
+   // 追加した方は、並び（途中に移した場合も）ごと保存する。それ以外は、その方の行だけ
+   if(isNew) enqueue('saveMemberBookData', [members, null], function(){ show('「'+name+'」を名簿に追加しました。', true); });
+   else enqueue('saveMemberBookMember', [orig, sent], function(r){ show(r.message, true); });
+ }
+ // 掲載順を番号で動かす（先に抜いてから挿入する）。並びもすぐ保存する
+ function moveTo(){
+   if(editing<0) return;
+   var n=parseInt(document.getElementById('e_num').value,10);
+   if(isNaN(n)||n<1||n>members.length){ alert('1〜'+members.length+' の番号を入れてください。'); return; }
+   var m=members[editing];
+   members.splice(editing,1);
+   members.splice(n-1,0,m);
+   editing=n-1; render(); document.getElementById('e_num').value=n;
+   if(!editingNew) saveOrderSoon();
+ }
 
  // === 表紙・プレジデント設定 ===
  var COVER_FIELDS=['title','term','pname','prole','ptext','philosophyTitle','philosophy',
@@ -201,7 +317,7 @@
    COVER_FIELDS.forEach(function(k){ var e=document.getElementById('c_'+k); if(e) next[k]=e.value; });
    google.script.run.withSuccessHandler(function(r){
      if(!r.ok){ alert(r.message); return; }
-     cover=r.cover||next; closeCover(); show(r.message,true);
+     cover=r.cover||next; closeCover(); show(r.message,true); render();
      // プレジデントの写真がまだ無ければ読み込む
      if(cover.pname && !photos[cover.pname]) fetchPhotos([cover.pname]);
    }).withFailureHandler(fail).saveMemberBookCover(next);
@@ -210,38 +326,15 @@
    if(!confirm('理念・チャプター紹介・メリット・タイムスケジュール・用語の説明を初期値に戻します。\nプレジデントの設定はそのまま残ります。よろしいですか？')) return;
    google.script.run.withSuccessHandler(function(r){
      if(!r.ok){ alert(r.message); return; }
-     cover=r.cover||{}; openCover(); show(r.message,true);
+     cover=r.cover||{}; openCover(); show(r.message,true); render();
    }).withFailureHandler(fail).resetMemberBookCoverText();
- }
- function applyM(){
-   if(editing<0) return;
-   var m=members[editing];
-   m.cat=document.getElementById('e_cat').value;
-   ['company','title','role','name','comment','refer','collab'].forEach(function(k){ m[k]=document.getElementById('e_'+k).value; });
-   closeM(); render();
- }
- // 現行版の挙動をそのまま再現：先に抜いてから挿入する
- function moveTo(){
-   if(editing<0) return;
-   var n=parseInt(document.getElementById('e_num').value,10);
-   if(isNaN(n)||n<1||n>members.length){ alert('1〜'+members.length+' の番号を入れてください。'); return; }
-   var m=members[editing];
-   members.splice(editing,1);
-   members.splice(n-1,0,m);
-   editing=n-1; render(); document.getElementById('e_num').value=n;
- }
-
- function save(){
-   busy(true); show('保存中...');
-   google.script.run.withSuccessHandler(function(r){ busy(false); show(r.message, !!r.ok); })
-     .withFailureHandler(fail).saveMemberBookData(members, null);
  }
 
  // 冊子と配布用HTMLには写真の実体（base64）を埋め込む必要がある。
  // サムネイルのURLのままだと、受け取った人にDriveの閲覧権限がないと写真が出ない。
  // 画面表示には不要なので、印刷・書き出しを押したときだけ読みに行く。
  function withPhotoData(next){
-   var need=members.map(function(m){return m.name;})
+   var need=members.map(function(m){return m.name;}).concat(cover.pname ? [cover.pname] : [])
                    .filter(function(n){ return n && photos[n] && !photosB64[n]; });
    if(!need.length){ next(); return; }
    busy(true);
@@ -257,13 +350,13 @@
    })(need);
  }
 
+ // 印刷：書体を読み込んで文字を収めてから、印刷の画面を開く（冊子の中の処理）
  function printBook(){
    withPhotoData(function(){
      var w=window.open('','_blank');
      if(!w){ show('ポップアップがブロックされました。ブラウザで許可してください。',false); return; }
-     w.document.open(); w.document.write(bookHtml()); w.document.close();
-     setTimeout(function(){ try{ w.focus(); w.print(); }catch(e){} }, 700);
-     show('印刷画面を開きました。送信先で「PDFに保存」を選んでください。',true);
+     w.document.open(); w.document.write(bookHtml({ photos: photosB64, autoPrint: true })); w.document.close();
+     show('印刷画面を開きます（書体の読み込みに数秒かかります）。送信先で「PDFに保存」を選んでください。',true);
    });
  }
  function exportHtml(){
@@ -275,7 +368,7 @@
        document.getElementById('msg').innerHTML='<span style="color:green;">'+esc(r.message)+'</span>'
          +'<br><a href="'+(r.downloadUrl||r.url)+'" target="_blank">⬇ ダウンロード</a>'
          +' <a href="'+r.url+'" target="_blank" style="font-size:12px;color:#666;">ドライブで見る</a>';
-     }).withFailureHandler(fail).exportMemberBookHtml(bookHtml(),'BNI_memberbook');
+     }).withFailureHandler(fail).exportMemberBookHtml(bookHtml({ photos: photosB64 }),'BNI_memberbook');
    });
  }
 </script>

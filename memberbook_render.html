@@ -1,10 +1,13 @@
 <script>
 // === メンバーブックの組版 ===
-// 配布版PDFと同じ見た目になるように作ってある。
-//   1ページ目 … 表紙（理念・チャプター紹介・メリット・タイムスケジュール・
-//                用語の説明・プレジデント挨拶・業種区分の凡例）
-//   2ページ目以降 … メンバーカードを3列×6行
-// 写真は配布先に閲覧権限がなくても出るよう、実体(base64)を埋め込む。
+// 配布しているPDF（Canvaで作った「BNI Active chapter Member」13(3)）と同じ見た目にしてある。
+//   書体 … 源ノ明朝（Source Han Serif JP）の太字。Googleフォントの「Noto Serif JP」は同じ書体なので、それを読み込む
+//          （読めないときはパソコンにある明朝体）
+//   1ページ目 … 表紙（理念・チャプター紹介・メリット・タイムスケジュール・用語の説明・プレジデント挨拶・業種区分の説明）
+//   2ページ目以降 … メンバーのカードを3列×6行（ページいっぱい。罫線で区切る）
+// 文字の大きさ・位置は、そのPDFから測った値（pt）。長い文字は、書体を読み込んだあとに枠に収まるまで小さくする
+// （まず1行のまま小さく、それでも入らない欄は2行にしてさらに小さく）。はみ出したり、ほかの文字に重なったりしない。
+// 写真は配布先に閲覧権限がなくても出るよう、実体(base64)を埋め込む（画面のプレビューはサムネイル）。
 
 function mbEsc(x){ var d=document.createElement('span'); d.textContent = x==null?'':x; return d.innerHTML; }
 function mbLines(s){ return String(s==null?'':s).split('\n').filter(function(x){ return x.trim()!==''; }); }
@@ -14,155 +17,248 @@ function mbBr(s){ return mbEsc(s).replace(/\n/g,'<br>'); }
 var MB_CIRCLE = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳';
 function mbCircle(i){ return i < MB_CIRCLE.length ? MB_CIRCLE.charAt(i) : String(i+1); }
 
+var MB_RED = '#D61717';
+var MB_FONT = '"Noto Serif JP","Source Han Serif JP","Source Han Serif","源ノ明朝","Yu Mincho","YuMincho","Hiragino Mincho ProN","MS PMincho",serif';
+// 書体の読み込みは、ページの中のスクリプト（mbFitWhenReady）が行う。<link> で読むと、つながりにくいときに
+// ページ全体が止まってしまう（印刷画面が開かない）ため
+var MB_FONT_CSS = 'https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;500;700&display=block';
+var MB_FONT_LINK = '<link rel="preconnect" href="https://fonts.googleapis.com">'
+  +'<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>';
+
+// 枠に収める欄：<div class="… fit" data-max="8" data-min="6" data-min2="5"><span>文字</span></div>
+//   data-max … いつもの大きさ（pt）。1行のまま data-min まで小さくする
+//   data-min2 … それでも入らなければ2行にして、ここまで小さくする（無ければ1行のまま）
+function mbFitBox(txt, cls, max, min, min2){
+  return '<div class="'+cls+' fit" data-max="'+max+'" data-min="'+min+'"'+(min2?' data-min2="'+min2+'"':'')
+    +' style="font-size:'+max+'pt;"><span>'+txt+'</span></div>';
+}
+
 function mbBookCss(){
  return '@page{size:A4;margin:0;}'
   +'*{box-sizing:border-box;margin:0;padding:0;}'
-  +'body{font-family:"Hiragino Mincho ProN","Yu Mincho","MS PMincho",serif;'
-  +'-webkit-print-color-adjust:exact;print-color-adjust:exact;background:#fff;}'
-  +'.page{width:210mm;height:297mm;padding:5mm;overflow:hidden;page-break-after:always;position:relative;}'
-  +'.page:last-child{page-break-after:auto;}'
+  +'html,body{background:#fff;}'
+  +'body{font-family:'+MB_FONT+';font-weight:700;color:#000;'
+  +'-webkit-print-color-adjust:exact;print-color-adjust:exact;}'
+  +'.page{width:210mm;height:297mm;overflow:hidden;page-break-after:always;break-after:page;position:relative;background:#fff;}'
+  +'.page:last-child{page-break-after:auto;break-after:auto;}'
+  +'@media screen{body{background:#8a8f98;padding:12px 0;}.page{margin:0 auto 12px;box-shadow:0 1px 6px rgba(0,0,0,.35);}}'
+  +'.fit{overflow:hidden;display:flex;align-items:center;justify-content:center;text-align:center;line-height:1.2;}'
+  +'.fit>span{display:inline-block;white-space:nowrap;}'
+  +'.fit.wrap>span{white-space:normal;text-wrap:balance;}'
+  +'.abs{position:absolute;}'
 
-  /* --- 表紙 --- */
-  +'.ttl{background:#C00000;color:#fff;font-weight:bold;font-size:21pt;text-align:center;'
-  +'padding:1.8mm 0 2.6mm;letter-spacing:.01em;}'
-  +'.ttl u{text-decoration:none;border-bottom:1.2pt solid #fff;padding-bottom:1mm;}'
-  +'.red{background:#C00000;color:#fff;padding:2.2mm 4mm 2.8mm;}'
-  +'.gray{background:#D9D9D9;color:#111;padding:2.2mm 4mm 2.8mm;}'
-  +'.h{font-weight:bold;font-size:12.5pt;margin-bottom:1.2mm;}'
-  +'.h .sq{font-size:12pt;margin-right:1mm;}'
-  +'.bd{font-size:9.5pt;line-height:1.45;padding-left:4mm;}'
-  +'.gray .bd{font-size:10pt;line-height:1.65;padding-left:2mm;}'
+  /* --- 表紙（位置は配布版PDFの pt）--- */
+  +'.cv-red{position:absolute;left:0;top:0;width:100%;height:211pt;background:'+MB_RED+';color:#fff;}'
+  +'.cv-ttl{position:absolute;left:8pt;right:8pt;top:4pt;height:40pt;}'
+  +'.cv-rule{position:absolute;left:13pt;right:12pt;top:46pt;height:1.5pt;background:#fff;}'
+  +'.cv-sec{position:absolute;left:12.8pt;right:14pt;overflow:hidden;}'
+  +'.cv-h{font-size:15.3pt;font-weight:700;line-height:1.3;}'
+  +'.cv-b{font-size:12pt;font-weight:500;line-height:1.375;padding-left:17pt;}'
+  +'.cv-gray{position:absolute;left:0;top:211pt;width:100%;height:77pt;background:#D9D9D9;}'
+  +'.cv-gray .cv-h{color:'+MB_RED+';}'
+  +'.cv-gray .cv-b{font-size:13pt;line-height:1.38;padding-left:7.7pt;}'
+  +'.cv-box{position:absolute;border:1.5pt solid #000;background:#fff;overflow:hidden;}'
+  +'.cv-lbl{position:absolute;left:1.5pt;top:3.5pt;height:20pt;background:'+MB_RED+';color:#fff;font-size:12pt;font-weight:500;'
+  +'line-height:20pt;padding:0 6pt;white-space:nowrap;}'
+  +'.cv-sch{position:absolute;left:0;right:16pt;top:30pt;bottom:6pt;overflow:hidden;color:'+MB_RED+';}'
+  +'.cv-sch .r{display:flex;font-size:12pt;line-height:1.375;}'
+  +'.cv-sch .tm{width:63pt;flex-shrink:0;text-align:left;padding-left:16pt;font-size:14pt;line-height:1.18;}'
+  +'.cv-sch .it{flex:1;min-width:0;}'
+  +'.cv-trm{position:absolute;left:4.5pt;right:6pt;top:23pt;bottom:4pt;overflow:hidden;}'
+  +'.cv-trm .t{color:'+MB_RED+';font-size:10pt;line-height:1.28;}'
+  +'.cv-trm .d{font-size:9pt;line-height:1.33;}'
+  +'.cv-prs{position:absolute;left:4pt;right:6pt;top:22pt;height:60pt;display:flex;gap:7pt;align-items:center;}'
+  +'.cv-prs img,.cv-prs .noimg{width:50pt;height:58pt;object-fit:cover;object-position:center top;background:#eee;flex-shrink:0;}'
+  +'.cv-prs .r{flex:1;min-width:0;text-align:center;font-weight:400;}'
+  +'.cv-prs .rl{font-size:10pt;line-height:1.35;}'
+  +'.cv-prs .nm{font-size:12pt;margin-top:3pt;}'
+  +'.cv-ptx{position:absolute;left:5pt;right:7pt;top:88pt;bottom:6pt;overflow:hidden;font-size:7.9pt;line-height:1.33;font-weight:400;text-align:justify;}'
+  +'.cv-lg{position:absolute;left:12pt;right:8pt;top:773pt;bottom:4pt;}'
+  +'.cv-lg .cv-lbl{left:9pt;top:0;height:17pt;line-height:17pt;font-size:9.8pt;font-weight:400;}'
+  +'.cv-lgi{position:absolute;left:0;right:0;top:19pt;display:flex;flex-wrap:wrap;row-gap:5.5pt;}'
+  +'.cv-lgi span{display:flex;align-items:center;gap:5pt;width:20%;font-size:11pt;font-weight:400;white-space:nowrap;}'
+  +'.cv-lgi i{width:16pt;height:16pt;display:inline-block;flex-shrink:0;}'
 
-  +'.cols{display:flex;gap:2.5mm;margin-top:2mm;}'
-  +'.cl{flex:1.32;min-width:0;border:0.6pt solid #000;padding:2mm;}'
-  +'.cr{flex:1;min-width:0;display:flex;flex-direction:column;gap:2.5mm;}'
-  +'.cr>div{border:0.6pt solid #000;padding:2mm;}'
-  +'.lbl{display:inline-block;background:#C00000;color:#fff;font-weight:bold;font-size:10.5pt;'
-  +'padding:0.8mm 3mm;margin-bottom:2mm;}'
-
-  +'.sch{display:flex;font-size:9.5pt;}'
-  +'.schT{width:13mm;flex-shrink:0;color:#C00000;font-weight:bold;}'
-  +'.schL{flex:1;min-width:0;}'
-  +'.schR{display:flex;gap:1.5mm;color:#C00000;font-weight:bold;line-height:1.3;margin-bottom:0.2mm;}'
-  +'.schR .n{flex-shrink:0;}'
-
-  +'.trm{font-size:8pt;line-height:1.35;}'
-  +'.trm .t{color:#C00000;font-weight:bold;}'
-  +'.trm .d{padding-left:2.5mm;margin-bottom:0.8mm;}'
-
-  +'.pz{display:flex;gap:2mm;margin-bottom:1.5mm;}'
-  +'.pz img{width:15mm;height:15mm;object-fit:cover;background:#eee;flex-shrink:0;}'
-  +'.pz .r{flex:1;min-width:0;font-size:9pt;line-height:1.5;}'
-  +'.pz .nm{font-size:13pt;font-weight:bold;text-align:center;margin-top:1mm;}'
-  +'.ptxt{font-size:8pt;line-height:1.45;text-align:justify;}'
-
-  +'.lg{margin-top:2mm;border:0.6pt solid #000;padding:1.6mm;}'
-  +'.lgi{display:flex;flex-wrap:wrap;gap:1.5mm 2mm;margin-top:1.5mm;}'
-  +'.lgi span{display:flex;align-items:center;gap:1.5mm;width:calc(20% - 2mm);font-size:10pt;}'
-  +'.lgi i{width:5mm;height:5mm;display:inline-block;flex-shrink:0;}'
-
-  /* --- メンバーカード --- */
-  +'.grid{display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(6,1fr);'
-  +'gap:1.2mm;height:100%;}'
-  +'.c{border:0.6pt solid #000;overflow:hidden;display:flex;flex-direction:column;}'
-  +'.hd{position:relative;padding:1.2mm 1.5mm 1.5mm;min-height:19mm;}'
-  +'.hd .ph{float:right;width:19mm;height:19mm;object-fit:cover;background:#ddd;margin:-1.2mm -1.5mm 0 1.5mm;}'
-  +'.hd .no{position:absolute;left:1.2mm;top:1.2mm;background:#E7E6E6;color:#111;'
-  +'font-weight:bold;font-size:10pt;min-width:6mm;height:6mm;line-height:6mm;text-align:center;'
-  +'padding:0 1mm;border-radius:1mm;}'
-  +'.hd .cat{margin-left:7.5mm;font-size:7pt;font-weight:bold;line-height:1.25;}'
-  +'.hd .co{margin-left:7.5mm;font-size:7pt;line-height:1.25;}'
-  +'.hd .ti{font-size:7pt;text-align:center;margin-top:0.8mm;}'
-  +'.hd .nm{font-size:13pt;font-weight:bold;text-align:center;letter-spacing:.04em;line-height:1.2;}'
-  +'.cm{font-size:7pt;text-align:center;padding:1mm 1.5mm;line-height:1.3;}'
-  +'.bar{background:#000;color:#fff;font-size:7.5pt;text-align:center;'
-  +'border-radius:2.5mm;margin:0 1.5mm;padding:0.3mm 0;}'
-  +'.tx{font-size:7pt;text-align:center;padding:0.7mm 1.5mm;line-height:1.3;}';
+  /* --- メンバーのカード（3列×6行。1枚 70mm×49.5mm）--- */
+  +'.grid{position:absolute;left:0;top:0;width:210mm;height:297mm;display:grid;'
+  +'grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(6,1fr);'
+  +'border-top:.75pt solid #000;border-left:.75pt solid #000;}'
+  +'.c{position:relative;border-right:.75pt solid #000;border-bottom:.75pt solid #000;overflow:hidden;background:#fff;}'
+  +'.c.pick{cursor:pointer;}.c.pick:hover{outline:2pt solid #1a73e8;outline-offset:-2pt;}'
+  +'.c .hd{position:absolute;left:4pt;right:4pt;top:2.8pt;height:63.6pt;}'
+  +'.c .ph{position:absolute;right:2pt;top:2.8pt;width:64pt;height:64pt;object-fit:cover;object-position:center top;}'
+  +'.c .no{position:absolute;left:9pt;top:9.8pt;width:25.2pt;height:24.6pt;background:#D9D9D9;font-size:12pt;'
+  +'display:flex;align-items:center;justify-content:center;line-height:1;}'
+  +'.c .cat{position:absolute;left:36pt;right:70pt;top:9.6pt;height:10pt;justify-content:flex-start;text-align:left;}'
+  +'.c .co{position:absolute;left:36pt;right:70pt;top:19.4pt;height:10pt;justify-content:flex-start;text-align:left;}'
+  +'.c .mid{position:absolute;left:4pt;right:70pt;top:27pt;height:38pt;display:flex;flex-direction:column;'
+  +'justify-content:center;align-items:stretch;}'
+  +'.c .ps{height:9.5pt;}'
+  +'.c .bn{height:8.5pt;}'
+  /* 会社での役職・BNIの役職・お名前の3行があるときは、会社名の下から詰めて並べる */
+  +'.c .mid.full{top:29.2pt;height:36pt;}.c .mid.full .ps{height:8.6pt;}.c .mid.full .bn{height:8pt;}'
+  /* 業種・会社名が1行に入らないときは2行（行の間を詰める）*/
+  +'.c .cat.wrap,.c .co.wrap{line-height:1.08;}'
+  +'.c .bn>span{background:'+MB_RED+';color:#fff;border-radius:1.5pt;padding:0 2.5pt;line-height:1.35;}'
+  +'.c .nm{height:19pt;letter-spacing:.02em;}'
+  +'.c .cm{position:absolute;left:6pt;right:6pt;top:67pt;height:20.5pt;}'
+  +'.c .bar{position:absolute;left:6.5pt;right:6.5pt;height:10pt;background:#000;color:#fff;border-radius:5pt;'
+  +'font-size:8pt;line-height:10pt;text-align:center;white-space:nowrap;overflow:hidden;}'
+  +'.c .b1{top:88.4pt;}.c .b2{top:112.2pt;}'
+  +'.c .rf{position:absolute;left:5pt;right:5pt;top:98.6pt;height:13.4pt;}'
+  +'.c .cb{position:absolute;left:5pt;right:5pt;top:122.4pt;height:16.4pt;}';
 }
 
-// 表紙ページ
-function mbCoverHtml(cv, presidentPhoto){
- var sch = mbLines(cv.schedule).map(function(t,i){
-   return '<div class="schR"><span class="n">'+mbCircle(i)+'</span><span>'+mbEsc(t)+'</span></div>';
+// 表紙ページ。usedCats … 使っている業種区分（凡例に出すもの）
+function mbCoverHtml(cv, presidentPhoto, usedCats){
+ var items = mbLines(cv.schedule), sch = items.map(function(t,i){
+   var tm = i===0 ? mbEsc(cv.scheduleFrom||'') : (i===items.length-1 ? mbEsc(cv.scheduleTo||'') : '');
+   return '<div class="r"><span class="tm">'+tm+'</span><span class="it">'+mbCircle(i)+'　'+mbEsc(t)+'</span></div>';
  }).join('');
+ if(!items.length && (cv.scheduleFrom||cv.scheduleTo)) sch = '<div class="r"><span class="tm">'+mbEsc(cv.scheduleFrom||'')+'</span></div>';
 
  // 用語の説明は「見出し行／説明行」の繰り返し
  var tl = mbLines(cv.terms), trm = '';
  for(var i=0;i<tl.length;i+=2){
-   trm += '<div class="t">'+mbCircle(i/2)+mbEsc(tl[i])+'</div>'
-        + '<div class="d">'+mbEsc(tl[i+1]||'')+'</div>';
+   trm += '<div class="t">'+mbCircle(i/2)+mbEsc(tl[i])+'</div><div class="d">'+mbEsc(tl[i+1]||'')+'</div>';
  }
-
- var lg = (cats||[]).map(function(c){
+ var lg = (usedCats||[]).map(function(c){
    return '<span><i style="background:'+mbEsc(c.bg||'#ccc')+'"></i>'+mbEsc(c.label||c.key)+'</span>';
  }).join('');
 
- return '<div class="page">'
-  +'<div class="ttl"><u>'+mbEsc(cv.title)+'</u></div>'
-  +'<div class="red">'
-    +'<div class="h"><span class="sq">■</span>'+mbEsc(cv.philosophyTitle)+'</div>'
-    +'<div class="bd">'+mbBr(cv.philosophy)+'</div>'
-    +'<div class="h" style="margin-top:3mm;"><span class="sq">■</span>'+mbEsc(cv.aboutTitle)+'</div>'
-    +'<div class="bd">'+mbBr(cv.about)+'</div>'
+ return '<div class="page cover">'
+  +'<div class="cv-red">'
+    +mbFitBox(mbEsc(cv.title), 'cv-ttl', 33, 18)
+    +'<div class="cv-rule"></div>'
+    +'<div class="cv-sec fitblock" style="top:52pt;height:72pt;" data-min="0.6"><div class="zi">'
+      +'<div class="cv-h">■'+mbEsc(cv.philosophyTitle)+'</div>'
+      +'<div class="cv-b">'+mbBr(cv.philosophy)+'</div></div></div>'
+    +'<div class="cv-sec fitblock" style="top:124pt;height:85pt;" data-min="0.6"><div class="zi">'
+      +'<div class="cv-h">■'+mbEsc(cv.aboutTitle)+'</div>'
+      +'<div class="cv-b">'+mbBr(cv.about)+'</div></div></div>'
   +'</div>'
-  +'<div class="gray">'
-    +'<div class="h"><span class="sq" style="color:#C00000;">■</span>'+mbEsc(cv.benefitsTitle)+'</div>'
-    +'<div class="bd">'+mbBr(cv.benefits)+'</div>'
+  +'<div class="cv-gray"><div class="cv-sec fitblock" style="top:2pt;height:73pt;" data-min="0.6"><div class="zi">'
+    +'<div class="cv-h">■'+mbEsc(cv.benefitsTitle)+'</div>'
+    +'<div class="cv-b">'+mbBr(cv.benefits)+'</div></div></div></div>'
+  +'<div class="cv-box" style="left:3pt;top:292pt;width:364pt;height:473pt;">'
+    +'<div class="cv-lbl">タイムスケジュール</div>'
+    +'<div class="cv-sch fitblock" data-min="0.55"><div class="zi">'+sch+'</div></div>'
   +'</div>'
-  +'<div class="cols">'
-    +'<div class="cl"><span class="lbl">タイムスケジュール</span>'
-      +'<div class="sch"><div class="schT">'+mbEsc(cv.scheduleFrom)+'</div><div class="schL">'+sch+'</div></div>'
-      +'<div class="sch" style="margin-top:0.5mm;"><div class="schT">'+mbEsc(cv.scheduleTo)+'</div><div class="schL"></div></div>'
+  +'<div class="cv-box" style="left:371pt;top:292pt;width:218pt;height:198pt;">'
+    +'<div class="cv-lbl">'+mbEsc(cv.termsTitle)+'</div>'
+    +'<div class="cv-trm fitblock" data-min="0.55"><div class="zi">'+trm+'</div></div>'
+  +'</div>'
+  +'<div class="cv-box" style="left:371pt;top:499pt;width:218pt;height:267pt;">'
+    +'<div class="cv-lbl" style="font-weight:400;">'+mbEsc(cv.term)+' プレジデント挨拶</div>'
+    +'<div class="cv-prs">'
+      +(presidentPhoto ? '<img src="'+presidentPhoto+'">' : '<div class="noimg"></div>')
+      +'<div class="r"><div class="rl">'+mbBr(cv.prole)+'</div><div class="nm">'+mbEsc(cv.pname)+'</div></div>'
     +'</div>'
-    +'<div class="cr">'
-      +'<div><span class="lbl">'+mbEsc(cv.termsTitle)+'</span><div class="trm">'+trm+'</div></div>'
-      +'<div><span class="lbl">'+mbEsc(cv.term)+' プレジデント挨拶</span>'
-        +'<div class="pz">'
-          +(presidentPhoto ? '<img src="'+presidentPhoto+'">'
-                           : '<div style="width:15mm;height:15mm;background:#eee;flex-shrink:0;"></div>')
-          +'<div class="r">'+mbBr(cv.prole)+'</div>'
-        +'</div>'
-        +'<div class="pz nmw"><div class="nm" style="flex:1;">'+mbEsc(cv.pname)+'</div></div>'
-        +'<div class="ptxt">'+mbBr(cv.ptext)+'</div>'
-      +'</div>'
-    +'</div>'
+    +'<div class="cv-ptx fitblock" data-min="0.6"><div class="zi">'+mbBr(cv.ptext)+'</div></div>'
   +'</div>'
-  +'<div class="lg"><span class="lbl">業種区分説明</span><div class="lgi">'+lg+'</div></div>'
+  +'<div class="cv-lg"><div class="cv-lbl">業種区分説明</div><div class="cv-lgi">'+lg+'</div></div>'
  +'</div>';
 }
 
-// メンバーカード1枚
-function mbCardHtml(m, no, photo){
+// メンバーカード1枚。idx … 画面のプレビューで押したときに開く方（印刷では付けない）
+function mbCardHtml(m, no, photo, idx){
  var c = catOf(m.cat), bg = (c && c.bg) ? c.bg : '#E7E6E6';
- return '<div class="c">'
-  +'<div class="hd" style="background:'+mbEsc(bg)+'">'
-    +(photo ? '<img class="ph" src="'+photo+'">' : '<div class="ph" style="float:right;width:19mm;height:19mm;background:#ddd;margin:-1.2mm -1.5mm 0 1.5mm;"></div>')
-    +'<span class="no">'+mbEsc(no)+'</span>'
-    +'<div class="cat">'+mbEsc(m.title)+'</div>'
-    +'<div class="co">'+mbEsc(m.company)+'</div>'
-    +'<div class="ti">'+mbEsc(m.role)+'</div>'
-    +'<div class="nm">'+mbEsc(m.name)+'</div>'
+ return '<div class="c'+(idx!=null?' pick':'')+'"'+(idx!=null?' data-i="'+idx+'"':'')+'>'
+  +'<div class="hd" style="background:'+mbEsc(bg)+'"></div>'
+  +(photo ? '<img class="ph" src="'+photo+'">' : '')
+  +'<div class="no">'+mbEsc(no)+'</div>'
+  +mbFitBox(mbEsc(m.title), 'cat', 7, 4.5, 3.8)
+  +mbFitBox(mbEsc(m.company), 'co', 7, 4.5, 3.8)
+  +'<div class="mid'+(m.position && m.role ? ' full' : '')+'">'
+    +(m.position ? mbFitBox(mbEsc(m.position), 'ps', 7, 5) : '')
+    +(m.role ? mbFitBox(mbEsc(m.role), 'bn', 6, 4) : '')
+    +mbFitBox(mbEsc(m.name), 'nm', 14, 9)
   +'</div>'
-  +'<div class="cm">'+mbBr(m.comment)+'</div>'
-  +'<div class="bar">最も紹介して欲しいカテゴリー</div>'
-  +'<div class="tx">'+mbBr(m.refer)+'</div>'
-  +'<div class="bar">協業したいカテゴリー</div>'
-  +'<div class="tx">'+mbBr(m.collab)+'</div>'
+  +mbFitBox(mbEsc(m.comment), 'cm', 8, 6, 4.8)
+  +'<div class="bar b1">最も紹介して欲しいカテゴリー</div>'
+  +mbFitBox(mbEsc(m.refer), 'rf', 8, 5.5, 4.6)
+  +'<div class="bar b2">協業したいカテゴリー</div>'
+  +mbFitBox(mbEsc(m.collab), 'cb', 8, 5.5, 4.6)
  +'</div>';
 }
 
-// 冊子全体
-function bookHtml(){
- var cv = cover || {}, per = 18, pages = '';
- pages += mbCoverHtml(cv, photosB64[cv.pname] || '');
+// --- 文字を枠に収める（書体を読み込んだあとに、実際の幅で測る）---
+// この関数は冊子のHTMLにもそのまま埋め込む（印刷・配布用HTML・画面のプレビューで同じ動き）
+function mbFitAll(doc){
+  var q = function(sel){ return Array.prototype.slice.call(doc.querySelectorAll(sel)); };
+  q('.fit').forEach(function(el){
+    var t = el.firstElementChild; if(!t || !t.textContent) return;
+    var max = parseFloat(el.getAttribute('data-max')), min = parseFloat(el.getAttribute('data-min'));
+    var min2 = parseFloat(el.getAttribute('data-min2') || '0'), W = el.clientWidth, H = el.clientHeight, s;
+    el.classList.remove('wrap'); t.style.maxWidth = '';
+    for(s = max; s >= min - 0.001; s -= 0.25){
+      el.style.fontSize = s + 'pt';
+      if(t.offsetWidth <= W + 0.5 && t.offsetHeight <= H + 0.5) return;
+    }
+    if(min2){
+      el.classList.add('wrap'); t.style.maxWidth = W + 'px';
+      for(s = min; s >= min2 - 0.001; s -= 0.25){
+        el.style.fontSize = s + 'pt';
+        if(t.offsetHeight <= H + 0.5 && t.scrollWidth <= W + 0.5) return;
+      }
+    }
+    el.setAttribute('data-over', '1');                 // いちばん小さくしても入らない（はみ出た分は枠で切る）
+  });
+  // 何行もある欄（表紙）：中身（.zi）をまとめて縮める（zoom）。枠の大きさは変えない
+  q('.fitblock').forEach(function(el){
+    var zi = el.firstElementChild, min = parseFloat(el.getAttribute('data-min') || '0.6'), z;
+    if(!zi) return;
+    for(z = 1; z >= min - 0.001; z -= 0.025){
+      zi.style.zoom = z;
+      if(el.scrollHeight <= el.clientHeight + 1 && el.scrollWidth <= el.clientWidth + 1) return;
+    }
+    el.setAttribute('data-over', '1');
+  });
+}
+// 書体（Googleフォント）を読み込んでから収める。読めないとき・8秒たっても届かないときは、パソコンの明朝体で収める
+// （あとから書体が届いたら、収め直す）
+function mbFitWhenReady(win, cssUrl, done){
+  var doc = win.document, finished = false;
+  var go = function(){ if(finished) return; finished = true; try{ mbFitAll(doc); }catch(e){} if(done) done(); };
+  var fonts = function(){
+    try{
+      var text = doc.body ? doc.body.textContent : '';
+      var loads = ['400','500','700'].map(function(w){ return doc.fonts.load(w+' 12pt "Noto Serif JP"', text || 'あ'); });
+      Promise.all(loads).then(function(){ return doc.fonts.ready; }).then(go, go);
+    }catch(e){ setTimeout(go, 300); }
+  };
+  try{
+    var l = doc.createElement('link');
+    l.rel = 'stylesheet'; l.href = cssUrl; l.onload = fonts; l.onerror = go;
+    (doc.head || doc.documentElement).appendChild(l);
+    doc.fonts.addEventListener('loadingdone', function(){ if(finished) try{ mbFitAll(doc); }catch(e){} });
+  }catch(e){ fonts(); }
+  setTimeout(go, 8000);
+}
+
+// 冊子全体。opts … { photos: 氏名→画像, autoPrint: 収めたあと印刷画面を開く, pick: カードを押すと編集（プレビュー）,
+//                    cover: 表紙を入れる（既定 true） }
+function bookHtml(opts){
+ var o = opts || {}, ph = o.photos || photosB64, cv = cover || {}, per = 18, pages = '';
+ var used = (cats||[]).filter(function(c){ return members.some(function(m){ return m.cat === c.key; }); });
+ if(o.cover !== false) pages += mbCoverHtml(cv, ph[cv.pname] || '', used.length ? used : cats);
  for(var s=0; s<members.length; s+=per){
    var cards = members.slice(s, s+per).map(function(m,i){
-     return mbCardHtml(m, m.no || (s+i+1), photosB64[m.name] || '');
-   }).join('');
-   pages += '<div class="page"><div class="grid">'+cards+'</div></div>';
+     return mbCardHtml(m, m.no || (s+i+1), ph[m.name] || '', o.pick ? s+i : null);
+   });
+   while(cards.length < per) cards.push('<div class="c"></div>');   // 最後のページも罫線はそのまま
+   pages += '<div class="page"><div class="grid">'+cards.join('')+'</div></div>';
  }
+ var script = mbFitAll.toString() + '\n' + mbFitWhenReady.toString() + '\n'
+   + 'mbFitWhenReady(window, ' + JSON.stringify(MB_FONT_CSS) + ', function(){ document.documentElement.setAttribute("data-fitted","1");'
+   + (o.autoPrint ? ' setTimeout(function(){ window.focus(); window.print(); }, 200);' : '')
+   + (o.pick ? ' try{ parent.postMessage({ mbFitted: 1 }, "*"); }catch(e){}' : '')
+   + ' });\n'
+   + (o.pick ? 'document.addEventListener("click", function(e){ var c = e.target.closest ? e.target.closest(".c.pick") : null;'
+             + ' if(c) parent.postMessage({ mbOpen: +c.getAttribute("data-i") }, "*"); });\n' : '');
  return '<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8">'
-  +'<title>'+mbEsc(cv.title || 'BNI メンバーブック')+'</title>'
-  +'<style>'+mbBookCss()+'</style></head><body>'+pages+'</body></html>';
+  +'<title>'+mbEsc(cv.title || 'BNI メンバーブック')+'</title>'+MB_FONT_LINK
+  +'<style>'+mbBookCss()+'</style></head><body>'+pages
+  +'<script>'+script+'<\/script></body></html>';
 }
 </script>

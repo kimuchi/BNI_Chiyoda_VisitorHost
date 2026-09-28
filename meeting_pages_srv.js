@@ -229,7 +229,7 @@ function fpMemberUnit_(xml, W, H) {
 }
 // lists … { newMembers: [{ name, raw, category }], renewMembers: [{ name, raw, category, years }] }
 function applyMemberPages_(parts, lists, cache) {
-  var res = { new: [], renew: [], hidden: [], noPhoto: [], unmatched: [], missing: [], pages: [] };
+  var res = { new: [], renew: [], hidden: [], noPhoto: [], unmatched: [], missing: [], pages: [], ethics: [] };
   var sz = fpSize_(parts), by = fpRoster_(), pages = { new: [], renew: [], both: [] };
   slideOrder_(parts).forEach(function (path) {
     var xml = xmlOf_(parts, path), k = xml ? fpMemberKind_(xml) : '';
@@ -245,6 +245,7 @@ function applyMemberPages_(parts, lists, cache) {
       return p;
     }).filter(Boolean);
   });
+  var blocks = [];                                   // まとまり（倫理規定のページをうしろに置く）
   ['renew', 'new'].forEach(function (k) {
     var list = people[k], have = pages[k];
     if (!have.length) { if (list.length && !pages.both.length) res.missing.push(k); return; }
@@ -252,6 +253,7 @@ function applyMemberPages_(parts, lists, cache) {
     var extra = list.length > have.length
       ? fpClonePages_(parts, have[have.length - 1], list.length - have.length, have[have.length - 1], models[models.length - 1]) : [];
     var use = have.concat(extra);
+    blocks.push({ kind: k, paths: use, any: list.length > 0 });
     use.forEach(function (path, i) {
       var xml = xmlOf_(parts, path), rp = relsPathOf_(path), rels = xmlOf_(parts, rp);
       var p = list[i] || null, u = fpMemberUnit_(xml, sz.W, sz.H);
@@ -272,6 +274,7 @@ function applyMemberPages_(parts, lists, cache) {
     if (!r) return;
     xml = r.xml;
     var any = people['new'].length || people.renew.length;
+    blocks.push({ kind: 'both', paths: [path], any: !!any });
     putXml_(parts, path, setSlideShow_(xml, !!any));
     if (!any) res.hidden.push(path);
     else res.pages.push(path);
@@ -280,8 +283,35 @@ function applyMemberPages_(parts, lists, cache) {
       people.renew.forEach(function (p) { res.renew.push({ path: path, name: p.name, years: p.years }); });
     }
   });
+  fpEthicsPages_(parts, blocks, res);
   res.message = fpMemberMessage_(res, people);
   return res;
+}
+// 倫理規定のページ：更新メンバー・新メンバーのまとまりの、それぞれすぐうしろに1枚ずつ（新しく入った方・更新した方が読み上げる）。
+// すぐうしろに無ければ倫理規定のページを複製して入れる（雛形は「更新メンバー → 新メンバー → 倫理規定」の並び）。
+// そのまとまりに人がいるときだけ表示（どちらもいない日は、倫理規定のページも非表示）
+function fpEthicsPages_(parts, blocks, res) {
+  if (!blocks.length) return;
+  var isEthics = function (p) { var x = xmlOf_(parts, p); return !!x && riNorm_(slideText_(x)).indexOf('倫理規定') >= 0; };
+  var order = slideOrder_(parts), lastOf = function (b) {
+    var best = -1;
+    b.paths.forEach(function (p) { best = Math.max(best, order.indexOf(p)); });
+    return best;
+  };
+  blocks.sort(function (a, b) { return lastOf(a) - lastOf(b); });
+  // 複製のもとは、まとまりのうしろにある倫理規定のページ（無ければ最初に見つかったもの）
+  var model = null, lastAll = lastOf(blocks[blocks.length - 1]);
+  for (var i = lastAll + 1; i < order.length && !model; i++) if (isEthics(order[i])) model = order[i];
+  for (var j = 0; j < order.length && !model; j++) if (isEthics(order[j])) model = order[j];
+  if (!model) return;
+  var modelXml = setSlideShow_(xmlOf_(parts, model), true);
+  blocks.forEach(function (b) {
+    order = slideOrder_(parts);
+    var at = lastOf(b), next = order[at + 1], path = next && isEthics(next) ? next : null;
+    if (!path) path = fpClonePages_(parts, model, 1, order[at], modelXml)[0];
+    putXml_(parts, path, setSlideShow_(xmlOf_(parts, path), b.any));
+    res.ethics.push({ kind: b.kind, path: path, shown: b.any, added: path !== next });
+  });
 }
 // 「新メンバー」「更新メンバー」の見出しの下の「氏名」の枠に、上から順にお名前を入れる（余った枠は空に）
 function fpFillBothPage_(xml, news, renews, H) {
@@ -322,6 +352,10 @@ function fpMemberMessage_(res, people) {
     else msg.push(k[1] + 'はいないので、そのページは非表示にしました');
   });
   var out = msg.join('。') + '。';
+  var eth = res.ethics.filter(function (e) { return e.shown; }).map(function (e) {
+    return { renew: '更新メンバー', 'new': '新メンバー', both: '新規および更新メンバー' }[e.kind]; });
+  if (res.ethics.length) out += eth.length ? '\n倫理規定のページを、' + eth.join('・') + 'のあとに表示しました。'
+                                           : '\n倫理規定のページも非表示にしました（新メンバー・更新メンバーがいないため）。';
   if (res.unmatched.length) out += '\n名簿に無い方（会社名・カテゴリーは空です）: ' + res.unmatched.join('、');
   if (res.noPhoto.length) out += '\n新メンバー・更新メンバーで写真が見つからない方（写真なし）: ' + res.noPhoto.join('、');
   return out;
