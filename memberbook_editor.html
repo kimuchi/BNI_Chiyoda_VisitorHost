@@ -22,6 +22,8 @@
  #msg{margin-top:10px;font-weight:bold;white-space:pre-wrap;font-size:12px;}
  #saveState{margin-top:6px;font-size:11px;line-height:1.6;}
  #overNote{margin-top:8px;font-size:11px;color:#b26b00;line-height:1.6;}
+ #coverNote{margin:-4px 0 8px;font-size:11px;color:#555;line-height:1.6;}
+ #coverNote .warn{color:#b26b00;}
  .modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:10;}
  .modal .inner{background:#fff;padding:18px;border-radius:7px;width:460px;max-height:88vh;overflow-y:auto;}
  .modal label{display:block;font-size:11px;color:#555;margin-top:8px;}
@@ -45,6 +47,7 @@
   <div class="bar">
     <button class="sub" onclick="openCover()">📄 表紙・プレジデント設定</button>
   </div>
+  <div id="coverNote"></div>
   <div style="font-size:11px;color:#666;margin:8px 0 4px;">メンバー一覧（この順が掲載順）</div>
   <div class="mlist" id="mlist"></div>
   <div id="saveState"></div>
@@ -88,9 +91,11 @@
   </div>
 
   <label>タイトル</label><input id="c_title">
-  <label>期（「23期 プレジデント挨拶」の見出しに使います）</label><input id="c_term">
 
-  <div style="border-top:1px solid #eee;margin-top:12px;padding-top:8px;"><b style="font-size:12px;">プレジデント</b></div>
+  <div style="border-top:1px solid #eee;margin-top:12px;padding-top:8px;"><b style="font-size:12px;">プレジデント（期ごとに保存します）</b></div>
+  <label>期（冊子に出す期。「24期 プレジデント挨拶」の見出しにも使います）</label>
+  <select id="c_termNo" onchange="changeCoverTerm()"></select>
+  <div class="note" id="c_termNote"></div>
   <label>氏名</label><input id="c_pname">
   <label>肩書（改行できます）</label><textarea id="c_prole" rows="2"></textarea>
   <label>挨拶文</label><textarea id="c_ptext" rows="9"></textarea>
@@ -191,7 +196,7 @@
  }
  function save(){ if(needLoaded()) saveAll(false); }
  window.addEventListener('beforeunload', function(e){
-   if(pendingSave() || lastError || modalChanged()){ e.preventDefault(); e.returnValue=''; return ''; }
+   if(pendingSave() || lastError || modalChanged() || coverChanged()){ e.preventDefault(); e.returnValue=''; return ''; }
  });
 
  function load(){
@@ -199,9 +204,9 @@
    google.script.run.withSuccessHandler(function(r){
      busy(false);
      if(!r.ok){ show(r.message+'\n画面を開き直してください。',false); return; }
-     members=r.members||[]; cats=r.categories||[]; cover=r.cover||{}; loaded=true;
+     members=r.members||[]; cats=r.categories||[]; cover=r.cover||{}; presidents=r.presidents||[]; loaded=true;
      members.forEach(function(x){ x._saved=x.name; });
-     render(); renderSaveState(); show(members.length+'名を読み込みました。',true);
+     render(); renderSaveState(); renderCoverNote(); show(members.length+'名を読み込みました。',true);
      var names=members.map(function(m){return m.name;});
      if(cover.pname && names.indexOf(cover.pname)<0) names.push(cover.pname);  // プレジデントの写真も
      fetchPhotos(names);
@@ -331,30 +336,85 @@
  }
 
  // === 表紙・プレジデント設定 ===
- var COVER_FIELDS=['title','term','pname','prole','ptext','philosophyTitle','philosophy',
+ // プレジデントの氏名・肩書き・挨拶文は期ごとに保存する（サーバーの coverPresidentList_）。
+ // 選んだ期が「冊子に出す期」（開いたときは、いまの期）。ほかの文章は期によらず1つ
+ var COVER_FIELDS=['title','pname','prole','ptext','philosophyTitle','philosophy',
                    'aboutTitle','about','benefitsTitle','benefits','scheduleFrom','scheduleTo',
                    'schedule','termsTitle','terms'];
+ var PRES_FIELDS=['pname','prole','ptext'], presidents=[], coverSnap=null;
+ function presOf(t){ for(var i=0;i<presidents.length;i++) if(presidents[i].term===t) return presidents[i]; return null; }
+ // 冊子に出す期を切り替える（表紙のプレジデントの項目を、その期のものにする）
+ function useTerm(t){
+   var p=presOf(t); if(!p) return;
+   cover.termNo=t; cover.term=p.label;
+   PRES_FIELDS.forEach(function(k){ cover[k]=p[k]; });
+ }
+ function coverForm(){ var o={}; COVER_FIELDS.forEach(function(k){ var e=document.getElementById('c_'+k); if(e) o[k]=e.value; }); return o; }
+ function coverChanged(){
+   if(!coverSnap || document.getElementById('coverModal').style.display!=='flex') return false;
+   var now=coverForm();
+   return COVER_FIELDS.some(function(k){ return (now[k]||'')!==(coverSnap[k]||''); });
+ }
+ function presChanged(){
+   if(!coverSnap) return false;
+   var now=coverForm();
+   return PRES_FIELDS.some(function(k){ return (now[k]||'')!==(coverSnap[k]||''); });
+ }
+ // 左の「表紙」の知らせ：冊子に出す期と、挨拶文がまだ無いこと
+ function renderCoverNote(){
+   var p=presOf(cover.termNo), el=document.getElementById('coverNote');
+   if(!p){ el.innerHTML=''; return; }
+   el.innerHTML='表紙：<b>'+esc(p.label)+'</b>（'+esc(p.range)+'）のプレジデント設定'+(p.current?'':'<span class="warn">（いまの期ではありません）</span>')
+     +(p.ptext ? '' : '<br><span class="warn">⚠ '+esc(p.label)+'のプレジデント挨拶がまだありません。「表紙・プレジデント設定」から入れてください。</span>');
+ }
+ function termNote(){
+   var p=presOf(cover.termNo);
+   document.getElementById('c_termNote').textContent = !p ? '' : (p.saved ? p.label+'（'+p.range+'）の設定です。'
+     : p.label+'の設定はまだ保存していません。氏名はその期の「役職・チーム（半期ごと）」のプレジデント、肩書きは既定の文です。挨拶文を入れて「保存」を押してください。');
+ }
  function openCover(){
+   document.getElementById('c_termNo').innerHTML=presidents.map(function(p){
+     return '<option value="'+p.term+'"'+(p.term===cover.termNo?' selected':'')+'>'
+       +esc(p.label+'（'+p.range+'）'+(p.current?'・いまの期':'')+(p.saved?'':'・未保存'))+'</option>';
+   }).join('');
    COVER_FIELDS.forEach(function(k){ var e=document.getElementById('c_'+k); if(e) e.value=cover[k]||''; });
+   coverSnap=coverForm(); termNote();
    document.getElementById('coverModal').style.display='flex';
  }
- function closeCover(){ document.getElementById('coverModal').style.display='none'; }
+ // 期を切り替える：その期の設定を読み込み、冊子もその期にする（変えて保存していない内容があれば聞く）
+ function changeCoverTerm(){
+   var sel=document.getElementById('c_termNo'), t=parseInt(sel.value,10);
+   if(presChanged() && !confirm('プレジデントの設定を変えたまま、保存していません。変えた内容を捨てて、'+t+'期に切り替えますか？')){
+     sel.value=String(cover.termNo); return;
+   }
+   useTerm(t);
+   PRES_FIELDS.forEach(function(k){ document.getElementById('c_'+k).value=cover[k]||''; coverSnap[k]=cover[k]||''; });
+   termNote(); render(); renderCoverNote();
+   if(cover.pname && !photos[cover.pname]) fetchPhotos([cover.pname]);
+ }
+ function hideCover(){ document.getElementById('coverModal').style.display='none'; coverSnap=null; }
+ // 閉じる：保存していない変更があれば、保存するか聞く
+ function closeCover(){
+   if(coverChanged() && confirm('保存していない変更があります。保存しますか？\n\n［OK］保存して閉じる　［キャンセル］保存しないで閉じる')){ saveCover(); return; }
+   hideCover();
+ }
  function saveCover(){
-   var next={};
-   COVER_FIELDS.forEach(function(k){ var e=document.getElementById('c_'+k); if(e) next[k]=e.value; });
+   var next=coverForm(), t=parseInt(document.getElementById('c_termNo').value,10) || cover.termNo;
    google.script.run.withSuccessHandler(function(r){
      if(!r.ok){ alert(r.message); return; }
-     cover=r.cover||next; closeCover(); show(r.message,true); render();
+     if(r.presidents) presidents=r.presidents;
+     cover=r.cover||next; hideCover(); show(r.message,true); render(); renderCoverNote();
      // プレジデントの写真がまだ無ければ読み込む
      if(cover.pname && !photos[cover.pname]) fetchPhotos([cover.pname]);
-   }).withFailureHandler(fail).saveMemberBookCover(next);
+   }).withFailureHandler(fail).saveMemberBookCover(next, t);
  }
  function resetCoverText(){
-   if(!confirm('理念・チャプター紹介・メリット・タイムスケジュール・用語の説明を初期値に戻します。\nプレジデントの設定はそのまま残ります。よろしいですか？')) return;
+   if(!confirm('理念・チャプター紹介・メリット・タイムスケジュール・用語の説明を初期値に戻します。\nプレジデントの設定（期ごと）はそのまま残ります。よろしいですか？')) return;
    google.script.run.withSuccessHandler(function(r){
      if(!r.ok){ alert(r.message); return; }
-     cover=r.cover||{}; openCover(); show(r.message,true); render();
-   }).withFailureHandler(fail).resetMemberBookCoverText();
+     if(r.presidents) presidents=r.presidents;
+     cover=r.cover||{}; openCover(); show(r.message,true); render(); renderCoverNote();
+   }).withFailureHandler(fail).resetMemberBookCoverText(cover.termNo);
  }
 
  // 冊子と配布用HTMLには写真の実体（base64）を埋め込む必要がある。

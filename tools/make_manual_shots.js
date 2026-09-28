@@ -332,8 +332,12 @@ const bookMembers = masterAnswer.members.map((m, i) => Object.assign({}, m, {
     : m.title + 'のことなら、お気軽にご相談ください',
   refer: i === 2 ? 'IT化を進めたい中小企業の社長、社内にIT担当者がいない会社、DXの補助金を検討している会社' : MB_REFER[i % MB_REFER.length],
   collab: MB_COLLAB[i % MB_COLLAB.length] }));
+// 表紙：23期（いまの期）の挨拶は保存済み、24期はまだ（氏名は24期のプレジデントの担当者）。本物のサーバーの関数で作る
+F.saveMemberBookCover({ ptext: '23期プレジデントの見本です。半年間、メンバー一人ひとりのビジネスが広がるチャプターを目指してきました。'
+  + 'ビジターの皆さまも、ぜひ一緒に活動しませんか。' }, 23);
+const bookCover = F.getCoverInfo_(23), bookPresidents = F.coverPresidentList_(23);
 const answersBook = {
-  getMemberBookData: { any: { ok: true, members: bookMembers, categories: masterAnswer.categories, cover: {} } },
+  getMemberBookData: { any: { ok: true, members: bookMembers, categories: masterAnswer.categories, cover: bookCover, presidents: bookPresidents } },
   getMemberPhotoThumbs: { any: { ok: true, map: Object.fromEntries(bookMembers.map((m, i) => [m.name, avatar(i)])) } },
 };
 const bookPage = () => readHtml('memberbook_editor.html')
@@ -466,6 +470,15 @@ const SHOTS = [
   // メンバーブックの編集（全体・プレビューのカードを押して編集を開いたところ）
   { name: 'memberbook_editor', file: () => writePage('memberbook_editor', bookPage(), answersBook), width: 1150, height: 780, wait: 800,
     before: bookReady },
+  // 表紙・プレジデント設定：次の期（24期・まだ保存していない）を選んだところ
+  { name: 'memberbook_cover', file: () => writePage('memberbook_cover', bookPage(), answersBook), width: 1150, height: 760, wait: 800,
+    element: '#coverModal .inner',
+    before: async (p) => {
+      await bookReady(p);
+      await p.evaluate(() => openCover());
+      await p.selectOption('#c_termNo', '24');
+      await p.waitForTimeout(300);
+    } },
   { name: 'memberbook_modal', file: () => writePage('memberbook_modal', bookPage(), answersBook), width: 1150, height: 900, wait: 800,
     element: '#modal .inner',
     before: async (p) => {

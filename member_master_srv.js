@@ -317,24 +317,38 @@ var DEFAULT_COVER_ = {
   photoFile: ''
 };
 
-// 表紙の初期値（チャプター名・いまの期を入れる）
-function defaultCover_() {
-  var c = {}, k, term = roleTermOf_(new Date()), name = chapterInfo_().name;
+// 表紙の初期値（チャプター名・期を入れる）。期を渡さなければ、いまの期
+function defaultCover_(term) {
+  var c = {}, k, t = term || roleTermOf_(new Date()), name = chapterInfo_().name;
   for (k in DEFAULT_COVER_) c[k] = DEFAULT_COVER_[k];
   c.title = 'BNI ' + name + ' chapter Member Book';
-  c.term = term + '期';
+  c.term = t + '期';
   c.aboutTitle = 'BNI ' + chapterLabel_() + 'とは？';
-  c.prole = chapterLabel_() + '\n第' + term + '期プレジデント';
+  c.prole = chapterLabel_() + '\n第' + t + '期プレジデント';
   return c;
 }
 
-function getCoverInfo_() {
-  var props = PropertiesService.getScriptProperties(), cover = {};
-  var def = defaultCover_();
-  for (var k in def) cover[k] = def[k];
+// --- プレジデント設定（期ごと）---
+// プレジデントの氏名・肩書き・挨拶文は期ごとに変わるので、期ごとに持つ（スクリプトのプロパティ BNI_MB_PRESIDENTS
+// = { '24': { pname, prole, ptext }, … }）。表紙のほかの文章（理念・用語の説明など）は期によらず BNI_MB_COVER に1件。
+// 期ごとの中身に項目が無いときは既定：氏名＝その期の「役職・チーム（半期ごと）」のプレジデント、
+// 肩書き＝「○○チャプター\n第N期プレジデント」、挨拶文＝空。既定と同じ値は保存しない
+// （期の番号・チャプター名・担当者を直しても、既定のままの項目は付いていく）
+var COVER_PRES_KEY_ = 'BNI_MB_PRESIDENTS';
+var COVER_PRES_FIELDS_ = ['pname', 'prole', 'ptext'];
+
+// 「24期」「第24期」「24」→ 24（読めなければ 0）
+function coverTermNo_(v) {
+  var m = String(v == null ? '' : v).normalize('NFKC').match(/\d+/), n = m ? parseInt(m[0], 10) : 0;
+  return n > 0 ? n : 0;
+}
+
+// 保存してある表紙（期ごとにする前は、プレジデントの項目もこの1件に入っていた）
+function coverSaved_() {
+  var props = PropertiesService.getScriptProperties(), saved = {};
   try {
     var raw = props.getProperty(COVER_KEY_);
-    if (raw) { var saved = JSON.parse(raw); for (var j in saved) cover[j] = saved[j]; }
+    if (raw) saved = JSON.parse(raw) || {};
   } catch (e) {
     console.warn('[MBOOK] 表紙設定の読み込みに失敗: ' + (e && e.message ? e.message : e));
   }
@@ -342,38 +356,134 @@ function getCoverInfo_() {
   var old = { term: 'BNI_MB_TERM', pname: 'BNI_MB_PNAME', ptext: 'BNI_MB_PTEXT', photoFile: 'BNI_MB_COVER_PHOTO' };
   for (var o in old) {
     var v = props.getProperty(old[o]);
-    if (v && !cover[o]) cover[o] = v;
+    if (v && !saved[o]) saved[o] = v;
   }
+  return saved;
+}
+
+// ある期のプレジデント設定の既定
+function coverPresDefault_(term) {
+  var pname = '';
+  try {
+    var h = roleHoldersOfTerm_(roleHolderTerms_(), term);
+    if (h.registered) pname = h.holders.president || '';      // その期として登録してある担当者だけ（前の期の方を出さない）
+  } catch (e) {}
+  return { pname: pname, prole: chapterLabel_() + '\n第' + term + '期プレジデント', ptext: '' };
+}
+
+// 期ごとのプレジデント設定 { 期: { pname, prole, ptext } }。
+// まだ期ごとに保存していないときは、1件だけ保存していた設定を、その「期」（「23期」など。読めなければいまの期）のものとして読む
+function coverPresidentTerms_() {
+  var all = null;
+  try { all = JSON.parse(PropertiesService.getScriptProperties().getProperty(COVER_PRES_KEY_) || 'null'); } catch (e) { all = null; }
+  if (all && typeof all === 'object') return all;
+  all = {};
+  var old = coverSaved_();
+  if (old.pname || old.ptext) {
+    var t = coverTermNo_(old.term) || roleTermOf_(new Date()), def = coverPresDefault_(t), e = {};
+    COVER_PRES_FIELDS_.forEach(function (k) {
+      if (old[k] == null) return;                             // 無かった項目は既定
+      var v = String(old[k]);
+      if (v !== def[k]) e[k] = v;
+    });
+    all[t] = e;
+  }
+  return all;
+}
+
+// ある期のプレジデント設定（保存してある項目＋既定）
+function coverPresidentOf_(term, all) {
+  var e = (all || coverPresidentTerms_())[term] || null, def = coverPresDefault_(term);
+  var out = { term: term, label: term + '期', range: roleTermLabel_(term), saved: !!e, defaults: def };
+  COVER_PRES_FIELDS_.forEach(function (k) {
+    out[k] = (e && Object.prototype.hasOwnProperty.call(e, k)) ? String(e[k] == null ? '' : e[k]) : def[k];
+  });
+  return out;
+}
+
+// 画面で選べる期：いまの期とその前後、保存してある期、選んでいる期
+function coverPresidentList_(selTerm) {
+  var all = coverPresidentTerms_(), cur = roleTermOf_(new Date()), set = {};
+  [cur - 1, cur, cur + 1, coverTermNo_(selTerm)].forEach(function (t) { if (t > 0) set[t] = true; });
+  Object.keys(all).forEach(function (t) { var n = parseInt(t, 10); if (n > 0) set[n] = true; });
+  return Object.keys(set).map(function (t) { return parseInt(t, 10); }).sort(function (a, b) { return a - b; })
+    .map(function (t) { var p = coverPresidentOf_(t, all); p.current = (t === cur); return p; });
+}
+
+// 期の番号を付け直したとき（チャプターの設定）、期ごとのプレジデント設定も同じだけずらす。
+// 付け直す前の番号のうちに呼ぶ（期ごとにする前の1件を、前の番号の期として読むため）
+function coverShiftTerms_(delta) {
+  delta = parseInt(delta, 10);
+  if (!delta) return;
+  var all = coverPresidentTerms_(), out = {};
+  Object.keys(all).forEach(function (t) {
+    var n = parseInt(t, 10);
+    if (n > 0 && n + delta > 0) out[n + delta] = all[t];
+  });
+  PropertiesService.getScriptProperties().setProperty(COVER_PRES_KEY_, JSON.stringify(out));
+}
+
+// 表紙の中身（期を渡さなければ、いまの期のプレジデント設定）。termNo … どの期のプレジデント設定か
+function getCoverInfo_(term) {
+  var cover = {}, def = defaultCover_(), saved = coverSaved_(), k;
+  for (k in def) cover[k] = def[k];
+  for (k in saved) if (COVER_PRES_FIELDS_.indexOf(k) < 0 && k !== 'term' && k !== 'termNo') cover[k] = saved[k];
+  var t = coverTermNo_(term) || roleTermOf_(new Date()), p = coverPresidentOf_(t);
+  cover.termNo = t;
+  cover.term = p.label;
+  COVER_PRES_FIELDS_.forEach(function (f) { cover[f] = p[f]; });
   return cover;
 }
 
-function saveCoverInfo_(cover) {
+// 表紙を保存する。プレジデントの項目（氏名・肩書き・挨拶文）は、term の期（無ければ cover.term の期・いまの期）に保存する。
+// 渡さなかった項目（undefined）はそのまま
+function saveCoverInfo_(cover, term) {
   if (!cover) return;
-  var cur = getCoverInfo_();
-  for (var k in cover) if (cover[k] !== undefined) cur[k] = cover[k];
-  PropertiesService.getScriptProperties().setProperty(COVER_KEY_, JSON.stringify(cur));
+  var props = PropertiesService.getScriptProperties();
+  // 先に期ごとの設定を作ってから（期ごとにする前の1件を引き継ぐため）、表紙の1件からプレジデントの項目を外す
+  var all = coverPresidentTerms_();
+  if (COVER_PRES_FIELDS_.some(function (k) { return cover[k] !== undefined; })) {
+    var t = coverTermNo_(term) || coverTermNo_(cover.termNo) || coverTermNo_(cover.term) || roleTermOf_(new Date());
+    var def = coverPresDefault_(t), e = all[t] || {};
+    COVER_PRES_FIELDS_.forEach(function (k) {
+      if (cover[k] === undefined) return;
+      var v = String(cover[k] == null ? '' : cover[k]);
+      if (v === def[k]) delete e[k]; else e[k] = v;
+    });
+    all[t] = e;
+  }
+  props.setProperty(COVER_PRES_KEY_, JSON.stringify(all));
+  var cur = coverSaved_(), shared = {}, k;
+  var skip = function (x) { return COVER_PRES_FIELDS_.indexOf(x) >= 0 || x === 'term' || x === 'termNo'; };
+  for (k in cur) if (!skip(k)) shared[k] = cur[k];
+  for (k in cover) if (!skip(k) && cover[k] !== undefined) shared[k] = cover[k];
+  props.setProperty(COVER_KEY_, JSON.stringify(shared));
 }
 
-// 画面から呼ぶ用
-function saveMemberBookCover(cover) {
+// 画面から呼ぶ用。term … プレジデント設定を保存する期
+function saveMemberBookCover(cover, term) {
   try {
-    saveCoverInfo_(cover);
-    return { ok: true, message: '表紙の設定を保存しました。', cover: getCoverInfo_() };
+    var t = coverTermNo_(term) || coverTermNo_(cover && cover.termNo) || roleTermOf_(new Date());
+    saveCoverInfo_(cover, t);
+    return { ok: true, message: '表紙の設定を保存しました（プレジデントの設定は' + t + '期のものとして保存）。',
+             cover: getCoverInfo_(t), presidents: coverPresidentList_(t) };
   } catch (e) {
     return { ok: false, message: '保存に失敗しました: ' + (e && e.message ? e.message : e) };
   }
 }
 
-// 表紙の文章を初期値に戻す（プレジデント関連は消さない）
-function resetMemberBookCoverText() {
+// 表紙の文章を初期値に戻す（期ごとのプレジデント設定は消さない）。term … 画面で選んでいる期
+function resetMemberBookCoverText(term) {
   try {
-    var cur = getCoverInfo_(), keep = ['term', 'pname', 'prole', 'ptext', 'photoFile'];
-    var next = {};
-    var def = defaultCover_();
-    for (var k in def) next[k] = def[k];
-    for (var i = 0; i < keep.length; i++) next[keep[i]] = cur[keep[i]];
-    PropertiesService.getScriptProperties().setProperty(COVER_KEY_, JSON.stringify(next));
-    return { ok: true, message: '定型文を初期値に戻しました（プレジデントの設定はそのままです）。', cover: next };
+    var props = PropertiesService.getScriptProperties();
+    props.setProperty(COVER_PRES_KEY_, JSON.stringify(coverPresidentTerms_()));   // 期ごとにする前の1件を先に引き継ぐ
+    var def = defaultCover_(), next = {}, keep = coverSaved_();
+    for (var k in def) if (COVER_PRES_FIELDS_.indexOf(k) < 0 && k !== 'term') next[k] = def[k];
+    if (keep.photoFile) next.photoFile = keep.photoFile;
+    props.setProperty(COVER_KEY_, JSON.stringify(next));
+    var t = coverTermNo_(term) || roleTermOf_(new Date());
+    return { ok: true, message: '定型文を初期値に戻しました（プレジデントの設定はそのままです）。',
+             cover: getCoverInfo_(t), presidents: coverPresidentList_(t) };
   } catch (e) {
     return { ok: false, message: '戻せませんでした: ' + (e && e.message ? e.message : e) };
   }
