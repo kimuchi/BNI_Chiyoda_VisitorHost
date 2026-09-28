@@ -162,7 +162,8 @@ shared('vhc', '・ビジターフォローは当日中に連絡をお願いし�
 shared('ec', '・エデュケーション：「リファーラルの質を高める3つの質問」');
 // そのほかの項目（お願い事項・直近のイベント・人数・代理・欠席）も、画面に出る項目の名前で入れる
 function fill(role, pairs) {
-  const ctx = F.getRoleInputContext(NEXT, role), r = ctx.roles.find((x) => x.key === role);
+  const ctx = F.getRoleInputContext(NEXT, role), r = (ctx.roles || []).find((x) => x.key === role);
+  if (!r) return;                                  // その役職の欄が無いルーティンチェックシート（画面の一部だけ撮るとき）
   const entries = pairs.map(([title, value]) => {
     const id = r.items.find((i) => ctx.items[i].title.replace(/\s/g, '') === title.replace(/\s/g, ''));
     return id ? { id, value, orig: ctx.items[id].value || '' } : null;
