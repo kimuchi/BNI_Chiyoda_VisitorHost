@@ -81,6 +81,10 @@ const SLIDES = {
   headRenew: sp(2, 0, 200, 960, 80, ['更新メンバー紹介'], 5400, true),
   headNew: sp(2, 0, 200, 960, 80, ['新メンバー紹介'], 5400, true),
   newNote: sp(2, 0, 20, 960, 70, ['新メンバーからの一言'], 4000, true) + sp(3, 40, 120, 880, 200, ['入会のきっかけと、これからのことを話します。'], 2000),
+  headRenewShiki: sp(2, 0, 200, 960, 80, ['更新式'], 5400, true),
+  headNewShiki: sp(2, 0, 200, 960, 80, ['新入会メンバー紹介'], 5400, true),
+  // 「倫理規定」の言葉が入った一般規定のページ（倫理規定のページではない）
+  policy: sp(2, 0, 20, 960, 70, ['一般規定'], 4000, true) + sp(3, 40, 120, 880, 200, ['メンバー規定、倫理規定、BNIコアバリューを守ります。'], 2000),
 };
 // ページ番号の枠（PowerPoint は番号の文字をページに持つので、置いた場所で文字が変わる）
 const numberPh = (n) => '<p:sp><p:nvSpPr><p:cNvPr id="90" name="スライド番号"/><p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr>'
@@ -117,7 +121,9 @@ function shown(parts) {
   return F.slideOrder_(parts).map((p) => F.xmlOf_(parts, p)).filter((x) => !/<p:sld\b[^>]*\sshow="0"/.test(x)).map((x) => {
     const t = F.slideText_(x), kind = F.fpMemberKind_(x);
     const name = (t.match(/見本 [新更][一二三]/) || [''])[0];
-    if (/紹介$/.test(t)) return kind === 'new' ? '新の見出し' : '更新の見出し';
+    if (/一般規定/.test(t)) return '一般規定';
+    if (/紹介$/.test(t)) return kind === 'renew' ? '更新の見出し' : '新の見出し';
+    if (/^更新式$/.test(t)) return '更新の見出し';
     if (/一言/.test(t)) return '新の一言';
     return kind === 'new' ? '新:' + name : kind === 'renew' ? '更新:' + name : kind === 'both' ? '両方' : /倫理規定/.test(t) ? '倫理' : /ウィークリー/.test(t) ? '週' : '表紙';
   });
@@ -183,6 +189,13 @@ const LAYOUTS = {
       ['表紙', '新:見本 新一', '新:見本 新二', '新の一言', '倫理', '更新:見本 更一', '更新:見本 更二', '更新:見本 更三', '倫理', '週']],
     '「新メンバーからの一言」がある、新メンバーが先の雛形（新 → 一言 → 更新 → 倫理規定）': [['cover', 'neu', 'newNote', 'renew', 'ethics', 'weekly'],
       ['表紙', '新:見本 新一', '新:見本 新二', '新の一言', '倫理', '更新:見本 更一', '更新:見本 更二', '更新:見本 更三', '倫理', '週']],
+    '「更新式」「新入会メンバー紹介」の見出しがある雛形': [['cover', 'headRenewShiki', 'renew', 'headNewShiki', 'neu', 'ethics', 'weekly'],
+      ['表紙', '新の見出し', '新:見本 新一', '新:見本 新二', '倫理', '更新の見出し', '更新:見本 更一', '更新:見本 更二', '更新:見本 更三', '倫理', '週']],
+    // 一般規定のページに「倫理規定」の言葉があっても、写すのは倫理規定のページ。一般規定のページは隠さない
+    '「倫理規定」の言葉が入った一般規定のページがある雛形（更新 → 新 → 倫理規定 → 一般規定）': [['cover', 'renew', 'neu', 'ethics', 'weekly', 'policy'],
+      ['表紙', '新:見本 新一', '新:見本 新二', '倫理', '更新:見本 更一', '更新:見本 更二', '更新:見本 更三', '倫理', '週', '一般規定']],
+    '「倫理規定」の言葉が入った一般規定のページが前にある雛形（一般規定 → 更新 → 新 → 倫理規定）': [['cover', 'policy', 'renew', 'neu', 'ethics', 'weekly'],
+      ['表紙', '一般規定', '新:見本 新一', '新:見本 新二', '倫理', '更新:見本 更一', '更新:見本 更二', '更新:見本 更三', '倫理', '週']],
   };
   Object.entries(cases).forEach(([ln, [order, want]]) => {
     const parts = makeParts(order);

@@ -319,10 +319,17 @@ function fpNewBeforeRenew_(parts, blocks, W, H) {
 function fpSideEnd_(parts, order, i, step, kind, W, H) {
   for (var j = i + step; j >= 0 && j < order.length; j += step) {
     var x = xmlOf_(parts, order[j]);
-    if (!x || fpMemberKind_(x) !== kind || fpMemberUnit_(x, W, H) || fpIsEthics_(parts, order[j])) break;
+    if (!x || fpSideKind_(x) !== kind || fpMemberUnit_(x, W, H) || fpIsEthics_(parts, order[j])) break;
     i = j;
   }
   return i;
+}
+// 見出しなどのページの種類。「新メンバー」「更新メンバー」のほか、「入会式」「新入会」「更新式」の見出しも
+function fpSideKind_(xml) {
+  var k = fpMemberKind_(xml);
+  if (k) return k;
+  var t = riNorm_(slideText_(xml)), neu = /入会式|新入会/.test(t), renew = /更新式/.test(t);
+  return neu && renew ? 'both' : neu ? 'new' : renew ? 'renew' : '';
 }
 function fpIsEthics_(parts, path) {
   var x = xmlOf_(parts, path);
@@ -345,8 +352,11 @@ function fpEthicsPages_(parts, blocks, res, W, H) {
     return b.kind === 'both' || best < 0 ? best : fpSideEnd_(parts, order, best, 1, b.kind, W, H);
   };
   blocks.sort(function (a, b) { return lastOf(a) - lastOf(b); });
-  // 複製のもとは、まとまりのうしろにある倫理規定のページ（無ければ最初に見つかったもの）
+  // 複製のもとは、まとまりのすぐうしろにある倫理規定のページ（入れ替えたあとは、新メンバーのうしろ）。
+  // 無ければ、まとまりよりうしろの倫理規定のページ、それも無ければ最初に見つかったもの
+  // （「倫理規定」の言葉が入った一般規定などのページを、先に拾わないように）
   var model = null, lastAll = lastOf(blocks[blocks.length - 1]);
+  blocks.forEach(function (b) { var nx = order[lastOf(b) + 1]; if (!model && nx && isEthics(nx)) model = nx; });
   for (var i = lastAll + 1; i < order.length && !model; i++) if (isEthics(order[i])) model = order[i];
   for (var j = 0; j < order.length && !model; j++) if (isEthics(order[j])) model = order[j];
   if (!model) return;
