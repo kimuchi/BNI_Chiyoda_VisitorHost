@@ -116,6 +116,16 @@ const ANSWER = J({ allocations: [{ visitorNo: 'V01', room: ['03', '04'] }, { vis
   ck(prompt.includes('添付されたメンバーブックPDF'), 'PDFを渡すときの指示文');
 }
 
+// ---------- 同じ氏名の方が2人いても取り違えない（番号と氏名の組で探す）----------
+{
+  const twins = ROSTER.concat([
+    { no: '07', name: '見本 同名', cat: '企業サポート', title: '司法書士', company: '見本司法書士事務所', comment: '相続登記が得意', refer: '', collab: '' },
+    { no: '08', name: '見本　同名', cat: '美容と健康', title: '整体院', company: '見本整体', comment: '', refer: '', collab: '' }]);
+  const { box } = makeServer(twins, ANSWER);
+  const prof = box.allocationMemberProfiles_([{ no: '07', name: '見本 同名' }, { no: '08', name: '見本 同名' }]);
+  ck(prof[0]['カテゴリー'] === '司法書士' && prof[1]['カテゴリー'] === '整体院', '同じ氏名の方の取り違え: ' + J(prof));
+}
+
 // ---------- 名簿に居ない方（古い「メンバーリスト」シートだけの方）は番号と氏名だけ ----------
 {
   const { box } = makeServer(ROSTER, ANSWER);

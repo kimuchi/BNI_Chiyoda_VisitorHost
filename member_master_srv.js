@@ -329,12 +329,14 @@ function defaultCover_(term) {
 }
 
 // --- プレジデント設定（期ごと）---
-// プレジデントの氏名・肩書き・挨拶文は期ごとに変わるので、期ごとに持つ（スクリプトのプロパティ BNI_MB_PRESIDENTS
-// = { '24': { pname, prole, ptext }, … }）。表紙のほかの文章（理念・用語の説明など）は期によらず BNI_MB_COVER に1件。
+// プレジデントの氏名・肩書き・挨拶文は期ごとに変わるので、期ごとに持つ（スクリプトのプロパティ BNI_MB_PRESIDENT_24
+// = { pname, prole, ptext } のように、期ごとに1つ。1つにまとめると、何年分もたまったときにプロパティの大きさの上限
+// （1つ 9KB）を超えて保存できなくなるため）。表紙のほかの文章（理念・用語の説明など）は期によらず BNI_MB_COVER に1件。
 // 期ごとの中身に項目が無いときは既定：氏名＝その期の「役職・チーム（半期ごと）」のプレジデント、
 // 肩書き＝「○○チャプター\n第N期プレジデント」、挨拶文＝空。既定と同じ値は保存しない
 // （期の番号・チャプター名・担当者を直しても、既定のままの項目は付いていく）
-var COVER_PRES_KEY_ = 'BNI_MB_PRESIDENTS';
+var COVER_PRES_PREFIX_ = 'BNI_MB_PRESIDENT_';
+var COVER_PRES_MOVED_KEY_ = 'BNI_MB_PRESIDENTS_MOVED';    // 期ごとにする前の1件を引き継いだ印
 var COVER_PRES_FIELDS_ = ['pname', 'prole', 'ptext'];
 
 // 「24期」「第24期」「24」→ 24（読めなければ 0）
@@ -374,10 +376,15 @@ function coverPresDefault_(term) {
 // 期ごとのプレジデント設定 { 期: { pname, prole, ptext } }。
 // まだ期ごとに保存していないときは、1件だけ保存していた設定を、その「期」（「23期」など。読めなければいまの期）のものとして読む
 function coverPresidentTerms_() {
-  var all = null;
-  try { all = JSON.parse(PropertiesService.getScriptProperties().getProperty(COVER_PRES_KEY_) || 'null'); } catch (e) { all = null; }
-  if (all && typeof all === 'object') return all;
-  all = {};
+  var props = PropertiesService.getScriptProperties(), raw = props.getProperties() || {}, all = {}, found = false, k;
+  for (k in raw) {
+    if (k.indexOf(COVER_PRES_PREFIX_) !== 0) continue;
+    var tail = k.slice(COVER_PRES_PREFIX_.length), n = parseInt(tail, 10);
+    if (!(n > 0) || String(n) !== tail) continue;
+    found = true;
+    try { var v = JSON.parse(raw[k]); if (v && typeof v === 'object') all[n] = v; } catch (e) {}
+  }
+  if (found || raw[COVER_PRES_MOVED_KEY_]) return all;
   var old = coverSaved_();
   if (old.pname || old.ptext) {
     var t = coverTermNo_(old.term) || roleTermOf_(new Date()), def = coverPresDefault_(t), e = {};
@@ -410,8 +417,18 @@ function coverPresidentList_(selTerm) {
     .map(function (t) { var p = coverPresidentOf_(t, all); p.current = (t === cur); return p; });
 }
 
+// 期ごとのプレジデント設定を書く（all にある期を書き、all に無い期のプロパティは消す）。引き継いだ印も付ける
+function coverPresidentWrite_(all) {
+  var props = PropertiesService.getScriptProperties(), raw = props.getProperties() || {}, k;
+  for (k in raw) {
+    if (k.indexOf(COVER_PRES_PREFIX_) === 0 && !all[k.slice(COVER_PRES_PREFIX_.length)]) props.deleteProperty(k);
+  }
+  for (k in all) props.setProperty(COVER_PRES_PREFIX_ + k, JSON.stringify(all[k]));
+  props.setProperty(COVER_PRES_MOVED_KEY_, '1');
+}
+
 // 期の番号を付け直したとき（チャプターの設定）、期ごとのプレジデント設定も同じだけずらす。
-// 付け直す前の番号のうちに呼ぶ（期ごとにする前の1件を、前の番号の期として読むため）
+// 付け直す前の番号のうちに、担当者をずらす前に呼ぶ（期ごとにする前の1件を、前の番号の期・前の番号の担当者で読むため）
 function coverShiftTerms_(delta) {
   delta = parseInt(delta, 10);
   if (!delta) return;
@@ -420,7 +437,7 @@ function coverShiftTerms_(delta) {
     var n = parseInt(t, 10);
     if (n > 0 && n + delta > 0) out[n + delta] = all[t];
   });
-  PropertiesService.getScriptProperties().setProperty(COVER_PRES_KEY_, JSON.stringify(out));
+  coverPresidentWrite_(out);
 }
 
 // 表紙の中身（期を渡さなければ、いまの期のプレジデント設定）。termNo … どの期のプレジデント設定か
@@ -452,7 +469,7 @@ function saveCoverInfo_(cover, term) {
     });
     all[t] = e;
   }
-  props.setProperty(COVER_PRES_KEY_, JSON.stringify(all));
+  coverPresidentWrite_(all);
   var cur = coverSaved_(), shared = {}, k;
   var skip = function (x) { return COVER_PRES_FIELDS_.indexOf(x) >= 0 || x === 'term' || x === 'termNo'; };
   for (k in cur) if (!skip(k)) shared[k] = cur[k];
@@ -476,7 +493,7 @@ function saveMemberBookCover(cover, term) {
 function resetMemberBookCoverText(term) {
   try {
     var props = PropertiesService.getScriptProperties();
-    props.setProperty(COVER_PRES_KEY_, JSON.stringify(coverPresidentTerms_()));   // 期ごとにする前の1件を先に引き継ぐ
+    coverPresidentWrite_(coverPresidentTerms_());           // 期ごとにする前の1件を先に引き継ぐ
     var def = defaultCover_(), next = {}, keep = coverSaved_();
     for (var k in def) if (COVER_PRES_FIELDS_.indexOf(k) < 0 && k !== 'term') next[k] = def[k];
     if (keep.photoFile) next.photoFile = keep.photoFile;

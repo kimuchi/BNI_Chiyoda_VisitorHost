@@ -373,6 +373,7 @@
      : p.label+'の設定はまだ保存していません。氏名はその期の「役職・チーム（半期ごと）」のプレジデント、肩書きは既定の文です。挨拶文を入れて「保存」を押してください。');
  }
  function openCover(){
+   if(!needLoaded()) return;          // 読み込めていないまま保存すると、表紙の文章が空で上書きされるため
    document.getElementById('c_termNo').innerHTML=presidents.map(function(p){
      return '<option value="'+p.term+'"'+(p.term===cover.termNo?' selected':'')+'>'
        +esc(p.label+'（'+p.range+'）'+(p.current?'・いまの期':'')+(p.saved?'':'・未保存'))+'</option>';
@@ -398,23 +399,38 @@
    if(coverChanged() && confirm('保存していない変更があります。保存しますか？\n\n［OK］保存して閉じる　［キャンセル］保存しないで閉じる')){ saveCover(); return; }
    hideCover();
  }
+ // 保存している間は、表紙の画面の入力・ボタンを止める（保存が終わると画面を閉じるので、そのあいだに打った文字が消えないように）
+ function coverBusy(b){
+   var els=document.querySelectorAll('#coverModal input,#coverModal textarea,#coverModal select,#coverModal button');
+   for(var i=0;i<els.length;i++) els[i].disabled=b;
+ }
+ function coverFail(e){ coverBusy(false); fail(e); }
  function saveCover(){
+   if(!needLoaded()) return;
    var next=coverForm(), t=parseInt(document.getElementById('c_termNo').value,10) || cover.termNo;
+   coverBusy(true);
    google.script.run.withSuccessHandler(function(r){
+     coverBusy(false);
      if(!r.ok){ alert(r.message); return; }
      if(r.presidents) presidents=r.presidents;
      cover=r.cover||next; hideCover(); show(r.message,true); render(); renderCoverNote();
      // プレジデントの写真がまだ無ければ読み込む
      if(cover.pname && !photos[cover.pname]) fetchPhotos([cover.pname]);
-   }).withFailureHandler(fail).saveMemberBookCover(next, t);
+   }).withFailureHandler(coverFail).saveMemberBookCover(next, t);
  }
  function resetCoverText(){
+   if(!needLoaded()) return;
    if(!confirm('理念・チャプター紹介・メリット・タイムスケジュール・用語の説明を初期値に戻します。\nプレジデントの設定（期ごと）はそのまま残ります。よろしいですか？')) return;
+   // 打ちかけのプレジデントの氏名・肩書き・挨拶文は、戻したあとも入力欄に残す（まだ保存していない変更として）
+   var keep=presChanged() ? coverForm() : null;
+   coverBusy(true);
    google.script.run.withSuccessHandler(function(r){
+     coverBusy(false);
      if(!r.ok){ alert(r.message); return; }
      if(r.presidents) presidents=r.presidents;
      cover=r.cover||{}; openCover(); show(r.message,true); render(); renderCoverNote();
-   }).withFailureHandler(fail).resetMemberBookCoverText(cover.termNo);
+     if(keep) PRES_FIELDS.forEach(function(k){ document.getElementById('c_'+k).value=keep[k]||''; });
+   }).withFailureHandler(coverFail).resetMemberBookCoverText(cover.termNo);
  }
 
  // 冊子と配布用HTMLには写真の実体（base64）を埋め込む必要がある。

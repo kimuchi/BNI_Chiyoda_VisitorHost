@@ -82,7 +82,13 @@ const J = (x) => JSON.stringify(x);
   for (const f of ['chapter_srv.js', 'role_input_srv.js', 'member_master_srv.js', 'memberbook_srv.js']) {
     vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), box, { filename: f });
   }
-  const PRES = () => JSON.parse(props.BNI_MB_PRESIDENTS || 'null');
+  // 期ごとのプロパティ（BNI_MB_PRESIDENT_24 など）をまとめて読む
+  const PRES = () => {
+    const o = {};
+    Object.keys(props).filter((k) => /^BNI_MB_PRESIDENT_\d+$/.test(k)).forEach((k) => { o[k.replace('BNI_MB_PRESIDENT_', '')] = JSON.parse(props[k]); });
+    return o;
+  };
+  const PRESJ = () => J(PRES());
   // 以前の1件（23期のプレジデントの設定と、表紙のほかの文章）。24期の担当者は登録済み
   props.BNI_MB_COVER = J({ title: '見本の題', term: '23期', pname: '見本 一郎', prole: 'Activeチャプター\n第23期プレジデント',
     ptext: '23期の挨拶', philosophy: '見本の理念' });
@@ -100,7 +106,7 @@ const J = (x) => JSON.stringify(x);
   let r = box.saveMemberBookCover({ title: '新しい題', pname: '見本 二郎', prole: 'Activeチャプター\n第24期プレジデント', ptext: '24期の挨拶',
     philosophy: '見本の理念' }, 24);
   ck(r.ok && r.cover.termNo === 24 && r.cover.ptext === '24期の挨拶' && r.presidents.some((p) => p.term === 24 && p.saved), '24期の保存: ' + J(r));
-  ck(J(PRES()) === J({ 23: { pname: '見本 一郎', ptext: '23期の挨拶' }, 24: { ptext: '24期の挨拶' } }), '期ごとの保存の中身: ' + props.BNI_MB_PRESIDENTS);
+  ck(J(PRES()) === J({ 23: { pname: '見本 一郎', ptext: '23期の挨拶' }, 24: { ptext: '24期の挨拶' } }), '期ごとの保存の中身: ' + PRESJ());
   const shared = JSON.parse(props.BNI_MB_COVER);
   ck(shared.title === '新しい題' && !('pname' in shared) && !('ptext' in shared) && !('prole' in shared) && !('term' in shared), '表紙の1件からプレジデントの項目を外す: ' + props.BNI_MB_COVER);
   c = box.getCoverInfo_(23);
@@ -113,7 +119,7 @@ const J = (x) => JSON.stringify(x);
   props.BNI_ROLE_HOLDERS_TERMS = J({ 24: { president: '見本 次郎' } });
   ck(box.getCoverInfo_(24).pname === '見本 次郎', '担当者を直したあとの氏名: ' + box.getCoverInfo_(24).pname);
   box.saveMemberBookCover({ pname: '見本 別名' }, 24);
-  ck(box.getCoverInfo_(24).pname === '見本 別名' && PRES()[24].pname === '見本 別名', '既定と違う氏名: ' + props.BNI_MB_PRESIDENTS);
+  ck(box.getCoverInfo_(24).pname === '見本 別名' && PRES()[24].pname === '見本 別名', '既定と違う氏名: ' + PRESJ());
   // 定型文を初期値に戻しても、期ごとのプレジデント設定は残る
   r = box.resetMemberBookCoverText(24);
   ck(r.ok && r.cover.title === 'BNI Active chapter Member Book' && r.cover.ptext === '24期の挨拶' && box.getCoverInfo_(23).ptext === '23期の挨拶',
@@ -121,16 +127,22 @@ const J = (x) => JSON.stringify(x);
   // メンバーブックHTMLの取り込み（表紙の「期」「氏名」「挨拶文」）は、その期に入る
   box.saveCoverInfo_({ term: 22, pname: '見本 三郎', ptext: '22期の挨拶' });
   ck(box.getCoverInfo_(22).ptext === '22期の挨拶' && box.getCoverInfo_(22).pname === '見本 三郎' && box.getCoverInfo_(24).ptext === '24期の挨拶',
-     '取り込んだ表紙の期: ' + props.BNI_MB_PRESIDENTS);
+     '取り込んだ表紙の期: ' + PRESJ());
   // 期の番号を付け直すと（+2）、期ごとの設定もずれる。既定の肩書きは新しい番号で
   box.coverShiftTerms_(2);
   ck(J(Object.keys(PRES()).sort()) === J(['24', '25', '26']) && box.coverPresidentOf_(26).ptext === '24期の挨拶'
-     && box.coverPresidentOf_(26).prole === 'Activeチャプター\n第26期プレジデント', '期の番号の付け直し: ' + props.BNI_MB_PRESIDENTS);
+     && box.coverPresidentOf_(26).prole === 'Activeチャプター\n第26期プレジデント' && !('BNI_MB_PRESIDENT_22' in props), '期の番号の付け直し: ' + PRESJ());
   // 期ごとにする前の1件のまま、期の番号を付け直したとき（前の番号の期として読んでからずらす）
   for (const k of Object.keys(props)) delete props[k];
   props.BNI_MB_COVER = J({ term: '23期', pname: '見本 一郎', ptext: '23期の挨拶' });
   box.coverShiftTerms_(1);
-  ck(J(PRES()) === J({ 24: { pname: '見本 一郎', ptext: '23期の挨拶' } }), '以前の1件のまま付け直したとき: ' + props.BNI_MB_PRESIDENTS);
+  ck(J(PRES()) === J({ 24: { pname: '見本 一郎', ptext: '23期の挨拶' } }), '以前の1件のまま付け直したとき: ' + PRESJ());
+  // 期ごとに別のプロパティ（1つ 9KB の上限にかからない）。長い挨拶文を20期ぶん保存しても、どれも保存できる
+  let big = true;
+  for (let t = 30; t < 50; t++) big = big && box.saveMemberBookCover({ ptext: t + '期の挨拶。'.repeat(1) + 'あ'.repeat(600) }, t).ok;
+  const sizes = Object.keys(props).filter((k) => /^BNI_MB_PRESIDENT_\d+$/.test(k)).map((k) => Buffer.byteLength(props[k], 'utf8'));
+  ck(big && sizes.length === 21 && Math.max(...sizes) < 9000 && box.getCoverInfo_(49).ptext.indexOf('49期の挨拶。') === 0,
+     '長い挨拶文を何期ぶんも保存したとき: ' + J({ big, n: sizes.length, max: Math.max(...sizes) }));
 }
 
 // ===================== 2・3. 組版と編集画面（Chromium）=====================
@@ -501,11 +513,12 @@ const STUB = (members, cats, cover) => `
     await page.route('https://memberbook.test/', (r) => r.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: editorHtml() }));
     await page.goto('https://memberbook.test/', { waitUntil: 'load' });
     await page.waitForFunction(() => /見本の失敗/.test(document.getElementById('msg').textContent), null, { timeout: 10000 });
-    await page.evaluate(() => { addM(); save(); });
+    await page.evaluate(() => { addM(); save(); openCover(); saveCover(); });
     await page.waitForTimeout(1500);
     const st = await page.evaluate(() => ({ n: members.length, modal: document.getElementById('modal').style.display,
-      saves: window.__calls.filter((c) => /^save/.test(c.fn)).length }));
-    ck(st.n === 0 && st.modal !== 'flex' && st.saves === 0, '名簿を読み込めなかったのに、追加・保存できた: ' + J(st));
+      cover: document.getElementById('coverModal').style.display,
+      saves: window.__calls.filter((c) => /^save|^reset/.test(c.fn)).length }));
+    ck(st.n === 0 && st.modal !== 'flex' && st.cover !== 'flex' && st.saves === 0, '名簿を読み込めなかったのに、追加・保存・表紙の保存ができた: ' + J(st));
     await page.close();
   }
   await browser.close();

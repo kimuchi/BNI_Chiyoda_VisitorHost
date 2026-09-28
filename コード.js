@@ -1455,16 +1455,18 @@ function exportAllocationSheetToPdf(sheet, fileName, fileIdPropKey) {
 // AI自動割り振りに渡す待機メンバーのプロフィール。メンバー名簿（メンバーブックと同じ中身）から作る。
 // 空の項目は入れない（送る量を減らす）。ふりがな・メモ・日付・写真は送らない。名簿に居ない方は番号と氏名だけ
 function allocationMemberProfiles_(pool) {
-  var master = [], labels = {}, byName = {}, byNo = {};
+  var master = [], labels = {}, byBoth = {}, byName = {}, byNo = {};
   try { master = getMemberMaster({ membersOnly: true }).members || []; } catch (e) { master = []; }
   try { (getCategoryMaster() || []).forEach(function (c) { labels[c.key] = c.label || c.key; }); } catch (e) {}
   master.forEach(function (m) {
+    if (m.no && m.name) byBoth[String(m.no).trim() + '|' + normName_(m.name)] = m;
     if (m.name) byName[normName_(m.name)] = m;
     if (m.no) byNo[String(m.no).trim()] = m;
   });
   return (pool || []).map(function (p) {
     var out = { no: String(p.no), name: p.name };
-    var m = byName[normName_(p.name)] || byNo[String(p.no).trim()] || null;
+    // 番号と氏名の組で探す（同じ氏名の方が2人いても取り違えない）。無ければ氏名、それも無ければ番号
+    var m = byBoth[String(p.no).trim() + '|' + normName_(p.name)] || byName[normName_(p.name)] || byNo[String(p.no).trim()] || null;
     if (!m) return out;
     var put = function (k, v) { v = String(v == null ? '' : v).replace(/\s+/g, ' ').trim(); if (v) out[k] = v; };
     put('業種区分', labels[m.cat] || m.cat);

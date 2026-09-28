@@ -145,8 +145,10 @@ function saveChapterSettings(s) {
     var passed = roleTermOf_(new Date()) - old.termBase;         // 2026年4月〜9月から、いまの期まで何期進んだか
     var termBase = term - passed, delta = termBase - old.termBase;
     if (delta) {
+      // メンバーブックの期ごとのプレジデント設定も（member_master_srv.js）。担当者より先にずらす
+      // （期ごとにする前の1件を引き継ぐとき、ずらす前の担当者と比べて既定かどうかを決めるため）
+      coverShiftTerms_(delta);
       roleShiftTerms_(delta);
-      coverShiftTerms_(delta);          // メンバーブックの期ごとのプレジデント設定も（member_master_srv.js）
     }
     PropertiesService.getScriptProperties().setProperty(CHAPTER_KEY_, JSON.stringify({
       name: name, region: region, termBase: termBase,
