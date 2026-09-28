@@ -25,6 +25,8 @@
  #saveState{margin-top:6px;font-size:11px;line-height:1.6;}
  #overNote{margin-top:8px;font-size:11px;color:#b26b00;line-height:1.6;}
  #coverNote{margin:-4px 0 8px;font-size:11px;color:#555;line-height:1.6;}
+ #driveNote{margin:-4px 0 10px;font-size:11px;color:#555;line-height:1.6;}
+ #msg a{font-weight:normal;margin-right:10px;}
  #coverNote .warn{color:#b26b00;}
  .modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:10;}
  .modal .inner{background:#fff;padding:18px;border-radius:7px;width:460px;max-height:88vh;overflow-y:auto;}
@@ -44,7 +46,11 @@
     <button class="sub" onclick="save()" title="いまの一覧（並び順も）をまとめて名簿に保存します">名簿に保存</button>
   </div>
   <div class="bar">
-    <button onclick="printBook()">🖨 冊子を印刷（PDF）</button>
+    <button id="btnPdf" onclick="makePdf()" title="印刷と同じ見た目のPDFを作り、ドライブのメンバーブック（メールで送るPDF）を差し替えます。URLはそのままです">📄 PDFを作ってドライブを更新</button>
+  </div>
+  <div id="driveNote"></div>
+  <div class="bar">
+    <button class="sub" onclick="printBook()">🖨 冊子を印刷</button>
     <button class="sub" onclick="exportHtml()">配布用HTMLを保存</button>
   </div>
   <div class="bar">
@@ -208,9 +214,9 @@
    google.script.run.withSuccessHandler(function(r){
      busy(false);
      if(!r.ok){ show(r.message+'\n画面を開き直してください。',false); return; }
-     members=r.members||[]; cats=r.categories||[]; cover=r.cover||{}; presidents=r.presidents||[]; loaded=true;
+     members=r.members||[]; cats=r.categories||[]; cover=r.cover||{}; presidents=r.presidents||[]; drive=r.drive||{}; loaded=true;
      members.forEach(function(x){ x._saved=x.name; });
-     render(); renderSaveState(); renderCoverNote(); show(members.length+'名を読み込みました。',true);
+     render(); renderSaveState(); renderCoverNote(); renderDriveNote(); show(members.length+'名を読み込みました。',true);
      var names=members.map(function(m){return m.name;});
      if(cover.pname && names.indexOf(cover.pname)<0) names.push(cover.pname);  // プレジデントの写真も
      fetchPhotos(names);
@@ -466,6 +472,57 @@
      show('印刷画面を開きます（書体の読み込みに数秒かかります）。送信先で「PDFに保存」を選んでください。',true);
    });
  }
+ // PDFを作って、ドライブのメンバーブック（メールで送るPDF）を差し替える。アップロードは要らない。
+ // 印刷の画面は通さず、この画面の中で作る（memberbook_pdf.html。印刷と同じ見た目・PDFの中で文字の検索もできる）。
+ // 写真は、PDFに要る大きさまで縮めてから使う（元の写真は1枚で数MBあるため）
+ var drive={}, lastPdf=null;
+ function makePdf(){
+   if(!needLoaded()) return;
+   if(!members.length){ show('メンバーがいません。',false); return; }
+   withPhotoData(function(){
+     busy(true); show('PDFを作っています...');
+     mbpSmallPhotos(photosB64).then(function(small){
+       return mbpBuildPdf(bookHtml({ photos: small }), cover.title || 'BNI メンバーブック', function(t){ show(t); });
+     }).then(function(pdf){
+       lastPdf=pdf;
+       sendPdf(false);
+     }).catch(function(e){
+       busy(false);
+       show('PDFを作れませんでした: '+((e&&e.message)?e.message:e)
+         +'\nGoogle Chrome で開き直して、もう一度お試しください。うまくいかないときは「🖨 冊子を印刷」でPDFを保存し、'
+         +'メニューの「メンバーブック(PDF)の更新」からアップロードしてください。',false);
+     });
+   });
+ }
+ function sendPdf(recreate){
+   if(!lastPdf) return;
+   busy(true); show('ドライブのメンバーブックを差し替えています...（'+lastPdf.pages+'ページ・'+(Math.round(lastPdf.bytes/104857.6)/10)+'MB）');
+   google.script.run.withSuccessHandler(function(r){
+     busy(false);
+     var m=document.getElementById('msg');
+     if(!r||!r.ok){
+       show((r&&r.message)||'ドライブのメンバーブックを差し替えられませんでした。',false);
+       if(r&&r.canRecreate){
+         var b=document.createElement('button'); b.className='sub'; b.style.marginTop='8px'; b.textContent='新しく作り直す（URLが変わります）';
+         b.onclick=function(){ if(confirm('新しいファイルを作って、メールで送るメンバーブックとして登録します。\n送ったメールのリンクは古いままになります。よろしいですか？')) sendPdf(true); };
+         m.appendChild(document.createElement('br')); m.appendChild(b);
+       }
+       return;
+     }
+     drive.url=r.url; drive.updated=new Date().toISOString(); renderDriveNote();
+     m.innerHTML='<span style="color:green;">'+esc(r.message)+'</span><br>'
+       +'<a href="'+esc(r.url)+'" target="_blank">📄 ドライブで開く</a>'
+       +(r.downloadUrl?'<a href="'+esc(r.downloadUrl)+'" target="_blank">⬇ ダウンロード</a>':'');
+     m.style.color='';
+   }).withFailureHandler(fail).saveMemberBookPdfToDrive(lastPdf.base64, 'MemberBook.pdf', !!recreate);
+ }
+ function renderDriveNote(){
+   var el=document.getElementById('driveNote');
+   if(!drive.url){ el.innerHTML='メールで送るメンバーブック（ドライブのPDF）は、まだありません。上のボタンで作ると、ドライブに作って登録します。'; return; }
+   var t=drive.updated?new Date(drive.updated):null, when=(t&&!isNaN(t))?(t.getMonth()+1)+'/'+t.getDate()+' '+t.getHours()+':'+('0'+t.getMinutes()).slice(-2):'';
+   el.innerHTML='メールで送るメンバーブック（ドライブのPDF）<br><a href="'+esc(drive.url)+'" target="_blank">📄 開く</a>'
+     +(when?'　最後に差し替え：'+esc(when):'')+'<br>上のボタンで、いまの内容に差し替えます（URLはそのまま）。';
+ }
  function exportHtml(){
    withPhotoData(function(){
      busy(true); show('保存中...');
@@ -480,4 +537,5 @@
  }
 </script>
 <?!= HtmlService.createHtmlOutputFromFile('memberbook_render').getContent(); ?>
+<?!= HtmlService.createHtmlOutputFromFile('memberbook_pdf').getContent(); ?>
 </body></html>

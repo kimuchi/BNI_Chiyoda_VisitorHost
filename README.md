@@ -79,10 +79,11 @@ BNI_Chiyoda_VisitorHost/
 ├── splice_srv.js             # 別のpptxのページを差し込む（メンバープレゼン → 前半スライド）
 ├── routine_srv.js            # ルーティンチェックシートから、その日の決めごとを読む
 ├── slides_layout.html        # 会社名・カテゴリーの組版とメンバーのページの並び（前半・後半で共通。include で読む）
-├── memberbook_srv.js         # メンバーブック（配布PDFの登録・編集画面から1人ずつ名簿に保存）
+├── memberbook_srv.js         # メンバーブック（配布PDFの登録・編集画面から1人ずつ名簿に保存・PDFでドライブのメンバーブックを差し替え）
 │   ├ memberbook.html
 │   ├ memberbook_editor.html  #   冊子の編集画面
-│   └ memberbook_render.html  #   冊子の組版
+│   ├ memberbook_render.html  #   冊子の組版
+│   └ memberbook_pdf.html     #   冊子のPDFを画面の中で作る（ページを画像に・検索できる文字を重ねる。印刷の画面を通さない）
 ├── talk_script_srv.js        # トークスクリプト（台本）：ひな形の {…} にその回の担当者・参加者・チェックシートの内容を入れてシートに作る
 │   ├ talk_script.html        #   台本を作る／ひな形の編集
 │   └ talk_script_default.js  #   既定のひな形（docs/samples/トークスクリプトのひな形.tsv と同じ内容）
@@ -131,7 +132,9 @@ BNI_Chiyoda_VisitorHost/
     ├── make_manual_shots.js  #   マニュアルのスクリーンショットを架空のデータで撮り直す（Chromium・Pillow を使う）
     ├── clean_pptx_meta.py    #   pptxのファイルの情報（作成者・コメントの作成者・変更の記録・縮小画像）を消す／--check で確かめる
     ├── check_memberbook.js   #   メンバーブック（Chromium で組版を測る：長い文字を枠に収める・会社での役職とBNIの役職／
-    │                         #     編集画面の「反映」ですぐ名簿に保存／期ごとのプレジデント設定）。Googleフォントを写したディレクトリを渡すとその書体で測る
+    │                         #     編集画面の「反映」ですぐ名簿に保存／期ごとのプレジデント設定／「PDFを作ってドライブを更新」）。Googleフォントを写したディレクトリを渡すとその書体で測る
+    ├── check_memberbook_pdf.js #  メンバーブックのPDFを画面の中で作る（PDFの作り・検索できる文字・見た目が印刷と同じ・写真を縮める）と、
+    │                         #     ドライブのメンバーブックの差し替え（中身だけ・URLそのまま・差し替えられないときは新しく作らない）
     ├── check_allocation_ai.js #  割り振り表の「AIに提案させる」（待機メンバーの情報はメンバー名簿から文字で渡す・送らない情報・返事の反映）
     ├── check_member_ocr.js   #   メンバーリスト(OCR)の取り込み（氏名で突き合わせ・番号がずれても別の方に入らない・確かめてから反映）と「取り込む前に戻す」
     ├── check_member_pages.js #   前半スライドの新メンバー・更新メンバー（作り物のページで：新メンバー → 倫理規定 → 更新メンバー → 倫理規定・1人1枚・PowerPointのセクション）
@@ -407,7 +410,7 @@ clasp deployments
 
 ### 更新が反映されたかの確かめ方
 
-`コード.js` の `SYSTEM_VERSION_`（例: `2026-09-28c`）が、ウェブアプリのトップページの下と
+`コード.js` の `SYSTEM_VERSION_`（例: `2026-09-28d`）が、ウェブアプリのトップページの下と
 「定例会スライド（前半）」「定例会スライド（後半）」の画面の右上に **「版 …」** として出ます。
 機能を変えたらこの値を変え、`clasp push`・`clasp version`・`clasp deploy` のあとに画面で確かめてください。
 

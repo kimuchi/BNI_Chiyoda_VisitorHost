@@ -2,7 +2,7 @@
 
 // 反映されたか確かめるための版。変更したら日付を更新する。
 // clasp push / デプロイが効いているかは、これを画面で見れば分かる。
-var SYSTEM_VERSION_ = '2026-09-28c';
+var SYSTEM_VERSION_ = '2026-09-28d';
 
 function getSystemVersion() { return SYSTEM_VERSION_; }
 
@@ -729,15 +729,27 @@ function exportSheetToPdf(sheet, fileName, fileIdPropKey) {
 
 function uploadMemberBookBlob_(blob) {
   var props = PropertiesService.getScriptProperties(), fileId = props.getProperty('MEMBER_BOOK_ID');
-  if (fileId) { try { Drive.Files.update({}, fileId, blob); return { msg: "更新しました。", url: props.getProperty('MEMBER_BOOK_URL') }; } catch(e) { fileId = null; } }
-  if (!fileId) {
-    var file = Drive.Files.create({name: 'MemberBook.pdf', mimeType: 'application/pdf'}, blob);
-    DriveApp.getFileById(file.id).setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-    props.setProperty('MEMBER_BOOK_ID', file.id);
-    var url = DriveApp.getFileById(file.id).getUrl();
-    props.setProperty('MEMBER_BOOK_URL', url);
-    return { msg: "新規登録しました。", url: url };
+  if (fileId) {
+    try {
+      Drive.Files.update({}, fileId, blob);
+      props.setProperty('MEMBER_BOOK_UPDATED', new Date().toISOString());
+      return { msg: "更新しました。", url: props.getProperty('MEMBER_BOOK_URL') };
+    } catch(e) { fileId = null; }
   }
+  var made = memberBookCreate_(blob);
+  props.setProperty('MEMBER_BOOK_UPDATED', new Date().toISOString());
+  return { msg: "新規登録しました。", url: made.url };
+}
+// メンバーブック（メールで送るPDF）のファイルを新しく作り、リンクを知っている全員が見られるようにして登録する
+function memberBookCreate_(blob) {
+  var props = PropertiesService.getScriptProperties();
+  var file = Drive.Files.create({ name: 'MemberBook.pdf', mimeType: 'application/pdf' }, blob);
+  var f = DriveApp.getFileById(file.id), shared = true;
+  try { f.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch (e) { shared = false; }
+  var url = f.getUrl();
+  props.setProperty('MEMBER_BOOK_ID', file.id);
+  props.setProperty('MEMBER_BOOK_URL', url);
+  return { id: file.id, url: url, shared: shared };
 }
 
 // ダイアログからは base64 文字列で受け取る（フォーム＋ファイル送信は環境により

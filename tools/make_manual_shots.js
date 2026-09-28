@@ -338,11 +338,12 @@ F.saveMemberBookCover({ ptext: '23期プレジデントの見本です。半年�
   + 'ビジターの皆さまも、ぜひ一緒に活動しませんか。' }, 23);
 const bookCover = F.getCoverInfo_(23), bookPresidents = F.coverPresidentList_(23);
 const answersBook = {
-  getMemberBookData: { any: { ok: true, members: bookMembers, categories: masterAnswer.categories, cover: bookCover, presidents: bookPresidents } },
+  getMemberBookData: { any: { ok: true, members: bookMembers, categories: masterAnswer.categories, cover: bookCover, presidents: bookPresidents,
+    drive: { id: 'MB', url: 'https://drive.google.com/file/d/MB/view', updated: '2026-09-26T09:15:00Z' } } },
   getMemberPhotoThumbs: { any: { ok: true, map: Object.fromEntries(bookMembers.map((m, i) => [m.name, avatar(i)])) } },
 };
 const bookPage = () => readHtml('memberbook_editor.html')
-  .replace(/<\?!=\s*HtmlService\.createHtmlOutputFromFile\('memberbook_render'\)\.getContent\(\);\s*\?>/, () => readHtml('memberbook_render.html'));
+  .replace(/<\?!=\s*HtmlService\.createHtmlOutputFromFile\('(\w+)'\)\.getContent\(\);\s*\?>/g, (m, name) => readHtml(name + '.html'));
 // プレビュー（iframe）の文字を収め終わるまで待つ
 const bookReady = async (p) => {
   await p.frameLocator('#pv').locator('html[data-fitted="1"]').waitFor({ timeout: 20000 });
