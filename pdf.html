@@ -36,7 +36,7 @@
     <b>読み取った内容（まだ名簿は変えていません）</b>
     <div id="planBody"></div>
     <div class="bar">
-      <button onclick="cancelPlan()">やめる</button>
+      <button id="btnCancel" onclick="cancelPlan()">やめる</button>
       <button id="btnApply" onclick="applyPlan()" style="font-weight:bold;">名簿に反映</button>
     </div>
   </div>
@@ -53,6 +53,7 @@
       document.getElementById('btn').disabled = on;
       document.getElementById('btn2').disabled = on;
       document.getElementById('btnApply').disabled = on;
+      document.getElementById('btnCancel').disabled = on;      // 反映している間は「やめる」も押せない（送ったものは取り消せない）
       if (msg) { document.getElementById('msg').style.color = '#0066cc'; document.getElementById('msg').innerText = msg; }
     }
     function esc(x){ var d=document.createElement('span'); d.textContent = x==null ? '' : x; return d.innerHTML; }
@@ -78,17 +79,22 @@
           + u.changes.map(function (c) { return esc(c.field) + ' ' + esc(c.from || '（空）') + ' → ' + esc(c.to); }).join('、');
       }));
       h += sec('新しく足す方（名簿に同じ氏名が無い）', sm.adds.map(function (a) { return 'No' + esc(a.no || '?') + ' ' + esc(a.name) + (a.cat ? '（' + esc(a.cat) + '）' : ''); }), true);
-      h += sec('氏名が1文字違う方（名簿の氏名のまま更新します。別の方なら「やめる」）', sm.near.map(function (x) { return 'PDF「' + esc(x.pdf) + '」→ 名簿「' + esc(x.roster) + '」'; }), true);
+      h += sec('氏名が1文字違う方（ふりがなが同じなので同じ方として、名簿の氏名のまま更新します。別の方なら「やめる」）', sm.near.map(function (x) { return 'PDF「' + esc(x.pdf) + '」→ 名簿「' + esc(x.roster) + '」'; }), true);
       h += sec('PDFに無い方（消しません）', sm.missing.map(function (x) { return (x.no ? 'No' + esc(x.no) + ' ' : '') + esc(x.name); }));
       h += sec('番号が重なる方（反映したあと、メンバー名簿で直してください）', sm.dupNos.map(function (x) { return 'No' + esc(x.no) + '：' + x.names.map(esc).join('・'); }), true);
       h += sec('氏名を読み取れなかった行（飛ばします）', sm.noName.map(function (x) { return 'No' + esc(x.no || '?'); }), true);
+      h += sec('PDFに同じ氏名が2回ある方（2回目は飛ばします）', (sm.repeated || []).map(function (x) { return 'No' + esc(x.no || '?') + ' ' + esc(x.name); }), true);
       document.getElementById('planBody').innerHTML = h;
       document.getElementById('plan').style.display = 'block';
       document.getElementById('msg').innerText = '';
     }
-    function cancelPlan() {
+    // 前に読み取った一覧を消す（読み直しに失敗したとき、前の一覧を反映してしまわないように）
+    function clearPlan() {
       extracted = null;
       document.getElementById('plan').style.display = 'none';
+    }
+    function cancelPlan() {
+      clearPlan();
       document.getElementById('msg').style.color = '#555';
       document.getElementById('msg').innerText = '名簿は変えていません。';
     }
@@ -100,7 +106,14 @@
         if (r && r.ok) { extracted = null; document.getElementById('plan').style.display = 'none'; }
         document.getElementById('msg').innerText = (r && r.message) ? r.message : String(r);
         document.getElementById('msg').style.color = (r && r.ok) ? 'green' : '#d00';
-      }).withFailureHandler(onFail).applyMemberListOcr(extracted);
+      }).withFailureHandler(function (err) {
+        // 通信が切れたときなどは、サーバー側で反映が済んでいることもある
+        busy(false);
+        var m = document.getElementById('msg');
+        m.style.color = '#d00';
+        m.innerText = '名簿に反映できたか分かりません: ' + ((err && err.message) ? err.message : String(err))
+          + '\nメンバー名簿の画面で反映されたか確かめてから、必要ならもう一度押してください。';
+      }).applyMemberListOcr(extracted);
     }
     function onFail(err) {
       var detail = (err && err.message) ? err.message : String(err);
@@ -114,6 +127,7 @@
     function uploadPdf() {
       var f = document.getElementById('pdfFile').files[0];
       if (!f) { alert('ファイルを選択してください。'); return; }
+      clearPlan();
       busy(true, 'ファイルを読み込み、Geminiで解析中です。数秒〜十数秒かかります...');
       var reader = new FileReader();
       reader.onload = function() {
@@ -126,6 +140,7 @@
     function fromDrive() {
       var link = document.getElementById('driveLink').value;
       if (!link) { alert('共有リンクまたはファイルIDを入力してください。'); return; }
+      clearPlan();
       busy(true, 'ドライブから読み込み、Geminiで解析中です...');
       google.script.run.withSuccessHandler(onOk).withFailureHandler(onFail).processMemberListFromDrive(link);
     }

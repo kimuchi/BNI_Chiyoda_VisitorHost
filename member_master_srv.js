@@ -647,22 +647,33 @@ function importMemberTsv(text, replaceAll) {
 // 名簿の行は【氏名】で探す（番号では探さない）。番号はPDFの番号に直すだけで、行の氏名は書き換えない。
 // 以前は番号で行を探して氏名を書き換えていたため、メンバーが増えて番号がずれると、
 // ある方の行（写真・一言・日付など）が次々と別の方の名前に書き換わってしまった。
-//   1. 同じ氏名（空白・全角半角の違いは無視）
-//   2. 1文字だけ違う氏名（読み取りの誤り・異体字。3文字以上で、名簿に当てはまる方が1人だけのとき）… 氏名は名簿のまま
+//   1. 同じ氏名（空白・全角半角・異体字セレクタの違いは無視）。PDFに同じ氏名が2回あれば、2回目は飛ばす
+//   2. 1文字だけ違う氏名（読み取りの誤り・異体字）で、ふりがなが同じ方（3文字以上。名簿でもPDFでも1対1に決まるときだけ）
+//      … 氏名は名簿のまま。ふりがなが無い・違うときは別の方とみなす（「山川 健」と「山川 誠」を同じ方にしない）
 //   3. どちらも無ければ、新しい方として足す
 // PDFに載っていない方は消さない（知らせるだけ）。
 
-// 2つの氏名（normName_ 済み）が、1文字だけ違う（置き換え・足りない・多い）か
+// 突き合わせに使う氏名（normName_ から、異体字セレクタ（葛󠄀 などの見えない印）を外す）
+function ocrKey_(s) {
+  return normName_(s).replace(/[\uFE00-\uFE0F]|\uDB40[\uDD00-\uDDEF]/g, '');
+}
+// ふりがな（ひらがなにそろえ、空白を外す）
+function ocrKana_(s) {
+  return String(s == null ? '' : s).normalize('NFKC').replace(/[\s　]/g, '')
+    .replace(/[\u30A1-\u30F6]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0x60); });
+}
+// 2つの氏名（ocrKey_ 済み）が、1文字だけ違う（置き換え・足りない・多い）か。字の単位で数える（𠮷 なども1文字）
 function ocrNameNear_(a, b) {
-  if (a === b || Math.abs(a.length - b.length) > 1) return false;
+  a = Array.from(a); b = Array.from(b);
+  if (Math.abs(a.length - b.length) > 1) return false;
   var i, d = 0;
   if (a.length === b.length) {
-    for (i = 0; i < a.length; i++) if (a.charAt(i) !== b.charAt(i) && ++d > 1) return false;
+    for (i = 0; i < a.length; i++) if (a[i] !== b[i] && ++d > 1) return false;
     return d === 1;
   }
   var s = a.length < b.length ? a : b, l = a.length < b.length ? b : a, j = 0;
   for (i = 0; i < l.length; i++) {
-    if (j < s.length && s.charAt(j) === l.charAt(i)) j++;
+    if (j < s.length && s[j] === l[i]) j++;
     else if (++d > 1) return false;
   }
   return true;
@@ -673,22 +684,34 @@ var OCR_FIELDS_ = [['no', 'No'], ['kana', 'ふりがな'], ['cat', '業種区分
 
 // 読み取った方（extracted）を名簿（cur）に当てはめる。名簿はまだ変えない
 function ocrMergePlan_(extracted, cur) {
-  var used = {}, keys = cur.map(function (m) { return normName_(m.name); }), pending = [];
-  var plan = { matches: [], adds: [], noName: [], missing: [] };
+  var used = {}, pending = [];
+  var keys = cur.map(function (m) { return ocrKey_(m.name); }), kanas = cur.map(function (m) { return ocrKana_(m.kana); });
+  var plan = { matches: [], adds: [], noName: [], missing: [], repeated: [] };
   (extracted || []).forEach(function (e) {
-    var key = normName_(e.name);
+    var key = ocrKey_(e.name), seen = false;
     if (!key) { plan.noName.push(e); return; }
     for (var i = 0; i < cur.length; i++) {
-      if (!used[i] && keys[i] === key) { used[i] = true; plan.matches.push({ idx: i, e: e, near: false }); return; }
+      if (keys[i] !== key) continue;
+      if (!used[i]) { used[i] = true; plan.matches.push({ idx: i, e: e, near: false }); return; }
+      seen = true;
     }
+    if (seen) { plan.repeated.push(e); return; }        // 同じ氏名がPDFに2回（2回目は飛ばす。行を増やさない）
     pending.push(e);
   });
-  pending.forEach(function (e) {
-    var key = normName_(e.name), cand = [];
-    if (key.length >= 3) {
-      for (var i = 0; i < cur.length; i++) if (!used[i] && keys[i].length >= 3 && ocrNameNear_(key, keys[i])) cand.push(i);
+  // 1文字違い：先に全員の候補を出してから、1対1に決まる組だけを当てはめる（読み取った順番で結果が変わらないように）
+  var claims = {}, cands = pending.map(function (e) {
+    var key = ocrKey_(e.name), kana = ocrKana_(e.kana), c = [];
+    if (kana && Array.from(key).length >= 3) {
+      for (var i = 0; i < cur.length; i++) {
+        if (!used[i] && kanas[i] === kana && Array.from(keys[i]).length >= 3 && ocrNameNear_(key, keys[i])) c.push(i);
+      }
     }
-    if (cand.length === 1) { used[cand[0]] = true; plan.matches.push({ idx: cand[0], e: e, near: true }); }
+    c.forEach(function (i) { claims[i] = (claims[i] || 0) + 1; });
+    return c;
+  });
+  pending.forEach(function (e, k) {
+    var c = cands[k];
+    if (c.length === 1 && claims[c[0]] === 1) { used[c[0]] = true; plan.matches.push({ idx: c[0], e: e, near: true }); }
     else plan.adds.push(e);
   });
   plan.matches.forEach(function (x) {
@@ -742,6 +765,7 @@ function ocrPlanSummary_(extracted, cur) {
     adds: plan.adds.map(function (e) { return { no: e.no, name: e.name, cat: e.cat }; }),
     missing: plan.missing.map(function (i) { return { no: cur[i].no, name: cur[i].name }; }),
     noName: plan.noName.map(function (e) { return { no: e.no }; }),
+    repeated: plan.repeated.map(function (e) { return { no: e.no, name: e.name }; }),
     dupNos: dup
   };
 }
@@ -756,19 +780,29 @@ function ocrSummaryText_(sm, done) {
   if (sm.missing.length) t += '\n・PDFに無い方（消しません）: ' + list(sm.missing, function (x) { return (x.no ? 'No' + x.no + ' ' : '') + x.name; });
   if (sm.dupNos.length) t += '\n・番号が重なる方: ' + list(sm.dupNos, function (x) { return 'No' + x.no + '（' + x.names.join('・') + '）'; });
   if (sm.noName.length) t += '\n・氏名を読み取れなかった行（飛ばします）: ' + list(sm.noName, function (x) { return 'No' + (x.no || '?'); });
+  if (sm.repeated.length) t += '\n・PDFに同じ氏名が2回ある方（2回目は飛ばします）: ' + list(sm.repeated, function (x) { return 'No' + (x.no || '?') + ' ' + x.name; });
   return t;
 }
 
 // 読み取った方を名簿に反映する（確認のあと、画面から呼ぶ）。いまの名簿は、書き換える前に控えておく
 function mergeMembersFromOcr_(extracted, label) {
   try {
-    var cur = getMemberMaster().members || [];
+    var mm = getMemberMaster();
+    if (!mm.ok) return mm;                              // 名簿を読めないまま反映すると、名簿が読み取った方だけになる
+    var cur = mm.members || [];
     var sm = ocrPlanSummary_(extracted, cur);
+    if (!sm.updates.length && !sm.adds.length) {
+      return { ok: true, message: '名簿に変わるところはありませんでした（名簿はそのままです）。\n' + ocrSummaryText_(sm, true),
+               updated: 0, added: 0, total: cur.length, summary: sm };
+    }
     var plan = ocrMergePlan_(extracted, cur);
     memberBackup_(label || 'メンバーリスト(OCR)の取り込み');
     ocrApplyPlan_(plan, cur);
     var res = saveMemberMaster(cur, null);
-    if (!res.ok) return res;
+    if (!res.ok) {
+      res.message += '\n名簿が途中までしか書けていないときは、メンバー名簿の画面の「取り込む前に戻す」で、反映する前の名簿に戻せます。';
+      return res;
+    }
     var msg = '「メンバー名簿」に反映しました（名簿は計 ' + cur.length + '名）。\n' + ocrSummaryText_(sm, true)
             + '\n写真・一言コメント・日付など、PDFに無い項目は残しています。'
             + '\n取り込む前の名簿は控えてあります（メンバー名簿の画面の「取り込む前に戻す」で戻せます）。';
@@ -817,7 +851,10 @@ function memberCopyGrid_(from, to) {
   return Math.max(0, data.length - 1);
 }
 function memberBackup_(label) {
-  var rows = memberCopyGrid_(ensureMemberSheet_(), memberBackupSheet_());
+  var src = ensureMemberSheet_(), bk = memberBackupSheet_();
+  // いまの名簿が空（保存が途中で失敗したあとなど）で、控えに中身があれば、控えを残す（空の名簿で上書きしない）
+  if (src.getLastRow() <= 1 && bk.getLastRow() > 1) return getMemberBackupInfo_();
+  var rows = memberCopyGrid_(src, bk);
   var info = { at: Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy/MM/dd HH:mm'), label: label || '取り込み', rows: rows };
   PropertiesService.getScriptProperties().setProperty(MEMBER_BACKUP_KEY_, JSON.stringify(info));
   return info;
@@ -844,10 +881,14 @@ function restoreMemberBackup() {
     sh.setFrozenRows(1);
     bk.clear();
     if (tmp.length && tmp[0].length) bk.getRange(1, 1, tmp.length, tmp[0].length).setValues(tmp);
-    var now = { at: Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy/MM/dd HH:mm'), label: '「取り込む前に戻す」を押す前', rows: Math.max(0, tmp.length - 1) };
+    // 控えはいま、取り込んだあとの名簿（after）。もう一度押すと入れ替わって、取り込む前に戻る
+    var now = { at: info.at, label: info.label, after: !info.after, rows: Math.max(0, tmp.length - 1) };
     PropertiesService.getScriptProperties().setProperty(MEMBER_BACKUP_KEY_, JSON.stringify(now));
-    return { ok: true, message: info.at + '（' + info.label + '）の名簿に戻しました（' + rows + '名）。'
-             + '\nもう一度押すと、戻す前の名簿に戻ります。', backup: now };
+    var msg = info.at + '（' + info.label + (info.after ? 'のあと' : 'の前') + '）の名簿に戻しました（' + rows + '名）。'
+            + '\nもう一度押すと、戻す前の名簿に戻ります。';
+    // 役職（BNIの役職）は、控えのときのまま。いま反映してある期の「役職・チーム」に合わせ直す（取り込みのあとと同じ）
+    if (typeof roleRosterAfterImport_ === 'function') msg += roleRosterAfterImport_();
+    return { ok: true, message: msg, backup: now };
   } catch (e) {
     console.error('[MEMBER] restore ' + (e && e.stack ? e.stack : e));
     return { ok: false, message: '戻せませんでした: ' + (e && e.message ? e.message : e) };

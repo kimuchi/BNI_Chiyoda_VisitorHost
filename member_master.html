@@ -101,8 +101,10 @@
  function renderBackup(b){
    var box=document.getElementById('backup');
    if(!b){ box.style.display='none'; return; }
-   document.getElementById('backupText').textContent='名簿の控えがあります：'+b.at+'（'+b.label+'の前・'+b.rows+'名）。'
-     +'取り込みで名簿がおかしくなったときは、この控えに戻せます。';
+   // after … 「取り込む前に戻す」を押したあと（控えは、取り込んだあとの名簿）
+   document.getElementById('backupText').textContent='名簿の控えがあります：'+b.at+'（'+b.label+(b.after?'のあと':'の前')+'・'+b.rows+'名）。'
+     +(b.after ? 'もう一度「取り込む前に戻す」を押すと、この名簿（取り込んだあと）に戻ります。'
+               : '取り込みで名簿がおかしくなったときは、この控えに戻せます。');
    box.style.display='block';
  }
  function restoreBackup(){

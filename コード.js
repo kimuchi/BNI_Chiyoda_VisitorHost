@@ -844,7 +844,9 @@ function extractMembersFromPdfBlob_(blob) {
   }
   console.log("[OCR] extracted=" + extracted.length);
   if (extracted.length === 0) return { ok: false, message: "メンバー情報を抽出できませんでした。PDF内容やモデル設定をご確認ください。" };
-  var summary = ocrPlanSummary_(extracted, getMemberMaster().members || []);
+  var mm = getMemberMaster();
+  if (!mm.ok) return mm;
+  var summary = ocrPlanSummary_(extracted, mm.members || []);
   return { ok: true, preview: true, extracted: extracted, summary: summary,
            message: ocrSummaryText_(summary, false) + "\n\nまだ名簿は変えていません。内容を確かめて「名簿に反映」を押してください。" };
 }
