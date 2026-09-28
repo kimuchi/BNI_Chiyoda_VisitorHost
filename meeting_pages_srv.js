@@ -246,7 +246,7 @@ function applyMemberPages_(parts, lists, cache) {
     }).filter(Boolean);
   });
   var blocks = [];                                   // まとまり（倫理規定のページをうしろに置く）
-  ['renew', 'new'].forEach(function (k) {
+  ['new', 'renew'].forEach(function (k) {
     var list = people[k], have = pages[k];
     if (!have.length) { if (list.length && !pages.both.length) res.missing.push(k); return; }
     var models = have.map(function (p) { return xmlOf_(parts, p); });
@@ -283,28 +283,84 @@ function applyMemberPages_(parts, lists, cache) {
       people.renew.forEach(function (p) { res.renew.push({ path: path, name: p.name, years: p.years }); });
     }
   });
-  fpEthicsPages_(parts, blocks, res);
+  var moved = fpNewBeforeRenew_(parts, blocks, sz.W, sz.H);
+  fpEthicsPages_(parts, blocks, res, sz.W, sz.H);
+  if (moved) syncSections_(parts);                   // PowerPoint のセクションも、入れ替えた並びに合わせる
   res.message = fpMemberMessage_(res, people);
   return res;
 }
-// 倫理規定のページ：更新メンバー・新メンバーのまとまりの、それぞれすぐうしろに1枚ずつ（新しく入った方・更新した方が読み上げる）。
-// すぐうしろに無ければ倫理規定のページを複製して入れる（雛形は「更新メンバー → 新メンバー → 倫理規定」の並び）。
+// 新メンバーのまとまりを、更新メンバーのまとまりの前にする（定例会の進行・ルーティンチェックシートの「新入会 → 更新式」と同じ順）。
+// 雛形が「更新メンバー → 新メンバー」の並びでも入れ替える。一緒に動かすもの：
+//   ・まとまりのすぐ前・すぐうしろの、1人1枚でない「新メンバー」のページ（見出し・一言など。fpSideEnd_）
+//   ・そのすぐうしろの倫理規定のページ（まとまりごとに倫理規定がある雛形。文字が少し違っても、その場所のものを使う）
+// 入れる場所は、更新メンバーのまとまりの前（すぐ前に1人1枚でない「更新メンバー」のページ＝見出しがあれば、その前）。
+// 倫理規定のページは、このあと fpEthicsPages_ がそれぞれのうしろに付ける
+function fpNewBeforeRenew_(parts, blocks, W, H) {
+  var nb = blocks.filter(function (b) { return b.kind === 'new'; })[0], rb = blocks.filter(function (b) { return b.kind === 'renew'; })[0];
+  if (!nb || !rb) return false;
+  var entries = slideEntries_(parts), order = entries.map(function (e) { return e.path; });
+  var ns = nb.paths.map(function (p) { return order.indexOf(p); }), rs = rb.paths.map(function (p) { return order.indexOf(p); });
+  var firstNew = Math.min.apply(null, ns), lastNew = Math.max.apply(null, ns), firstRenew = Math.min.apply(null, rs);
+  if (firstNew < 0 || firstRenew < 0 || lastNew < firstRenew) return false;   // もう全部が前にある
+  var from = fpSideEnd_(parts, order, firstNew, -1, 'new', W, H), to = fpSideEnd_(parts, order, lastNew, 1, 'new', W, H);
+  var move = nb.paths.slice(), i;
+  for (i = from; i < firstNew; i++) move.push(order[i]);
+  for (i = lastNew + 1; i <= to; i++) move.push(order[i]);
+  if (to + 1 < order.length && rb.paths.indexOf(order[to + 1]) < 0 && fpIsEthics_(parts, order[to + 1])) move.push(order[to + 1]);
+  var headPath = order[fpSideEnd_(parts, order, firstRenew, -1, 'renew', W, H)];
+  var moving = entries.filter(function (e) { return move.indexOf(e.path) >= 0; });
+  var rest = entries.filter(function (e) { return move.indexOf(e.path) < 0; }), at = 0;
+  for (i = 0; i < rest.length; i++) if (rest[i].path === headPath) { at = i; break; }
+  setSlideEntries_(parts, rest.slice(0, at).concat(moving, rest.slice(at)));
+  return true;
+}
+// まとまりのすぐ前（step = -1）・すぐうしろ（step = 1）に続く、1人1枚でない同じ種類のページ（見出し・「新メンバーからの一言」など。
+// 倫理規定のページは除く）。戻り値は、いちばん端のページの位置（無ければ i のまま）
+function fpSideEnd_(parts, order, i, step, kind, W, H) {
+  for (var j = i + step; j >= 0 && j < order.length; j += step) {
+    var x = xmlOf_(parts, order[j]);
+    if (!x || fpSideKind_(x) !== kind || fpMemberUnit_(x, W, H) || fpIsEthics_(parts, order[j])) break;
+    i = j;
+  }
+  return i;
+}
+// 見出しなどのページの種類。「新メンバー」「更新メンバー」のほか、「入会式」「新入会」「更新式」の見出しも
+function fpSideKind_(xml) {
+  var k = fpMemberKind_(xml);
+  if (k) return k;
+  var t = riNorm_(slideText_(xml)), neu = /入会式|新入会/.test(t), renew = /更新式/.test(t);
+  return neu && renew ? 'both' : neu ? 'new' : renew ? 'renew' : '';
+}
+function fpIsEthics_(parts, path) {
+  var x = xmlOf_(parts, path);
+  return !!x && riNorm_(slideText_(x)).indexOf('倫理規定') >= 0;
+}
+// 同じ倫理規定のページかを見る文字。ページ番号・日付（a:fld）は、置いた場所で変わるので除く
+function fpEthicsKey_(xml) {
+  return riNorm_(slideText_(String(xml || '').replace(/<a:fld\b[\s\S]*?<\/a:fld>/g, '')));
+}
+// 倫理規定のページ：新メンバー・更新メンバーのまとまりの、それぞれすぐうしろに1枚ずつ（新しく入った方・更新した方が読み上げる）。
+// すぐうしろに無ければ倫理規定のページを複製して入れる（Activeチャプターの雛形は「更新メンバー → 新メンバー → 倫理規定」の並びで、
+// fpNewBeforeRenew_ で「新メンバー → 倫理規定 → 更新メンバー」にしてから、更新メンバーのうしろに写しを入れる）。
 // そのまとまりに人がいるときだけ表示（どちらもいない日は、倫理規定のページも非表示）
-function fpEthicsPages_(parts, blocks, res) {
+function fpEthicsPages_(parts, blocks, res, W, H) {
   if (!blocks.length) return;
-  var isEthics = function (p) { var x = xmlOf_(parts, p); return !!x && riNorm_(slideText_(x)).indexOf('倫理規定') >= 0; };
-  var order = slideOrder_(parts), lastOf = function (b) {
+  var isEthics = function (p) { return fpIsEthics_(parts, p); };
+  var order = slideOrder_(parts), lastOf = function (b) {       // まとまりの最後（うしろに続く「一言」などのページも、まとまりのうち）
     var best = -1;
     b.paths.forEach(function (p) { best = Math.max(best, order.indexOf(p)); });
-    return best;
+    return b.kind === 'both' || best < 0 ? best : fpSideEnd_(parts, order, best, 1, b.kind, W, H);
   };
   blocks.sort(function (a, b) { return lastOf(a) - lastOf(b); });
-  // 複製のもとは、まとまりのうしろにある倫理規定のページ（無ければ最初に見つかったもの）
+  // 複製のもとは、まとまりのすぐうしろにある倫理規定のページ（入れ替えたあとは、新メンバーのうしろ）。
+  // 無ければ、まとまりよりうしろの倫理規定のページ、それも無ければ最初に見つかったもの
+  // （「倫理規定」の言葉が入った一般規定などのページを、先に拾わないように）
   var model = null, lastAll = lastOf(blocks[blocks.length - 1]);
+  blocks.forEach(function (b) { var nx = order[lastOf(b) + 1]; if (!model && nx && isEthics(nx)) model = nx; });
   for (var i = lastAll + 1; i < order.length && !model; i++) if (isEthics(order[i])) model = order[i];
   for (var j = 0; j < order.length && !model; j++) if (isEthics(order[j])) model = order[j];
   if (!model) return;
-  var modelXml = setSlideShow_(xmlOf_(parts, model), true), modelText = riNorm_(slideText_(modelXml)), used = [];
+  var modelXml = setSlideShow_(xmlOf_(parts, model), true), modelText = fpEthicsKey_(modelXml), used = [];
   blocks.forEach(function (b) {
     order = slideOrder_(parts);
     var at = lastOf(b), next = order[at + 1], path = next && isEthics(next) ? next : null;
@@ -318,7 +374,7 @@ function fpEthicsPages_(parts, blocks, res) {
   slideOrder_(parts).forEach(function (p) {
     if (used.indexOf(p) >= 0) return;
     var x = xmlOf_(parts, p);
-    if (x && riNorm_(slideText_(x)) === modelText) {
+    if (x && fpEthicsKey_(x) === modelText) {
       putXml_(parts, p, setSlideShow_(x, false));
       res.ethics.push({ kind: 'extra', path: p, shown: false, added: false });
     }

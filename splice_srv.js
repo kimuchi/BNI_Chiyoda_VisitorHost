@@ -201,6 +201,60 @@ function setSlideEntries_(parts, entries) {
   putXml_(parts, 'ppt/presentation.xml', prs.replace(/<p:sldIdLst>[\s\S]*?<\/p:sldIdLst>/, '<p:sldIdLst>' + out + '</p:sldIdLst>'));
 }
 
+// PowerPoint のセクション（presentation.xml の p14:sectionLst）を、いまのスライドの並びに合わせる（ページを並べ替えたあとに呼ぶ）。
+// セクションは続いたページのまとまりなので、並びと食い違うと PowerPoint が直そうとする（並びが戻ることもある）。
+//   ・どのセクションにも無いページ（写したページ）は、すぐ前のページのセクションへ（先頭なら最初のセクション）
+//   ・同じセクションのページが離れたら、離れた方は、その場所のセクションへ
+//   ・セクションの並びは最初のページの順。ページの無くなったセクションは、元のすぐ前のセクションのうしろに残す
+// 並びに無いページの番号は除く。セクションが無ければ何もしない
+function syncSections_(parts) {
+  var prs = xmlOf_(parts, 'ppt/presentation.xml') || '';
+  var lm = prs.match(/<(\w+):sectionLst\b[^>]*>[\s\S]*?<\/\1:sectionLst>/);
+  if (!lm) return false;
+  var ns = lm[1], whole = lm[0];
+  var secs = (whole.match(new RegExp('<' + ns + ':section\\b[^>]*\\/>|<' + ns + ':section\\b[^>]*>[\\s\\S]*?<\\/' + ns + ':section>', 'g')) || [])
+    .map(function (x) {
+      var ids = [], m, re = new RegExp('<' + ns + ':sldId\\b[^>]*\\bid="(\\d+)"', 'g');
+      while ((m = re.exec(x)) !== null) ids.push(m[1]);
+      return { xml: x, ids: ids, got: [] };
+    });
+  if (!secs.length) return false;
+  var home = {}, cur = -1, closed = {}, first = {};
+  secs.forEach(function (s, i) { s.ids.forEach(function (id) { if (!(id in home)) home[id] = i; }); });
+  slideEntries_(parts).forEach(function (e, pos) {
+    var id = String(e.id), h = id in home ? home[id] : (cur >= 0 ? cur : 0);
+    if (h !== cur) {
+      if (closed[h]) h = cur;                         // 離れた → その場所のセクションへ
+      else { if (cur >= 0) closed[cur] = true; cur = h; }
+    }
+    secs[h].got.push(id);
+    if (!(h in first)) first[h] = pos;
+  });
+  var out = [];
+  secs.forEach(function (s, i) { if (s.got.length) out.push(i); });
+  out.sort(function (a, b) { return first[a] - first[b]; });
+  secs.forEach(function (s, i) {
+    if (s.got.length) return;
+    var to = 0;
+    for (var j = i - 1; j >= 0; j--) { var k = out.indexOf(j); if (k >= 0) { to = k + 1; break; } }
+    out.splice(to, 0, i);
+  });
+  var list = function (ids) {
+    return ids.length ? '<' + ns + ':sldIdLst>' + ids.map(function (id) { return '<' + ns + ':sldId id="' + id + '"/>'; }).join('')
+                        + '</' + ns + ':sldIdLst>' : '<' + ns + ':sldIdLst/>';
+  };
+  var lstRe = new RegExp('<' + ns + ':sldIdLst\\s*\\/>|<' + ns + ':sldIdLst\\b[^>]*>[\\s\\S]*?<\\/' + ns + ':sldIdLst>');
+  var body = out.map(function (i) {
+    var s = secs[i], x = s.xml;
+    if (/\/>$/.test(x) && !new RegExp('<\\/' + ns + ':section>$').test(x)) x = x.replace(/\s*\/>$/, '></' + ns + ':section>');
+    return lstRe.test(x) ? x.replace(lstRe, function () { return list(s.got); })
+                         : x.replace(/^(<[^>]*>)/, function (t) { return t + list(s.got); });
+  }).join('');
+  var next = whole.match(/^<[^>]*>/)[0] + body + '</' + ns + ':sectionLst>';
+  putXml_(parts, 'ppt/presentation.xml', prs.replace(whole, function () { return next; }));
+  return true;
+}
+
 // その文字（差し込み口など）が載っているスライド。並びの順で最初のもの
 function findSlideWithText_(parts, text) {
   var order = slideOrder_(parts);
