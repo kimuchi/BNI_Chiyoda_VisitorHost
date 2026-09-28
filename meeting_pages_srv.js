@@ -246,7 +246,7 @@ function applyMemberPages_(parts, lists, cache) {
     }).filter(Boolean);
   });
   var blocks = [];                                   // まとまり（倫理規定のページをうしろに置く）
-  ['renew', 'new'].forEach(function (k) {
+  ['new', 'renew'].forEach(function (k) {
     var list = people[k], have = pages[k];
     if (!have.length) { if (list.length && !pages.both.length) res.missing.push(k); return; }
     var models = have.map(function (p) { return xmlOf_(parts, p); });
@@ -283,12 +283,32 @@ function applyMemberPages_(parts, lists, cache) {
       people.renew.forEach(function (p) { res.renew.push({ path: path, name: p.name, years: p.years }); });
     }
   });
+  fpNewBeforeRenew_(parts, blocks);
   fpEthicsPages_(parts, blocks, res);
   res.message = fpMemberMessage_(res, people);
   return res;
 }
-// 倫理規定のページ：更新メンバー・新メンバーのまとまりの、それぞれすぐうしろに1枚ずつ（新しく入った方・更新した方が読み上げる）。
-// すぐうしろに無ければ倫理規定のページを複製して入れる（雛形は「更新メンバー → 新メンバー → 倫理規定」の並び）。
+// 新メンバーのまとまりを、更新メンバーのまとまりの前にする（定例会の進行・ルーティンチェックシートの「新入会 → 更新式」と同じ順）。
+// 雛形が「更新メンバー → 新メンバー」の並びでも入れ替える。倫理規定のページは、このあと fpEthicsPages_ がそれぞれのうしろに付ける
+function fpNewBeforeRenew_(parts, blocks) {
+  var nb = blocks.filter(function (b) { return b.kind === 'new'; })[0], rb = blocks.filter(function (b) { return b.kind === 'renew'; })[0];
+  if (!nb || !rb) return false;
+  var entries = slideEntries_(parts), pos = function (p) {
+    for (var i = 0; i < entries.length; i++) if (entries[i].path === p) return i;
+    return -1;
+  };
+  var at0 = nb.paths.map(pos), firstRenew = Math.min.apply(null, rb.paths.map(pos));
+  if (Math.min.apply(null, at0) < 0 || firstRenew < 0 || Math.max.apply(null, at0) < firstRenew) return false;   // もう全部が前にある
+  var renewHead = entries[firstRenew].path;
+  var moving = entries.filter(function (e) { return nb.paths.indexOf(e.path) >= 0; });
+  var rest = entries.filter(function (e) { return nb.paths.indexOf(e.path) < 0; }), at = 0;
+  for (var i = 0; i < rest.length; i++) if (rest[i].path === renewHead) { at = i; break; }
+  setSlideEntries_(parts, rest.slice(0, at).concat(moving, rest.slice(at)));
+  return true;
+}
+// 倫理規定のページ：新メンバー・更新メンバーのまとまりの、それぞれすぐうしろに1枚ずつ（新しく入った方・更新した方が読み上げる）。
+// すぐうしろに無ければ倫理規定のページを複製して入れる（Activeチャプターの雛形は「更新メンバー → 新メンバー → 倫理規定」の並びで、
+// fpNewBeforeRenew_ で「新メンバー → 更新メンバー → 倫理規定」にしてから、新メンバーのうしろに写しを入れる）。
 // そのまとまりに人がいるときだけ表示（どちらもいない日は、倫理規定のページも非表示）
 function fpEthicsPages_(parts, blocks, res) {
   if (!blocks.length) return;

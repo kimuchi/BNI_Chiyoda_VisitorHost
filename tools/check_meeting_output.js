@@ -532,10 +532,10 @@ if (!SECOND) {
       });
     });
   }
-  // 倫理規定：更新メンバー・新メンバーのまとまりの、それぞれすぐうしろに1枚。人がいるまとまりのうしろだけ表示
+  // 倫理規定：新メンバー・更新メンバーのまとまりの、それぞれすぐうしろに1枚。人がいるまとまりのうしろだけ表示
   if (memberPages) {
     const isEth = (p) => /倫理規定/.test(flat(p));
-    [['renew', '更新メンバー', memberPages.renewMembers], ['new', '新メンバー', memberPages.newMembers]].forEach(([k, label, list]) => {
+    [['new', '新メンバー', memberPages.newMembers], ['renew', '更新メンバー', memberPages.renewMembers]].forEach(([k, label, list]) => {
       const pages = order.filter((p) => F.fpMemberKind_(F.xmlOf_(parts, p)) === k && F.fpMemberUnit_(F.xmlOf_(parts, p), sz.W, sz.H));
       if (!pages.length) return;
       const next = order[Math.max(...pages.map((p) => order.indexOf(p))) + 1];
@@ -545,6 +545,16 @@ if (!SECOND) {
     const vis = order.filter(shown);
     vis.forEach((p, i) => { if (i && isEth(p)) pck(!isEth(vis[i - 1]), `倫理規定：表示のページが2枚続いている（${vis[i - 1]}・${p}）`); });
     pck((info.members.ethics || []).length >= 1, '倫理規定：知らせが無い');
+    // 並び：新メンバー → 倫理規定 → 更新メンバー → 倫理規定（雛形が「更新メンバー → 新メンバー」の並びでも）
+    const seqOk = (q, list) => {
+      const unit = (p) => { const x = F.xmlOf_(q, p) || '', k = F.fpMemberKind_(x); return k && k !== 'both' && F.fpMemberUnit_(x, sz.W, sz.H) ? k : ''; };
+      const ks = list.map(unit), iN = ks.indexOf('new'), lN = ks.lastIndexOf('new'), iR = ks.indexOf('renew'), lR = ks.lastIndexOf('renew');
+      const eth = (i) => i >= 0 && i < list.length && /倫理規定/.test(F.slideText_(F.xmlOf_(q, list[i]) || ''));
+      return iN >= 0 && iR >= 0 && eth(lN + 1) && lN + 2 === iR && eth(lR + 1);
+    };
+    if (memberPages.newMembers.length && memberPages.renewMembers.length) {
+      pck(seqOk(parts, vis), '新メンバー → 倫理規定 → 更新メンバー → 倫理規定 の並びでない');
+    }
     // 雛形の並びが違っても（倫理規定がまとまりの前・あいだに別のページ・2枚目の写しがある）、
     // 表示の倫理規定は「人がいるまとまり」の数だけで、続けて出ない。4つの並び × 4つの人数で、雛形を読み直して作る
     const fresh = () => {
@@ -588,6 +598,7 @@ if (!SECOND) {
         const ve = vis2.filter((p) => ethOf(q, p));
         pck(ve.length === r + n, `倫理規定（${ln}・${cn}）：表示の倫理規定が ${ve.length}枚（${r + n}枚のはず）`);
         vis2.forEach((p, i) => { if (i && ethOf(q, p)) pck(!ethOf(q, vis2[i - 1]), `倫理規定（${ln}・${cn}）：表示のページが2枚続いている`); });
+        if (r && n) pck(seqOk(q, vis2), `倫理規定（${ln}・${cn}）：新メンバー → 倫理規定 → 更新メンバー → 倫理規定 の並びでない`);
       }));
     }
   }
