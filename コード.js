@@ -748,16 +748,26 @@ function uploadMemberBookBlob_(blob) {
 // 登録してあるメンバーブックの中身だけを差し替える（ゴミ箱にあれば戻してから）。
 // 戻り値 { ok } か { ok: false, notFound: 見つからない（削除した）, message: 知らせ }
 function memberBookReplace_(id, blob) {
+  var trashed = false;
   try {
     var meta = Drive.Files.get(id, { fields: 'id,trashed', supportsAllDrives: true });
-    if (meta && meta.trashed) Drive.Files.update({ trashed: false }, id, null, { supportsAllDrives: true });
+    trashed = !!(meta && meta.trashed);
+    if (trashed) Drive.Files.update({ trashed: false }, id, null, { supportsAllDrives: true });
     Drive.Files.update({}, id, blob, { supportsAllDrives: true });   // 中身だけ（名前・共有はそのまま）
     return { ok: true };
   } catch (e) {
     var msg = String(e && e.message ? e.message : e);
     console.error('[MBOOK] 差し替え: ' + msg);
-    if (/not ?found|見つかりません/i.test(msg)) {
+    if (/not ?found|見つか/i.test(msg)) {
       return { ok: false, notFound: true, message: '登録してあるメンバーブック（メールで送るPDF）のファイルが見つかりませんでした（削除した・ゴミ箱を空にした など）。' };
+    }
+    // このアプリへのGoogleドライブの許可（認可）が足りない：許可し直してもらう（ファイルの権限の話ではない）
+    if (/authentication scopes|permission to call|authorization is required|認可|承認/i.test(msg)) {
+      return { ok: false, message: driveHelpHint_(new Error('Googleドライブへの許可が足りません（' + msg + '）')) };
+    }
+    // 持ち主がゴミ箱に入れた：戻せるのは持ち主だけ
+    if (trashed && /permission|権限|forbidden/i.test(msg)) {
+      return { ok: false, message: 'メンバーブック（メールで送るPDF）のファイルが、持ち主のゴミ箱に入っています。持ち主に、ゴミ箱から戻してもらってください。\n（' + msg + '）' };
     }
     if (/permission|権限|forbidden|access denied|アクセスが拒否/i.test(msg)) {
       var owner = '';
@@ -767,7 +777,7 @@ function memberBookReplace_(id, blob) {
       } catch (x) {}
       return { ok: false, message: 'メンバーブック（メールで送るPDF）のファイルを差し替える権限がありません。\n'
         + 'ファイルの持ち主' + (owner ? '（' + owner + ' さん）' : '') + 'に、このファイルの「編集者」にしてもらってから、もう一度お試しください。\n'
-        + '（新しく作り直すとURLが変わり、送ったメールのリンクが古いままになるので、作り直さないでください）' };
+        + '（新しく作り直すとURLが変わり、送ったメールのリンクが古いままになるので、作り直さないでください）\n（' + msg + '）' };
     }
     return { ok: false, message: 'メンバーブック（メールで送るPDF）を差し替えられませんでした（' + msg + '）。少し待ってから、もう一度お試しください。' };
   }
@@ -775,9 +785,15 @@ function memberBookReplace_(id, blob) {
 // メンバーブック（メールで送るPDF）のファイルを新しく作り、リンクを知っている全員が見られるようにして登録する。
 // 置き場所は素材フォルダの「03_生成物」（共有フォルダなら、ほかの役員も差し替えられる）。素材フォルダが無ければマイドライブ
 function memberBookCreate_(blob) {
-  var props = PropertiesService.getScriptProperties(), res = { name: 'MemberBook.pdf', mimeType: 'application/pdf' };
+  var props = PropertiesService.getScriptProperties(), res = { name: 'MemberBook.pdf', mimeType: 'application/pdf' }, file;
   try { res.parents = [getAssetFolder_('output').getId()]; } catch (e) {}
-  var file = Drive.Files.create(res, blob, { supportsAllDrives: true });
+  try { file = Drive.Files.create(res, blob, { supportsAllDrives: true }); }
+  catch (e) {
+    if (!res.parents) throw e;                          // 03_生成物 に書けない（見るだけの共有など）：マイドライブに作る
+    console.warn('[MBOOK] 03_生成物に作れません: ' + (e && e.message ? e.message : e));
+    delete res.parents;
+    file = Drive.Files.create(res, blob, { supportsAllDrives: true });
+  }
   var f = DriveApp.getFileById(file.id), shared = true;
   try { f.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch (e) { shared = false; }
   var url = f.getUrl();

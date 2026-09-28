@@ -239,7 +239,7 @@
    if(!names.length) return;
    var todo=names.slice(), total=todo.length, done=0;
    (function step(){
-     if(!todo.length){ render(); return; }
+     if(!todo.length){ document.getElementById('photoState').textContent=''; render(); return; }
      var batch=todo.splice(0,15);
      var ps=document.getElementById('photoState');
      ps.textContent='写真を読み込んでいます...（'+done+'/'+total+'）';
@@ -267,6 +267,7 @@
    try{ pvScroll = pv.contentWindow ? pv.contentWindow.scrollY : pvScroll; }catch(e){}
    pv.onload=function(){ try{ pv.contentWindow.scrollTo(0, pvScroll); }catch(e){} };
    pv.srcdoc = bookHtml({ photos: photos, pick: true, cover: document.getElementById('pvCover').checked });
+   if(pdfRunning) busy(true);                            // PDFを作っているあいだに描き直しても、ボタンは押せないまま
  }
  // プレビューからの知らせ：カードを押した／文字を収め終わった（入りきらない欄を左下に出す）
  window.addEventListener('message', function(e){
@@ -289,18 +290,21 @@
  }
 
  function addM(){
+   if(pdfRunning) return;                               // PDFを作っているあいだは直さない
    if(!needLoaded()) return;
    members.push({cat:'',company:'',title:'',position:'',role:'',name:'',photoFile:'',comment:'',refer:'',collab:'',joinDate:'',renewDate:'',expireDate:''});
    render(); openM(members.length-1, true);
  }
  function del(i){
+   if(pdfRunning) return;                               // PDFを作っているあいだは直さない
    if(!needLoaded()) return;
    if(!confirm((members[i].name||'この行')+' を削除しますか？（名簿からも消えます）')) return;
    members.splice(i,1); render(); saveOrderSoon();
  }
- function mv(i,d){ if(!needLoaded()) return; var j=i+d; if(j<0||j>=members.length) return; var t=members[i]; members[i]=members[j]; members[j]=t; render(); saveOrderSoon(); }
+ function mv(i,d){ if(pdfRunning || !needLoaded()) return; var j=i+d; if(j<0||j>=members.length) return; var t=members[i]; members[i]=members[j]; members[j]=t; render(); saveOrderSoon(); }
 
  function openM(i, isNew){
+   if(pdfRunning) return;                               // PDFを作っているあいだは直さない
    editing=i; editingNew=!!isNew; var m=members[i];
    document.getElementById('e_cat').innerHTML='<option value=""></option>'+cats.map(function(c){
      return '<option value="'+esc(c.key)+'"'+(c.key===m.cat?' selected':'')+'>'+esc(c.label||c.key)+'</option>';}).join('')
@@ -329,6 +333,7 @@
    hideM();
  }
  function applyM(){
+   if(pdfRunning) return;                               // PDFを作っているあいだは直さない
    if(editing<0) return;
    // 直す前の氏名は「名簿に入っている氏名」（前の「反映」が失敗していると、画面の氏名はもう変わっている）
    var m=members[editing], orig=editingNew ? '' : (m._saved!=null ? m._saved : (m.name||''));
@@ -346,6 +351,7 @@
  }
  // 掲載順を番号で動かす（先に抜いてから挿入する）。並びもすぐ保存する
  function moveTo(){
+   if(pdfRunning) return;                               // PDFを作っているあいだは直さない
    if(editing<0) return;
    var n=parseInt(document.getElementById('e_num').value,10);
    if(isNaN(n)||n<1||n>members.length){ alert('1〜'+members.length+' の番号を入れてください。'); return; }
@@ -394,6 +400,7 @@
      : p.label+'の設定はまだ保存していません。氏名はその期の「役職・チーム（半期ごと）」のプレジデント、肩書きは既定の文です。挨拶文を入れて「保存」を押してください。');
  }
  function openCover(){
+   if(pdfRunning) return;                               // PDFを作っているあいだは直さない
    if(!needLoaded()) return;          // 読み込めていないまま保存すると、表紙の文章が空で上書きされるため
    document.getElementById('c_termNo').innerHTML=presidents.map(function(p){
      return '<option value="'+p.term+'"'+(p.term===cover.termNo?' selected':'')+'>'
@@ -476,6 +483,7 @@
 
  // 印刷：書体を読み込んで文字を収めてから、印刷の画面を開く（冊子の中の処理）
  function printBook(){
+   if(pdfRunning) return;                               // PDFを作っているあいだは直さない
    withPhotoData(function(){
      var w=window.open('','_blank');
      if(!w){ show('ポップアップがブロックされました。ブラウザで許可してください。',false); return; }
@@ -485,12 +493,19 @@
  }
  // PDFを作って、ドライブのメンバーブック（メールで送るPDF）を差し替える。アップロードは要らない。
  // 印刷の画面は通さず、この画面の中で作る（memberbook_pdf.html。印刷と同じ見た目・PDFの中で文字の検索もできる）。
- //   ・写真は、全員分の元の写真をそろえてから作る（一覧のサムネイルの読み込みを待たない）。読めなかった回があれば止める
- //     （写真の欠けたPDFを、メールで送るファイルに出さないため）。写真が無い方（ドライブに無い）は写真なし
+ //   ・写真は、全員分の元の写真をそろえてから作る（一覧のサムネイルの読み込みを待たない）。読めなかった写真・ブラウザーで開けない写真が
+ //     あれば止める（写真の欠けたPDFを、メールで送るファイルに出さないため）。写真を登録していない方は写真なし。
+ //     写真の一覧（写真索引）にあるのにファイルが無くなっている方は、写真なしで作って知らせる（全員そうなら、写真のフォルダを見る権限が無いので止める）
  //   ・写真は、PDFに要る大きさまで縮めてから使う（元の写真は1枚で数MBあるため）
- //   ・作っているあいだは画面の操作を止める（途中で直した内容はPDFに入らないため）
- var drive={}, lastPdf=null, noPhoto={};
+ //   ・作っているあいだは画面を覆い、ボタンも押せなくする（途中で直した内容はPDFに入らないため・2回押し）
+ //   ・「新しく作り直す」は、そのときの内容で作り直してから送る
+ var drive={}, lastPdf=null, noPhoto={}, gonePhoto={}, pdfRunning=false;
  function pdfBusy(on, t){
+   pdfRunning=on; busy(on);
+   // 画面全体を操作できなくする（覆いはマウスだけを止めるので、キーボードでの操作も止める）
+   var app=document.querySelector('.app');
+   if(on) app.setAttribute('inert',''); else app.removeAttribute('inert');
+   if(on && document.activeElement && document.activeElement.blur) document.activeElement.blur();
    document.getElementById('pdfWait').style.display=on?'flex':'none';
    document.getElementById('pdfWaitStep').textContent=on?(t||''):'';
  }
@@ -499,28 +514,36 @@
    return members.map(function(m){return m.name;}).concat(cover.pname?[cover.pname]:[])
      .filter(function(n,i,a){ return n && a.indexOf(n)===i; });
  }
+ // 写真の問題（もう一度押しても直らない）。写真を入れ直す道を案内する
+ function PhotoError(msg){ var e=new Error(msg); e.photo=true; return e; }
  function pdfPhotos(){
-   var need=pdfNames().filter(function(n){ return !photosB64[n] && !noPhoto[n]; }), total=need.length, done=0;
+   gonePhoto={};                                         // ファイルが無くなっている写真は、毎回確かめ直す（入れ直したら入るように）
+   var need=pdfNames().filter(function(n){ return !photosB64[n] && !noPhoto[n]; }), total=need.length, done=0, gone=[];
    return new Promise(function(resolve, reject){
      (function step(list){
-       if(!list.length){ resolve(); return; }
+       if(!list.length){
+         var had=need.filter(function(n){ return !noPhoto[n]; });
+         if(gone.length && gone.length===had.length && !pdfNames().some(function(n){ return photosB64[n]; }))
+           reject(PhotoError('写真のファイルを1枚も開けませんでした。写真のフォルダ（02_メンバー写真）を見る権限があるか、持ち主に確かめてください。'));
+         else { gone.forEach(function(n){ gonePhoto[n]=true; }); resolve(); }
+         return;
+       }
        var batch=list.slice(0,10), rest=list.slice(10);
        pdfStep('写真を読み込んでいます...（'+done+'/'+total+'）');
        google.script.run.withSuccessHandler(function(r){
-         if(!r||!r.ok||(r.failed&&r.failed.length)){
-           reject(new Error((r&&r.message)||('写真を読めなかった方がいます'+(r&&r.failed&&r.failed.length?'（'+r.failed.join('、')+'）':'')+'。')));
-           return;
-         }
+         if(!r||!r.ok){ reject(new Error((r&&r.message)||'写真を読み込めませんでした。')); return; }
+         if(r.failed&&r.failed.length){ reject(new Error('写真を読めなかった方がいます（'+r.failed.join('、')+'）。')); return; }
          for(var k in r.map) photosB64[k]=r.map[k];
-         (r.missing||[]).forEach(function(n){ if(!r.map[n]) noPhoto[n]=true; });
+         (r.missing||[]).forEach(function(n){ noPhoto[n]=true; });
+         gone=gone.concat(r.gone||[]);
          done+=batch.length; step(rest);
        }).withFailureHandler(function(e){ reject(new Error('写真を読み込めませんでした（'+((e&&e.message)?e.message:e)+'）。')); })
          .getMemberPhotosBase64(batch);
      })(need);
    });
  }
- function makePdf(){
-   if(!needLoaded()) return;
+ function makePdf(recreate){
+   if(pdfRunning || !needLoaded()) return;
    if(!members.length){ show('メンバーがいません。',false); return; }
    pdfBusy(true, '写真をそろえています...');
    pdfPhotos().then(function(){
@@ -529,18 +552,21 @@
      pdfNames().forEach(function(n){ if(photosB64[n]) use[n]=photosB64[n]; });
      return mbpSmallPhotos(use);
    }).then(function(small){
-     return mbpBuildPdf(bookHtml({ photos: small }), cover.title || 'BNI メンバーブック', pdfStep).then(function(pdf){
-       pdf.photos=members.filter(function(m){ return small[m.name]; }).length;
+     if(small.bad.length) throw PhotoError('写真を開けなかった方がいます（'+small.bad.join('、')+'）。写真のファイルが壊れているか、'
+       +'ブラウザーで開けない形式（HEIC など）です。JPEG か PNG にして、「⚙️ 設定」＞「メンバー写真」で入れ直してください。');
+     return mbpBuildPdf(bookHtml({ photos: small.map }), cover.title || 'BNI メンバーブック', pdfStep).then(function(pdf){
+       pdf.photos=members.filter(function(m){ return small.map[m.name]; }).length;
        return pdf;
      });
    }).then(function(pdf){
      lastPdf=pdf;
-     sendPdf(false);
+     sendPdf(!!recreate);
    }).catch(function(e){
      pdfBusy(false);
-     show('PDFを作れませんでした（ドライブのメンバーブックは変えていません）: '+((e&&e.message)?e.message:e)
-       +'\nもう一度押してください。続けて失敗するときは、Google Chrome で開き直すか、「🖨 冊子を印刷」でPDFを保存して、'
-       +'メニューの「メンバーブック(PDF)の更新」からアップロードしてください。',false);
+     var msg=(e&&e.message)?e.message:String(e);
+     show('PDFを作れませんでした（ドライブのメンバーブックは変えていません）: '+msg
+       +(e&&e.photo?'':'\nもう一度押してください。続けて失敗するときは、Google Chrome で開き直すか、「🖨 冊子を印刷」でPDFを保存して、'
+         +'メニューの「メンバーブック(PDF)の更新」からアップロードしてください。'),false);
    });
  }
  function sendPdf(recreate){
@@ -553,17 +579,21 @@
        show((r&&r.message)||'ドライブのメンバーブックを差し替えられませんでした。',false);
        if(r&&r.canRecreate){
          var b=document.createElement('button'); b.className='sub'; b.style.marginTop='8px'; b.textContent='新しく作り直す（URLが変わります）';
-         b.onclick=function(){ if(confirm('新しいファイルを作って、メールで送るメンバーブックとして登録します（素材フォルダの「03_生成物」に作ります）。\n'
-           +'URLが変わるので、送ったメールのリンクは古いままになります。よろしいですか？')) sendPdf(true); };
+         b.onclick=function(){ if(confirm('いまの内容でPDFを作り直し、新しいファイルとして、メールで送るメンバーブックに登録します（素材フォルダの「03_生成物」に作ります）。\n'
+           +'URLが変わるので、送ったメールのリンクは古いままになります。よろしいですか？')) makePdf(true); };
          m.appendChild(document.createElement('br')); m.appendChild(b);
        }
        return;
      }
      drive.url=r.url; drive.updated=new Date().toISOString(); renderDriveNote();
      var nm=members.length, ph=lastPdf.photos;
+     var none=members.filter(function(x){ return noPhoto[x.name]; }).map(function(x){ return x.name; });
+     var gone=members.filter(function(x){ return gonePhoto[x.name]; }).map(function(x){ return x.name; });
      m.innerHTML='<span style="color:green;">'+esc(r.message)+'</span><br>'
        +'<span style="font-size:11px;color:#555;font-weight:normal;">'+lastPdf.pages+'ページ・写真 '+ph+'/'+nm+'名'
-       +(ph<nm?'（写真が無い方：'+esc(members.filter(function(x){ return noPhoto[x.name]; }).map(function(x){ return x.name; }).join('、'))+'）':'')+'</span><br>'
+       +(none.length?'（写真を登録していない方：'+esc(none.join('、'))+'）':'')+'</span>'
+       +(gone.length?'<br><span style="font-size:11px;color:#b26b00;font-weight:normal;">写真のファイルが見つからなかった方（写真なしで作りました）：'+esc(gone.join('、'))
+         +'。「⚙️ 設定」＞「メンバー写真」で入れ直してください</span>':'')+'<br>'
        +'<a href="'+esc(r.url)+'" target="_blank">📄 ドライブで開く</a>'
        +(r.downloadUrl?'<a href="'+esc(r.downloadUrl)+'" target="_blank">⬇ ダウンロード</a>':'');
      m.style.color='';
@@ -577,6 +607,7 @@
      +(when?'　最後に差し替え：'+esc(when):'')+'<br>上のボタンで、いまの内容に差し替えます（URLはそのまま）。';
  }
  function exportHtml(){
+   if(pdfRunning) return;                               // PDFを作っているあいだは直さない
    withPhotoData(function(){
      busy(true); show('保存中...');
      google.script.run.withSuccessHandler(function(r){

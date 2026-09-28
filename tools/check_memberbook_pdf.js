@@ -49,6 +49,7 @@ function server(opts) {
     Drive: { Files: {
       get: (id, args) => {
         log.push(['get', id, args && args.fields]);
+        if (o.scope) throw new Error('API call to drive.files.get failed with error: Insufficient Permission: Request had insufficient authentication scopes.');
         if (!files[id]) throw new Error('API call to drive.files.get failed with error: File not found: ' + id + '.');
         if (args && /owners/.test(args.fields)) return { owners: [{ displayName: files[id].owner || '見本 管理者', emailAddress: 'owner@example.com' }] };
         return { id, trashed: !!files[id].trashed };
@@ -58,11 +59,13 @@ function server(opts) {
         if (!files[id]) throw new Error('API call to drive.files.update failed with error: File not found: ' + id + '.');
         if (o.readOnly && o.readOnly.includes(id) && blob) throw new Error('API call to drive.files.update failed with error: The user does not have sufficient permissions for file ' + id + '.');
         if (o.transient && blob) throw new Error('API call to drive.files.update failed with error: Internal Error');
+        if (o.untrashDenied && res && res.trashed === false) throw new Error('API call to drive.files.update failed with error: The user does not have sufficient permissions for file ' + id + '.');
         if (res && res.trashed === false) files[id].trashed = false;
         if (blob) files[id].content = blob._bytes;
         return { id };
       },
       create: (res, blob, args) => {
+        if (o.parentReadOnly && res.parents) { log.push(['create-denied', J(res.parents)]); throw new Error('API call to drive.files.create failed with error: Insufficient permissions for the specified parent.'); }
         const id = 'new' + (++seq);
         log.push(['create', id, res.name, J(res.parents || null), J(args || null)]);
         files[id] = { name: res.name, parents: res.parents || null, content: blob._bytes, trashed: false };
@@ -74,6 +77,7 @@ function server(opts) {
       getFileById: (id) => {
         if (o.photos && id in o.photos) {
           if (o.photos[id] === 'broken') throw new Error('写真を読めない');
+          if (o.photos[id] === 'gone') throw new Error('No item with the given ID could be found. Or perhaps you do not have permission to access it.');
           return { getBlob: () => ({ getContentType: () => 'image/jpeg', getBytes: () => Array.from(Buffer.from(o.photos[id])) }) };
         }
         return {
@@ -106,6 +110,9 @@ const pdfBlob = (S) => S.box.Utilities.newBlob(Array.from(Buffer.from('%PDF-1.4'
   S = server({ noFolder: true });
   r = S.box.saveMemberBookPdfToDrive(PDF64);
   ck(r.ok && r.created && S.files.new1.parents === null, '素材フォルダが無いときはマイドライブに作る: ' + J(S.log));
+  S = server({ parentReadOnly: true });
+  r = S.box.saveMemberBookPdfToDrive(PDF64);
+  ck(r.ok && r.created && S.files.new1.parents === null && S.log.some((x) => x[0] === 'create-denied'), '03_生成物に書けないときはマイドライブに作る: ' + J(r) + ' ' + J(S.log));
 
   // 登録してあるとき：中身だけ差し替える（新しく作らない・URLそのまま・共有ドライブでも）
   S = server({ props: reg, files: { mb: { name: '配布用.pdf', content: Buffer.from('old'), trashed: false } } });
@@ -135,6 +142,14 @@ const pdfBlob = (S) => S.box.Utilities.newBlob(Array.from(Buffer.from('%PDF-1.4'
      '編集の権限が無いとき: ' + J(r) + ' ' + J(S.log));
   ck(/権限がありません/.test(r.message) && /見本 管理者/.test(r.message) && /編集者/.test(r.message) && !/動作確認/.test(r.message) && !/「新しく作り直す」を押すと/.test(r.message),
      '編集の権限が無いときの知らせ: ' + r.message);
+  // このアプリへのGoogleドライブの許可が足りない：許可し直す案内（持ち主に頼む案内ではない）
+  S = server({ props: reg, files: { mb: {} }, scope: true });
+  r = S.box.saveMemberBookPdfToDrive(PDF64);
+  ck(!r.ok && !r.canRecreate && /動作確認/.test(r.message) && !/編集者/.test(r.message) && !S.log.some((x) => x[0] === 'create'), '許可が足りないとき: ' + J(r));
+  // 持ち主がゴミ箱に入れた（戻せるのは持ち主だけ）：戻してもらう案内
+  S = server({ props: reg, files: { mb: { trashed: true } }, untrashDenied: true });
+  r = S.box.saveMemberBookPdfToDrive(PDF64);
+  ck(!r.ok && !r.canRecreate && /ゴミ箱/.test(r.message) && /戻してもらって/.test(r.message) && !S.log.some((x) => x[0] === 'create'), '持ち主のゴミ箱にあるとき: ' + J(r));
   // 一時的なエラー：もう一度。作り直しは出さない
   S = server({ props: reg, files: { mb: {} }, transient: true });
   r = S.box.saveMemberBookPdfToDrive(PDF64);
@@ -179,10 +194,11 @@ const pdfBlob = (S) => S.box.Utilities.newBlob(Array.from(Buffer.from('%PDF-1.4'
   u = S.box.uploadMemberBookBlob_(pdfBlob(S));
   ck(/共有を設定できませんでした/.test(u.msg), 'アップロード（共有できない）の知らせ: ' + J(u));
 
-  // 写真の実体：写真の無い方（missing）と、あるのに読めなかった方（failed）を分ける
-  S = server({ photoIds: { '見本 一郎': 'p1', '見本 花子': 'p2' }, photos: { p1: 'JPEG', p2: 'broken' } });
-  const ph = S.box.getMemberPhotosBase64(['見本 一郎', '見本 花子', '見本 三郎']);
-  ck(ph.ok && Object.keys(ph.map).join() === '見本 一郎' && J(ph.missing) === J(['見本 三郎']) && J(ph.failed) === J(['見本 花子']), '写真の実体: ' + J(ph));
+  // 写真の実体：写真の無い方（missing）・一覧にあるのにファイルが無い方（gone）・あるのに読めなかった方（failed）を分ける
+  S = server({ photoIds: { '見本 一郎': 'p1', '見本 花子': 'p2', '見本 四郎': 'p4' }, photos: { p1: 'JPEG', p2: 'broken', p4: 'gone' } });
+  const ph = S.box.getMemberPhotosBase64(['見本 一郎', '見本 花子', '見本 三郎', '見本 四郎']);
+  ck(ph.ok && Object.keys(ph.map).join() === '見本 一郎' && J(ph.missing) === J(['見本 三郎']) && J(ph.failed) === J(['見本 花子']) && J(ph.gone) === J(['見本 四郎']),
+     '写真の実体: ' + J(ph));
 }
 
 // ===================== 2. 画面の中で作るPDF =====================
@@ -261,6 +277,9 @@ MEMBERS[20].name = '見本 カ\u3099ク';
 MEMBERS[21].name = '\u{20BB7}田 見本';
 MEMBERS[19].comment = '一行め\u000B二行め';
 MEMBERS[20].company = '見本\u000C商事';
+// 組になっていないサロゲート（絵文字の半分）：末尾に上位だけ・下位が2つ続く
+MEMBERS[18].company = '見本物産\uD83C';
+MEMBERS[18].refer = '税理士\uDE00\uDE01・弁護士';
 const COVER = { title: 'BNI 見本 chapter Member Book \u{20BB7}', term: '24期', pname: '見本 会長', prole: '見本チャプター\n第24期プレジデント',
   ptext: 'あいさつの文です。'.repeat(40), philosophyTitle: 'BNIの理念', philosophy: '理念の本文です。'.repeat(6), aboutTitle: 'チャプターとは？',
   about: '紹介の本文です。'.repeat(5), benefitsTitle: 'メリット', benefits: '1.メリット　2.メリット\n3.メリット',
@@ -302,14 +321,16 @@ const strip = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8').replace(/^<scri
     const png = (() => { const c = document.createElement('canvas'); c.width = 1000; c.height = 1300; const g = c.getContext('2d');
       g.fillStyle = '#c33'; g.beginPath(); g.arc(500, 500, 300, 0, 7); g.fill(); return c.toDataURL('image/png'); })();
     photos[members[2].name] = png;
+    // ブラウザーで開けない写真（HEIC を .jpg にしたもの・空のファイル）
+    photos[members[5].name] = 'data:image/jpeg;base64,AAAAGGZ0eXBoZWljAAAAAG1pZjE=';
     const size = (d) => new Promise((ok) => { const im = new Image(); im.onload = () => ok([im.naturalWidth, im.naturalHeight]); im.src = d; });
-    const small = await mbpSmallPhotos(photos);
+    const sr = await mbpSmallPhotos(photos), small = sr.map;
     const sizes = {};
     for (const n of Object.keys(small)) sizes[n] = await size(small[n]);
     const alpha = await new Promise((ok) => { const im = new Image(); im.onload = () => { const c = document.createElement('canvas'); c.width = im.naturalWidth; c.height = im.naturalHeight;
       const g = c.getContext('2d'); g.drawImage(im, 0, 0); ok(g.getImageData(1, 1, 1, 1).data[3]); }; im.src = small[members[2].name]; });
     const pngKind = small[members[2].name].slice(0, 15);
-    const again = await mbpSmallPhotos(photos);
+    const again = (await mbpSmallPhotos(photos)).map;
     const steps = [];
     const html = bookHtml({ photos: small });
     const t0 = performance.now();
@@ -333,13 +354,13 @@ const strip = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8').replace(/^<scri
     const steps2 = [];
     const pdf2 = await mbpBuildPdf(html, cover.title, (t) => steps2.push(t));
     MBP_MAX_BYTES = keep;
-    return { pdf, ms, steps, sizes, alpha, pngKind, sameAgain: Object.keys(small).every((n) => again[n] === small[n]), small: Object.keys(small).length,
+    return { pdf, ms, steps, sizes, alpha, pngKind, bad: sr.bad, sameAgain: Object.keys(small).every((n) => again[n] === small[n]), small: Object.keys(small).length,
              unchangedSmall: small[members[4].name] === photos[members[4].name], loaded, css: css.length, cssRules: (css.match(/@font-face/g) || []).length,
              clipLines, pdf2: { base64: pdf2.base64, bytes: pdf2.bytes }, steps2, html };
   }, { render: strip('memberbook_render.html'), pdfjs: strip('memberbook_pdf.html'), members: MEMBERS, cats: CATS, cover: COVER });
 
   // 写真を縮める（短い辺 360px まで。小さな写真はそのまま。2回目は覚えたものを使う）。透明な PNG は透明のまま
-  ck(R.small === 17, '写真の数: ' + R.small);
+  ck(R.small === 17 && J(R.bad) === J([MEMBERS[5].name]), '写真の数・開けない写真: ' + R.small + ' ' + J(R.bad));
   ck(Object.values(R.sizes).every(([w, h]) => Math.min(w, h) <= 360), '写真が縮んでいない: ' + J(R.sizes));
   ck(J(R.sizes[MEMBERS[1].name]) === J([360, 480]) && J(R.sizes[COVER.pname]) === J([540, 360]) && J(R.sizes[MEMBERS[2].name]) === J([360, 468]),
      '縮めた写真の大きさ（縦横の比はそのまま・短い辺で）: ' + J(R.sizes));
@@ -365,7 +386,7 @@ const strip = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8').replace(/^<scri
   // 見えない文字（検索・コピー用）
   const flat = (t) => t.replace(/\s/g, '');
   // 検索用の文字：合成した形（NFC）・異体字セレクタは除く・BMP の外の字は〓・制御文字は除く
-  const searchable = (x) => flat(x.normalize('NFC').replace(/[\uFE00-\uFE0F]|[\u{E0100}-\u{E01EF}]/gu, '').replace(/[\u0000-\u001F]/g, '')
+  const searchable = (x) => flat(x.replace(/[\uD800-\uDFFF]/gu, '').normalize('NFC').replace(/[\uFE00-\uFE0F]|[\u{E0100}-\u{E01EF}]/gu, '').replace(/[\u0000-\u001F]/g, '')
     .replace(/[\u{10000}-\u{10FFFF}]/gu, '\u3013'));
   ck(flat(pages[0].text).includes(searchable(COVER.title)) && flat(pages[0].text).includes('タイムスケジュール') && flat(pages[0].text).includes('見本会長'),
      '表紙の文字: ' + pages[0].text.slice(0, 120));

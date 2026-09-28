@@ -338,19 +338,24 @@ function getMemberPhotoThumbs(names) {
 }
 
 // 実体が必要な場面（PDFへの埋め込みなど）や、サムネイルが表示できなかったときの控え
-// missing … 写真を登録していない方。failed … 写真はあるのに読めなかった方（メンバーブックのPDFでは、欠けたまま出さずに止める）
+// missing … 写真を登録していない方。
+// gone … 写真の一覧（写真索引）にあるのに、ファイルが見つからない（削除した・見る権限が無い）方。
+// failed … 写真はあるのに、ほかの理由（一時的なエラーなど）で読めなかった方（メンバーブックのPDFでは、欠けたまま出さずに止める）
 function getMemberPhotosBase64(names) {
   try {
-    var map = {}, miss = [], failed = [];
+    var map = {}, miss = [], gone = [], failed = [];
     for (var i = 0; i < (names || []).length; i++) {
       var id = findPhotoIdForName_(names[i]);
       if (!id) { miss.push(names[i]); continue; }
       try {
         var b = DriveApp.getFileById(id).getBlob();
         map[names[i]] = 'data:' + (b.getContentType() || 'image/jpeg') + ';base64,' + Utilities.base64Encode(b.getBytes());
-      } catch (e) { failed.push(names[i]); }
+      } catch (e) {
+        if (/No item with the given ID|not found|見つか/i.test(String(e && e.message ? e.message : e))) gone.push(names[i]);
+        else failed.push(names[i]);
+      }
     }
-    return { ok: true, map: map, missing: miss, failed: failed };
+    return { ok: true, map: map, missing: miss, gone: gone, failed: failed };
   } catch (e) {
     return { ok: false, message: '写真の取得に失敗しました: ' + (e && e.message ? e.message : e), map: {} };
   }

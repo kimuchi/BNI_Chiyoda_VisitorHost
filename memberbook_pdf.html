@@ -49,7 +49,8 @@ function mbpBuildPdf(html, title, onStep){
 }
 
 // 写真（氏名 → data: のURL）を、PDFに要る大きさまで縮める。JPEG は JPEG に、ほか（PNG など）は透明なところを残して PNG に。
-// 読めない写真はそのまま。縮めたものは覚えておく
+// 戻り値 { map: 氏名 → 縮めた写真, bad: ブラウザーで開けなかった写真の方（HEIC を .jpg にしたもの・壊れたファイルなど） }。
+// 開けなかった写真は map に入れない（そのまま冊子に入れると、壊れた画像の印が出る）。縮めたものは覚えておく
 var mbpSmallCache = {};
 function mbpSmallPhotos(photos){
   var names = Object.keys(photos || {});
@@ -60,6 +61,7 @@ function mbpSmallPhotos(photos){
       img.onload = function(){
         var w = img.naturalWidth, h = img.naturalHeight;
         var k = Math.min(1, MBP_PHOTO_SHORT / Math.max(1, Math.min(w, h)), MBP_PHOTO_LONG / Math.max(1, w, h));
+        if(!w || !h){ resolve(null); return; }
         if(k >= 1){ resolve(src); return; }
         try{
           var jpeg = /^data:image\/jpe?g/i.test(src), cv = document.createElement('canvas');
@@ -70,11 +72,15 @@ function mbpSmallPhotos(photos){
           resolve(jpeg ? cv.toDataURL('image/jpeg', 0.9) : cv.toDataURL('image/png'));
         }catch(e){ resolve(src); }
       };
-      img.onerror = function(){ resolve(src); };
+      img.onerror = function(){ resolve(null); };
       img.src = src;
     });
     return mbpSmallCache[key].then(function(d){ return [n, d]; });
-  })).then(function(pairs){ var o = {}; pairs.forEach(function(x){ o[x[0]] = x[1]; }); return o; });
+  })).then(function(pairs){
+    var o = { map: {}, bad: [] };
+    pairs.forEach(function(x){ if(x[1]) o.map[x[0]] = x[1]; else o.bad.push(x[0]); });
+    return o;
+  });
 }
 
 // 見えない枠で冊子を開き、文字を枠に収め終わるまで待つ（書体が届かないときも、冊子の中で8秒で収める）
@@ -129,12 +135,17 @@ function mbpRangeKey(range){
     return parseInt(s, 16).toString(16);
   }).filter(Boolean).join(',');
 }
-// 待つ長さを決めて読む（止まったつながりで、いつまでも待たないように）
-function mbpFetch(url){
-  var ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-  var timer = setTimeout(function(){ if(ctl) ctl.abort(); }, MBP_FETCH_MS);
-  return fetch(url, ctl ? { signal: ctl.signal } : {}).then(function(r){ clearTimeout(timer); return r; },
-    function(e){ clearTimeout(timer); throw new Error(e && e.name === 'AbortError' ? '書体を読むのに時間がかかりすぎました' : '書体を読めませんでした'); });
+// 待つ長さを決めて読む（止まったつながりで、いつまでも待たないように。中身を読み終えるまでを数える）。how … 'text' か 'blob'
+function mbpFetch(url, how){
+  var ctl = typeof AbortController !== 'undefined' ? new AbortController() : null, late = false;
+  return new Promise(function(resolve, reject){
+    var timer = setTimeout(function(){ late = true; if(ctl) ctl.abort(); reject(new Error('書体を読むのに時間がかかりすぎました')); }, MBP_FETCH_MS);
+    fetch(url, ctl ? { signal: ctl.signal } : {}).then(function(r){
+      if(!r.ok) throw new Error('書体を読めませんでした（' + r.status + '）');
+      return how === 'text' ? r.text() : r.blob();
+    }).then(function(v){ clearTimeout(timer); resolve(v); },
+            function(e){ clearTimeout(timer); if(!late) reject(e && /書体/.test(e.message) ? e : new Error('書体を読めませんでした')); });
+  });
 }
 // 冊子が読んだ書体の CSS（Googleフォント）から、このページの文字が入っている分だけを、埋め込んだ @font-face にする。
 // 冊子が実際に読み込んだ書体（FontFace が loaded のもの）だけを入れる。読めなかった・間に合わなかった書体は、
@@ -143,7 +154,7 @@ function mbpFetch(url){
 function mbpFontCss(doc, text, cache){
   var link = doc.querySelector('link[rel="stylesheet"][href*="fonts.googleapis.com"]');
   var cssUrl = link ? link.href : MB_FONT_CSS;
-  var getCss = cache.css || (cache.css = mbpFetch(cssUrl).then(function(r){ if(!r.ok) throw new Error('書体のCSS ' + r.status); return r.text(); }));
+  var getCss = cache.css || (cache.css = mbpFetch(cssUrl, 'text'));
   var seen = {}, cps = [], loaded = {};
   for(var ch of String(text)){ var c = ch.codePointAt(0); if(!seen[c]){ seen[c] = 1; cps.push(c); } }
   try{ doc.fonts.forEach(function(f){ if(f.status === 'loaded') loaded[mbpRangeKey(f.unicodeRange) + '|' + f.weight + '|' + f.style] = true; }); }catch(e){}
@@ -164,7 +175,7 @@ function mbpFontCss(doc, text, cache){
     order = order.filter(function(k){ return byUrl[k].ok.length; });
     return Promise.all(order.map(function(k){
       var f = byUrl[k];
-      cache[f.url] = cache[f.url] || mbpFetch(f.url).then(function(r){ if(!r.ok) throw new Error('書体 ' + r.status); return r.blob(); }).then(mbpDataUrl);
+      cache[f.url] = cache[f.url] || mbpFetch(f.url, 'blob').then(mbpDataUrl);
       return cache[f.url].then(function(data){
         var face = function(wt){
           return '@font-face{font-family:' + f.fam + ';font-style:' + f.st + ';font-weight:' + wt + ';'
@@ -197,7 +208,7 @@ function mbpPageImage(pg, fontCss, scale, quality){
   // XML に入れられない文字（PowerPoint の改行 U+000B などの制御文字・片割れのサロゲート）は、SVG が読めなくなるので除く
   var xml = new XMLSerializer().serializeToString(pg)
     .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g, '')
-    .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/g, '\uFFFD').replace(/(^|[^\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '$1\uFFFD');
+    .replace(/[\uD800-\uDFFF]/gu, '\uFFFD');             // u を付けると、組になっていないサロゲートだけに当たる
   var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '">'
     + '<foreignObject x="0" y="0" width="' + w + '" height="' + h + '">'
     + '<div xmlns="http://www.w3.org/1999/xhtml" lang="' + (doc.documentElement.lang || 'ja') + '" class="mbp-w" style="width:' + w + 'px;height:' + h + 'px;">'
@@ -225,7 +236,7 @@ function mbpPageImage(pg, fontCss, scale, quality){
 var MBP_JOIN = /^(?:[\u0300-\u036F\u3099\u309A\uFE00-\uFE0F\u200D]|\uDB40[\uDD00-\uDDEF])$/;
 // 見えない文字にする行の文字：合成した形（NFC）にし、異体字セレクタ・制御文字を除く（検索できるように）
 function mbpLineText(s){
-  return String(s).normalize('NFC').replace(/[\uFE00-\uFE0F\u200D\u0000-\u001F]|\uDB40[\uDD00-\uDDEF]/g, '');
+  return String(s).replace(/[\uD800-\uDFFF]/gu, '').normalize('NFC').replace(/[\uFE00-\uFE0F\u200D\u0000-\u001F]|\uDB40[\uDD00-\uDDEF]/g, '');
 }
 // ページの文字を、行ごとに位置つきで取り出す（見えない文字にして重ねる）。位置は pt、上から。
 // 枠からはみ出して見えていない文字（枠で切ってあるところ）は入れない
@@ -250,7 +261,8 @@ function mbpPageText(pg){
     var clip = clipOf(node.parentElement), cur = null;
     var flush = function(){ if(cur && cur.s.replace(/\s/g, '')) lines.push(cur); cur = null; };
     for(var i = 0; i < t.length; ){
-      var n = (t.charCodeAt(i) >= 0xD800 && t.charCodeAt(i) <= 0xDBFF) ? 2 : 1, ch = t.substr(i, n);
+      var c0 = t.charCodeAt(i), c1 = i + 1 < t.length ? t.charCodeAt(i + 1) : 0;
+      var n = (c0 >= 0xD800 && c0 <= 0xDBFF && c1 >= 0xDC00 && c1 <= 0xDFFF) ? 2 : 1, ch = t.substr(i, n);
       // 濁点などの結合文字・異体字セレクタは、前の字と一緒の1文字（枠が前の字と同じなので、行の続きとして足す）
       if(cur && MBP_JOIN.test(ch)){ cur.s += ch; i += n; continue; }
       range.setStart(node, i); range.setEnd(node, i + n); i += n;
