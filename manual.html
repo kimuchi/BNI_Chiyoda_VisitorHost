@@ -343,7 +343,8 @@ clasp deploy -i &lt;デプロイID&gt; -V 34   （-V には、いま出た番号
 <h3>対象の開催日</h3>
 <p>画面の上に <strong>「対象の開催日」</strong> の選択欄があります。 <strong>次回の定例会</strong>が最初から選ばれているので、ふつうはそのままで構いません。</p>
 <p><strong>次回のシートがまだ作られていない場合は、直近の最新の回</strong>が選ばれます。</p>
-<p>過去の回に送り直したいときは、ここで開催日を選び直してください。 選んだ開催日の「〇〇参加者」シートが読み込まれ、<strong>本文の <code>{{date}}</code> にも その開催日</strong>が入ります。</p>
+<p>過去の回に送り直したいときは、ここで開催日を選び直してください。 選んだ開催日の「〇〇参加者」シートが読み込まれ、<strong>本文の <code>{{date}}</code> にも その開催日</strong>が入ります。<strong><code>{{visitorlist}}</code> にも、その開催日のビジターリストPDFのリンク</strong>が入ります （翌週の名簿を先に作った・前の回のPDFを作り直したあとでも、別の回のリンクにはなりません）。</p>
+<p>その開催日のビジターリストのPDF（またはメンバーブックのPDF）がまだ無いときは、 画面の上に赤字で知らせ、本文のリンクは「【未生成】」になります。送る前の確認にも同じ知らせが出るので、 先に「1. CSVから名簿・PDF作成」でPDFを作ってから送ってください。</p>
 <blockquote>以前は「開いているシート」を対象にしていましたが、 ウェブアプリには「開いているシート」が無いため、選ぶ方式に変えました。 どちらから使っても同じように動きます。</blockquote>
 <h3>手順</h3>
 <ol>
@@ -364,10 +365,10 @@ clasp deploy -i &lt;デプロイID&gt; -V 34   （-V には、いま出た番号
 <hr>
 <h2 id="sec10">作成済みPDFをもう一度見たいとき</h2>
 <p><strong>メニュー</strong>: <code>名簿システム</code> &gt; <code>4. 作成済みPDFの確認</code></p>
-<p>直近で作成した以下のPDFリンクをワンクリックで開けます。</p>
+<p><strong>次回の定例会</strong>（まだ作っていなければ直近の回）の、以下のPDFリンクをワンクリックで開けます。 どの開催日のものかは、画面の上に出ます。</p>
 <ul>
-<li>ビジター様リスト PDF</li>
-<li>ルーム割り振り表 PDF</li>
+<li>ビジター様リスト PDF（その開催日のもの）</li>
+<li>ルーム割り振り表 PDF（その開催日のもの）</li>
 <li>メンバーブック PDF</li>
 </ul>
 <hr>
@@ -1370,7 +1371,7 @@ clasp deploy -i &lt;デプロイID&gt; -V 34   （-V には、いま出た番号
 <tr><td><code>{{name}}</code></td><td>参加者の氏名</td></tr>
 <tr><td><code>{{inviter}}</code></td><td>招待者の氏名</td></tr>
 <tr><td><code>{{date}}</code></td><td>開催日</td></tr>
-<tr><td><code>{{visitorlist}}</code></td><td>ビジターリストPDFのURL</td></tr>
+<tr><td><code>{{visitorlist}}</code></td><td>選んだ開催日のビジターリストPDFのURL</td></tr>
 <tr><td><code>{{memberbook}}</code></td><td>メンバーブックPDFのURL</td></tr>
 </tbody></table>
 <h3>割り振り表の特記事項設定</h3>

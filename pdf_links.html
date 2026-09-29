@@ -24,7 +24,7 @@
   <script>
     window.onload = function() {
       google.script.run.withSuccessHandler(function(data){
-        document.getElementById('dateText').innerText = "現在記憶されている定例会: " + data.date;
+        document.getElementById('dateText').innerText = "定例会: " + data.date + "（次回。まだ作っていなければ直近の回）";
         
         var btnList = document.getElementById('btnList');
         if(data.visitorList) { btnList.href = data.visitorList; btnList.classList.remove('disabled'); }

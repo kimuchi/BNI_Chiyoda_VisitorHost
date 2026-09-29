@@ -76,7 +76,7 @@ function loadPage(file, opts) {
   function makeEl(id, tag) {
     const el = { id, tag, checked: false, disabled: false, style: {}, textContent: '', innerText: '',
                  _html: '', _value: '', options: [], selectedIndex: -1,
-                 focus() {}, select() { log.selected = this.id; } };
+                 focus() {}, select() { log.selected = this.id; }, appendChild(c) { return c; }, removeChild(c) { return c; } };
     Object.defineProperty(el, 'innerHTML', {
       get() { return this._html; },
       set(v) {
@@ -135,8 +135,11 @@ function loadPage(file, opts) {
     getElementById: (id) => els[id] || null,
     createElement: (tag) => {
       if (tag === 'canvas') return fakeCanvas();
-      const x = { textContent: '', click() { if (this.download) log.downloads.push({ name: this.download, href: this.href }); } };
-      Object.defineProperty(x, 'innerHTML', { get() { return escHtml(this.textContent); } });
+      const x = { textContent: '', style: {}, dataset: {}, className: '', appendChild(c) { return c; },
+                  click() { if (this.download) log.downloads.push({ name: this.download, href: this.href }); } };
+      // 作った部品に innerHTML で入れた id 付きの部品（カードの中の入力欄など）も拾う
+      Object.defineProperty(x, 'innerHTML', { get() { return this._html != null ? this._html : escHtml(this.textContent); },
+                                              set(v) { this._html = String(v); scan(this._html); } });
       return x;
     },
     body: { appendChild() {}, removeChild() {} },
