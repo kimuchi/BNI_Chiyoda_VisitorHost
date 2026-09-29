@@ -59,6 +59,11 @@
     var currentIndex = 0;
     var commonCc = "";
     var commonBcc = "";
+    var linkWarning = "";   // 本文に入れるPDFのリンクが無いときの知らせ（送る前の確認にも出す）
+    function esc(s) {
+      return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
 
     // 開いているシートに頼らず、開催日を選んで作る。
     // （ウェブアプリには「開いているシート」が無いため）
@@ -96,9 +101,18 @@
       drafts = data.drafts;
       document.getElementById('commonCc').value = data.cc || "";
       document.getElementById('commonBcc').value = data.bcc || "";
+      var missing = [];
+      if (!data.visitorList) missing.push('この開催日のビジターリストのPDF');
+      if (!data.memberBook) missing.push('メンバーブックのPDF');
+      linkWarning = missing.length
+        ? '⚠ ' + missing.join('・') + 'がありません。本文のリンクは「【未生成】」になります。'
+          + '先に「1. CSVから名簿・PDF作成」（メンバーブックは「メンバーブックの編集・PDF出力」）で作ってください。'
+        : '';
       document.getElementById('meetNote').innerText =
         '「' + data.sheet + '」を読み込みました。'
-        + (data.date ? '本文の{{date}}には「' + data.date + '」が入ります。' : '');
+        + (data.date ? '本文の{{date}}には「' + data.date + '」が入ります。' : '')
+        + (linkWarning ? '\n' + linkWarning : '');
+      document.getElementById('meetNote').style.color = linkWarning ? '#c00' : '';
 
       var container = document.getElementById('emailContainer');
       container.innerHTML = '';
@@ -112,16 +126,17 @@
         var d = drafts[i];
         var div = document.createElement('div');
         div.className = 'card';
+        // 名前・件名・本文はHTMLとして読ませない（件名に「"」があると、そこで切れて送られてしまうため）
         div.innerHTML = `
           <div class="card-header">
             <div>
-              <span style="background:#0055ff; color:#fff; padding:3px 8px; border-radius:12px; font-size:11px;">${d.type}</span>
-              <strong>${d.name} 様</strong> (${d.email})
+              <span style="background:#0055ff; color:#fff; padding:3px 8px; border-radius:12px; font-size:11px;">${esc(d.type)}</span>
+              <strong>${esc(d.name)} 様</strong> (${esc(d.email)})
             </div>
             <label class="checkbox-lbl"><input type="checkbox" id="chk_${i}" checked> 送信する</label>
           </div>
-          <input type="text" id="subj_${i}" value="${d.subject}">
-          <textarea id="body_${i}">${d.body}</textarea>
+          <input type="text" id="subj_${i}" value="${esc(d.subject)}">
+          <textarea id="body_${i}">${esc(d.body)}</textarea>
         `;
         container.appendChild(div);
       }
@@ -129,7 +144,7 @@
     }
 
     function startSending() {
-      if(!confirm("チェックが入っている全員にメールを順番に送信します。\nよろしいですか？")) return;
+      if(!confirm((linkWarning ? linkWarning + "\n\n" : "") + "チェックが入っている全員にメールを順番に送信します。\nよろしいですか？")) return;
       
       commonCc = document.getElementById('commonCc').value;
       commonBcc = document.getElementById('commonBcc').value;

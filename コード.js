@@ -2,7 +2,7 @@
 
 // 反映されたか確かめるための版。変更したら日付を更新する。
 // clasp push / デプロイが効いているかは、これを画面で見れば分かる。
-var SYSTEM_VERSION_ = '2026-09-29a';
+var SYSTEM_VERSION_ = '2026-09-29b';
 
 function getSystemVersion() { return SYSTEM_VERSION_; }
 
@@ -253,11 +253,18 @@ function deleteAiDocument(fileId) {
   return newDocs;
 }
 
+// 作成済みPDFの確認。メールと同じく「次回の定例会」（無ければ直近）の開催日のPDFを出す。
+// 以前は「最後に作ったPDF」をそれぞれ出していたため、前の回を作り直したあとなどに、
+// 名簿と割り振り表で別の開催日のリンクが並ぶことがあった
 function getPdfLinks() {
-  var props = PropertiesService.getScriptProperties();
+  var props = PropertiesService.getScriptProperties(), ctx = getEmailContext();
+  var pick = null;
+  if (ctx.ok) for (var i = 0; i < ctx.sheets.length; i++) if (ctx.sheets[i].sheet === ctx.defaultSheet) pick = ctx.sheets[i];
   return {
-    visitorList: props.getProperty('LATEST_VISITOR_LIST_URL') || "", allocation: props.getProperty('LATEST_ALLOCATION_URL') || "",
-    memberBook: props.getProperty('MEMBER_BOOK_URL') || "", date: props.getProperty('LATEST_MEETING_DATE') || "未設定"
+    visitorList: pick ? visitorPdfUrlOf_(pick.sheet) : "",
+    allocation: pick && pick.key ? allocationPdfUrlOf_(pick.key) : "",
+    memberBook: props.getProperty('MEMBER_BOOK_URL') || "",
+    date: pick ? pick.label : "未設定"
   };
 }
 
@@ -1171,7 +1178,11 @@ function generateEmailDrafts(sheetName) {
   if (nameIdx === -1 || emailIdx === -1 || typeIdx === -1) throw new Error("「" + sheet.getName() + "」に必須列（参加者氏名・メール・種別）が見つかりません。");
 
   var tpls = getTemplates(), props = PropertiesService.getScriptProperties();
-  var visitorListUrl = props.getProperty('LATEST_VISITOR_LIST_URL') || "【未生成】", memberBookUrl = props.getProperty('MEMBER_BOOK_URL') || "【未生成】";
+  // ビジターリストは、選んだ開催日のPDF（作ったときに控えたID）のURL。
+  // 以前は「最後に作ったPDF」を入れていたため、翌週の名簿を先に作った・前の回のPDFを作り直したあとだと、
+  // 別の開催日のビジターリストのリンクが送られてしまっていた。見つからないときは別の回で代わりにせず「【未生成】」にする
+  var listUrl = visitorPdfUrlOf_(sheet.getName()), bookUrl = props.getProperty('MEMBER_BOOK_URL') || "";
+  var visitorListUrl = listUrl || "【未生成】", memberBookUrl = bookUrl || "【未生成】";
   // 日付は選ばれたシートから求める（以前は最後に作った開催日を使っていたため、
   // 過去の回を選んでも最新の日付が入ってしまっていた）
   var dateFormatted = "";
@@ -1197,7 +1208,29 @@ function generateEmailDrafts(sheetName) {
     var body = tplBody.replace(/{{name}}/g, name).replace(/{{inviter}}/g, inviter).replace(/{{invitee}}/g, inviter).replace(/{{date}}/g, dateFormatted).replace(/{{visitorlist}}/g, visitorListUrl).replace(/{{memberbook}}/g, memberBookUrl);
     drafts.push({ name: name, email: email, type: type, subject: subject, body: body, send: true });
   }
-  return { drafts: drafts, cc: tpls.cc, bcc: tpls.bcc, sheet: sheet.getName(), date: dateFormatted };
+  return { drafts: drafts, cc: tpls.cc, bcc: tpls.bcc, sheet: sheet.getName(), date: dateFormatted,
+           visitorList: listUrl, memberBook: bookUrl };
+}
+
+// その参加者シート（開催日）のビジターリストPDFのURL。作ったときに控えたID（VISITOR_PDF_ID_＋シート名）から求める。
+// 無い・消した・ゴミ箱のときは空（別の開催日のPDFで代わりにしない）
+function visitorPdfUrlOf_(sheetName) {
+  return pdfUrlOfProp_('VISITOR_PDF_ID_' + sheetName);
+}
+// 割り振り表のPDF（ALLOC_PDF_ID_＋開催日＋「割り振り」）
+function allocationPdfUrlOf_(key) {
+  return pdfUrlOfProp_('ALLOC_PDF_ID_' + key + '割り振り');
+}
+function pdfUrlOfProp_(propKey) {
+  var id = PropertiesService.getScriptProperties().getProperty(propKey);
+  if (!id) return '';
+  try {
+    var f = DriveApp.getFileById(id);
+    return f.isTrashed() ? '' : f.getUrl();
+  } catch (e) {
+    console.warn('[PDF] ' + propKey + ' が開けません: ' + (e && e.message ? e.message : e));
+    return '';
+  }
 }
 
 function sendSingleEmail(e, cc, bcc) {
