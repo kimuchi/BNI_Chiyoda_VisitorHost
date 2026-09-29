@@ -123,6 +123,7 @@ function createTalkScript(dateStr, overrides) {
     var built = talkBuild_(d, overrides), name = talkOutName_(d);
     var title = built.label + '　トークスクリプト（' + chapterLabel_() + '）';
     var sh = talkWriteSheet_(name, [[title, '', '', '', ''], TALK_HEADERS_], built.rows, { marks: built.marks });
+    try { if (sh.isSheetHidden()) sh.showSheet(); } catch (e) {}   // アーカイブ（非表示）してあった日も、作ったら見えるように
     var msg = '「' + name + '」を作りました（' + built.rows.length + '行）。';
     if (built.missing.length) msg += '\n入らなかった差し込み（「' + TALK_BLANK_ + '」にしました）: ' + built.missing.join('、');
     if (built.unknown.length) msg += '\nひな形の書き方が違う差し込み: ' + built.unknown.map(function (k) { return '{' + k + '}'; }).join('、');

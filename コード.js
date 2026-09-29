@@ -2,7 +2,7 @@
 
 // 反映されたか確かめるための版。変更したら日付を更新する。
 // clasp push / デプロイが効いているかは、これを画面で見れば分かる。
-var SYSTEM_VERSION_ = '2026-09-28d';
+var SYSTEM_VERSION_ = '2026-09-29a';
 
 function getSystemVersion() { return SYSTEM_VERSION_; }
 
@@ -565,11 +565,14 @@ function setAutoArchiveEnabled(enabled) {
   return { ok: true, message: enabled ? "自動アーカイブを有効にしました。新しい開催日を作成すると、前の開催日は自動で非表示になります。" : "自動アーカイブを無効にしました。", status: getSheetArchiveStatus() };
 }
 
-// currentKey（"0318"など）以外の開催日シートを自動で非表示にする。
+// currentKey（"20260930"など）以外の開催日シートを自動で非表示にする。
 // シート作成の本処理を妨げないよう、失敗しても例外は投げない。
+// 開催日の形（yyyyMMdd か移行前の MMdd）でないキーのときは何もしない
+// （以前、作成直後に年だけの「2026」を渡してしまい、作ったばかりの開催日まで隠れていたため）。
 function autoArchiveOtherDates_(currentKey) {
   try {
     if (!isAutoArchiveEnabled()) return;
+    if (!isMeetingKey_(currentKey)) { console.warn("[ARCHIVE] auto-archive skipped: bad key " + currentKey); return; }
     var status = getSheetArchiveStatus(), keys = [];
     for (var i = 0; i < status.groups.length; i++) {
       var g = status.groups[i];
@@ -580,6 +583,29 @@ function autoArchiveOtherDates_(currentKey) {
     console.log("[ARCHIVE] auto-archive for " + currentKey + " -> " + (res && res.message));
   } catch (e) {
     console.error("[ARCHIVE] auto-archive failed: " + (e && e.stack ? e.stack : e));
+  }
+}
+
+// 開催日のキーか（"20260930" か 移行前の "0930"）。年だけの "2026" は月が20になるので外れる
+function isMeetingKey_(key) {
+  var m = String(key == null ? '' : key).match(/^(?:\d{4})?(\d\d)(\d\d)$/);
+  return !!m && +m[1] >= 1 && +m[1] <= 12 && +m[2] >= 1 && +m[2] <= 31;
+}
+
+// その開催日のシートを全て表示に戻す（作り直す・PDFを作る開催日は、隠れたままにしない）。
+// 隠れたシートは、書き込めても画面に出ず、PDFにすると真っ白になるため。失敗しても本処理は止めない
+function showDateSheets_(ss, key) {
+  try {
+    if (!isMeetingKey_(key)) return 0;
+    var targets = collectSheetsForKeys_(ss, [key]), done = 0;
+    for (var i = 0; i < targets.length; i++) {
+      if (targets[i].isSheetHidden()) { targets[i].showSheet(); done++; }
+    }
+    if (done) console.log("[ARCHIVE] shown for " + key + ": " + done);
+    return done;
+  } catch (e) {
+    console.error("[ARCHIVE] show failed: " + (e && e.stack ? e.stack : e));
+    return 0;
   }
 }
 
@@ -648,7 +674,10 @@ function loadSheetData(sheetName) {
 }
 
 function createFinalSheet(meetingDateVal, meetingDisplay, finalRows, originalHeader) {
-  var ss = getSS_(), dateObj = new Date(meetingDateVal), baseSheetName = sheetKeyOf_(dateObj) + "参加者";
+  var ss = getSS_(), dateObj = new Date(meetingDateVal), dateKey = sheetKeyOf_(dateObj), baseSheetName = dateKey + "参加者";
+  // 前にアーカイブ（非表示）した開催日を作り直すときは、その開催日のシートを表示に戻す
+  // （隠れたシートは画面に出ず、PDFにすると真っ白になる）
+  showDateSheets_(ss, dateKey);
   var dataSheetName = baseSheetName, dataSheet = ss.getSheetByName(dataSheetName);
   if (!dataSheet) dataSheet = ss.insertSheet(dataSheetName); else dataSheet.clear();
   var printSheetName = baseSheetName + "_印刷用", printSheet = ss.getSheetByName(printSheetName);
@@ -692,7 +721,7 @@ function createFinalSheet(meetingDateVal, meetingDisplay, finalRows, originalHea
   PropertiesService.getScriptProperties().setProperty('LATEST_VISITOR_LIST_URL', pdfUrl);
   PropertiesService.getScriptProperties().setProperty('LATEST_MEETING_DATE', meetingDateVal); 
   ss.setActiveSheet(dataSheet);
-  autoArchiveOtherDates_(baseSheetName.slice(0, 4));
+  autoArchiveOtherDates_(dateKey);
   return "<h3>処理が完了しました🎉</h3><p>PDFを作成し、全員が閲覧できるよう権限を付与しました。</p><br><a href='" + pdfUrl + "' target='_blank' style='background:#0055ff; color:#fff; padding:10px 20px; text-decoration:none; border-radius:5px; font-weight:bold;'>📄 作成されたPDFを開く</a>";
 }
 
@@ -702,6 +731,9 @@ function regeneratePdfOnly(dataSheetName) {
   var printSheetName = dataSheetName + "_印刷用";
   var printSheet = ss.getSheetByName(printSheetName);
   if (!printSheet) throw new Error("印刷用シート '" + printSheetName + "' が見つかりません。先に「再編集」で印刷用シートを作成してください。");
+  // アーカイブ（非表示）した開催日なら、その開催日のシートを表示に戻す（隠れたシートはPDFが真っ白になる）
+  var keyMatch = String(dataSheetName).match(ARCHIVE_SHEET_PATTERN_);
+  if (keyMatch) showDateSheets_(ss, keyMatch[1]);
   var meetingDisplay = printSheet.getRange("A3").getValue();
   if (!meetingDisplay) meetingDisplay = dataSheetName;
   SpreadsheetApp.flush();
@@ -711,11 +743,36 @@ function regeneratePdfOnly(dataSheetName) {
   return "<h3>PDFを再作成しました🎉</h3><p>「" + printSheetName + "」の現在の内容でPDFを上書きしました。</p><br><a href='" + pdfUrl + "' target='_blank' style='background:#0055ff; color:#fff; padding:10px 20px; text-decoration:none; border-radius:5px; font-weight:bold;'>📄 PDFを開く</a>";
 }
 
+// シートをPDFにして Blob で返す（ビジターリスト・割り振り表）。
+// 隠れた（アーカイブした）シートは、その間だけ表示に戻す。隠れたままだと真っ白のPDFになるため。
+// PDFが返ってこないとき（混み合い・権限など）は、真っ白や壊れたファイルでドライブのPDFを上書きしないよう、ここで止める
+function fetchSheetPdf_(sheet, url, fileName) {
+  var wasHidden = sheet.isSheetHidden();
+  if (wasHidden) { sheet.showSheet(); SpreadsheetApp.flush(); }
+  try {
+    var token = ScriptApp.getOAuthToken(), response = null, code = 0;
+    for (var attempt = 0; attempt < 3; attempt++) {
+      if (attempt) Utilities.sleep(3000 * attempt);
+      response = UrlFetchApp.fetch(url, { headers: { 'Authorization': 'Bearer ' + token }, muteHttpExceptions: true });
+      code = response.getResponseCode();
+      if (code !== 429 && code < 500) break;   // 混み合い（429）・一時的な不調（5xx）だけ、少し待ってやり直す
+    }
+    var blob = response.getBlob(), head = blob.getBytes().slice(0, 5).map(function (b) { return String.fromCharCode(b & 255); }).join('');
+    if (code !== 200 || head !== '%PDF-') {
+      console.error('[PDF] export failed: code=' + code + ' head=' + JSON.stringify(head) + ' ' + fileName);
+      throw new Error('PDFを作れませんでした（' + (code === 429 ? '混み合っています' : '応答 ' + code) + '）。'
+        + '1〜2分おいてから、もう一度お試しください。ドライブの前のPDFはそのままです。');
+    }
+    return blob.setName(fileName);
+  } finally {
+    if (wasHidden) { try { sheet.hideSheet(); } catch (e) {} }
+  }
+}
+
 function exportSheetToPdf(sheet, fileName, fileIdPropKey) {
   var ss = getSS_(), spreadsheetId = ss.getId(), sheetId = sheet.getSheetId(), lastRow = sheet.getLastRow();
   var url = "https://docs.google.com/spreadsheets/d/" + spreadsheetId + "/export?exportFormat=pdf&format=pdf&size=A4&portrait=true&fitw=true&sheetnames=false&printtitle=false&pagenumbers=false&gridlines=false&fzr=false&gid=" + sheetId + "&r1=0&c1=0&r2=" + lastRow + "&c2=7";
-  var token = ScriptApp.getOAuthToken(), response = UrlFetchApp.fetch(url, { headers: { 'Authorization': 'Bearer ' + token }, muteHttpExceptions: true });
-  var blob = response.getBlob().setName(fileName), props = PropertiesService.getScriptProperties();
+  var blob = fetchSheetPdf_(sheet, url, fileName), props = PropertiesService.getScriptProperties();
   var existingId = fileIdPropKey ? props.getProperty(fileIdPropKey) : null;
   if (existingId) {
     try { Drive.Files.update({name: fileName}, existingId, blob); return DriveApp.getFileById(existingId).getUrl(); } catch(e) { existingId = null; }
@@ -1296,6 +1353,7 @@ function getAllocationData(meetingDateVal) {
 
 function saveAllocationSheet(meetingDateVal, displayVal, visitors, pool, facilAlloc, orienAlloc, roomAlloc, connectReq, mergedWith) {
   var ss = getSS_(), dateObj = new Date(meetingDateVal), mmdd = sheetKeyOf_(dateObj);
+  showDateSheets_(ss, mmdd);   // アーカイブ（非表示）した開催日を作り直すときは、表示に戻す（隠れたままだとPDFが真っ白になる）
   var sheetName = mmdd + "割り振り表", sheet = ss.getSheetByName(sheetName);
   if (!sheet) sheet = ss.insertSheet(sheetName); else sheet.clear();
   
@@ -1441,12 +1499,12 @@ function saveAllocationSheet(meetingDateVal, displayVal, visitors, pool, facilAl
   // 幅が収まっていれば文字を縮小せずに出力できる（収まらないと全体が縮小されて読みにくくなる）。
   var widths = [36, 89, 107, 80, 107, 98, 107, 116];
   for(var w=0; w<widths.length; w++) sheet.setColumnWidth(w+1, widths[w]);
+  var borSheets = saveBreakoutRoomSheets_(ss, mmdd, borRows);   // PDFを作れなかったときも、ルームの表は最新にしておく
   SpreadsheetApp.flush();
   
   var allocPdfIdKey = 'ALLOC_PDF_ID_' + mmdd + '割り振り';
   var pdfUrl = exportAllocationSheetToPdf(sheet, displayVal + " 割り振り表.pdf", allocPdfIdKey);
   PropertiesService.getScriptProperties().setProperty('LATEST_ALLOCATION_URL', pdfUrl); 
-  var borSheets = saveBreakoutRoomSheets_(ss, mmdd, borRows);
   autoArchiveOtherDates_(mmdd);
   return "<h3>作成完了しました🎉</h3><p>割り振り表と、ブレイクアウトルームの表（" + borSheets.join("／") + "）を作成しました。</p><br><a href='" + pdfUrl + "' target='_blank' style='background:#0055ff; color:#fff; padding:10px 20px; text-decoration:none; border-radius:5px; font-weight:bold;'>📄 作成されたPDFを開く</a>";
 }
@@ -1514,8 +1572,7 @@ function exportAllocationSheetToPdf(sheet, fileName, fileIdPropKey) {
           + "&top_margin=0.30&bottom_margin=0.30&left_margin=0.25&right_margin=0.25"
           + "&sheetnames=false&printtitle=false&pagenumbers=false&gridlines=false&fzr=false&gid=" + sheetId
           + "&r1=0&c1=0&r2=" + lastRow + "&c2=8";
-  var token = ScriptApp.getOAuthToken(), response = UrlFetchApp.fetch(url, { headers: { 'Authorization': 'Bearer ' + token }, muteHttpExceptions: true });
-  var blob = response.getBlob().setName(fileName), props = PropertiesService.getScriptProperties();
+  var blob = fetchSheetPdf_(sheet, url, fileName), props = PropertiesService.getScriptProperties();
   var existingId = fileIdPropKey ? props.getProperty(fileIdPropKey) : null;
   if (existingId) {
     try { Drive.Files.update({name: fileName}, existingId, blob); return DriveApp.getFileById(existingId).getUrl(); } catch(e) { existingId = null; }
