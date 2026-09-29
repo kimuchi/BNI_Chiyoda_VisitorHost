@@ -201,6 +201,11 @@ ck(drive.updated.length === 1 && drive.updated[0].id === 'F0' && /見本 太郎/
    '2) 同じファイル（URLそのまま）に中身のあるPDFで差し替えていない: ' + JSON.stringify(drive.updated.map((u) => [u.id, pdfText(u.blob)])));
 ck(drive.created.length === 0, '2) 新しいPDFを作ってしまった（URLが変わる）');
 
+// ---- 2b) 前のPDFが消えていて差し替えられない → 新しく作り、URLが変わったことを知らせる ----
+reset([['メンバー名簿', false]].concat(OLD('20260930', false)), { 'VISITOR_PDF_ID_20260930参加者': 'GONE' });
+const html2b = srv.createFinalSheet('2026-09-30T00:00:00', DISPLAY, ROWS, HEADER);
+ck(drive.created.length === 1 && /新しいPDFを作りました/.test(html2b) && props['VISITOR_PDF_ID_20260930参加者'] === 'F1', '2b) 新しく作ったのに、URLが変わったことを知らせない');
+
 // ---- 3) アーカイブ済みの開催日で「PDFのみ再作成」→ その開催日が表示に戻り、PDFに中身がある ----
 reset([['メンバー名簿', false], ['20260930参加者', true, [['No.'], ['V01']]],
        ['20260930参加者_印刷用', true, [['BNI 見本チャプターの定例会へようこそ'], [''], [DISPLAY], [''], ['No.', '参加者氏名'], ['V01', '見本 太郎']]],

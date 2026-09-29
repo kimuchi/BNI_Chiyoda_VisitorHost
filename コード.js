@@ -2,7 +2,7 @@
 
 // 反映されたか確かめるための版。変更したら日付を更新する。
 // clasp push / デプロイが効いているかは、これを画面で見れば分かる。
-var SYSTEM_VERSION_ = '2026-09-29e';
+var SYSTEM_VERSION_ = '2026-09-29f';
 
 function getSystemVersion() { return SYSTEM_VERSION_; }
 
@@ -398,6 +398,26 @@ function matchInviterToMember(inviterName, membersList) {
   return String(inviterName);
 }
 
+// 招待者の欄 → 照合に使う字（空白を除き、最後の「さん」「様」を落とす）。
+// 以前は「さ」「ん」の字をすべて消していたため、名前に「さ」「ん」がある方（「みさき」など）が当たらなかった
+function inviterKey_(s) {
+  return String(s == null ? '' : s).replace(/[\s\u3000]/g, '').replace(/(さん|さま|様|氏)$/, '');
+}
+// 招待者の欄から名簿のメンバーを探す。同じ字の方がいればその方、いなければ一部が重なる方。
+// 当たる方が2人以上（姓だけで同じ姓の方がいるなど）のときは ambiguous（確かめてもらう）
+function findInviterMember_(inviter, membersList) {
+  var key = inviterKey_(inviter), exact = [], partial = [];
+  if (!key) return { member: null, ambiguous: false };
+  for (var k = 0; k < membersList.length; k++) {
+    var m = String(membersList[k].name || '').replace(/[\s\u3000]/g, '');
+    if (!m) continue;
+    if (m === key) exact.push(membersList[k]);
+    else if (key.indexOf(m) !== -1 || m.indexOf(key) !== -1) partial.push(membersList[k]);
+  }
+  var hits = exact.length ? exact : partial;
+  return { member: hits[0] || null, ambiguous: hits.length > 1 };
+}
+
 function analyzeCsvData(csvText) {
   var data = Utilities.parseCsv(csvText);
   if (data.length < 2) throw new Error("データがありません");
@@ -437,14 +457,11 @@ function analyzeCsvData(csvText) {
     r._needsNameReview = needsSpaceReview(origName) || needsSpaceReview(origKana);
     r["参加者氏名"] = formatNameSuggest(origName); r["ふりがな"] = formatNameSuggest(origKana);
     r._needsInviterReview = false;
-    var originalInviter = r["招待者"] || "", searchInviter = originalInviter.replace(/[\sさん]/g, ""), matchedMember = null;
-    if (searchInviter !== "") {
-      for (var k = 0; k < membersList.length; k++) {
-        var mNameSearch = membersList[k].name.replace(/[\s]/g, "");
-        if (searchInviter.indexOf(mNameSearch) !== -1 || mNameSearch.indexOf(searchInviter) !== -1) { matchedMember = membersList[k]; break; }
-      }
-    }
-    if (matchedMember) { r["招待者"] = matchedMember.name; } else if (originalInviter !== "") { r._needsInviterReview = true; r["招待者"] = formatNameSuggest(originalInviter); }
+    var originalInviter = r["招待者"] || "", hit = findInviterMember_(originalInviter, membersList), matchedMember = hit.member;
+    if (matchedMember) {
+      r["招待者"] = matchedMember.name;
+      if (hit.ambiguous) r._needsInviterReview = true;   // 同じ姓の方が2人以上など。黄色にして確かめてもらう
+    } else if (originalInviter !== "") { r._needsInviterReview = true; r["招待者"] = formatNameSuggest(originalInviter); }
     if (r["種別"] === "Visitor") { r._No = "V" + ("0" + vCount).slice(-2); vCount++; } 
     else if (r["種別"] === "Guest") { r._No = "G" + ("0" + gCount).slice(-2); gCount++; } 
     else if (r["種別"] === "Substitute") { r._No = matchedMember ? "代理" + matchedMember.no : "代理??"; } 
@@ -572,7 +589,7 @@ function setAutoArchiveEnabled(enabled) {
   return { ok: true, message: enabled ? "自動アーカイブを有効にしました。新しい開催日を作成すると、前の開催日は自動で非表示になります。" : "自動アーカイブを無効にしました。", status: getSheetArchiveStatus() };
 }
 
-// currentKey（"20260930"など）以外の開催日シートを自動で非表示にする。
+// currentKey（"20260930"など）以外の、過ぎた開催日のシートを自動で非表示にする。
 // シート作成の本処理を妨げないよう、失敗しても例外は投げない。
 // 開催日の形（yyyyMMdd か移行前の MMdd）でないキーのときは何もしない
 // （以前、作成直後に年だけの「2026」を渡してしまい、作ったばかりの開催日まで隠れていたため）。
@@ -580,10 +597,15 @@ function autoArchiveOtherDates_(currentKey) {
   try {
     if (!isAutoArchiveEnabled()) return;
     if (!isMeetingKey_(currentKey)) { console.warn("[ARCHIVE] auto-archive skipped: bad key " + currentKey); return; }
-    var status = getSheetArchiveStatus(), keys = [];
+    var status = getSheetArchiveStatus(), keys = [], today = new Date();
+    today.setHours(0, 0, 0, 0);
     for (var i = 0; i < status.groups.length; i++) {
       var g = status.groups[i];
-      if (g.key !== String(currentKey) && !g.archived) keys.push(g.key);
+      if (g.key === String(currentKey) || g.archived) continue;
+      // これからの定例会（今日以降）は隠さない。翌週分を先に作っても、次回のシートが見えなくならないように
+      var d = meetingDateFromKey_(g.key);
+      if (d && d.getTime() >= today.getTime()) continue;
+      keys.push(g.key);
     }
     if (!keys.length) return;
     var res = archiveSheetGroups(keys);
@@ -668,12 +690,9 @@ function loadSheetData(sheetName) {
     if (obj["種別"] === "Visitor") { obj._No = "V" + ("0" + vCount).slice(-2); vCount++; }
     else if (obj["種別"] === "Guest") { obj._No = "G" + ("0" + gCount).slice(-2); gCount++; }
     else if (obj["種別"] === "Substitute") {
-      var searchInv = (obj["招待者"] || "").replace(/[\s]/g, ""), matched = null;
-      for (var k = 0; k < membersList.length; k++) {
-        var mName = membersList[k].name.replace(/[\s]/g, "");
-        if (searchInv.indexOf(mName) !== -1 || mName.indexOf(searchInv) !== -1) { matched = membersList[k]; break; }
-      }
-      obj._No = matched ? "代理" + matched.no : (obj._No || "代理??");
+      // 招待者が空・だれか決まらないときは、シートの番号のまま（以前は空だと名簿の最初の方の代理になっていた）
+      var sub = findInviterMember_(obj["招待者"], membersList);
+      obj._No = (sub.member && !sub.ambiguous) ? "代理" + sub.member.no : (obj._No || "代理??");
     }
     rows.push(obj);
   }
@@ -704,6 +723,13 @@ function createFinalSheet(meetingDateVal, meetingDisplay, finalRows, originalHea
   for (var i = 0; i < originalHeader.length; i++) { if (mapKeys.indexOf(originalHeader[i]) === -1) { dataHeaders.push(originalHeader[i]); otherKeys.push(originalHeader[i]); } }
   if (dataHeaders.indexOf("種別") === -1) { dataHeaders.push("種別"); otherKeys.push("種別"); }
   if (dataHeaders.indexOf("メール") === -1) { dataHeaders.push("メール"); otherKeys.push("メール"); }
+  // 代理の番号は、編集画面で直した招待者の欄から付け直す（画面の番号は取り込んだときのまま動かないため）
+  var subMembers = getMembersList();
+  for (var s = 0; s < finalRows.length; s++) {
+    if (finalRows[s]["種別"] !== "Substitute") continue;
+    var sub = findInviterMember_(finalRows[s]["招待者"], subMembers);
+    if (sub.member && !sub.ambiguous) finalRows[s]["_No"] = "代理" + sub.member.no;
+  }
   var dataOutput = [dataHeaders], printOutput = [
     [chapterLabel_() + "の定例会へようこそ", "", "", "", "", "", ""], ["", "", "", "", "", "", ""], [meetingDisplay, "", "", "", "", "", ""], ["", "", "", "", "", "", ""], fixedHeaders
   ];
@@ -733,14 +759,14 @@ function createFinalSheet(meetingDateVal, meetingDisplay, finalRows, originalHea
   for(var w=0; w<widths.length; w++) printSheet.setColumnWidth(w+1, widths[w]);
   for(var row = 6; row <= lastPrintRow; row++) printSheet.setRowHeight(row, 30);
   SpreadsheetApp.flush();
-  var pdfFileIdKey = 'VISITOR_PDF_ID_' + baseSheetName;
-  var pdfUrl = exportSheetToPdf(printSheet, meetingDisplay + " ビジター様リスト.pdf", pdfFileIdKey);
+  var pdfFileIdKey = 'VISITOR_PDF_ID_' + baseSheetName, pdfInfo = {};
+  var pdfUrl = exportSheetToPdf(printSheet, meetingDisplay + " ビジター様リスト.pdf", pdfFileIdKey, pdfInfo);
   PropertiesService.getScriptProperties().setProperty('VISITOR_PDF_URL_' + baseSheetName, pdfUrl);   // メールに入れるリンク（開催日ごと）
   PropertiesService.getScriptProperties().setProperty('LATEST_VISITOR_LIST_URL', pdfUrl);
   PropertiesService.getScriptProperties().setProperty('LATEST_MEETING_DATE', meetingDateVal); 
   ss.setActiveSheet(dataSheet);
   autoArchiveOtherDates_(dateKey);
-  return "<h3>処理が完了しました🎉</h3><p>PDFを作成し、全員が閲覧できるよう権限を付与しました。</p><br><a href='" + pdfUrl + "' target='_blank' style='background:#0055ff; color:#fff; padding:10px 20px; text-decoration:none; border-radius:5px; font-weight:bold;'>📄 作成されたPDFを開く</a>";
+  return "<h3>処理が完了しました🎉</h3><p>PDFを作成し、全員が閲覧できるよう権限を付与しました。</p>" + pdfRecreatedNote_(pdfInfo) + "<br><a href='" + pdfUrl + "' target='_blank' style='background:#0055ff; color:#fff; padding:10px 20px; text-decoration:none; border-radius:5px; font-weight:bold;'>📄 作成されたPDFを開く</a>";
 }
 
 function regeneratePdfOnly(dataSheetName) {
@@ -755,11 +781,11 @@ function regeneratePdfOnly(dataSheetName) {
   var meetingDisplay = printSheet.getRange("A3").getValue();
   if (!meetingDisplay) meetingDisplay = dataSheetName;
   SpreadsheetApp.flush();
-  var pdfFileIdKey = 'VISITOR_PDF_ID_' + dataSheetName;
-  var pdfUrl = exportSheetToPdf(printSheet, meetingDisplay + " ビジター様リスト.pdf", pdfFileIdKey);
+  var pdfFileIdKey = 'VISITOR_PDF_ID_' + dataSheetName, pdfInfo = {};
+  var pdfUrl = exportSheetToPdf(printSheet, meetingDisplay + " ビジター様リスト.pdf", pdfFileIdKey, pdfInfo);
   PropertiesService.getScriptProperties().setProperty('VISITOR_PDF_URL_' + dataSheetName, pdfUrl);
   PropertiesService.getScriptProperties().setProperty('LATEST_VISITOR_LIST_URL', pdfUrl);
-  return "<h3>PDFを再作成しました🎉</h3><p>「" + printSheetName + "」の現在の内容でPDFを上書きしました。</p><br><a href='" + pdfUrl + "' target='_blank' style='background:#0055ff; color:#fff; padding:10px 20px; text-decoration:none; border-radius:5px; font-weight:bold;'>📄 PDFを開く</a>";
+  return "<h3>PDFを再作成しました🎉</h3><p>「" + printSheetName + "」の現在の内容でPDFを上書きしました。</p>" + pdfRecreatedNote_(pdfInfo) + "<br><a href='" + pdfUrl + "' target='_blank' style='background:#0055ff; color:#fff; padding:10px 20px; text-decoration:none; border-radius:5px; font-weight:bold;'>📄 PDFを開く</a>";
 }
 
 // シートをPDFにして Blob で返す（ビジターリスト・割り振り表）。
@@ -788,6 +814,14 @@ function fetchSheetPdf_(sheet, url, fileName) {
   }
 }
 
+// 前のPDFを差し替えられずに新しく作ったとき（URLが変わった）の知らせ。送ったリンクは古い中身のままなので、送り直してもらう
+function pdfRecreatedNote_(info) {
+  return info && info.recreated
+    ? "<p style='color:#c00; font-weight:bold;'>⚠ 前のPDFを差し替えられなかったため（消した・権限が無いなど）、新しいPDFを作りました。URLが変わっています。"
+      + "すでにリンクを送った方には、新しいリンクを送り直してください。</p>"
+    : "";
+}
+
 // 前に作ったPDFの中身を差し替える（URL・共有はそのまま）。ゴミ箱にあれば戻してから（ゴミ箱のままだとリンクが開けない）。
 // 差し替えられない（消した・権限が無いなど）ときは false（呼び出し側で新しく作る）
 function replacePdfFile_(id, blob, fileName) {
@@ -802,12 +836,13 @@ function replacePdfFile_(id, blob, fileName) {
   }
 }
 
-function exportSheetToPdf(sheet, fileName, fileIdPropKey) {
+function exportSheetToPdf(sheet, fileName, fileIdPropKey, out) {
   var ss = getSS_(), spreadsheetId = ss.getId(), sheetId = sheet.getSheetId(), lastRow = sheet.getLastRow();
   var url = "https://docs.google.com/spreadsheets/d/" + spreadsheetId + "/export?exportFormat=pdf&format=pdf&size=A4&portrait=true&fitw=true&sheetnames=false&printtitle=false&pagenumbers=false&gridlines=false&fzr=false&gid=" + sheetId + "&r1=0&c1=0&r2=" + lastRow + "&c2=7";
   var blob = fetchSheetPdf_(sheet, url, fileName), props = PropertiesService.getScriptProperties();
   var existingId = fileIdPropKey ? props.getProperty(fileIdPropKey) : null;
   if (existingId && replacePdfFile_(existingId, blob, fileName)) return DriveApp.getFileById(existingId).getUrl();
+  if (existingId && out) out.recreated = true;   // 前のPDFを差し替えられず、新しいURLになった
   var file = DriveApp.getFileById(spreadsheetId), folder = file.getParents().hasNext() ? file.getParents().next() : DriveApp.getRootFolder();
   var pdfFile = folder.createFile(blob);
   pdfFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
@@ -1199,6 +1234,7 @@ function generateEmailDrafts(sheetName) {
   if (data.length < 2) throw new Error("「" + sheet.getName() + "」にデータがありません。開催日の選択をご確認ください。");
   var headers = data[0];
   var nameIdx = headers.indexOf("参加者氏名"), emailIdx = headers.indexOf("メール"), typeIdx = headers.indexOf("種別"), inviterIdx = headers.indexOf("招待者");
+  var statusIdx = headers.indexOf("ステータス"); if (statusIdx === -1) statusIdx = headers.indexOf("出席ステータス");
   if (nameIdx === -1 || emailIdx === -1 || typeIdx === -1) throw new Error("「" + sheet.getName() + "」に必須列（参加者氏名・メール・種別）が見つかりません。");
 
   var tpls = getTemplates(), props = PropertiesService.getScriptProperties();
@@ -1215,12 +1251,13 @@ function generateEmailDrafts(sheetName) {
   if (!d) { var raw = props.getProperty('LATEST_MEETING_DATE') || ""; if (raw) d = new Date(raw); }
   if (d && !isNaN(d.getTime())) dateFormatted = d.getFullYear() + "年" + (d.getMonth() + 1) + "月" + d.getDate() + "日";
   
-  var drafts = [];
+  var drafts = [], sent = mailSentMap_(sheet.getName());
   for (var i = 1; i < data.length; i++) {
     var name = data[i][nameIdx], email = data[i][emailIdx], type = data[i][typeIdx];
     var inviter = inviterIdx !== -1 ? data[i][inviterIdx] : "";
     
-    if (!email || email.trim() === "") continue;
+    email = String(email == null ? "" : email);
+    if (email.trim() === "") continue;
     var tplSubj = "", tplBody = "";
     if (type === "Visitor") { tplSubj = tpls.visitorSubj; tplBody = tpls.visitorBody; }
     else if (type === "Guest") { tplSubj = tpls.guestSubj; tplBody = tpls.guestBody; }
@@ -1230,7 +1267,11 @@ function generateEmailDrafts(sheetName) {
     // {{inviter}} と、念のための {{invitee}} 両方で置換対応
     var subject = tplSubj.replace(/{{name}}/g, name).replace(/{{inviter}}/g, inviter).replace(/{{invitee}}/g, inviter).replace(/{{date}}/g, dateFormatted).replace(/{{visitorlist}}/g, visitorListUrl).replace(/{{memberbook}}/g, memberBookUrl);
     var body = tplBody.replace(/{{name}}/g, name).replace(/{{inviter}}/g, inviter).replace(/{{invitee}}/g, inviter).replace(/{{date}}/g, dateFormatted).replace(/{{visitorlist}}/g, visitorListUrl).replace(/{{memberbook}}/g, memberBookUrl);
-    drafts.push({ name: name, email: email, type: type, subject: subject, body: body, send: true });
+    // Spreadingでキャンセルになった方・すでに送った方は、はじめからチェックを外す（二重に送らないように）
+    var status = statusIdx !== -1 ? String(data[i][statusIdx] == null ? "" : data[i][statusIdx]).trim() : "";
+    var cancelled = /キャンセル|cancel/i.test(status), sentAt = sent[String(email).trim().toLowerCase()] || "";
+    drafts.push({ name: name, email: email, type: type, subject: subject, body: body, send: !cancelled && !sentAt,
+                  cancelled: cancelled, status: status, sentAt: sentAt, sheet: sheet.getName() });
   }
   return { drafts: drafts, cc: tpls.cc, bcc: tpls.bcc, sheet: sheet.getName(), date: dateFormatted,
            visitorList: listUrl, memberBook: bookUrl };
@@ -1269,15 +1310,38 @@ function sendSingleEmail(e, cc, bcc) {
     var cfg = getActiveMailWebApp_();
     if (!cfg.url) {
       GmailApp.sendEmail(toEmail, e.subject, e.body, options);
-      return { success: true };
     } else {
       var payload = { token: cfg.token, to: toEmail, subject: e.subject, body: e.body, options: options };
       var res = UrlFetchApp.fetch(cfg.url, { method: "post", contentType: "application/json", payload: JSON.stringify(payload), muteHttpExceptions: true, followRedirects: true });
       var resData = JSON.parse(res.getContentText());
       if (!resData.success) throw new Error(resData.error);
-      return { success: true };
     }
+    var at = markMailSent_(e.sheet, toEmail);
+    return { success: true, sentAt: at };
   } catch (error) { return { success: false, error: error.toString() }; }
+}
+
+// 案内メールを送った記録（開催日の参加者シートごと。{ メールアドレス（小文字）: 送った日時 }）。
+// 画面を開き直したときに、送った方のチェックを外しておくため（二重に送らないように）
+function mailSentMap_(sheetName) {
+  try { return JSON.parse(PropertiesService.getScriptProperties().getProperty('MAIL_SENT_' + sheetName) || '{}') || {}; }
+  catch (e) { return {}; }
+}
+function markMailSent_(sheetName, email) {
+  var at = new Date().toISOString();
+  if (!sheetName) return at;
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+    var m = mailSentMap_(sheetName);
+    m[String(email).trim().toLowerCase()] = at;
+    PropertiesService.getScriptProperties().setProperty('MAIL_SENT_' + sheetName, JSON.stringify(m));
+  } catch (err) {
+    console.warn('[MAIL] 送った記録を残せませんでした: ' + (err && err.message ? err.message : err));
+  } finally {
+    try { lock.releaseLock(); } catch (e2) {}
+  }
+  return at;
 }
 
 function doPost(e) {
@@ -1560,12 +1624,12 @@ function saveAllocationSheet(meetingDateVal, displayVal, visitors, pool, facilAl
   var borSheets = saveBreakoutRoomSheets_(ss, mmdd, borRows);   // PDFを作れなかったときも、ルームの表は最新にしておく
   SpreadsheetApp.flush();
   
-  var allocPdfIdKey = 'ALLOC_PDF_ID_' + mmdd + '割り振り';
-  var pdfUrl = exportAllocationSheetToPdf(sheet, displayVal + " 割り振り表.pdf", allocPdfIdKey);
+  var allocPdfIdKey = 'ALLOC_PDF_ID_' + mmdd + '割り振り', pdfInfo = {};
+  var pdfUrl = exportAllocationSheetToPdf(sheet, displayVal + " 割り振り表.pdf", allocPdfIdKey, pdfInfo);
   PropertiesService.getScriptProperties().setProperty('ALLOC_PDF_URL_' + mmdd + '割り振り', pdfUrl);
   PropertiesService.getScriptProperties().setProperty('LATEST_ALLOCATION_URL', pdfUrl); 
   autoArchiveOtherDates_(mmdd);
-  return "<h3>作成完了しました🎉</h3><p>割り振り表と、ブレイクアウトルームの表（" + borSheets.join("／") + "）を作成しました。</p><br><a href='" + pdfUrl + "' target='_blank' style='background:#0055ff; color:#fff; padding:10px 20px; text-decoration:none; border-radius:5px; font-weight:bold;'>📄 作成されたPDFを開く</a>";
+  return "<h3>作成完了しました🎉</h3><p>割り振り表と、ブレイクアウトルームの表（" + borSheets.join("／") + "）を作成しました。</p>" + pdfRecreatedNote_(pdfInfo) + "<br><a href='" + pdfUrl + "' target='_blank' style='background:#0055ff; color:#fff; padding:10px 20px; text-decoration:none; border-radius:5px; font-weight:bold;'>📄 作成されたPDFを開く</a>";
 }
 
 // === ブレイクアウトルーム(BOR)の表 ===
@@ -1620,7 +1684,7 @@ function estimateRowHeight_(text, charsPerLine, lineHeight) {
   return Math.max(21, totalLines * lineHeight + 6);
 }
 
-function exportAllocationSheetToPdf(sheet, fileName, fileIdPropKey) {
+function exportAllocationSheetToPdf(sheet, fileName, fileIdPropKey, out) {
   var ss = getSS_(), spreadsheetId = ss.getId(), sheetId = sheet.getSheetId(), lastRow = sheet.getLastRow();
   // A4縦。fitw=true（幅を1ページに合わせる）は必須。
   // これを外すと、幅が印字領域をわずかでも超えたときに表が左右に分断され、
@@ -1634,6 +1698,7 @@ function exportAllocationSheetToPdf(sheet, fileName, fileIdPropKey) {
   var blob = fetchSheetPdf_(sheet, url, fileName), props = PropertiesService.getScriptProperties();
   var existingId = fileIdPropKey ? props.getProperty(fileIdPropKey) : null;
   if (existingId && replacePdfFile_(existingId, blob, fileName)) return DriveApp.getFileById(existingId).getUrl();
+  if (existingId && out) out.recreated = true;   // 前のPDFを差し替えられず、新しいURLになった
   var file = DriveApp.getFileById(spreadsheetId), folder = file.getParents().hasNext() ? file.getParents().next() : DriveApp.getRootFolder();
   var pdfFile = folder.createFile(blob);
   pdfFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
