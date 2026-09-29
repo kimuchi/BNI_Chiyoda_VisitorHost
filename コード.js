@@ -2,7 +2,7 @@
 
 // 反映されたか確かめるための版。変更したら日付を更新する。
 // clasp push / デプロイが効いているかは、これを画面で見れば分かる。
-var SYSTEM_VERSION_ = '2026-09-29j';
+var SYSTEM_VERSION_ = '2026-09-29k';
 
 function getSystemVersion() { return SYSTEM_VERSION_; }
 
@@ -851,6 +851,32 @@ function fetchSheetPdf_(sheet, url, fileName) {
   }
 }
 
+// 新しいPDFを作り、「リンクを知っている全員が閲覧可」にする。
+// 作る場所：スプレッドシートと同じフォルダ → 素材フォルダの 03_生成物 → 作った方のマイドライブ（書き込めるところ）。
+// 以前は、スプレッドシートのフォルダが閲覧だけの共有の方は作れずに止まり、リンクの共有が組織で禁止されている方は
+// 共有できないPDFを作っては残していた（作り直すたびに増える）。リンクで共有できないときは、ビジターの方が開けないので、
+// そのPDFはゴミ箱に入れて、分かる言葉で止める（登録しない）
+function createSharedPdf_(spreadsheetId, blob) {
+  var places = [
+    function () { var ps = DriveApp.getFileById(spreadsheetId).getParents(); return ps.hasNext() ? ps.next() : null; },
+    function () { return assetRootUnreachable_() ? null : getAssetFolder_('output'); },
+    function () { return DriveApp.getRootFolder(); }
+  ], pdfFile = null, lastErr = null;
+  for (var i = 0; i < places.length && !pdfFile; i++) {
+    try { var folder = places[i](); if (folder) pdfFile = folder.createFile(blob); }
+    catch (e) { lastErr = e; console.warn('[PDF] ここには作れないので、次の場所に作ります: ' + (e && e.message ? e.message : e)); }
+  }
+  if (!pdfFile) throw new Error('PDFを保存できる場所がありませんでした: ' + driveHelpHint_(lastErr));
+  try { pdfFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); }
+  catch (e) {
+    try { pdfFile.setTrashed(true); } catch (x) {}
+    throw new Error('PDFを「リンクを知っている全員が閲覧可」にできませんでした（このGoogleアカウントでは、組織の設定でリンクの共有が禁止されている可能性があります）。'
+      + 'ビジターの方が開けないため、PDFは登録していません。リンクの共有ができるアカウント（スプレッドシートの持ち主など）で作り直してください。（'
+      + (e && e.message ? e.message : e) + '）');
+  }
+  return pdfFile;
+}
+
 // 前のPDFを差し替えられずに新しく作ったとき（URLが変わった）の知らせ。送ったリンクは古い中身のままなので、送り直してもらう
 function pdfRecreatedNote_(info) {
   return info && info.recreated
@@ -880,9 +906,7 @@ function exportSheetToPdf(sheet, fileName, fileIdPropKey, out) {
   var existingId = fileIdPropKey ? props.getProperty(fileIdPropKey) : null;
   if (existingId && replacePdfFile_(existingId, blob, fileName)) return DriveApp.getFileById(existingId).getUrl();
   if (existingId && out) out.recreated = true;   // 前のPDFを差し替えられず、新しいURLになった
-  var file = DriveApp.getFileById(spreadsheetId), folder = file.getParents().hasNext() ? file.getParents().next() : DriveApp.getRootFolder();
-  var pdfFile = folder.createFile(blob);
-  pdfFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  var pdfFile = createSharedPdf_(spreadsheetId, blob);
   if (fileIdPropKey) props.setProperty(fileIdPropKey, pdfFile.getId());
   return pdfFile.getUrl();
 }
@@ -1785,9 +1809,7 @@ function exportAllocationSheetToPdf(sheet, fileName, fileIdPropKey, out) {
   var existingId = fileIdPropKey ? props.getProperty(fileIdPropKey) : null;
   if (existingId && replacePdfFile_(existingId, blob, fileName)) return DriveApp.getFileById(existingId).getUrl();
   if (existingId && out) out.recreated = true;   // 前のPDFを差し替えられず、新しいURLになった
-  var file = DriveApp.getFileById(spreadsheetId), folder = file.getParents().hasNext() ? file.getParents().next() : DriveApp.getRootFolder();
-  var pdfFile = folder.createFile(blob);
-  pdfFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  var pdfFile = createSharedPdf_(spreadsheetId, blob);
   if (fileIdPropKey) props.setProperty(fileIdPropKey, pdfFile.getId());
   return pdfFile.getUrl();
 }

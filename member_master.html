@@ -95,7 +95,7 @@
  window.onload=load;
  // まだ「名簿を保存」していない変更があるまま閉じようとしたら、ブラウザの確認を出す
  window.addEventListener('beforeunload', function(e){ if(dirty){ e.preventDefault(); e.returnValue=''; return ''; } });
- function esc(x){var d=document.createElement('span');d.textContent=x==null?'':x;return d.innerHTML;}
+ function esc(x){return String(x==null?'':x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}   // 「"」を含む値が入力欄で切れないように
  // keepMsg … 取り込みなどのあとに読み直すときは、そのお知らせを消さない
  // 取り込む前の名簿の控え：いつの、何の前か。「取り込む前に戻す」で入れ替える（もう一度押すと戻す前に戻る）
  function renderBackup(b){

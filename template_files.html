@@ -27,12 +27,13 @@
   <div id="msg"></div>
 
 <script>
-  var busy=false;
+  var busy=false, status={};
   window.onload=load;
   function load(){ google.script.run.withSuccessHandler(render).withFailureHandler(fail).getTemplateStatus(); }
   function esc(x){ var d=document.createElement('span'); d.textContent=x==null?'':x; return d.innerHTML; }
 
   function render(st){
+    status=st||{};
     var w=document.getElementById('assetWarn');
     if(st.assets && !st.assets.folderId){
       w.style.display='block';
@@ -46,8 +47,9 @@
          + '<input type="file" accept=".pptx" id="f_'+t.kind+'"> '
          + '<button onclick="up(\''+t.kind+'\')" id="b_'+t.kind+'">登録する</button>'
          + '<div class="state" id="s_'+t.kind+'">'
-         + (t.registered ? '<span class="ok">✓ 登録済み</span>　<a href="'+t.url+'" target="_blank">'+esc(t.fileName)+'</a>'
-                         : '<span class="ng">未登録</span>')
+         + (t.registered ? '<span class="ok">✓ 登録済み</span>　<a href="'+esc(t.url)+'" target="_blank">'+esc(t.fileName)+'</a>'
+            : t.unreadable ? '<span class="ng">登録済みですが、このアカウントでは開けません</span><div style="white-space:pre-wrap;font-size:12px;color:#8a2119;margin-top:4px;">'+esc(t.unreadable)+'</div>'
+            : '<span class="ng">未登録</span>')
          + '</div></div>';
     });
     document.getElementById('list').innerHTML=h;
@@ -59,6 +61,11 @@
   function up(kind){
     var f=document.getElementById('f_'+kind).files[0];
     if(!f){ alert('.pptx ファイルを選択してください。'); return; }
+    // 登録済み（開けないものも）を置き換えるときは確かめる（チャプター全体のテンプレートが替わるため）
+    var cur=(status.templates||[]).filter(function(t){ return t.kind===kind; })[0];
+    if(cur && (cur.registered || cur.unreadable)
+       && !confirm('「'+cur.label+'」は登録済みです。'+(cur.unreadable ? '（このアカウントでは開けません）' : '')
+                   +'\n選んだファイルで置き換えると、みんなが使うテンプレートが替わります。よろしいですか？')) return;
     setBusy(true);
     document.getElementById('msg').style.color='#0055ff';
     document.getElementById('msg').innerText='検証してアップロードしています...';

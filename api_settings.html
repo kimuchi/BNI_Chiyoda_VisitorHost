@@ -26,14 +26,19 @@
   <div id="saveNote" style="margin-top:14px;font-weight:bold;white-space:pre-wrap;line-height:1.7;"></div>
 
   <script>
+    var loaded = false;   // 読み込めたか（読めないまま保存すると、今のAPIキーが消えるため）
     window.onload = function() {
       google.script.run.withSuccessHandler(function(data){
+        loaded = true;
         document.getElementById('apiKey').value = data.apiKey;
         document.getElementById('modelName').value = data.modelName;
+      }).withFailureHandler(function(e){
+        saveNote('読み込めませんでした: ' + (e && e.message ? e.message : e) + '\n画面を開き直してください（読み込めるまで保存はできません。空のまま保存すると、今の設定が消えるため）。', '#c00');
       }).getApiSettings();
     };
 
     function save() {
+      if (!loaded) { saveNote('設定を読み込めていないため、保存できません。画面を開き直してください。', '#c00'); return; }
       var data = {
         apiKey: document.getElementById('apiKey').value,
         modelName: document.getElementById('modelName').value

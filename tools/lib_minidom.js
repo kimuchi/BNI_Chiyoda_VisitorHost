@@ -143,21 +143,26 @@ function loadPage(file, opts) {
       return x;
     },
     body: { appendChild() {}, removeChild() {} },
+    // 「button」のようにタグ名だけのときは、id の付いたその部品を返す（ほかは空）
+    querySelectorAll: (sel) => (/^[a-z]+$/.test(sel) ? Object.values(els).filter((e) => e.tag === sel) : []),
     execCommand: (cmd) => { if (cmd === 'copy') log.copies++; return true; },
   };
 
   // google.script.run の代わり。返事は flush() で順に届ける（本物と同じく後から届く）
   const queue = [];
   function runner() {
-    let ok = null;
+    let ok = null, ng = null;
     const r = new Proxy({}, {
       get(_, name) {
         if (name === 'withSuccessHandler') return (f) => { ok = f; return r; };
-        if (name === 'withFailureHandler') return () => r;
+        if (name === 'withFailureHandler') return (f) => { ng = f; return r; };
         return (...args) => {
           log.calls.push({ name: String(name), args });
           if (!server[name]) { fails.push('サーバーに無い関数を呼んでいる: ' + String(name)); return; }
-          const res = server[name](...args);
+          let res;
+          // サーバーで例外が出たときは、本物と同じく withFailureHandler に届ける（無ければそのまま投げる）
+          try { res = server[name](...args); }
+          catch (e) { if (ng) { const h = ng; queue.push(() => h(e)); return; } throw e; }
           if (ok) queue.push(() => ok(res));
         };
       },
