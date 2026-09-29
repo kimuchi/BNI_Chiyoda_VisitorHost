@@ -60,6 +60,12 @@
     var commonCc = "";
     var commonBcc = "";
     var linkWarning = "";   // 本文に入れるPDFのリンクが無いときの知らせ（送る前の確認にも出す）
+    function fmtSent(iso) {
+      var t = new Date(iso);
+      if (isNaN(t.getTime())) return '';
+      var p = function (n) { return (n < 10 ? '0' : '') + n; };
+      return (t.getMonth() + 1) + '/' + t.getDate() + ' ' + p(t.getHours()) + ':' + p(t.getMinutes());
+    }
     function esc(s) {
       return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -108,9 +114,11 @@
         ? '⚠ ' + missing.join('・') + 'がありません。本文のリンクは「【未生成】」になります。'
           + '先に「1. CSVから名簿・PDF作成」（メンバーブックは「メンバーブックの編集・PDF出力」）で作ってください。'
         : '';
+      var skipped = (data.drafts || []).filter(function (d) { return d.send === false; }).length;
       document.getElementById('meetNote').innerText =
         '「' + data.sheet + '」を読み込みました。'
         + (data.date ? '本文の{{date}}には「' + data.date + '」が入ります。' : '')
+        + (skipped ? '\nすでに送った方・Spreadingでキャンセルの方（' + skipped + '名）は、チェックを外してあります。' : '')
         + (linkWarning ? '\n' + linkWarning : '');
       document.getElementById('meetNote').style.color = linkWarning ? '#c00' : '';
 
@@ -127,13 +135,15 @@
         var div = document.createElement('div');
         div.className = 'card';
         // 名前・件名・本文はHTMLとして読ませない（件名に「"」があると、そこで切れて送られてしまうため）
+        var marks = (d.cancelled ? `<span style="background:#c00; color:#fff; padding:3px 8px; border-radius:12px; font-size:11px; margin-left:6px;">キャンセル（Spreading）</span>` : '')
+          + (d.sentAt ? `<span style="background:#777; color:#fff; padding:3px 8px; border-radius:12px; font-size:11px; margin-left:6px;">送信済み ${esc(fmtSent(d.sentAt))}</span>` : '');
         div.innerHTML = `
           <div class="card-header">
             <div>
               <span style="background:#0055ff; color:#fff; padding:3px 8px; border-radius:12px; font-size:11px;">${esc(d.type)}</span>
-              <strong>${esc(d.name)} 様</strong> (${esc(d.email)})
+              <strong>${esc(d.name)} 様</strong> (${esc(d.email)})${marks}
             </div>
-            <label class="checkbox-lbl"><input type="checkbox" id="chk_${i}" checked> 送信する</label>
+            <label class="checkbox-lbl"><input type="checkbox" id="chk_${i}" ${d.send === false ? '' : 'checked'}> 送信する</label>
           </div>
           <input type="text" id="subj_${i}" value="${esc(d.subject)}">
           <textarea id="body_${i}">${esc(d.body)}</textarea>
@@ -144,7 +154,16 @@
     }
 
     function startSending() {
-      if(!confirm((linkWarning ? linkWarning + "\n\n" : "") + "チェックが入っている全員にメールを順番に送信します。\nよろしいですか？")) return;
+      var again = 0, cancelledOn = 0;
+      for (var j = 0; j < drafts.length; j++) {
+        if (!document.getElementById('chk_' + j).checked) continue;
+        if (drafts[j].sentAt) again++;
+        if (drafts[j].cancelled) cancelledOn++;
+      }
+      var warn = (linkWarning ? linkWarning + "\n\n" : "")
+        + (again ? "⚠ このうち " + again + " 名には、すでに送っています（もう一度送ります）。\n" : "")
+        + (cancelledOn ? "⚠ このうち " + cancelledOn + " 名は、Spreadingでキャンセルになっています。\n" : "");
+      if(!confirm(warn + (warn ? "\n" : "") + "チェックが入っている全員にメールを順番に送信します。\nよろしいですか？")) return;
       
       commonCc = document.getElementById('commonCc').value;
       commonBcc = document.getElementById('commonBcc').value;

@@ -34,7 +34,7 @@ for (const f of ['コード.js', 'chapter_srv.js', 'webapp_srv.js']) {
 // ---- はじめの状態：メンバー名簿（架空）・休会日 ----
 const MEMBER_HEAD = ['No', '業種区分', '氏名', 'ふりがな', 'カテゴリー', '会社名', '役職', 'メモ', '写真ファイル名', '一言コメント',
   '紹介してほしい人', '協業したい人', '入会日', '更新日', '更新期限日', '会社での役職'];
-const MEMBERS = [['1', '見本 一郎'], ['2', '試験 花子'], ['3', '架空 三郎'], ['4', '仮名 四郎'], ['5', '例示 五月'], ['6', '模擬 六助'], ['7', '空想 七海']];
+const MEMBERS = [['1', '見本 一郎'], ['2', '試験 花子'], ['3', '架空 三郎'], ['4', '仮名 四郎'], ['5', '例示 五月'], ['6', '模擬 六助'], ['7', '空想 七海'], ['8', '見本 みさき']];
 const rosterRows = [MEMBER_HEAD].concat(MEMBERS.map(([no, name]) => MEMBER_HEAD.map((h, i) => (i === 0 ? no : i === 2 ? name : ''))));
 env.reset([
   ['メンバー名簿', false, rosterRows],
@@ -79,6 +79,16 @@ step('CSVの読み込み', () => {
   ck(byName('見本 太郎') && byName('見本 太郎')['招待者'] === '試験 花子', '2) 招待者を名簿の氏名に合わせていない: ' + (byName('見本 太郎') || {})['招待者']);
   ck(byName('例示 次郎') && byName('例示 次郎')['メモ（ビジターリストに表示）'] === 'よろしく, お願いします', '2) 引用符の中のカンマで列がずれた');
   ck(analyzed.header.indexOf('メール') >= 0 && analyzed.header.indexOf('種別') >= 0, '2) 英語の見出しを日本語にしていない: ' + analyzed.header.join(','));
+  ck(byName('仮設 月子') && byName('仮設 月子')['招待者'] === '見本 一郎' && !byName('仮設 月子')._needsInviterReview, '2) 同じ字の招待者なのに確認に回した・別の方にした');
+  // 招待者の照合：姓だけで同じ姓の方が2人 → 黄色で確かめる。「さん」付き・名前に「さ」「ん」がある方も当たる。代理の番号はその方の番号
+  const amb = srv.analyzeCsvData(['Name,Furigana,Inviter,Email,Type',
+    '姓だけ 招待,せいだけ しょうたい,見本さん,a@example.com,Visitor',
+    'さ行 招待,さぎょう しょうたい,見本 みさきさん,b@example.com,Visitor',
+    '代理 さき,だいり さき,見本みさき,c@example.com,Substitute'].join('\n')).rows;
+  const an = (n) => amb.find((x) => x['参加者氏名'] === n) || {};
+  ck(an('姓だけ 招待')._needsInviterReview === true, '2) 姓だけで同じ姓の方が2人いるのに、確かめずに決めた: ' + an('姓だけ 招待')['招待者']);
+  ck(an('さ行 招待')['招待者'] === '見本 みさき' && !an('さ行 招待')._needsInviterReview, '2) 名前に「さ」がある方（「さん」付き）が当たらない: ' + an('さ行 招待')['招待者']);
+  ck(an('代理 さき')._No === '代理8', '2) 代理の番号が違う: ' + an('代理 さき')._No);
 });
 
 // ---- 3) 名簿とPDFを作る ----
@@ -113,12 +123,27 @@ step('再編集して作り直す', () => {
      '4) 読み込んだシートの開催日（書き戻す先）が違う: ' + JSON.stringify(loaded.meeting));
   ck(loaded.rows[0]['メール'] === 'taro@example.com' && loaded.rows[0]['種別'] === 'Visitor', '4) メール・種別が読み戻せない');
   loaded.rows[2]['会社名'] = '例示工務店（新）';
+  loaded.rows[4]['招待者'] = '例示 五月';   // 代理の方の招待者を直す（画面の番号は「代理4」のまま）
   const before = env.drive.created.length;
+  const html4 = srv.createFinalSheet(cand.dateValue, cand.display, loaded.rows, loaded.header);
+  ck(!/新しいPDFを作りました/.test(html4), '4) 差し替えられたのに「新しいPDFを作りました」と出た');
+  ck(env.values('20260930参加者').some((r) => r[0] === '代理5' && r[1] === '代理 太一'), '4) 招待者を直した代理の番号が付け直されない: ' + env.values('20260930参加者').map((r) => r[0]).join(','));
+  loaded.rows[4]['招待者'] = '仮名 四郎';
   srv.createFinalSheet(cand.dateValue, cand.display, loaded.rows, loaded.header);
   ck(env.drive.created.length === before, '4) 作り直したのに新しいPDFができた（URLが変わる）');
   ck(env.props.LATEST_VISITOR_LIST_URL === url0930, '4) 作り直したらPDFのURLが変わった');
   ck(env.fileText(id0930).includes('例示工務店（新）'), '4) 作り直したPDFに直した内容が入っていない');
   ck(env.values('20260930参加者').length === 6, '4) 作り直したら参加者シートの行数が変わった: ' + env.values('20260930参加者').length);
+});
+
+// ---- 4a) 招待者が空の代理を読み戻しても、名簿の最初の方の代理にならない ----
+step('招待者が空の代理', () => {
+  env.ss.insertSheet('20261014参加者').getRange(1, 1, 2, 9).setValues([
+    ['No.', '参加者氏名', 'ふりがな', 'カテゴリー', '会社名', '招待者', '備考', '種別', 'メール'],
+    ['代理??', '空欄 代理', 'くうらん だいり', '', '', '', '', 'Substitute', '']]);
+  const r = srv.loadSheetData('20261014参加者').rows[0];
+  ck(r._No === '代理??', '4a) 招待者が空の代理が、名簿の最初の方の代理になった: ' + r._No);
+  env.ss.deleteSheet(env.sheet('20261014参加者'));
 });
 
 // ---- 4b) 前のPDFをゴミ箱に入れてしまっていても、作り直せば戻して差し替える（ゴミ箱のままだとリンクが開けない） ----
@@ -138,7 +163,8 @@ step('次の週の名簿', () => {
   url1007 = env.props.LATEST_VISITOR_LIST_URL;
   ck(url1007 && url1007 !== url0930, '5) 次の週のPDFが別のファイルにならない');
   ck(env.visibleNames().includes('20261007参加者'), '5) 次の週のシートが隠れた');
-  ck(env.hiddenNames().includes('20260930参加者') && env.hiddenNames().includes('20260930参加者_印刷用'), '5) 今週のシートがアーカイブされない');
+  ck(env.visibleNames().includes('20260930参加者') && env.visibleNames().includes('20260930参加者_印刷用'), '5) 翌週分を先に作ったら、次回（9/30）のシートまで隠れた');
+  ck(env.hiddenNames().includes('20260923参加者'), '5) 過ぎた回（9/23）のシートがアーカイブされない');
   ck(env.fileText(id0930).includes('見本 太郎'), '5) 次の週を作ったら、今週のPDFが書き換わった');
 });
 
@@ -201,9 +227,21 @@ step('メールの画面', () => {
   ck(withList.length === 2 && withList.every((m) => m.body.includes(url0930) && !m.body.includes(url1007)), '6) 送ったメールのビジターリストのURLが違う');
   ck(page.log.confirms.length === 1 && !/⚠/.test(page.log.confirms[0]), '6) 送る前の確認の出方が違う');
 
+  // 開き直すと、送った方はチェックが外れ「送信済み」と出る。送っていない方（チェックを外した方）はチェックが入る
+  const again = loadPage('email.html', { fails, server });
+  again.step('開き直す', () => again.window.onload());
+  ck(again.els.chk_0 && again.els.chk_0.checked === false && again.els.chk_1.checked === false && again.els.chk_3.checked === false && again.els.chk_2.checked === true,
+     '6) 開き直したら、送った方にもチェックが入っている（二重に送る）: ' + [0, 1, 2, 3].map((i) => again.els['chk_' + i] && again.els['chk_' + i].checked).join(','));
+  ck(/すでに送った方・Spreadingでキャンセルの方（3名）は、チェックを外してあります/.test(again.els.meetNote.innerText), '6) 送信済みであることが画面に出ない: ' + again.els.meetNote.innerText);
+  again.els.chk_0.checked = true;   // わざと送った方にもう一度チェック → 送る前の確認で知らせる
+  const b0 = env.mail.length;
+  again.step('もう一度送る', () => again.run('startSending()'));
+  ck(again.log.confirms.length === 1 && /すでに送っています/.test(again.log.confirms[0]), '6) 送った方にもう一度送るとき、確認で知らせない');
+  ck(env.mail.length === b0 + 2, '6) 開き直して送った数が違う: ' + (env.mail.length - b0));
+
   // 件名に「"」や「<」があっても、切れずにそのまま送る
   const tricky = loadPage('email.html', { fails, server: Object.assign({}, server, {
-    generateEmailDrafts: (n) => { const r = clone(srv.generateEmailDrafts(n)); r.drafts = r.drafts.slice(0, 1); r.drafts[0].subject = '【"見本" <定例会>】ご案内 & 資料'; return r; },
+    generateEmailDrafts: (n) => { const r = clone(srv.generateEmailDrafts(n)); r.drafts = r.drafts.slice(0, 1); r.drafts[0].send = true; r.drafts[0].sentAt = ''; r.drafts[0].subject = '【"見本" <定例会>】ご案内 & 資料'; return r; },
   }) });
   tricky.step('開く', () => tricky.window.onload());
   const b2 = env.mail.length;
@@ -222,6 +260,23 @@ step('メールの画面', () => {
   ck(env.mail.length === b3 + 1, '6) 確認でOKしたのに送られない');
 });
 
+// Spreadingでキャンセルになった方は、はじめからチェックを外し、印を出す
+step('キャンセルの方', () => {
+  env.ss.insertSheet('20261021参加者').getRange(1, 1, 3, 10).setValues([
+    ['No.', '参加者氏名', 'ふりがな', 'カテゴリー', '会社名', '招待者', '備考', '種別', 'メール', 'ステータス'],
+    ['V01', '参加 する', 'さんか する', '', '', '', '', 'Visitor', 'yes@example.com', '参加予定'],
+    ['V02', '取消 した', 'とりけし した', '', '', '', '', 'Visitor', 'no@example.com', 'キャンセル']]);
+  const r = srv.generateEmailDrafts('20261021参加者');
+  const yes = r.drafts.find((d) => d.email === 'yes@example.com'), no = r.drafts.find((d) => d.email === 'no@example.com');
+  ck(yes && yes.send === true && no && no.send === false && no.cancelled === true, '6) キャンセルの方にもチェックが入る: ' + JSON.stringify(r.drafts.map((d) => [d.email, d.send, d.cancelled])));
+  const page = loadPage('email.html', { fails, server: { getEmailContext: () => ({ ok: true, sheets: [{ sheet: '20261021参加者', label: '2026年10月21日' }], defaultSheet: '20261021参加者' }),
+    generateEmailDrafts: (n) => JSON.parse(JSON.stringify(srv.generateEmailDrafts(n))) } });
+  page.step('開く', () => page.window.onload());
+  ck(page.els.chk_0 && page.els.chk_0.checked === true && page.els.chk_1 && page.els.chk_1.checked === false && /キャンセルの方（1名）は、チェックを外してあります/.test(page.els.meetNote.innerText),
+     '6) 画面でキャンセルの方のチェックが外れていない・知らせが出ない: ' + page.els.meetNote.innerText);
+  env.ss.deleteSheet(env.sheet('20261021参加者'));
+});
+
 step('メールの送信', () => {
   const b = env.mail.length;
   const r = srv.sendSingleEmail(drafts[0], ' cc@example.com ', '');
@@ -238,7 +293,7 @@ step('割り振り表', () => {
   const d = srv.getAllocationData('2026/09/30');
   ck(d.visitors.map((v) => v.no + ':' + v.name + ':' + v.inviter).join(',') === 'V01:見本 太郎:試験 花子,V02:無メール 氏:,V03:例示 次郎:架空 三郎,G01:仮設 月子:見本 一郎,代理4:代理 太一:仮名 四郎',
      '7) 割り振りのビジター一覧が違う: ' + d.visitors.map((v) => v.no + ':' + v.name + ':' + v.inviter).join(','));
-  ck(d.pool.map((m) => m.no).join(',') === '5,6,7', '7) 招待者を除いた待機メンバーが違う: ' + d.pool.map((m) => m.no).join(','));
+  ck(d.pool.map((m) => m.no).join(',') === '5,6,7,8', '7) 招待者を除いた待機メンバーが違う: ' + d.pool.map((m) => m.no).join(','));
   const facil = { V01: '5', V03: '6' }, orien = { V01: ['7'] }, room = { V01: ['6'], V03: ['7'] }, conn = { V01: 'IT関係の方' };
   const html = srv.saveAllocationSheet('2026/09/30', cand.display, d.visitors, d.pool, facil, orien, room, conn, {});
   ck(/作成完了/.test(html), '7) 割り振り表の完了の知らせが出ない');
