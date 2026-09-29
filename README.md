@@ -129,6 +129,8 @@ BNI_Chiyoda_VisitorHost/
     ├── check_weekly_flow.js  #   毎週の流れを通しで（開催日の候補→CSV→名簿とPDF→再編集→次の週→メールの下書き・画面・送信→
     │                         #     割り振り表の作成と読み戻し→作成済みPDFの確認）。機能のつなぎ目（シート名・開催日・PDFのURL）の誤りを見つける
     ├── lib_sheet_fake.js     #   その検査で使う、書き込める見せかけのスプレッドシート・ドライブ・Gmail（隠れたシートは真っ白のPDFになる、など本物に合わせてある）
+    ├── check_csv_dialog.js   #   「CSVから名簿・PDF作成」の画面を Chromium で（過ぎた回の再編集はその回に書き戻す・Shift_JIS のCSV・
+    │                         #     PDFのみ再作成・PDFを作れなかったとき）
     ├── check_gas_names.py    #   名前の衝突・参照先HTMLの検査
     ├── check_html.py         #   divの対応・スクリプトの構文・共通部品の読み込み漏れ
     ├── check_manual_links.py #   マニュアルの導線 ↔ 実際のメニュー
@@ -416,7 +418,7 @@ clasp deployments
 
 ### 更新が反映されたかの確かめ方
 
-`コード.js` の `SYSTEM_VERSION_`（例: `2026-09-29b`）が、ウェブアプリのトップページの下と
+`コード.js` の `SYSTEM_VERSION_`（例: `2026-09-29c`）が、ウェブアプリのトップページの下と
 「定例会スライド（前半）」「定例会スライド（後半）」の画面の右上に **「版 …」** として出ます。
 機能を変えたらこの値を変え、`clasp push`・`clasp version`・`clasp deploy` のあとに画面で確かめてください。
 

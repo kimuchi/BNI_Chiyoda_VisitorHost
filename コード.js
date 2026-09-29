@@ -2,7 +2,7 @@
 
 // 反映されたか確かめるための版。変更したら日付を更新する。
 // clasp push / デプロイが効いているかは、これを画面で見れば分かる。
-var SYSTEM_VERSION_ = '2026-09-29b';
+var SYSTEM_VERSION_ = '2026-09-29c';
 
 function getSystemVersion() { return SYSTEM_VERSION_; }
 
@@ -677,7 +677,17 @@ function loadSheetData(sheetName) {
     }
     rows.push(obj);
   }
-  return { rows: rows, header: header, membersList: membersList };
+  // 読み込んだシートの開催日。再編集して「作成する」を押したら、この日に書き戻す
+  // （上の「定例会を選択」の日ではなく。開催日が過ぎた回は候補に出ないため、翌週の名簿を上書きしてしまっていた）
+  var km = String(sheetName).match(/^(\d{8}|\d{4})参加者$/), md = km ? meetingDateFromKey_(km[1]) : null;
+  return { rows: rows, header: header, membersList: membersList,
+           meeting: md ? { dateValue: chapterFmt_(md), display: meetingDisplayOf_(md) } : null };
+}
+
+// 開催日の表示（「2026/9/30(水) 第535回」。getMeetingCandidates と同じ形）。回数の無い日（休会日など）は回数を付けない
+function meetingDisplayOf_(d) {
+  var n = meetingCountOf_(d);
+  return Utilities.formatDate(d, "Asia/Tokyo", "yyyy/M/d") + "(" + CHAPTER_WEEK_[d.getDay()] + ")" + (n ? " 第" + n + "回" : "");
 }
 
 function createFinalSheet(meetingDateVal, meetingDisplay, finalRows, originalHeader) {

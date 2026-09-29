@@ -30,6 +30,7 @@ run() {
 echo "── 毎週の流れ（名簿・PDF・メール・割り振り表）"
 run "毎週の流れ（候補→CSV→名簿とPDF→再編集→次の週→メール→割り振り表→PDFの確認）" node tools/check_weekly_flow.js
 run "ビジターリスト・割り振り表のシートとPDF（作った日は隠さない・真っ白のPDFを作らない）" node tools/check_visitor_pdf.js
+run "CSVから名簿・PDF作成の画面（ブラウザ：過ぎた回の再編集はその回に書き戻す・Shift_JIS のCSV）" node tools/check_csv_dialog.js
 run "ビジター情報の投稿文" node tools/check_visitor_post.js
 run "割り振り表のAI" node tools/check_allocation_ai.js
 
