@@ -2,7 +2,7 @@
 
 // 反映されたか確かめるための版。変更したら日付を更新する。
 // clasp push / デプロイが効いているかは、これを画面で見れば分かる。
-var SYSTEM_VERSION_ = '2026-09-29o';
+var SYSTEM_VERSION_ = '2026-09-29p';
 
 function getSystemVersion() { return SYSTEM_VERSION_; }
 
@@ -1197,10 +1197,80 @@ function getMailWebAppSettings() {
 }
 function saveMailWebAppSettings(data) {
   requireSheetAccess_();
-  var props = PropertiesService.getScriptProperties();
-  props.setProperty('MAIL_WEB_APP_URL', (data.webAppUrl || "").trim());
+  var props = PropertiesService.getScriptProperties(), url = (data.webAppUrl || "").trim();
+  props.setProperty('MAIL_WEB_APP_URL', url);
   props.setProperty('MAIL_WEB_APP_TOKEN', (data.webAppToken || "").trim());
-  return "メール送信用のWeb App設定を保存しました。";
+  var warn = mailWebAppUrlWarning_(url);
+  return "メール送信用のWeb App設定を保存しました。" + (warn ? "\n⚠ " + warn : "")
+    + (url ? "\n「代理送信を確かめる」で、送れるかどうかを確かめられます（メールは送りません）。" : "");
+}
+
+// 代理送信の Web App のURLとして使えない形なら、その理由（使えそうなら ''）
+function mailWebAppUrlWarning_(url) {
+  if (!url) return '';
+  if (/\/dev(\?|$)/.test(url)) return 'URLの最後が「/dev」です。/dev のURLは持ち主の方しか使えないため、送れません。「デプロイを管理」に出ている「/exec」で終わるURLを入れてください。';
+  if (!/^https:\/\/script\.google\.com\/(a\/[^\/]+\/)?macros\/s\/[^\/]+\/exec(\?.*)?$/.test(url)) {
+    return '「https://script.google.com/macros/s/…/exec」の形のURLではありません。代理送信用にデプロイした Web App のURLか確かめてください。';
+  }
+  var mine = '';
+  try { mine = getWebAppUrl_(); } catch (e) { mine = ''; }
+  if (mine && mine.replace(/\?.*$/, '') === url.replace(/\?.*$/, '')) {
+    return 'このURLは、名簿システムのウェブアプリ（メンバーが開く画面）のURLです。ログインが要るため、代理送信には使えません。';
+  }
+  return '';
+}
+
+// 代理送信の Web App の返事が、送った結果（JSON）でなかったとき：何が返ってきたかを、直し方つきの文にする。
+// （以前は「SyntaxError: Unexpected token '<'」とだけ出て、送れていないことも、直し方も分からなかった）
+var MAIL_RELAY_FIX_ = '\n今すぐ送るには：この画面の「自分のGmailから送る」を押すか、⚙️ 設定 ＞ メールテンプレート の'
+  + '「代理送信 Web App URL」を空欄にして保存してから送ってください（その画面を開いている方のGmailから送ります）。';
+function relayProblem_(code, text) {
+  var t = String(text || ''), title = ((t.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1] || '').replace(/\s+/g, ' ').trim();
+  var head = 'このメールは送られていません。';
+  if (/accounts\.google\.com|ServiceLogin|signin|ログイン|Sign in/i.test(t)) {
+    return head + '代理送信の Web App が、Googleにログインしないと使えない設定になっています（ログインの画面が返ってきました）。'
+      + '代理送信用の Apps Script の「デプロイを管理」で「次のユーザーとして実行：自分」「アクセスできるユーザー：全員」にして、'
+      + 'デプロイし直してください（URLの最後が /dev のもの、名簿システムのウェブアプリ（メンバーが開く画面）のURLは使えません）。' + MAIL_RELAY_FIX_;
+  }
+  if (code === 404 || /見つかりません|not found|ファイルを開くことができません|unable to open the file/i.test(t)) {
+    return head + '代理送信の Web App のURLが見つかりません（デプロイを削除した・URLが違う）。設定のURLを確かめてください。' + MAIL_RELAY_FIX_;
+  }
+  if (/承認|Authorization is required|requires authorization/i.test(t)) {
+    return head + '代理送信の Web App の持ち主の方が、Googleの許可をしていません。持ち主の方が Apps Script の画面で一度実行して、許可してください。' + MAIL_RELAY_FIX_;
+  }
+  if (/doPost/.test(t)) {
+    return head + 'そのURLの Web App には、メールを送る仕組み（doPost）がありません。代理送信用にデプロイした Web App のURLか確かめてください。' + MAIL_RELAY_FIX_;
+  }
+  return head + '代理送信の Web App から、送った結果ではなく別のページが返ってきました（HTTP ' + code + (title ? '・「' + title + '」' : '') + '）。' + MAIL_RELAY_FIX_;
+}
+function relayTokenProblem_() {
+  return 'このメールは送られていません。代理送信の合言葉（シークレットトークン）が、代理送信の Web App と合っていません。'
+    + '⚙️ 設定 ＞ メールテンプレート の「代理送信用 シークレットトークン」を確かめてください。' + MAIL_RELAY_FIX_;
+}
+// 送る方（この画面を開いている方）のメールアドレス。分からなければ ''
+function mailSenderAddress_() {
+  try { return Session.getActiveUser().getEmail() || Session.getEffectiveUser().getEmail() || ''; } catch (e) { return ''; }
+}
+
+// 設定の画面の「代理送信を確かめる」：代理送信の Web App に、送らずに返事だけをもらう（メールは送らない）
+function testMailWebApp(data) {
+  requireSheetAccess_();
+  var url = String((data && data.webAppUrl) || '').trim(), token = String((data && data.webAppToken) || '').trim() || SECRET_TOKEN;
+  if (!url) return { ok: true, message: '代理送信は使いません。メールは、送る画面を開いている方のGmailから送ります' + (mailSenderAddress_() ? '（いまは ' + mailSenderAddress_() + '）' : '') + '。' };
+  var warn = mailWebAppUrlWarning_(url);
+  try {
+    var res = UrlFetchApp.fetch(url, { method: 'post', contentType: 'application/json', payload: JSON.stringify({ token: token, ping: true }),
+                                       muteHttpExceptions: true, followRedirects: true });
+    var code = res.getResponseCode(), text = res.getContentText(), r = null;
+    try { r = JSON.parse(text); } catch (e) { r = null; }
+    if (!r || typeof r !== 'object') return { ok: false, message: relayProblem_(code, text).replace(/^このメールは送られていません。/, '') + (warn ? '\n⚠ ' + warn : '') };
+    if (r.success && r.ping) return { ok: true, message: '代理送信の Web App から返事がありました。送れます' + (r.sender ? '（送信元：' + r.sender + '）' : '') + '。' };
+    if (/アクセス権限がありません/.test(String(r.error || ''))) return { ok: false, message: relayTokenProblem_().replace(/^このメールは送られていません。/, '') };
+    // 古い版の代理送信（確かめる仕組みの無いもの）：返事は来ているので、送る仕組みは動いている
+    return { ok: true, message: '代理送信の Web App から返事がありました（古い版のため、送信元は確かめられませんでした）。' };
+  } catch (e) {
+    return { ok: false, message: '代理送信の Web App に届きませんでした: ' + (e && e.message ? e.message : e) + (warn ? '\n⚠ ' + warn : '') };
+  }
 }
 function getActiveMailWebApp_() {
   var props = PropertiesService.getScriptProperties();
@@ -1396,7 +1466,8 @@ function pdfUrlOfProp_(idKey, urlKey) {
   }
 }
 
-function sendSingleEmail(e, cc, bcc) {
+// opt.direct … 代理送信を使わず、この方のGmailから送る（代理送信の Web App が動いていないときの画面の「自分のGmailから送る」）
+function sendSingleEmail(e, cc, bcc, opt) {
   try {
     var options = { name: chapterLabel_() };
     if (cc && cc.trim() !== "") options.cc = cc.trim();
@@ -1404,17 +1475,24 @@ function sendSingleEmail(e, cc, bcc) {
     var toEmail = e.email ? e.email.toString().normalize('NFKC').trim() : "";
     if (!toEmail || toEmail.indexOf('@') === -1) return { success: false, error: "無効なメールアドレス形式 (" + toEmail + ")" };
 
-    var cfg = getActiveMailWebApp_();
-    if (!cfg.url) {
+    var cfg = getActiveMailWebApp_(), direct = !!(opt && opt.direct);
+    if (!cfg.url || direct) {
       GmailApp.sendEmail(toEmail, e.subject, e.body, options);
     } else {
       var payload = { token: cfg.token, to: toEmail, subject: e.subject, body: e.body, options: options };
       var res = UrlFetchApp.fetch(cfg.url, { method: "post", contentType: "application/json", payload: JSON.stringify(payload), muteHttpExceptions: true, followRedirects: true });
-      var resData = JSON.parse(res.getContentText());
-      if (!resData.success) throw new Error(resData.error);
+      var code = res.getResponseCode(), text = res.getContentText(), resData = null;
+      try { resData = JSON.parse(text); } catch (pe) { resData = null; }
+      // 送った結果（JSON）でなければ、代理送信の Web App が動いていない（ログインの画面・見つからないページなど）。
+      // ほかの方にも同じく送れないので、画面はここで止めて「自分のGmailから送る」を出す（relayBroken）
+      if (!resData || typeof resData !== 'object') return { success: false, relayBroken: true, me: mailSenderAddress_(), error: relayProblem_(code, text) };
+      if (!resData.success) {
+        if (/アクセス権限がありません/.test(String(resData.error || ''))) return { success: false, relayBroken: true, me: mailSenderAddress_(), error: relayTokenProblem_() };
+        throw new Error(resData.error);
+      }
     }
     var at = markMailSent_(e.sheet, toEmail);
-    return { success: true, sentAt: at };
+    return { success: true, sentAt: at, direct: direct || !cfg.url };
   } catch (error) { return { success: false, error: error.toString() }; }
 }
 
@@ -1446,6 +1524,12 @@ function doPost(e) {
     var params = JSON.parse(e.postData.contents);
     var cfg = getActiveMailWebApp_();
     if (params.token !== cfg.token) throw new Error("アクセス権限がありません");
+    // 設定の画面の「代理送信を確かめる」：送らずに、送る方（この Web App の持ち主）だけを返す
+    if (params.ping) {
+      var sender = '';
+      try { sender = Session.getEffectiveUser().getEmail() || ''; } catch (pe) {}
+      return ContentService.createTextOutput(JSON.stringify({ success: true, ping: true, sender: sender })).setMimeType(ContentService.MimeType.JSON);
+    }
     GmailApp.sendEmail(params.to, params.subject, params.body, params.options);
     return ContentService.createTextOutput(JSON.stringify({success: true})).setMimeType(ContentService.MimeType.JSON);
   } catch (err) {

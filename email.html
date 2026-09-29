@@ -44,19 +44,28 @@
   </div>
 
   <div id="progressArea" style="display:none; text-align:center; padding-top:40px;">
-    <h3 style="color:#0055ff;">メール送信中...そのままお待ちください</h3>
+    <h3 id="progressHead" style="color:#0055ff;">メール送信中...そのままお待ちください</h3>
     <div class="progress-wrap" style="display:block;">
       <div id="progressBar" class="progress-bar"></div>
     </div>
     <p id="progressText" style="font-weight:bold; font-size:18px;">0 / 0 件 処理完了</p>
     <p id="progressDetail" style="font-size:14px; color:#666;"></p>
+    <!-- 代理送信の Web App が動いていないとき：止めて、理由と「自分のGmailから送る」を出す -->
+    <div id="relayBox" style="display:none; text-align:left; background:#fff4e5; border:2px solid #e67e22; border-radius:6px; padding:12px 14px; margin:14px 0;">
+      <div style="font-weight:bold; color:#c0392b; font-size:15px;">メールは送られていません（<span id="relayCount">0</span>名）。代理送信の Web App が動いていないため、止めました。</div>
+      <div id="relayWhy" style="font-size:13px; margin:8px 0; white-space:pre-wrap; line-height:1.6;"></div>
+      <button id="directBtn" onclick="sendDirect()" style="background:#e67e22; color:#fff; border:none; padding:10px 16px; font-weight:bold; border-radius:4px; cursor:pointer; font-size:14px;">自分のGmailから送る</button>
+      <div id="directNote" style="font-size:12px; color:#555; margin-top:6px;"></div>
+    </div>
     <div id="logArea" style="margin-top: 20px; text-align: left;"></div>
+    <div id="doneMsg"></div>
   </div>
 
   <script>
     var drafts = [];
     var sendList = [];
     var currentIndex = 0;
+    var sendOpt = {}, errCount = 0, pendingRest = [], senderMe = '';   // 代理送信が動かないときに止めた、まだ送っていない方
     var commonCc = "";
     var commonBcc = "";
     var linkWarning = "";   // 本文に入れるPDFのリンクが無いときの知らせ（送る前の確認にも出す）
@@ -190,20 +199,62 @@
         return;
       }
 
-      // プログレス画面に切り替え
+      sendOpt = {};
+      runSend();
+    }
+
+    // プログレス画面に切り替えて、sendList を順に送る
+    function runSend() {
+      errCount = 0;
       document.getElementById('setupArea').style.display = 'none';
       document.getElementById('progressArea').style.display = 'block';
+      document.getElementById('relayBox').style.display = 'none';
+      document.getElementById('doneMsg').innerHTML = '';
+      document.getElementById('progressHead').innerText = 'メール送信中...そのままお待ちください';
+      document.getElementById('progressBar').style.width = '0%';
       document.getElementById('progressText').innerText = "0 / " + sendList.length + " 件 処理完了";
-      
       currentIndex = 0;
       sendNext();
+    }
+    function addErr(text) {
+      var errDiv = document.createElement('div');
+      errDiv.className = 'error-log';
+      errDiv.innerText = text;
+      document.getElementById('logArea').appendChild(errDiv);
+    }
+    // 代理送信の Web App が動いていない：ほかの方にも同じく送れないので、ここで止める（以前は全員に同じエラーを出しながら
+    // 最後まで進み、「すべての処理が完了しました！🎉」と出ていた）。まだ送っていない方は「自分のGmailから送る」で送れる
+    function stopForRelay(res) {
+      pendingRest = sendList.slice(currentIndex);
+      senderMe = res.me || '';
+      document.getElementById('progressHead').innerText = '送信を止めました';
+      document.getElementById('progressDetail').innerText = '';
+      document.getElementById('relayCount').innerText = pendingRest.length;
+      document.getElementById('relayWhy').innerText = res.error || '';
+      document.getElementById('directBtn').innerText = '自分のGmail' + (senderMe ? '（' + senderMe + '）' : '') + 'から、' + pendingRest.length + '名に送る';
+      document.getElementById('directNote').innerText = '代理送信（管理者のGmail）ではなく、この画面を開いている方のGmailから送ります（送り主の名前は、これまでどおりチャプター名です）。';
+      document.getElementById('relayBox').style.display = 'block';
+    }
+    function sendDirect() {
+      if (!pendingRest.length) return;
+      if (!confirm('代理送信を使わず、この画面を開いている方のGmail' + (senderMe ? '（' + senderMe + '）' : '') + 'から、'
+          + pendingRest.length + '名にメールを送ります。よろしいですか？')) return;
+      sendList = pendingRest; pendingRest = [];
+      sendOpt = { direct: true };
+      document.getElementById('logArea').innerHTML = '';
+      runSend();
     }
 
     // 1件ずつ再帰的に送信
     function sendNext() {
       if(currentIndex >= sendList.length) {
         document.getElementById('progressDetail').innerText = "完了";
-        document.getElementById('progressArea').innerHTML += "<h3 style='color:green; text-align:center; margin-top:30px;'>すべての処理が完了しました！🎉</h3><p style='text-align:center;'>画面を閉じてください。</p>";
+        document.getElementById('progressHead').innerText = errCount ? '送れなかった方がいます' : '送信が終わりました';
+        // 送れなかった方がいるのに「完了🎉」と出さない
+        document.getElementById('doneMsg').innerHTML = errCount
+          ? "<h3 style='color:#c0392b; text-align:center; margin-top:30px;'>送れなかった方がいます（" + errCount + "名）。上の理由を確かめてください。</h3>"
+            + "<p style='text-align:center;'>送れた方には「送信済み」の印が付きます。画面を開き直すと、送れなかった方にだけチェックが入ります。</p>"
+          : "<h3 style='color:green; text-align:center; margin-top:30px;'>すべての処理が完了しました！🎉</h3><p style='text-align:center;'>画面を閉じてください。</p>";
         return;
       }
 
@@ -214,10 +265,9 @@
         .withSuccessHandler(function(res) {
           // エラーがあった場合は画面に残す
           if(!res.success) {
-            var errDiv = document.createElement('div');
-            errDiv.className = 'error-log';
-            errDiv.innerText = "⚠️ " + e.name + " 様: " + res.error;
-            document.getElementById('logArea').appendChild(errDiv);
+            if (res.relayBroken && !sendOpt.direct) { stopForRelay(res); return; }
+            errCount++;
+            addErr("⚠️ " + e.name + " 様: " + res.error);
           }
 
           currentIndex++;
@@ -230,15 +280,13 @@
         })
         .withFailureHandler(function(err) {
           // GAS自体の通信エラーなど
-          var errDiv = document.createElement('div');
-          errDiv.className = 'error-log';
-          errDiv.innerText = "⚠️ システムエラー (" + e.name + " 様): " + err.message;
-          document.getElementById('logArea').appendChild(errDiv);
+          errCount++;
+          addErr("⚠️ システムエラー (" + e.name + " 様): " + err.message);
 
           currentIndex++;
           sendNext();
         })
-        .sendSingleEmail(e, commonCc, commonBcc);
+        .sendSingleEmail(e, commonCc, commonBcc, sendOpt);
     }
   </script>
 </body>
