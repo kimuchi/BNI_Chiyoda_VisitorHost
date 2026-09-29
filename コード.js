@@ -2,7 +2,7 @@
 
 // 反映されたか確かめるための版。変更したら日付を更新する。
 // clasp push / デプロイが効いているかは、これを画面で見れば分かる。
-var SYSTEM_VERSION_ = '2026-09-29c';
+var SYSTEM_VERSION_ = '2026-09-29d';
 
 function getSystemVersion() { return SYSTEM_VERSION_; }
 
@@ -735,6 +735,7 @@ function createFinalSheet(meetingDateVal, meetingDisplay, finalRows, originalHea
   SpreadsheetApp.flush();
   var pdfFileIdKey = 'VISITOR_PDF_ID_' + baseSheetName;
   var pdfUrl = exportSheetToPdf(printSheet, meetingDisplay + " ビジター様リスト.pdf", pdfFileIdKey);
+  PropertiesService.getScriptProperties().setProperty('VISITOR_PDF_URL_' + baseSheetName, pdfUrl);   // メールに入れるリンク（開催日ごと）
   PropertiesService.getScriptProperties().setProperty('LATEST_VISITOR_LIST_URL', pdfUrl);
   PropertiesService.getScriptProperties().setProperty('LATEST_MEETING_DATE', meetingDateVal); 
   ss.setActiveSheet(dataSheet);
@@ -756,6 +757,7 @@ function regeneratePdfOnly(dataSheetName) {
   SpreadsheetApp.flush();
   var pdfFileIdKey = 'VISITOR_PDF_ID_' + dataSheetName;
   var pdfUrl = exportSheetToPdf(printSheet, meetingDisplay + " ビジター様リスト.pdf", pdfFileIdKey);
+  PropertiesService.getScriptProperties().setProperty('VISITOR_PDF_URL_' + dataSheetName, pdfUrl);
   PropertiesService.getScriptProperties().setProperty('LATEST_VISITOR_LIST_URL', pdfUrl);
   return "<h3>PDFを再作成しました🎉</h3><p>「" + printSheetName + "」の現在の内容でPDFを上書きしました。</p><br><a href='" + pdfUrl + "' target='_blank' style='background:#0055ff; color:#fff; padding:10px 20px; text-decoration:none; border-radius:5px; font-weight:bold;'>📄 PDFを開く</a>";
 }
@@ -1223,23 +1225,24 @@ function generateEmailDrafts(sheetName) {
 }
 
 // その参加者シート（開催日）のビジターリストPDFのURL。作ったときに控えたID（VISITOR_PDF_ID_＋シート名）から求める。
-// 無い・消した・ゴミ箱のときは空（別の開催日のPDFで代わりにしない）
+// 無い・ゴミ箱のときは空（別の開催日のPDFで代わりにしない）
 function visitorPdfUrlOf_(sheetName) {
-  return pdfUrlOfProp_('VISITOR_PDF_ID_' + sheetName);
+  return pdfUrlOfProp_('VISITOR_PDF_ID_' + sheetName, 'VISITOR_PDF_URL_' + sheetName);
 }
 // 割り振り表のPDF（ALLOC_PDF_ID_＋開催日＋「割り振り」）
 function allocationPdfUrlOf_(key) {
-  return pdfUrlOfProp_('ALLOC_PDF_ID_' + key + '割り振り');
+  return pdfUrlOfProp_('ALLOC_PDF_ID_' + key + '割り振り', 'ALLOC_PDF_URL_' + key + '割り振り');
 }
-function pdfUrlOfProp_(propKey) {
-  var id = PropertiesService.getScriptProperties().getProperty(propKey);
+// ファイルを開けない（PDFを作った方以外で、そのファイルの権限が無い）ときは、作ったときに控えたその開催日のURLを使う
+function pdfUrlOfProp_(idKey, urlKey) {
+  var props = PropertiesService.getScriptProperties(), id = props.getProperty(idKey);
   if (!id) return '';
   try {
     var f = DriveApp.getFileById(id);
     return f.isTrashed() ? '' : f.getUrl();
   } catch (e) {
-    console.warn('[PDF] ' + propKey + ' が開けません: ' + (e && e.message ? e.message : e));
-    return '';
+    console.warn('[PDF] ' + idKey + ' が開けません: ' + (e && e.message ? e.message : e));
+    return props.getProperty(urlKey) || '';
   }
 }
 
@@ -1547,6 +1550,7 @@ function saveAllocationSheet(meetingDateVal, displayVal, visitors, pool, facilAl
   
   var allocPdfIdKey = 'ALLOC_PDF_ID_' + mmdd + '割り振り';
   var pdfUrl = exportAllocationSheetToPdf(sheet, displayVal + " 割り振り表.pdf", allocPdfIdKey);
+  PropertiesService.getScriptProperties().setProperty('ALLOC_PDF_URL_' + mmdd + '割り振り', pdfUrl);
   PropertiesService.getScriptProperties().setProperty('LATEST_ALLOCATION_URL', pdfUrl); 
   autoArchiveOtherDates_(mmdd);
   return "<h3>作成完了しました🎉</h3><p>割り振り表と、ブレイクアウトルームの表（" + borSheets.join("／") + "）を作成しました。</p><br><a href='" + pdfUrl + "' target='_blank' style='background:#0055ff; color:#fff; padding:10px 20px; text-decoration:none; border-radius:5px; font-weight:bold;'>📄 作成されたPDFを開く</a>";

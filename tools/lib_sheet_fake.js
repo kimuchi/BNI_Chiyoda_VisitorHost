@@ -144,6 +144,7 @@ function makeEnv(opt) {
     env.drive = { files: {}, created: [], updated: [] };
     env.addFile('SSID', null, '名簿システム（検査）');   // スプレッドシートそのもの（PDFを同じフォルダに作るときに親を引く）
     env.mail = []; env.fetchLog = []; env.fetchPlan = []; env.sleeps = []; env.errors = [];
+    env.denied = new Set();   // このIDのファイルは開けない（作った方以外で権限が無い）
     return env;
   };
   env.sheet = (n) => env.ss.getSheetByName(n);
@@ -204,7 +205,7 @@ function makeEnv(opt) {
   // ---- ドライブのファイル ----
   const fileObj = (id) => {
     const f = env.drive.files[id];
-    if (!f) throw new Error('No item with the given ID could be found, or you do not have permission to access it. (' + id + ')');
+    if (!f || env.denied.has(id)) throw new Error('No item with the given ID could be found, or you do not have permission to access it. (' + id + ')');
     return {
       getId: () => id, getUrl: () => 'https://drive.example/' + id, getName: () => f.name,
       getBlob: () => f.blob, isTrashed: () => !!f.trashed,
