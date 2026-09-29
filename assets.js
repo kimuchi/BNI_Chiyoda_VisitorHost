@@ -79,15 +79,19 @@ function getAssetFolder_(kind) {
   return ensureChildFolder_(getAssetRootFolder_(), ASSET_SUB_[kind] || ASSET_SUB_.output);
 }
 
-// Driveの権限エラーは原因が分かりにくいので、次にやることを添えて返す
+// Driveの権限エラーは原因が分かりにくいので、次にやることを添えて返す。
+// 「DriveApp.getFileById を呼び出す権限がありません」… 許可の画面で、Googleドライブの項目のチェックを外して許可したときに出る
 function driveHelpHint_(e) {
   var msg = (e && e.message) ? e.message : String(e);
   if (/アクセスが拒否|Access denied|権限|permission|Authorization|承認/i.test(msg)) {
-    return msg + '\n\nGoogleドライブへの許可がまだ取れていない可能性があります。\n'
-      + 'この画面をいったん閉じて、メニューの「🔧 動作確認」＞「Googleの権限を確認・許可する」を実行し、\n'
-      + '表示される画面で「許可」を選んでから、もう一度お試しください。\n'
-      + '※ 許可を求める画面は、いまのような小窓（ダイアログ）の中には表示できません。\n'
-      + '　 そのためメニューから直接実行する必要があります。';
+    return msg + '\n\nこのアカウントでは、Googleドライブへの許可が取れていない可能性があります'
+      + '（はじめの許可の画面で、ドライブの項目にチェックが入っていなかった、など）。次のどちらかで許可し直してください。\n'
+      + '・ウェブアプリで使っているとき … ページの上に出る赤い「Googleの許可をやり直す」を押し、'
+      + '開いた画面で「すべて選択」にチェックを入れてから「続行」を押します。\n'
+      + '・スプレッドシートのメニューから使っているとき … この画面をいったん閉じて、メニューの「🔧 動作確認」＞'
+      + '「Googleの権限を確認・許可する」を実行し、表示される画面で「すべて選択」にチェックを入れて「続行」を押します'
+      + '（許可を求める画面は、小窓（ダイアログ）の中には出せないため）。\n'
+      + 'そのあと、もう一度お試しください。';
   }
   return msg;
 }
@@ -167,7 +171,7 @@ function saveTemplateBase64(kind, base64, fileName) {
     return { ok: true, message: '「' + def.label + '」のテンプレートを登録しました。', status: getTemplateStatus() };
   } catch (e) {
     console.error('[TPL] ' + (e && e.stack ? e.stack : e));
-    return { ok: false, message: '登録中にエラーが発生しました: ' + (e && e.message ? e.message : e) };
+    return { ok: false, message: '登録中にエラーが発生しました: ' + driveHelpHint_(e) };
   }
 }
 

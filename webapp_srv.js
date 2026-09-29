@@ -124,6 +124,7 @@ function doGet(e) {
       var t = HtmlService.createTemplateFromFile('webapp_home');
       t.groups = WEBAPP_PAGES_;
       t.status = webAppStatus_();
+      t.authNotice = webAppAuthNotice_(t.status.authUrl);
       // 画面は googleusercontent.com のiframeの中で動くため、
       // href="?p=..." のような相対リンクだとiframeのURLを基準にしてしまい、
       // まったく別の場所へ飛んで真っ白になる。必ず絶対URLを使う。
@@ -150,7 +151,8 @@ function doGet(e) {
             + '<a href="' + escapeHtmlText_(home) + '" target="_top" '
             + 'style="color:#ffd200;text-decoration:none;font-weight:bold;">'
             + '← メニューに戻る</a>'
-            + '<span style="opacity:.85;">' + escapeHtmlText_(page.label) + '</span></div>';
+            + '<span style="opacity:.85;">' + escapeHtmlText_(page.label) + '</span></div>'
+            + webAppAuthNotice_(webAppAuthUrl_());
     // 画面から別の画面を開くとき（BNI 素材フォルダの画面の「公式ファイルから雛形を作る」など）に使うURL。
     // ダイアログではこの値が無いので、画面の側は WEBAPP_URL があるかどうかで開き方を変える
     bar += '<script>var WEBAPP_URL = ' + JSON.stringify(getWebAppUrl_()).replace(/</g, '\\u003c') + ';</script>';
@@ -176,7 +178,7 @@ function doGet(e) {
 // ウェブアプリが「どのスプレッドシートに繋がっているか」を確かめる。
 // ここが繋がっていないと、どの画面も動かない。
 function webAppStatus_() {
-  var st = { ok: false, name: '', url: '', user: '', message: '' };
+  var st = { ok: false, name: '', url: '', user: '', message: '', authUrl: webAppAuthUrl_() };
   try { st.user = Session.getEffectiveUser().getEmail() || ''; } catch (e) {}
   try {
     var ss = getSS_();
@@ -187,6 +189,32 @@ function webAppStatus_() {
     st.message = (e && e.message ? e.message : String(e));
   }
   return st;
+}
+
+// この方のアカウントで、スクリプトに要る許可がそろっているか。そろっていなければ、許可し直す画面のURL（そろっていれば空）。
+// 許可の画面で一部の権限（Googleドライブなど）のチェックを外すと、その権限を使う機能だけが
+// 「DriveApp.getFileById を呼び出す権限がありません」のように止まる。ウェブアプリにはメニューが無いので、ここから許可し直してもらう
+function webAppAuthUrl_() {
+  try {
+    var info = ScriptApp.getAuthorizationInfo(ScriptApp.AuthMode.FULL);
+    if (info.getAuthorizationStatus() === ScriptApp.AuthorizationStatus.REQUIRED) return info.getAuthorizationUrl() || '';
+  } catch (e) {
+    console.warn('[WEBAPP] 許可の確認: ' + (e && e.message ? e.message : e));
+  }
+  return '';
+}
+
+// 許可が足りないときに、画面の上に出す知らせ（トップページ・各画面の帯の下）
+function webAppAuthNotice_(authUrl) {
+  if (!authUrl) return '';
+  return '<div style="background:#fdecea;border-bottom:1px solid #f3b6b0;color:#8a2119;padding:10px 14px;'
+    + 'font-family:sans-serif;font-size:13px;line-height:1.7;">'
+    + '<b>このアカウントでは、Googleの許可が一部足りません（Googleドライブなど）。</b>'
+    + 'このままだと、PDFやスライドの作成、テンプレートの登録などが「権限がありません」で止まります。<br>'
+    + '<a href="' + escapeHtmlText_(authUrl) + '" target="_blank" rel="noopener" '
+    + 'style="display:inline-block;margin:4px 0;background:#c00;color:#fff;padding:6px 14px;border-radius:5px;'
+    + 'text-decoration:none;font-weight:bold;">Googleの許可をやり直す</a><br>'
+    + '開いた画面で <b>「すべて選択」にチェック</b> を入れてから「続行」を押し、終わったらこのページを再読み込みしてください。</div>';
 }
 
 function escapeHtmlText_(s) {

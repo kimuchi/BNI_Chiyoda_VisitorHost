@@ -217,6 +217,8 @@ function openBigTemplateDialog() {
 // 実際にファイルを作って共有設定まで行い、最後に片付ける。
 // ダイアログの中からは許可を求める画面を出せないため、この関数はメニューから直接呼ぶ。
 function authorizeDriveAccess() {
+  // 許可の画面で一部の権限のチェックを外していた方には、足りない権限をもう一度求める（ここで実行が止まり、許可の画面が出る）
+  if (typeof ScriptApp.requireAllScopes === 'function') ScriptApp.requireAllScopes(ScriptApp.AuthMode.FULL);
   var ui = SpreadsheetApp.getUi(), testName = '_権限確認.txt';
   try {
     var folder = getAssetFolder_('output');
