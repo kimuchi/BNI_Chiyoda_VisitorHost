@@ -17,7 +17,7 @@ const path = require('path');
 const vm = require('vm');
 const { execFileSync } = require('child_process');
 const { makeEnv } = require('./lib_sheet_fake');
-const pw = (() => { try { return require('playwright'); } catch (e) { return require('/opt/node22/lib/node_modules/playwright'); } })();
+const { launch, openGasPage } = require('./lib_gas_page');
 
 const ROOT = path.join(__dirname, '..');
 const fails = [];
@@ -49,47 +49,15 @@ function start() {
 
 const calls = [];
 async function openDialog(browser) {
-  const page = await browser.newPage();
-  const dialogs = [];
-  page.on('dialog', async (d) => { dialogs.push(d.type() + ':' + d.message()); await d.accept(); });
-  page.on('pageerror', (e) => fails.push('画面のエラー: ' + e.message));
-  await page.exposeFunction('__gas', (name, argsJson) => {
-    const args = JSON.parse(argsJson);
-    calls.push({ name, args });
-    try {
-      if (typeof srv[name] !== 'function') return JSON.stringify({ ok: false, message: 'サーバーに無い関数: ' + name });
-      const r = srv[name](...args);
-      return JSON.stringify({ ok: true, r: r === undefined ? null : r });
-    } catch (e) { return JSON.stringify({ ok: false, message: String(e && e.message ? e.message : e) }); }
-  });
-  await page.addInitScript(() => {
-    function runner() {
-      let ok = null, ng = null;
-      const r = new Proxy({}, { get(_, name) {
-        if (name === 'withSuccessHandler') return (f) => { ok = f; return r; };
-        if (name === 'withFailureHandler') return (f) => { ng = f; return r; };
-        if (name === 'withUserObject') return () => r;
-        return (...args) => {
-          window.__gas(String(name), JSON.stringify(args)).then((s) => {
-            const x = JSON.parse(s);
-            if (x.ok) { if (ok) ok(x.r); } else if (ng) ng(new Error(x.message));
-          });
-        };
-      } });
-      return r;
-    }
-    window.google = { script: { get run() { return runner(); } } };
-  });
-  await page.route('https://dialog.test/', (r) => r.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: fs.readFileSync(path.join(ROOT, 'dialog.html'), 'utf8') }));
-  await page.goto('https://dialog.test/', { waitUntil: 'load' });
-  await page.waitForFunction(() => document.querySelectorAll('#meetingSelect option').length === 4 && document.querySelectorAll('#sheetSelect option').length > 0, null, { timeout: 10000 });
-  return { page, dialogs };
+  const r = await openGasPage(browser, 'dialog.html', srv, { fails, calls });
+  await r.page.waitForFunction(() => document.querySelectorAll('#meetingSelect option').length === 4 && document.querySelectorAll('#sheetSelect option').length > 0, null, { timeout: 10000 });
+  return r;
 }
 const visible = (page, sel) => page.evaluate((s) => !document.querySelector(s).classList.contains('hidden'), sel);
 const lastCall = (name) => calls.filter((c) => c.name === name).pop();
 
 (async () => {
-  const browser = await pw.chromium.launch();
+  const browser = await launch();
   try {
     // ---- 1) 再編集：過ぎた回（9/30）を読み込んで作る → 9/30 に書き戻す ----
     start();
