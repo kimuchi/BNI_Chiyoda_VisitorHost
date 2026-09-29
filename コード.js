@@ -2,7 +2,7 @@
 
 // 反映されたか確かめるための版。変更したら日付を更新する。
 // clasp push / デプロイが効いているかは、これを画面で見れば分かる。
-var SYSTEM_VERSION_ = '2026-09-29l';
+var SYSTEM_VERSION_ = '2026-09-29m';
 
 function getSystemVersion() { return SYSTEM_VERSION_; }
 
@@ -1287,6 +1287,15 @@ function getEmailContext() {
   }
 }
 
+// メールのひな形の {{name}} などを、1回でまとめて差し込む。置き換える文字は関数で返す
+// （お名前・会社名の「$&」「$1」を置き換えの記号として読まない。差し込んだ文字の中の {{…}} も、もう一度は置き換えない）
+function fillMailTemplate_(tpl, vals) {
+  return String(tpl == null ? '' : tpl).replace(/{{(name|inviter|invitee|date|visitorlist|memberbook)}}/g, function (all, k) {
+    var v = vals[k];
+    return v == null ? '' : String(v);
+  });
+}
+
 // sheetName を省略した場合は、開いているシート（メニューから使う従来の動き）
 function generateEmailDrafts(sheetName) {
   var ss = getSS_(), sheet;
@@ -1331,8 +1340,8 @@ function generateEmailDrafts(sheetName) {
     else continue;
     
     // {{inviter}} と、念のための {{invitee}} 両方で置換対応
-    var subject = tplSubj.replace(/{{name}}/g, name).replace(/{{inviter}}/g, inviter).replace(/{{invitee}}/g, inviter).replace(/{{date}}/g, dateFormatted).replace(/{{visitorlist}}/g, visitorListUrl).replace(/{{memberbook}}/g, memberBookUrl);
-    var body = tplBody.replace(/{{name}}/g, name).replace(/{{inviter}}/g, inviter).replace(/{{invitee}}/g, inviter).replace(/{{date}}/g, dateFormatted).replace(/{{visitorlist}}/g, visitorListUrl).replace(/{{memberbook}}/g, memberBookUrl);
+    var vals = { name: name, inviter: inviter, invitee: inviter, date: dateFormatted, visitorlist: visitorListUrl, memberbook: memberBookUrl };
+    var subject = fillMailTemplate_(tplSubj, vals), body = fillMailTemplate_(tplBody, vals);
     // Spreadingでキャンセルになった方・すでに送った方は、はじめからチェックを外す（二重に送らないように）
     var status = statusIdx !== -1 ? String(data[i][statusIdx] == null ? "" : data[i][statusIdx]).trim() : "";
     var cancelled = /キャンセル|cancel/i.test(status), sentAt = sent[String(email).trim().toLowerCase()] || "";

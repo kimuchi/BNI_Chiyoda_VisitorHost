@@ -21,20 +21,14 @@ function rouletteKey_(name) {
   return String(name == null ? '' : name).normalize('NFKC').replace(/[\s　]/g, '').replace(/さん$/, '').trim();
 }
 
-// 当日の参加者シートを探す。
-// 新しい開催日を作ると他の開催日は自動で非表示になるため、表示されているものを優先する。
-// シート名は yyyyMMdd なので、名前順の並べ替えがそのまま日付順になる。
+// 当日の参加者シートを探す。開催日が今日以降でいちばん近いもの（無ければ直近の過去）。
+// メール・ビジター・代理スライドの既定と同じ決め方（getEmailContext）。
+// 以前は「表示されているうちで、いちばん新しい日付」を選んでいたため、翌週の名簿を先に作ってあると
+// （翌週の分は隠さない）、定例会の当日に翌週のビジターを数えていた
 function findCurrentVisitorSheet_() {
-  var sheets = getSS_().getSheets(), visible = [], all = [];
-  for (var i = 0; i < sheets.length; i++) {
-    if (!/^\d{8}参加者$/.test(sheets[i].getName()) && !/^\d{4}参加者$/.test(sheets[i].getName())) continue;
-    all.push(sheets[i]);
-    if (!sheets[i].isSheetHidden()) visible.push(sheets[i]);
-  }
-  var pick = visible.length ? visible : all;
-  if (!pick.length) return null;
-  pick.sort(function (a, b) { return a.getName() < b.getName() ? 1 : (a.getName() > b.getName() ? -1 : 0); });
-  return pick[0];
+  var ctx = getEmailContext();
+  if (!ctx || !ctx.ok || !ctx.defaultSheet) return null;
+  return getSS_().getSheetByName(ctx.defaultSheet);
 }
 
 // 参加者シートから、招待者ごとのビジター人数を数える
@@ -44,20 +38,26 @@ function countVisitorsByInviter_(sheet) {
     if (data[i].indexOf('No.') !== -1) { h = i; break; }
   }
   if (h < 0) throw new Error('「' + sheet.getName() + '」に見出し行（No.）が見つかりません。');
-  var hd = data[h], noIdx = hd.indexOf('No.'), invIdx = hd.indexOf('招待者'), nmIdx = hd.indexOf('参加者氏名');
+  var hd = data[h].map(function (x) { return String(x).trim(); });
+  var noIdx = hd.indexOf('No.'), invIdx = hd.indexOf('招待者'), nmIdx = hd.indexOf('参加者氏名');
+  var stIdx = hd.indexOf('ステータス') >= 0 ? hd.indexOf('ステータス') : hd.indexOf('出席ステータス');
   if (noIdx < 0 || invIdx < 0) throw new Error('「' + sheet.getName() + '」に「No.」または「招待者」の列がありません。');
 
-  var members = getMembersList(), counts = {}, visitors = 0, noInviter = [];
+  var members = getMembersList(), counts = {}, visitors = 0, noInviter = [], cancelled = [];
   for (var r = h + 1; r < data.length; r++) {
     var no = String(data[r][noIdx] == null ? '' : data[r][noIdx]).trim();
     if (!/^V/i.test(no)) continue;          // ビジターのみ。ゲスト(G)・代理は対象外
+    // Spreadingでキャンセルになった方は来ないので数えない（名簿・メール・スライドでも外している）
+    if (stIdx >= 0 && /キャンセル|cancel/i.test(String(data[r][stIdx] == null ? '' : data[r][stIdx]))) {
+      cancelled.push(String(data[r][nmIdx >= 0 ? nmIdx : noIdx] || no)); continue;
+    }
     visitors++;
     // 招待者名はメンバー名簿の表記にそろえる（川邉/川辺などの異体字対応）
     var key = rouletteKey_(resolveInviterName_(data[r][invIdx], members));   // 同じ字の方を先に（似た名前の方と数を取り違えない）
     if (!key) { noInviter.push(String(data[r][nmIdx >= 0 ? nmIdx : noIdx] || no)); continue; }
     counts[key] = (counts[key] || 0) + 1;
   }
-  return { counts: counts, visitors: visitors, noInviter: noInviter, sheetName: sheet.getName() };
+  return { counts: counts, visitors: visitors, noInviter: noInviter, cancelled: cancelled, sheetName: sheet.getName() };
 }
 
 // 「抽選ルーレット作成用」で始まるシートを全て返す（①②と分かれていても両方に入れる）
@@ -114,6 +114,7 @@ function fillRouletteVisitorCounts() {
   var msg = '「' + tally.sheetName + '」のビジター ' + tally.visitors + '名を数えて、'
           + sheetNames.join('／') + ' のH列に入れました（' + written + '行 / 招待者として名前が出たのは ' + filled + '名）。';
   if (tally.noInviter.length) msg += '\n招待者が空のビジター: ' + tally.noInviter.join('、');
+  if (tally.cancelled.length) msg += '\nSpreadingでキャンセルのビジター（数えていません）: ' + tally.cancelled.join('、');
   if (unknown.length) msg += '\n' + unknown.join('\n');
   console.log('[ROULETTE] ' + msg.replace(/\n/g, ' / '));
   return { ok: true, message: msg, visitors: tally.visitors, written: written, filled: filled };

@@ -477,7 +477,8 @@ function riSetPara_(xml, id, idx, text) {
 function riNamePic_(xml, id, name) {
   var r = findShapeRange_(xml, id);
   if (!r) return xml;
-  var seg = xml.substring(r.start, r.end).replace(/(<p:cNvPr\b[^>]*\sname=")[^"]*(")/, '$1' + escapeXml_(name) + '$2');
+  var nm = escapeXml_(name);                         // 関数で置き換える（お名前の「$&」「$1」を記号として読まない）
+  var seg = xml.substring(r.start, r.end).replace(/(<p:cNvPr\b[^>]*\sname=")[^"]*(")/, function (all, a, b) { return a + nm + b; });
   return xml.substring(0, r.start) + seg + xml.substring(r.end);
 }
 // fits … 書いた枠のうち、入れた文字に合わせて小さくする図形 [{ id, lines, w }]（渡したときだけ足す）

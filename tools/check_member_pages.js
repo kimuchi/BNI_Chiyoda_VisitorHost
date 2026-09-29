@@ -281,6 +281,16 @@ const LAYOUTS = {
   ck(J(shown(parts)) === J(['表紙', '両方', '倫理', '週']), '新規および更新メンバーの1枚: ' + J(shown(parts)));
   ck(/見本 新一/.test(t) && /見本 新二/.test(t) && /見本 更一（2年）/.test(t), '新規および更新メンバーの欄: ' + t);
 }
+// 氏名の枠（3つ）より多い新メンバー（4人）：だれも落とさず、最後の枠に残りの方をまとめて入れ、そのことを知らせる
+// （以前は4人目がどのページにも出ないのに、知らせには4人の名前が出ていた）
+{
+  const parts = makeParts(['cover', 'both', 'ethics', 'weekly']);
+  const res = F.applyMemberPages_(parts, { newMembers: people(['見本 新一', '見本 新二', '見本 新三', '見本 新四']), renewMembers: people(['見本 更一'], 1) }, { by: {}, seq: 0 });
+  const t = F.slideText_(F.xmlOf_(parts, F.slideOrder_(parts)[1]));
+  ck(['見本 新一', '見本 新二', '見本 新三', '見本 新四', '見本 更一（1年）'].every((n) => t.includes(n)), '枠より多い新メンバーを落とした: ' + t);
+  ck(/最後の枠に、残りの方をまとめて入れました/.test(res.message) && /新メンバーの最後の枠/.test(res.message),
+     '枠より多いことを知らせない: ' + res.message);
+}
 
 console.log(`新メンバー・更新メンバーのページ: 検査 ${checks} 件`);
 if (fails.length) {

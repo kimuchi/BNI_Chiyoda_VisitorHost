@@ -28,7 +28,7 @@ run() {
 }
 
 echo "── 毎週の流れ（名簿・PDF・メール・割り振り表）"
-run "毎週の流れ（候補→CSV→名簿とPDF→再編集→次の週→メール→割り振り表→PDFの確認）" node tools/check_weekly_flow.js
+run "毎週の流れ（候補→CSV→名簿とPDF→再編集→次の週→抽選ルーレット→メール→割り振り表→PDFの確認）" node tools/check_weekly_flow.js
 run "ビジターリスト・割り振り表のシートとPDF（作った日は隠さない・真っ白のPDFを作らない）" node tools/check_visitor_pdf.js
 run "CSVから名簿・PDF作成の画面（ブラウザ：過ぎた回の再編集はその回に書き戻す・Shift_JIS のCSV）" node tools/check_csv_dialog.js
 run "メールの確認・一括送信の画面（ブラウザ：リンク・キャンセル・記号・二重に送らない）" node tools/check_email_dialog.js
@@ -42,6 +42,7 @@ run "PowerPointテンプレートの登録（開けない登録を未登録と�
 
 echo "── スライド"
 run "定例会スライド（指示どおりか）" node tools/check_meeting_slides.js
+run "ビジター・代理スライド（「$」の入った名前・テンプレートの2ページ目・消した枠・キャンセルの方）" node tools/check_visitor_slides.js
 run "新メンバー・更新メンバーのページ" node tools/check_member_pages.js
 run "役職のメンバー紹介" node tools/check_role_intro.js
 run "カウントダウンと音" node tools/check_countdown.js

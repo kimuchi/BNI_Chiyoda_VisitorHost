@@ -807,8 +807,9 @@ function replaceSlideAudio_(parts, audio, fileId) {
 
   // 図形の名前（曲名）も入れ替えておく。画面の一覧でどの曲か分かるように。
   var xml = xmlOf_(parts, audio.slide);
+  var label = escapeXml_(name.replace(AUDIO_EXT_RE_, ''));   // 関数で置き換える（曲のファイル名の「$1」などを記号として読まない）
   xml = xml.replace(new RegExp('(<p:cNvPr id="' + audio.spid + '" name=")[^"]*(")'),
-                    '$1' + escapeXml_(name.replace(AUDIO_EXT_RE_, '')) + '$2');
+                    function (all, a, b) { return a + label + b; });
   putXml_(parts, audio.slide, xml);
 
   // 種類が決まっていないと再生できないので、拡張子の既定を足しておく

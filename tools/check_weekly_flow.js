@@ -27,7 +27,7 @@ function step(name, fn) {
 const env = makeEnv({ now: new Date(2026, 8, 29, 10, 0, 0) });
 const srv = Object.assign({}, env.globals);
 vm.createContext(srv);
-for (const f of ['コード.js', 'chapter_srv.js', 'webapp_srv.js', 'assets.js', 'slides_visitor_srv.js']) {
+for (const f of fs.readdirSync(ROOT).filter((x) => /\.js$/.test(x)).sort()) {   // 本番と同じく全部のファイルを1つの場所に
   vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), srv, { filename: f });
 }
 
@@ -175,6 +175,28 @@ step('次の週の名簿', () => {
   const pvCall = vp.log.calls.find((c) => c.name === 'previewVisitorSlideData');
   ck(vp.els.sheet.value === '20260930参加者' && pvCall && pvCall.args[0] === '20260930参加者',
      '5) ビジター・代理スライドの画面が、次回（9/30）ではなく ' + vp.els.sheet.value + ' を開いた（読み込み: ' + (pvCall && pvCall.args[0]) + '）');
+});
+
+// ---- 5.5) 抽選ルーレットのビジター招待数：翌週（10/07）の名簿を先に作ってあっても、次回（9/30）の分を数える ----
+step('抽選ルーレットのビジター招待数', () => {
+  env.ss.insertSheet('抽選ルーレット作成用①').getRange(1, 1, 5, 8).setValues([
+    ['姓', '名', '', '', '', '', '', 'ビ'], ['試験', '花子', '', '', '', '', '', ''], ['架空', '三郎', '', '', '', '', '', ''],
+    ['例示', '五月', '', '', '', '', '', ''], ['見本', '一郎', '', '', '', '', '', '']]);
+  const r = srv.fillRouletteVisitorCounts();
+  const h = env.values('抽選ルーレット作成用①').slice(1).map((row) => row[0] + row[1] + '=' + row[7]).join(',');
+  ck(r.ok && /20260930参加者/.test(r.message) && h === '試験花子=1,架空三郎=1,例示五月=0,見本一郎=0',
+     '5.5) 抽選ルーレットが次回（9/30）の名簿で数えない（翌週の名簿を数えた？）: ' + h + ' / ' + r.message);
+  // Spreadingでキャンセルのビジターは数えない
+  env.ss.insertSheet('20261028参加者').getRange(1, 1, 4, 10).setValues([
+    ['No.', '参加者氏名', 'ふりがな', 'カテゴリー', '会社名', '招待者', '備考', '種別', 'メール', 'ステータス'],
+    ['V01', '参加 する', '', '', '', '試験 花子', '', 'Visitor', '', '参加予定'],
+    ['V02', '取消 した', '', '', '', '試験 花子', '', 'Visitor', '', 'キャンセル'],
+    ['V03', '参加 二人目', '', '', '', '架空 三郎', '', 'Visitor', '', '']]);
+  const t = srv.countVisitorsByInviter_(env.sheet('20261028参加者'));
+  ck(t.visitors === 2 && t.counts['試験花子'] === 1 && t.counts['架空三郎'] === 1 && JSON.stringify(t.cancelled) === '["取消 した"]',
+     '5.5) キャンセルのビジターを抽選ルーレットの数に入れた: ' + JSON.stringify(t));
+  env.ss.deleteSheet(env.sheet('20261028参加者'));
+  env.ss.deleteSheet(env.sheet('抽選ルーレット作成用①'));
 });
 
 // ---- 6) メール：今日（9/29）は次回の 9/30 が既定。下書きの日付・リンクは選んだ開催日のもの ----
@@ -422,6 +444,16 @@ step('設定の読み書きは編集者だけ', () => {
   srv.SpreadsheetApp.getActiveSpreadsheet = realGet; srv.SpreadsheetApp.openById = realOpen;
   ck(srv.getApiSettings().apiKey === 'secret-key', '9) 編集者（開ける方）が設定を読めない');
   env.errors.length = 0;
+});
+
+// ---- 10) トークスクリプトの参加者：移行前の4桁の名前（0916参加者）しか無い回も読む ----
+step('トークスクリプトの参加者（移行前の4桁の名前）', () => {
+  env.ss.insertSheet('0916参加者').getRange(1, 1, 2, 9).setValues([
+    ['No.', '参加者氏名', 'ふりがな', 'カテゴリー', '会社名', '招待者', '備考', '種別', 'メール'],
+    ['V01', '旧名 来人', 'きゅうめい くると', '', '', '見本 一郎', '', 'Visitor', '']]);
+  const people = srv.talkEnv_(new Date(2026, 8, 16)).people();
+  ck(people && people.map((p) => p.name).join(',') === '旧名 来人', '10) 4桁の名前の参加者シートを、トークスクリプトが読まない: ' + JSON.stringify(people));
+  env.ss.deleteSheet(env.sheet('0916参加者'));
 });
 
 ck(env.errors.length === 0, '途中でエラーの記録が出た: ' + env.errors.slice(0, 3).join(' / '));

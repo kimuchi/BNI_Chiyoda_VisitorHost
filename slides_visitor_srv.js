@@ -181,15 +181,20 @@ function generateAllIntroSlides(sheetName) {
 
     var mmdd = (sheetName.match(/^\d{8}|^\d{4}/) || [''])[0];
     var outName = mmdd + '_BNI_紹介スライド_一括.pptx';
+    var noTitle = false;
     var blob = buildPptxFromTemplate_(baseBlob, slides, function (xml, item) {
+      if (!findShapeRange_(xml, INTRO_TITLE_SHAPE_ID_)) noTitle = true;
       xml = setTextInShape_(xml, INTRO_TITLE_SHAPE_ID_, item.title);
       return buildGroupXml_(xml, item.trio);
     }, outName);
+    // 見出しの枠が無いテンプレートでは、ゲスト・代理のページも「本日のビジター」の見出しのままになる。黙っていない
+    var titleNote = (noTitle && counts.length > 1) || (noTitle && !parsed.visitors.length)
+      ? '\nテンプレートに見出しの枠（図形の番号15）が無いため、ゲスト・代理のページの見出しはテンプレートのままです。' : '';
 
     var saved = saveOutputFile_(blob, outName);
     console.log('[VSLIDE] all-intro ' + outName + ' slides=' + slides.length);
     return { ok: true, url: saved.url, downloadUrl: saved.downloadUrl, fileName: outName, slideCount: slides.length,
-             message: '紹介スライドをまとめて作成しました（' + counts.join(' / ') + '　合計' + slides.length + '枚）。'
+             message: '紹介スライドをまとめて作成しました（' + counts.join(' / ') + '　合計' + slides.length + '枚）。' + titleNote
                + (parsed.cancelled.length ? '\nSpreadingでキャンセルの方は入れていません: ' + parsed.cancelled.join('、') : '') };
   } catch (e) {
     console.error('[VSLIDE] ' + (e && e.stack ? e.stack : e));

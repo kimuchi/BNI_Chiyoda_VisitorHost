@@ -196,7 +196,13 @@
    var F=(R && R.ok && R.found) ? (R.firstHalf||{}) : {};
    nmFromRoutine(F); vpFromRoutine(F); nlFromRoutine(F);
    if(!R || !R.ok || !R.found){
-     note.innerText = (R&&R.message) ? R.message : 'ルーティンチェックシートに該当する開催日が見つかりません。';
+     // その日の列が無い：前に選んでいた開催日の値を残さない（別の日のメインプレゼン・コアバリューなどで作らないように）
+     document.getElementById('core').value=''; val('mp1',''); val('mp2','');
+     val('t_求める専門分野',''); val('t_開放カテゴリー',''); val('t_審査中カテゴリー','');
+     document.getElementById('gp').value=''; document.getElementById('mpNote').innerHTML='';
+     mpFromRotation();
+     note.innerText = ((R&&R.message) ? R.message : 'ルーティンチェックシートに該当する開催日が見つかりません。')
+       + '（メインプレゼン・コアバリュー・一般規定・カテゴリーの欄は空にしました。手で入れてください）';
      note.style.color='#c60'; return;
    }
    if(R.meetingNo) val('no', R.meetingNo);
