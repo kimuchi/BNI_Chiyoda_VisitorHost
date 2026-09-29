@@ -107,6 +107,19 @@ console.log('  ' + r2.message);
 // 判別できない指定は何もしない
 ck(F.applyCoreValue_(deck(), '対面BOD') === null, 'コアバリューでない指定で動いている');
 
+// 差し込み・書き換えの前に見分けておけば、あとで入ったメンバーの会社名などの英語（Building・Positive）で
+// そのページを非表示にしない（以前は書き換えのあとで見分けていたため、メンバーのページ・ローテーションの表が消えていた）
+{
+  const p3 = deck(slide(para('ウィークリープレゼン'), para('{{会社名}}')));
+  const pages = F.coreValuePages_(p3);
+  p3['ppt/slides/slide10.xml'] = { _x: slide(para('ウィークリープレゼン'), para('株式会社Team Building研修')) };   // 差し込んだあと
+  p3['ppt/slides/slide11.xml'] = { _x: slide(para('メインプレゼン'), para('Positive Link株式会社')) };        // あとで足したページ
+  const r3 = F.applyCoreValue_(p3, 'Givers Gain', pages);
+  ck(!/show="0"/.test(p3['ppt/slides/slide10.xml']._x) && !/show="0"/.test(p3['ppt/slides/slide11.xml']._x),
+     'メンバーの会社名の英語で、そのページをコアバリューのページとして非表示にした');
+  ck(r3.shown === 1 && r3.hidden === 6, 'あらかじめ見分けたときの表示・非表示の数: ' + r3.shown + '/' + r3.hidden);
+}
+
 console.log(`\n検査 ${checks} 件`);
 if (fails) { console.log(`NG: ${fails} 件`); process.exit(1); }
 console.log('OK: すべて指示どおりです');

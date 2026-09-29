@@ -60,6 +60,8 @@
    var sel=document.getElementById('sheet'), h='';
    (c.sheets||[]).forEach(function(s){ h+='<option value="'+esc(s)+'">'+esc(s)+'</option>'; });
    sel.innerHTML=h || '<option value="">参加者シートがありません</option>';
+   // 既定は次回の定例会（翌週の名簿を先に作ってあっても、いちばん新しいシートにしない）
+   if(c.defaultSheet && (c.sheets||[]).indexOf(c.defaultSheet)>=0) sel.value=c.defaultSheet;
    var miss=[];
    if(!c.templates.presen) miss.push('ビジタープレゼン');
    if(!c.templates.intro)  miss.push('ビジター紹介');
@@ -86,7 +88,9 @@
      (r.guests||[]).forEach(function(v,i){ h+=row('ゲ'+(i+1),'ゲスト',v,'guest'); });
      r.dairi.forEach(function(v,i){ h+=row('代'+(i+1),'代理',v,'dairi'); });
      document.getElementById('prev').innerHTML=h+'</table>';
-     document.getElementById('msg').innerText='';
+     // Spreadingでキャンセルの方は、一覧にもスライドにも入れない（入れていないことを知らせる）
+     if((r.cancelled||[]).length) show('Spreadingでキャンセルの方（スライドに入れません）: '+r.cancelled.join('、'),null);
+     else document.getElementById('msg').innerText='';
      refresh();
    }).withFailureHandler(fail).previewVisitorSlideData(s);
  }
@@ -115,7 +119,7 @@
    google.script.run.withSuccessHandler(function(r){
      setBusy(false);
      if(!r.ok){ show(r.message,false); return; }
-     document.getElementById('msg').innerHTML='<span style="color:green;">'+esc(r.message)+'</span><br>'
+     document.getElementById('msg').innerHTML='<span style="color:green;">'+esc(r.message).replace(/\n/g,'<br>')+'</span><br>'
        +'<a class="dl" href="'+(r.downloadUrl||r.url)+'" target="_blank">⬇ PowerPointをダウンロード</a> '+'<a href="'+r.url+'" target="_blank" style="font-size:12px;color:#666;">ドライブで見る</a>';
    }).withFailureHandler(fail).generateVisitorSlides(s,type);
  }
@@ -127,7 +131,7 @@
    google.script.run.withSuccessHandler(function(r){
      setBusy(false);
      if(!r.ok){ show(r.message,false); return; }
-     document.getElementById('msg').innerHTML='<span style="color:green;">'+esc(r.message)+'</span><br>'
+     document.getElementById('msg').innerHTML='<span style="color:green;">'+esc(r.message).replace(/\n/g,'<br>')+'</span><br>'
        +'<a class="dl" href="'+(r.downloadUrl||r.url)+'" target="_blank">⬇ PowerPointをダウンロード</a> '+'<a href="'+r.url+'" target="_blank" style="font-size:12px;color:#666;">ドライブで見る</a>';
    }).withFailureHandler(fail).generateAllIntroSlides(s);
  }

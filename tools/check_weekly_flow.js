@@ -27,7 +27,7 @@ function step(name, fn) {
 const env = makeEnv({ now: new Date(2026, 8, 29, 10, 0, 0) });
 const srv = Object.assign({}, env.globals);
 vm.createContext(srv);
-for (const f of ['コード.js', 'chapter_srv.js', 'webapp_srv.js']) {
+for (const f of ['コード.js', 'chapter_srv.js', 'webapp_srv.js', 'assets.js', 'slides_visitor_srv.js']) {
   vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), srv, { filename: f });
 }
 
@@ -166,6 +166,15 @@ step('次の週の名簿', () => {
   ck(env.visibleNames().includes('20260930参加者') && env.visibleNames().includes('20260930参加者_印刷用'), '5) 翌週分を先に作ったら、次回（9/30）のシートまで隠れた');
   ck(env.hiddenNames().includes('20260923参加者'), '5) 過ぎた回（9/23）のシートがアーカイブされない');
   ck(env.fileText(id0930).includes('見本 太郎'), '5) 次の週を作ったら、今週のPDFが書き換わった');
+  const vctx = srv.getVisitorSlideContext();
+  ck(vctx.ok && vctx.defaultSheet === '20260930参加者', '5) ビジター・代理スライドの既定が次回（9/30）でない（翌週を先に作ったとき）: ' + vctx.defaultSheet);
+  const vp = loadPage('slides_visitor.html', { fails, server: {
+    getVisitorSlideContext: () => JSON.parse(JSON.stringify(srv.getVisitorSlideContext())),
+    previewVisitorSlideData: (n) => JSON.parse(JSON.stringify(srv.previewVisitorSlideData(n))) } });
+  vp.step('ビジター・代理スライドの画面を開く', () => vp.window.onload());
+  const pvCall = vp.log.calls.find((c) => c.name === 'previewVisitorSlideData');
+  ck(vp.els.sheet.value === '20260930参加者' && pvCall && pvCall.args[0] === '20260930参加者',
+     '5) ビジター・代理スライドの画面が、次回（9/30）ではなく ' + vp.els.sheet.value + ' を開いた（読み込み: ' + (pvCall && pvCall.args[0]) + '）');
 });
 
 // ---- 6) メール：今日（9/29）は次回の 9/30 が既定。下書きの日付・リンクは選んだ開催日のもの ----
@@ -271,6 +280,15 @@ step('キャンセルの方', () => {
   const r = srv.generateEmailDrafts('20261021参加者');
   const yes = r.drafts.find((d) => d.email === 'yes@example.com'), no = r.drafts.find((d) => d.email === 'no@example.com');
   ck(yes && yes.send === true && no && no.send === false && no.cancelled === true, '6) キャンセルの方にもチェックが入る: ' + JSON.stringify(r.drafts.map((d) => [d.email, d.send, d.cancelled])));
+  const pv = srv.previewVisitorSlideData('20261021参加者');
+  ck(pv.ok && pv.visitors.map((v) => v.name).join(',') === '参加 する' && JSON.stringify(pv.cancelled) === '["取消 した"]' && /キャンセル/.test(pv.message),
+     '6) キャンセルの方をビジター紹介のスライドに入れる: ' + JSON.stringify(pv && { v: pv.visitors, c: pv.cancelled }));
+  const sp = loadPage('slides_visitor.html', { fails, server: {
+    getVisitorSlideContext: () => ({ ok: true, sheets: ['20261021参加者'], defaultSheet: '20261021参加者', templates: { intro: true, presen: true, dairi: true } }),
+    previewVisitorSlideData: (n) => JSON.parse(JSON.stringify(srv.previewVisitorSlideData(n))) } });
+  sp.step('ビジター・代理スライドの画面', () => sp.window.onload());
+  ck(/取消 した/.test(sp.els.msg.innerText) && !/取消 した/.test(sp.els.prev.innerHTML) && /参加 する/.test(sp.els.prev.innerHTML),
+     '6) ビジター・代理スライドの画面で、キャンセルの方を知らせない・一覧に入れた: ' + sp.els.msg.innerText);
   const page = loadPage('email.html', { fails, server: { getEmailContext: () => ({ ok: true, sheets: [{ sheet: '20261021参加者', label: '2026年10月21日' }], defaultSheet: '20261021参加者' }),
     generateEmailDrafts: (n) => JSON.parse(JSON.stringify(srv.generateEmailDrafts(n))) } });
   page.step('開く', () => page.window.onload());

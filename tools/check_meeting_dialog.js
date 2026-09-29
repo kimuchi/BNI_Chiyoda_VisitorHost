@@ -3,12 +3,23 @@
 // （関数が無い・値の渡し忘れ）や、「読み込み中」の出し忘れを見つけるため。
 // サーバーの返事は、それらしい固定値で代用する。
 //
-//   node tools/check_meeting_dialog.js <members.json>
+//   node tools/check_meeting_dialog.js               … 架空の60名の名簿で動かす
+//   node tools/check_meeting_dialog.js <members.json> … 手元の名簿（リポジトリには入れない）で動かす
 
 const fs = require('fs');
 const { loadPage } = require('./lib_minidom');
 
-const MEMBERS = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+// 架空の名簿（60名。ブロックは6つに分かれ、研修・教育と飲食・エンタメは0名）
+function fictionalMembers() {
+  const fams = ['見本', '試験', '架空', '仮名', '例示', '模擬', '空想', '新入', '単独', '別人',
+                '甲野', '乙野', '丙野', '丁野', '戊野', '己野', '庚野', '辛野', '壬野', '癸野'];
+  const gives = ['一郎', '二郎', '三郎'];
+  const cats = ['企業サポート', '不動産関連', '建築・住まい', 'プロモーション', '暮らし・生活', '美容と健康'];
+  return Array.from({ length: 60 }, (_, i) => ({
+    no: String(i + 1), name: fams[i % 20] + ' ' + gives[Math.floor(i / 20)], kana: '', cat: cats[i % 6],
+    title: 'カテゴリー' + (i + 1), company: '見本会社' + (i + 1), role: '', position: '', comment: '', refer: '', collab: '' }));
+}
+const MEMBERS = process.argv[2] ? JSON.parse(fs.readFileSync(process.argv[2], 'utf8')) : fictionalMembers();
 const fails = [];
 let checks = 0;
 function ck(ok, msg) { checks++; if (!ok) fails.push(msg); }
@@ -326,6 +337,26 @@ const shown = (el) => !!el && el.style.display !== 'none' && el.style.display !=
   ck(rows('during') === 0 && /（なし）/.test(els.recoDuring.innerHTML), '定例会中の組が無いときの表示: ' + els.recoDuring.innerHTML);
   ck(pairsOf(lastOpts()) === `A:${N(4)}>`, '定例会中なしで渡した組: ' + pairsOf(lastOpts()));
 
+  // 更新状況の「更新した」を押しても、手で直した推薦のことば・抽選はそのまま（以前は全部を読み直して、
+  // ルーティンチェックシートの内容に戻っていた）。読み直すのは更新状況の一覧だけ
+  step('推薦のことば・抽選を手で直して、「更新した」を押す', () => {
+    run("addPair('during')");
+    els.rp_during_g_0.value = N(10); els.rp_during_r_0.value = N(11);
+    els.lt1.value = N(12); els.lt2.value = N(13);
+    page.log.calls.length = 0;
+    run("mark(0,'done')");
+  });
+  const calledNames = page.log.calls.map((c) => c.name);
+  ck(calledNames.includes('setRenewalMark') && calledNames.includes('computeRenewalLists') && !calledNames.includes('getRoutineInfo'),
+     '「更新した」で読み直したもの: ' + calledNames.join(','));
+  ck(els.rp_during_g_0.value === N(10) && els.rp_during_r_0.value === N(11) && els.lt1.value === N(12) && els.lt2.value === N(13),
+     '「更新した」を押したら、手で直した推薦のことば・抽選が戻った: ' + [els.rp_during_g_0.value, els.rp_during_r_0.value, els.lt1.value, els.lt2.value].join(' / '));
+  step('手で直したまま作る', () => run('gen()'));
+  ck(pairsOf(lastOpts()) === `D:${N(10)}>${N(11)},A:${N(4)}>`, '「更新した」のあとに渡した組: ' + pairsOf(lastOpts()));
+  ck(lastCall()[1]['抽選1氏名'] === N(12) && lastCall()[1]['抽選2氏名'] === N(13),
+     '「更新した」のあとに渡した抽選: ' + [lastCall()[1]['抽選1氏名'], lastCall()[1]['抽選2氏名']].join(' / '));
+  step('定例会中の組を外す（次の検査のため）', () => run("delPair('during',0)"));
+
   // 開催日を選び直すと、その日のルーティンチェックシートの組に入れ替わる（記載が無ければ空の1組）
   routine = Object.assign({}, routine, { recommendations: [], recommendationsRaw: '' });
   step('後半：開催日を選び直す', () => run('reload()'));
@@ -342,4 +373,4 @@ if (fails.length) {
   fails.slice(0, 30).forEach((f) => console.log('   ' + f));
   process.exit(1);
 }
-console.log('OK: 前半（読み込み中・メンバーのページ・アンバサダー・ディレクター）／後半（読み込み中・推薦のことば・リファーラル発表・音楽）');
+console.log('OK: 前半（読み込み中・メンバーのページ・アンバサダー・ディレクター）／後半（読み込み中・推薦のことば・リファーラル発表・音楽・「更新した」で手直しが戻らない）');

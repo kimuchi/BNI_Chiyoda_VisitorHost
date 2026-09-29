@@ -46,6 +46,7 @@ run "新メンバー・更新メンバーのページ" node tools/check_member_p
 run "役職のメンバー紹介" node tools/check_role_intro.js
 run "カウントダウンと音" node tools/check_countdown.js
 run "公式ファイルから雛形の画面" node tools/check_official_dialog.js
+run "定例会スライドの画面（架空の名簿：読み込み中・推薦のことば・「更新した」で手直しが戻らない）" node tools/check_meeting_dialog.js
 
 echo "── 名簿・メンバーブック"
 run "メンバーリスト(OCR)の取り込み" node tools/check_member_ocr.js
@@ -73,7 +74,7 @@ if [ -n "$ROUTINE_JSON" ] && [ -n "$MEMBERS_JSON" ]; then
   run "ウィークリープレゼンの始まり" node tools/check_weekly_start.js "$ROUTINE_JSON" "$MEMBERS_JSON"
   run "事前MTGのパワポ" node tools/check_premtg.js "$ROUTINE_JSON" "$MEMBERS_JSON"
   run "トークスクリプト（台本）" node tools/check_talk_script.js "$ROUTINE_JSON" "$MEMBERS_JSON"
-  run "定例会スライドの画面" node tools/check_meeting_dialog.js "$MEMBERS_JSON"
+  run "定例会スライドの画面（手元の名簿）" node tools/check_meeting_dialog.js "$MEMBERS_JSON"
 else
   echo "（ROUTINE_JSON・MEMBERS_JSON が無いため、ルーティンチェックシートの写しを使う検査10本は飛ばしました）"
 fi
