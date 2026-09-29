@@ -75,6 +75,17 @@ function getAssetRootFolder_() {
   var file = DriveApp.getFileById(getSS_().getId());
   return file.getParents().hasNext() ? file.getParents().next() : DriveApp.getRootFolder();
 }
+// 設定した素材フォルダを、この方のアカウントで開けないか（開けないときは、その理由の文。開ける・未設定なら空）。
+// 開けないと上の getAssetRootFolder_ は別のフォルダを使うので、みんなで使う写真の索引などを作り直すときは止める
+function assetRootUnreachable_() {
+  var id = PropertiesService.getScriptProperties().getProperty(ASSET_ROOT_KEY_);
+  if (!id) return '';
+  try { DriveApp.getFolderById(id); return ''; }
+  catch (e) {
+    return '設定した「BNI 素材フォルダ」を、このアカウントでは開けません（共有されていない可能性があります）。'
+      + '素材フォルダを編集者で共有してもらってから、もう一度お試しください。（' + (e && e.message ? e.message : e) + '）';
+  }
+}
 // kind: 'template' | 'photo' | 'output'
 function getAssetFolder_(kind) {
   return ensureChildFolder_(getAssetRootFolder_(), ASSET_SUB_[kind] || ASSET_SUB_.output);
@@ -139,11 +150,13 @@ function getTemplateStatus() {
   var props = PropertiesService.getScriptProperties(), list = [];
   for (var k in TEMPLATE_KINDS_) {
     var def = TEMPLATE_KINDS_[k], id = props.getProperty(def.prop) || '', row = {
-      kind: k, label: def.label, requiredIds: def.ids.join(', '), registered: false, fileName: '', url: ''
+      kind: k, label: def.label, requiredIds: def.ids.join(', '), registered: false, fileName: '', url: '', unreadable: ''
     };
     if (id) {
+      // 登録してあるのに、この方のアカウントで開けない（共有されていない・ドライブの許可が無い・消した）ときは、
+      // 「未登録」ではなくその理由を出す（未登録と思って登録し直すと、チャプター全体のテンプレートを差し替えてしまうため）
       try { var f = DriveApp.getFileById(id); row.registered = true; row.fileName = f.getName(); row.url = f.getUrl(); }
-      catch (e) {}
+      catch (e) { row.unreadable = driveHelpHint_(e); }
     }
     list.push(row);
   }
@@ -159,6 +172,9 @@ function saveTemplateBase64(kind, base64, fileName) {
     var blob = Utilities.newBlob(Utilities.base64Decode(base64), 'application/zip', fileName || (kind + '.pptx'));
     var check = validateTemplate_(blob, def.ids);
     if (!check.ok) return check;
+    // 素材フォルダを開けない方が登録すると、ほかの方の開けない別のフォルダに置いて、チャプター全体のテンプレートを差し替えてしまう
+    var unreachable = assetRootUnreachable_();
+    if (unreachable) return { ok: false, message: unreachable };
 
     var folder = getAssetFolder_('template');
     var saveName = kind + '_' + (fileName || 'template.pptx');
@@ -216,6 +232,8 @@ function normName_(x) {
 function uploadMemberPhotosBase64(items) {
   try {
     if (!items || !items.length) return { ok: false, message: '写真が選択されていません。' };
+    var unreachable = assetRootUnreachable_();   // 開けないと、みんなの見えない別のフォルダに入れてしまうため
+    if (unreachable) return { ok: false, message: unreachable };
     var folder = getAssetFolder_('photo'), saved = 0, names = [], rejected = [];
     for (var i = 0; i < items.length; i++) {
       var it = items[i];
@@ -248,6 +266,9 @@ var NON_DISPLAY_IMAGE_EXT_ = /\.(heic|heif|bmp|tiff?|avif|raw|cr2|nef|arw|psd)$/
 // 同じ人に複数の写真がある場合は、更新日時が新しいものを採用する（毎回同じ結果になるように）。
 function rebuildPhotoIndex() {
   try {
+    // 素材フォルダを開けない方が作り直すと、別のフォルダ（写真の無いフォルダ）を調べて、みんなの索引を空にしてしまう
+    var unreachable = assetRootUnreachable_();
+    if (unreachable) return { ok: false, message: unreachable };
     var folder = getAssetFolder_('photo'), it = folder.getFiles();
     var cand = [], unsupported = [];
     while (it.hasNext()) {

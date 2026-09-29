@@ -138,6 +138,7 @@ BNI_Chiyoda_VisitorHost/
     ├── check_role_terms.js   #   期の替わり目（担当者を入れていない期で、名簿の「役職」を消さない・前の期の担当者を使う・登録した期は反映する）
     ├── check_routine_names.js #  ルーティンチェックシートの名前の照合（同じ名字・似た氏名の方を取り違えない・名字だけで2人なら決めない・名簿に無い新メンバー）
     ├── check_member_master_dialog.js # 「メンバー名簿」の画面を Chromium で（読み込めていないまま追加・保存して名簿を上書きしない）
+    ├── check_template_files.js # PowerPointテンプレートの登録（開けない登録を「未登録」と出さない・置き換える前に確かめる・素材フォルダを開けない方は止める）
     ├── check_gas_names.py    #   名前の衝突・参照先HTMLの検査
     ├── check_html.py         #   divの対応・スクリプトの構文・共通部品の読み込み漏れ
     ├── check_manual_links.py #   マニュアルの導線 ↔ 実際のメニュー
@@ -425,7 +426,7 @@ clasp deployments
 
 ### 更新が反映されたかの確かめ方
 
-`コード.js` の `SYSTEM_VERSION_`（例: `2026-09-29j`）が、ウェブアプリのトップページの下と
+`コード.js` の `SYSTEM_VERSION_`（例: `2026-09-29k`）が、ウェブアプリのトップページの下と
 「定例会スライド（前半）」「定例会スライド（後半）」の画面の右上に **「版 …」** として出ます。
 機能を変えたらこの値を変え、`clasp push`・`clasp version`・`clasp deploy` のあとに画面で確かめてください。
 

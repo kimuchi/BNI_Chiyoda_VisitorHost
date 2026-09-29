@@ -66,17 +66,20 @@
           : '役職ごとの入力の「役職・チーム（半期ごと）」で登録した、ビジターホストとビジターホストコーディネーターを読み取ります。';
         el('readBar').style.display = '';
       }).withFailureHandler(function() {}).getVisitorHostsFromRoles();
+      var loadFail = function(e){ saveNote('読み込めませんでした: ' + (e && e.message ? e.message : e) + '\n画面を開き直してください（読み込めるまで保存はできません。空のまま保存すると、今の設定が消えるため）。', '#c00'); };
       google.script.run.withSuccessHandler(function(list) {
         members = list;
         google.script.run.withSuccessHandler(function(hosts) {
           savedHosts = hosts;
           google.script.run.withSuccessHandler(function(priorities) {
             savedPriorities = priorities || {};
+            loaded = true;
             render();
-          }).getMemberPriorities();
-        }).getVisitorHosts();
-      }).getMembersList();
+          }).withFailureHandler(loadFail).getMemberPriorities();
+        }).withFailureHandler(loadFail).getVisitorHosts();
+      }).withFailureHandler(loadFail).getMembersList();
     };
+    var loaded = false;   // 読み込めたか（読めないまま保存すると、今のビジターホスト・優先順位が消えるため）
 
     function render() {
       var container = document.getElementById('memberList');
@@ -123,6 +126,7 @@
     }
 
     function save() {
+      if (!loaded) { saveNote('ビジターホストの設定を読み込めていないため、保存できません。画面を開き直してください。', '#c00'); return; }
       var newHosts = [];
       var newPriorities = {};
       for(var i = 0; i < members.length; i++) {

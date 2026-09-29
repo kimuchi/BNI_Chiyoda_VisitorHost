@@ -364,6 +364,26 @@ step('作成済みPDFの確認', () => {
   ck(srv.getPdfLinks().visitorList === url0930, '8) PDFのみ再作成のあと、作成済みPDFのリンクが変わった');
 });
 
+// ---- 8b) PDFを作る方が、スプレッドシートのフォルダに書き込めない・リンクで共有できないとき ----
+step('PDFの作る場所と共有', () => {
+  const rows = srv.analyzeCsvData(CSV_1007);
+  env.readOnly.add('FOLDER');                            // スプレッドシートのフォルダは閲覧だけの共有
+  const created = env.drive.created.length;
+  srv.createFinalSheet('2026/10/14', '2026/10/14(水) 第537回', rows.rows, rows.header);
+  const id = env.props['VISITOR_PDF_ID_20261014参加者'], f = env.drive.files[id];
+  ck(env.drive.created.length === created + 1 && f && f.parent !== 'FOLDER' && f.sharing === 'ANYONE_WITH_LINK/VIEW' && env.fileText(id).includes('翌週 来子'),
+     '8b) 書き込めるほかの場所にPDFを作れない: ' + JSON.stringify(f && { parent: f.parent, sharing: f.sharing }));
+  env.readOnly.clear();
+  env.sharingBlocked = true;                              // 組織の設定でリンクの共有が禁止されている
+  let err = null;
+  try { srv.createFinalSheet('2026/10/21', '2026/10/21(水) 第538回', rows.rows, rows.header); } catch (e) { err = e; }
+  const last = env.drive.created[env.drive.created.length - 1];
+  ck(err && /リンクを知っている全員が閲覧可/.test(err.message), '8b) リンクで共有できないことを知らせない: ' + (err && err.message));
+  ck(!env.props['VISITOR_PDF_ID_20261021参加者'] && last && env.drive.files[last.id].trashed === true, '8b) 共有できないPDFを登録した・残した');
+  env.sharingBlocked = false;
+  env.errors.length = 0;
+});
+
 // ---- 9) スプレッドシートを開けない方（ウェブアプリのURLだけ知っている方）は、設定を読めない・書き換えられない ----
 step('設定の読み書きは編集者だけ', () => {
   const realGet = srv.SpreadsheetApp.getActiveSpreadsheet, realOpen = srv.SpreadsheetApp.openById;

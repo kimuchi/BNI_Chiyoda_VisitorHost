@@ -49,6 +49,25 @@ for (const web of [false, true]) {
   }
 }
 
+// 最初の読み込みに失敗したまま保存を押しても、サーバーに保存を送らない（空のまま保存して、今の設定を消さないように）
+const SAVE_FN = { 'holiday.html': ['saveHolidays'], 'allocation_note.html': ['saveAllocationNote'], 'api_settings.html': ['saveApiSettings'],
+                  'template.html': ['saveTemplates', 'saveMailWebAppSettings'], 'visitor_host.html': ['saveVisitorHosts', 'saveMemberPriorities'] };
+const LOAD_FN = { 'holiday.html': ['getHolidays'], 'allocation_note.html': ['getAllocationNote'], 'api_settings.html': ['getApiSettings'],
+                  'template.html': ['getTemplates'], 'visitor_host.html': ['getMembersList'] };
+for (const P of PAGES) {
+  const server = Object.assign({}, P.server);
+  LOAD_FN[P.file].forEach((fn) => { server[fn] = () => { throw new Error('サーバー エラーが発生しました'); }; });
+  const page = loadPage(P.file, { server, fails: [] });
+  page.step('開く', () => page.window.onload && page.window.onload());
+  if (P.before) page.step('準備', () => page.run(P.before));
+  page.step('保存', () => page.run('save()'));
+  const sent = page.log.calls.filter((c) => SAVE_FN[P.file].includes(c.name));
+  const note = page.els.saveNote ? page.els.saveNote.innerHTML : '';
+  ck(sent.length === 0, P.file + '：読み込めていないのに保存を送った（今の設定を空で上書きする）');
+  ck(/読み込めていないため/.test(note), P.file + '：保存できない理由を出さない: ' + note);
+  ck(!page.fails.length, P.file + '（読み込みに失敗）：' + page.fails.join(' / '));
+}
+
 console.log(`設定の画面の保存: 検査 ${checks} 件`);
 if (fails.length) {
   console.log(`NG: ${fails.length} 件`);

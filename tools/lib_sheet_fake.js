@@ -145,6 +145,8 @@ function makeEnv(opt) {
     env.addFile('SSID', null, '名簿システム（検査）');   // スプレッドシートそのもの（PDFを同じフォルダに作るときに親を引く）
     env.mail = []; env.fetchLog = []; env.fetchPlan = []; env.sleeps = []; env.errors = [];
     env.denied = new Set();   // このIDのファイルは開けない（作った方以外で権限が無い）
+    env.readOnly = new Set(); // このフォルダには作れない（閲覧だけの共有）
+    env.sharingBlocked = false;   // リンクでの共有が組織の設定で禁止されている
     return env;
   };
   env.sheet = (n) => env.ss.getSheetByName(n);
@@ -209,19 +211,34 @@ function makeEnv(opt) {
     return {
       getId: () => id, getUrl: () => 'https://drive.example/' + id, getName: () => f.name,
       getBlob: () => f.blob, isTrashed: () => !!f.trashed,
-      setSharing: (a, p) => { f.sharing = a + '/' + p; },
+      setTrashed: (t) => { f.trashed = !!t; },
+      setSharing: (a, p) => {
+        if (env.sharingBlocked) throw new Error('Access denied: DriveApp.（リンクの共有が組織の設定で禁止されています）');
+        f.sharing = a + '/' + p;
+      },
       getParents: () => { let used = false; return { hasNext: () => !used, next: () => { used = true; return folder; } }; },
     };
   };
-  const folder = {
-    getId: () => 'FOLDER', getName: () => '親フォルダ',
-    createFile: (blob) => {
-      const id = 'F' + (env.drive.created.length + 1);
-      env.addFile(id, blob, blob.getName());
-      env.drive.created.push({ id, blob });
-      return fileObj(id);
-    },
+  // フォルダ：スプレッドシートのある「親フォルダ」（FOLDER）と、マイドライブ（ROOT）。env.readOnly に入れたフォルダには作れない
+  const makeFolder = (fid, fname) => {
+    const children = {};
+    const fo = {
+      getId: () => fid, getName: () => fname, getUrl: () => 'https://drive.example/folders/' + fid,
+      createFile: (blob) => {
+        if (env.readOnly.has(fid)) throw new Error('Access denied: DriveApp.（このフォルダは閲覧だけの共有です）');
+        const id = 'F' + (env.drive.created.length + 1);
+        env.addFile(id, blob, blob.getName());
+        env.drive.files[id].parent = fid;
+        env.drive.created.push({ id, blob, parent: fid });
+        return fileObj(id);
+      },
+      getFoldersByName: (n) => { let used = !children[n]; return { hasNext: () => !used, next: () => { used = true; return children[n]; } }; },
+      createFolder: (n) => { children[n] = makeFolder(fid + '/' + n, n); return children[n]; },
+      getFiles: () => ({ hasNext: () => false, next: () => null }),
+    };
+    return fo;
   };
+  const folder = makeFolder('FOLDER', '親フォルダ'), rootFolder = makeFolder('ROOT', 'マイドライブ');
   env.drive = { files: {}, created: [], updated: [] };
 
   const store = () => ({
@@ -277,8 +294,11 @@ function makeEnv(opt) {
     DriveApp: {
       Access: { ANYONE_WITH_LINK: 'ANYONE_WITH_LINK' }, Permission: { VIEW: 'VIEW' },
       getFileById: fileObj,
-      getRootFolder: () => folder,
-      getFolderById: () => folder,
+      getRootFolder: () => rootFolder,
+      getFolderById: (id) => {
+        if (env.denied.has(id)) throw new Error('No item with the given ID could be found, or you do not have permission to access it. (' + id + ')');
+        return folder;
+      },
     },
     GmailApp: { sendEmail: (to, subject, body, options) => { env.mail.push({ to, subject, body, options: options || {} }); } },
   };
