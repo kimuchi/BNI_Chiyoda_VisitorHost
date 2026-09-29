@@ -40,9 +40,15 @@
     上記Web Appとこのスプレッドシートの両方に同じ文字列を設定してください（推測されにくい任意の文字列で構いません）。
   </div>
   <input type="text" class="input-subj" id="tplWebAppToken" placeholder="例: ChapterSecret2026" style="margin-bottom:8px; font-weight:normal;">
-  <div style="margin-bottom:25px;">
-    <button type="button" onclick="testRelay()" style="background:#fff; color:#0044cc; border:1px solid #0044cc; padding:6px 12px; border-radius:4px; cursor:pointer; font-size:13px;">代理送信を確かめる（メールは送りません）</button>
+  <div style="margin-bottom:25px; background:#f4f6fb; border-radius:6px; padding:10px 12px;">
+    <div style="font-weight:bold; font-size:13px; color:#0044cc; margin-bottom:6px;">メールが送れるかのテスト（上に入っているURL・合言葉で。保存していなくても確かめられます）</div>
+    <button type="button" id="relayTestBtn" onclick="testRelay()" style="background:#fff; color:#0044cc; border:1px solid #0044cc; padding:6px 12px; border-radius:4px; cursor:pointer; font-size:13px;">① 代理送信を確かめる（メールは送りません）</button>
     <div id="relayNote" style="font-size:13px; margin-top:6px; white-space:pre-wrap; line-height:1.6;"></div>
+    <div style="margin-top:10px; font-size:13px;">
+      ② テストメールを送る：送り先 <input type="text" id="testTo" placeholder="空欄なら自分あて" style="width:220px; padding:4px;">
+      <button type="button" id="mailTestBtn" onclick="sendTestMail()" style="background:#0044cc; color:#fff; border:none; padding:6px 12px; border-radius:4px; cursor:pointer; font-size:13px;">テストメールを送る</button>
+    </div>
+    <div id="mailTestNote" style="font-size:13px; margin-top:6px; white-space:pre-wrap; line-height:1.6;"></div>
   </div>
 
   <div class="label">Visitor用</div>
@@ -107,15 +113,33 @@
       }).withFailureHandler(fail).saveTemplates(data);
     }
     // 入っているURL・合言葉で、代理送信の Web App から返事が来るか確かめる（保存しなくても確かめられる。メールは送らない）
+    function relayInput() { return { webAppUrl: document.getElementById('tplWebAppUrl').value, webAppToken: document.getElementById('tplWebAppToken').value }; }
     function testRelay() {
-      var n = document.getElementById('relayNote');
-      n.style.color = '#0055ff'; n.innerText = '確かめています...';
+      var n = document.getElementById('relayNote'), b = document.getElementById('relayTestBtn');
+      n.style.color = '#0055ff'; n.innerText = '確かめています...'; b.disabled = true;
       google.script.run.withSuccessHandler(function (r) {
+        b.disabled = false;
         n.style.color = r && r.ok ? 'green' : '#c00';
         n.innerText = (r && r.ok ? '✓ ' : '⚠ ') + ((r && r.message) || '');
       }).withFailureHandler(function (e) {
+        b.disabled = false;
         n.style.color = '#c00'; n.innerText = '⚠ 確かめられませんでした: ' + (e && e.message ? e.message : e);
-      }).testMailWebApp({ webAppUrl: document.getElementById('tplWebAppUrl').value, webAppToken: document.getElementById('tplWebAppToken').value });
+      }).testMailWebApp(relayInput());
+    }
+    // テストメールを1通、本当に送る（決まった件名・本文。案内メールと同じ送り方で）
+    function sendTestMail() {
+      var n = document.getElementById('mailTestNote'), b = document.getElementById('mailTestBtn'), to = document.getElementById('testTo').value.trim();
+      if (!confirm((to ? to : '自分') + ' あてに、テストメールを1通送ります。よろしいですか？')) return;
+      var data = relayInput(); data.to = to;
+      n.style.color = '#0055ff'; n.innerText = '送っています...'; b.disabled = true;
+      google.script.run.withSuccessHandler(function (r) {
+        b.disabled = false;
+        n.style.color = r && r.ok ? 'green' : '#c00';
+        n.innerText = (r && r.ok ? '✓ ' : '⚠ ') + ((r && r.message) || '');
+      }).withFailureHandler(function (e) {
+        b.disabled = false;
+        n.style.color = '#c00'; n.innerText = '⚠ 送れませんでした: ' + (e && e.message ? e.message : e);
+      }).sendMailTest(data);
     }
     // 保存の結果は画面の下に出す（画面は消さない。ウェブアプリでは上の帯と同じ「← メニューに戻る」も出す）
     function saveNote(text, color) {

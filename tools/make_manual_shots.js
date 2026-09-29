@@ -265,6 +265,7 @@ const answersWeekly = {
   getAllocationData: { any: F.getAllocationData(NEXT) },
   getEmailContext: { any: F.getEmailContext() },
   generateEmailDrafts: { any: F.generateEmailDrafts('20260930参加者') },
+  getMailSendStatus: { any: { ok: true, route: 'direct', me: 'chapter@example.com', message: '送信元：この画面を開いている方のGmail（chapter@example.com）。' } },
   getVisitorPostContext: { any: F.getVisitorPostContext() },
   getVisitorPostData: { any: F.getVisitorPostData('20260930参加者') },
 };

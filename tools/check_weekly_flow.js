@@ -241,7 +241,8 @@ step('メールの画面', () => {
   const server = {
     getEmailContext: () => clone(srv.getEmailContext()),
     generateEmailDrafts: (n) => clone(srv.generateEmailDrafts(n)),
-    sendSingleEmail: (e, cc, bcc) => clone(srv.sendSingleEmail(e, cc, bcc)),
+    sendSingleEmail: (e, cc, bcc, opt) => clone(srv.sendSingleEmail(e, cc, bcc, opt)),
+    getMailSendStatus: () => clone(srv.getMailSendStatus()),
   };
   const page = loadPage('email.html', { fails, server });
   page.step('メールの画面を開く', () => page.window.onload());
@@ -312,7 +313,7 @@ step('キャンセルの方', () => {
   ck(/取消 した/.test(sp.els.msg.innerText) && !/取消 した/.test(sp.els.prev.innerHTML) && /参加 する/.test(sp.els.prev.innerHTML),
      '6) ビジター・代理スライドの画面で、キャンセルの方を知らせない・一覧に入れた: ' + sp.els.msg.innerText);
   const page = loadPage('email.html', { fails, server: { getEmailContext: () => ({ ok: true, sheets: [{ sheet: '20261021参加者', label: '2026年10月21日' }], defaultSheet: '20261021参加者' }),
-    generateEmailDrafts: (n) => JSON.parse(JSON.stringify(srv.generateEmailDrafts(n))) } });
+    generateEmailDrafts: (n) => JSON.parse(JSON.stringify(srv.generateEmailDrafts(n))), getMailSendStatus: () => JSON.parse(JSON.stringify(srv.getMailSendStatus())) } });
   page.step('開く', () => page.window.onload());
   ck(page.els.chk_0 && page.els.chk_0.checked === true && page.els.chk_1 && page.els.chk_1.checked === false && /キャンセルの方（1名）は、チェックを外してあります/.test(page.els.meetNote.innerText),
      '6) 画面でキャンセルの方のチェックが外れていない・知らせが出ない: ' + page.els.meetNote.innerText);

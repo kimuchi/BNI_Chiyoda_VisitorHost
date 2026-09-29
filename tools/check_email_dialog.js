@@ -10,7 +10,9 @@
 //   ・次回のシートが無く、過ぎた回が選ばれたときは赤字で知らせる
 //   ・代理送信の Web App が動いていない（ログインの画面などが返る）ときは、1人目で止めて理由を出し、
 //     「自分のGmailから送る」で送れる。送れなかった方がいるのに「完了🎉」と出さない
-//   ・設定の「代理送信を確かめる」・/dev のURLの知らせ
+//   ・開いたときに送信元を確かめる。代理送信の Web App が動いていなければ知らせて「自分のGmailから送る」を選んでおく
+//   ・Web App が動いているかのテスト：代理送信を確かめる（届くか・合言葉・持ち主の Gmail の許可・版）、テストメールを送る、
+//     メニュー「🔧 動作確認 > メール送信のテスト」、doPost の確かめ（送らない）・/dev のURLの知らせ
 // 名前・メールアドレスはすべて架空。
 
 process.env.TZ = 'Asia/Tokyo';
@@ -105,12 +107,72 @@ try {
   ck(t.ok === true && /Gmailから送ります/.test(t.message), '0) 確かめる（代理送信なし）: ' + JSON.stringify(t));
   const sv = srv.saveMailWebAppSettings({ webAppUrl: 'https://script.google.com/macros/s/RELAYID/dev', webAppToken: 'x' });
   ck(/\/dev/.test(sv) && /⚠/.test(sv), '0) /dev のURLを保存しても知らせない: ' + sv);
-  // doPost：確かめるときは送らずに返事だけ
+  // 確かめる：新しい版の Web App は、Gmail の許可と版も答える
+  env.onFetch = () => json({ success: true, ping: true, sender: 'chapter@example.com', gmail: true, version: '2026-09-29q' });
+  t = srv.testMailWebApp({ webAppUrl: RELAY, webAppToken: 'x' });
+  ck(t.ok && /chapter@example\.com/.test(t.message) && /2026-09-29q/.test(t.message), '0) 確かめる（版・送信元）: ' + JSON.stringify(t));
+  env.onFetch = () => json({ success: true, ping: true, sender: 'chapter@example.com', gmail: false, gmailError: 'You do not have permission to call GmailApp.getAliases' });
+  t = srv.testMailWebApp({ webAppUrl: RELAY, webAppToken: 'x' });
+  ck(!t.ok && /Gmail の許可/.test(t.message) && /chapter@example\.com/.test(t.message), '0) 確かめる（Web App の持ち主の Gmail の許可が無い）: ' + JSON.stringify(t));
+  // 古い版の Web App（確かめる仕組みが無い）：届いてはいるが、Gmail で送れるかはテストメールで
+  env.onFetch = () => json({ success: false, error: 'Exception: 無効な引数: recipient' });
+  t = srv.testMailWebApp({ webAppUrl: RELAY, webAppToken: 'x' });
+  ck(t.ok && t.old && /テストメール/.test(t.message), '0) 確かめる（古い版の Web App）: ' + JSON.stringify(t));
+  // 送る画面を開いたときの確かめ（保存してある設定で）
+  env.props.MAIL_WEB_APP_URL = RELAY;
+  env.onFetch = () => html(200, LOGIN_PAGE);
+  let st = srv.getMailSendStatus();
+  ck(st.ok === false && st.route === 'relay' && /ログイン/.test(st.message) && st.me === 'tester@example.com', '0) 送る画面の確かめ（動いていない）: ' + JSON.stringify(st));
+  delete env.props.MAIL_WEB_APP_URL;
+  st = srv.getMailSendStatus();
+  ck(st.ok && st.route === 'direct' && /tester@example\.com/.test(st.message), '0) 送る画面の確かめ（代理送信なし）: ' + JSON.stringify(st));
+  // テストメール：代理送信なし → 自分のGmailから自分あてに1通
+  const m0 = env.mail.length;
+  let tm = srv.sendMailTest({ to: '' });
+  ck(tm.ok && env.mail.length === m0 + 1 && env.mail[m0].to === 'tester@example.com' && /メール送信のテスト/.test(env.mail[m0].subject),
+     '0) テストメール（自分のGmail）: ' + JSON.stringify(tm));
+  // テストメール：画面に入っている代理送信のURL・合言葉で（保存していなくても）
+  let sentPayload = null;
+  env.onFetch = (url, o) => { sentPayload = JSON.parse(o.payload); return json({ success: true }); };
+  tm = srv.sendMailTest({ to: 'check@example.com', webAppUrl: RELAY, webAppToken: 'tok2' });
+  ck(tm.ok && sentPayload && sentPayload.to === 'check@example.com' && sentPayload.token === 'tok2' && /メール送信のテスト/.test(sentPayload.subject)
+     && !sentPayload.ping && env.mail.length === m0 + 1, '0) テストメール（代理送信）: ' + JSON.stringify([tm, sentPayload && sentPayload.to]));
+  env.onFetch = () => html(200, LOGIN_PAGE);
+  tm = srv.sendMailTest({ to: 'check@example.com', webAppUrl: RELAY, webAppToken: 'tok2' });
+  ck(!tm.ok && /送られていません/.test(tm.message) && /ログイン/.test(tm.message), '0) テストメール（代理送信が動いていない）: ' + JSON.stringify(tm));
+  tm = srv.sendMailTest({ to: 'not-an-address', webAppUrl: '' });
+  ck(!tm.ok && env.mail.length === m0 + 1, '0) メールアドレスでない送り先に送った');
+  // doPost：確かめるときは送らずに返事だけ（送信元・Gmail の許可・版）
   env.props.MAIL_WEB_APP_TOKEN = 'tok';
   const out = { text: '' };
   srv.ContentService = { MimeType: { JSON: 'json' }, createTextOutput: (x) => { out.text = x; return { setMimeType: () => out }; } };
+  srv.GmailApp.getAliases = () => [];
   srv.doPost({ postData: { contents: JSON.stringify({ token: 'tok', ping: true }) } });
-  ck(/"ping":true/.test(out.text) && env.mail.length === 1, '0) doPost の確かめで、メールを送った・返事が違う: ' + out.text);
+  ck(/"ping":true/.test(out.text) && /"gmail":true/.test(out.text) && /"version":"2026-/.test(out.text) && env.mail.length === m0 + 1,
+     '0) doPost の確かめで、メールを送った・返事が違う: ' + out.text);
+  srv.GmailApp.getAliases = () => { throw new Error('You do not have permission to call GmailApp.getAliases'); };
+  srv.doPost({ postData: { contents: JSON.stringify({ token: 'tok', ping: true }) } });
+  ck(/"gmail":false/.test(out.text) && /permission/.test(out.text), '0) doPost が Gmail の許可が無いことを答えない: ' + out.text);
+  delete srv.GmailApp.getAliases;
+  srv.doPost({ postData: { contents: JSON.stringify({ token: 'ちがう', ping: true }) } });
+  ck(/"success":false/.test(out.text) && /アクセス権限がありません/.test(out.text), '0) doPost が合言葉の違う確かめに答えた: ' + out.text);
+  delete env.props.MAIL_WEB_APP_TOKEN;
+  // メニュー「🔧 動作確認 > メール送信のテスト」：確かめて、「はい」なら自分あてに1通。動いていなければ送らずに理由だけ
+  const realUi = srv.SpreadsheetApp.getUi, alerts = [];
+  srv.SpreadsheetApp.getUi = () => ({ alert: (title, msg, b) => { alerts.push(msg); return b === 'YES_NO' ? 'YES' : 'OK'; },
+                                      ButtonSet: { OK: 'OK', YES_NO: 'YES_NO' }, Button: { YES: 'YES', NO: 'NO' } });
+  const m1 = env.mail.length;
+  const mr = srv.menuTestMailSending();
+  ck(mr.ok && env.mail.length === m1 + 1 && alerts.some((a) => /テストメールを1通送りますか/.test(a)) && /✅/.test(alerts[alerts.length - 1]),
+     '0) メニューのメール送信のテスト（代理送信なし）: ' + JSON.stringify([mr, alerts]));
+  env.props.MAIL_WEB_APP_URL = RELAY;
+  env.onFetch = () => html(200, LOGIN_PAGE);
+  alerts.length = 0;
+  const mr2 = srv.menuTestMailSending();
+  ck(!mr2.ok && env.mail.length === m1 + 1 && alerts.length === 1 && /❌/.test(alerts[0]) && /ログイン/.test(alerts[0]),
+     '0) メニューのメール送信のテスト（代理送信が動いていない）: ' + JSON.stringify(alerts));
+  delete env.props.MAIL_WEB_APP_URL;
+  srv.SpreadsheetApp.getUi = realUi;
 } catch (e) {
   fails.push('0) 止まった: ' + (e && e.message ? e.message : e));
 } finally {
@@ -159,15 +221,34 @@ try {
       await page.close();
     }
 
-    // ---- 2b) 代理送信の Web App が動いていない：1人目で止めて理由を出す。「自分のGmailから送る」で送れる ----
+    // ---- 2a) 開いたときに代理送信を確かめる：動いていなければ知らせ、「自分のGmailから送る」を選んでおく ----
     start(true);
     env.props.MAIL_WEB_APP_URL = RELAY;
     env.onFetch = () => html(200, LOGIN_PAGE);
     {
       const { page, dialogs } = await open(browser);
+      await page.waitForFunction(() => /動いていません|送信元/.test(document.getElementById('routeNote').textContent), null, { timeout: 10000 });
+      ck(/動いていません/.test(await page.textContent('#routeNote')) && /ログイン/.test(await page.textContent('#routeWhy')) && await page.isChecked('#useDirect'),
+         '2a) 開いたときに、代理送信が動いていないことを知らせない・自分のGmailを選んでいない: ' + await page.textContent('#routeBox'));
+      await sendAll(page);
+      ck(relayFetches() === 1, '2a) 自分のGmailを選んだのに、代理送信で送ろうとした: ' + relayFetches());
+      ck(env.mail.map((m) => m.to).join(',') === 'taro@example.com,hana@example.com', '2a) 自分のGmailから送れない: ' + env.mail.map((m) => m.to).join(','));
+      ck(dialogs.some((d) => /送信元：自分のGmail（tester@example\.com）/.test(d)), '2a) 送る前の確認に送信元が出ない: ' + dialogs.join(' / '));
+      await page.close();
+    }
+
+    // ---- 2b) 開いたときは動いていたのに、送るときに動かない：1人目で止めて理由を出す。「自分のGmailから送る」で送れる ----
+    start(true);
+    env.props.MAIL_WEB_APP_URL = RELAY;
+    env.onFetch = (url, o) => (JSON.parse(o.payload).ping ? json({ success: true, ping: true, sender: 'chapter@example.com', gmail: true, version: 'v' }) : html(200, LOGIN_PAGE));
+    {
+      const { page, dialogs } = await open(browser);
+      await page.waitForFunction(() => /送信元/.test(document.getElementById('routeNote').textContent), null, { timeout: 10000 });
+      ck(/✓/.test(await page.textContent('#routeNote')) && /chapter@example\.com/.test(await page.textContent('#routeNote')) && !(await page.isChecked('#useDirect')),
+         '2b) 開いたときに、代理送信が動いていることを出さない: ' + await page.textContent('#routeBox'));
       await page.click('#sendBtn');
       await page.waitForFunction(() => document.getElementById('relayBox').style.display === 'block' || /すべての処理が完了しました/.test(document.body.textContent), null, { timeout: 10000 });
-      ck(relayFetches() === 1, '2b) 代理送信が動かないのに、2人目以降も送ろうとした: ' + relayFetches());
+      ck(relayFetches() === 2, '2b) 代理送信が動かないのに、2人目以降も送ろうとした: ' + relayFetches());
       ck(env.mail.length === 0, '2b) 送れていないはずのメールが送られた');
       ck(!/🎉|すべての処理が完了しました/.test(await page.textContent('#progressArea')), '2b) 送れていないのに「完了🎉」と出た');
       ck(await page.textContent('#relayCount') === '2' && /ログイン/.test(await page.textContent('#relayWhy')) && /tester@example\.com/.test(await page.textContent('#directBtn')),
@@ -175,7 +256,7 @@ try {
       await page.click('#directBtn');
       await page.waitForFunction(() => /すべての処理が完了しました/.test(document.body.textContent), null, { timeout: 10000 });
       ck(dialogs.some((d) => /自分のGmail|Gmail（tester@example\.com）/.test(d)), '2b) 自分のGmailから送る前に確かめない: ' + dialogs.join(' / '));
-      ck(env.mail.map((m) => m.to).join(',') === 'taro@example.com,hana@example.com' && relayFetches() === 1,
+      ck(env.mail.map((m) => m.to).join(',') === 'taro@example.com,hana@example.com' && relayFetches() === 2,
          '2b) 自分のGmailから送った宛先が違う・代理送信を通った: ' + env.mail.map((m) => m.to).join(','));
       await page.close();
     }
@@ -194,6 +275,31 @@ try {
       ck(/送れなかった方がいます（1名）/.test(done) && !/🎉/.test(done), '2c) 送れなかった方がいるのに「完了🎉」と出た: ' + done);
       srv.GmailApp.sendEmail = real;
       await page.close();
+    }
+
+    // ---- 2d) 設定の画面：入っている URL・合言葉で「代理送信を確かめる」「テストメールを送る」（保存していなくても）----
+    start(true);
+    {
+      env.onFetch = (url, o) => (JSON.parse(o.payload).ping ? json({ success: true, ping: true, sender: 'chapter@example.com', gmail: true, version: 'v9' }) : json({ success: true }));
+      const { page, dialogs } = await openGasPage(browser, 'template.html', srv, { fails });
+      await page.waitForTimeout(500);
+      await page.fill('#tplWebAppUrl', RELAY);
+      await page.fill('#tplWebAppToken', 'tok9');
+      await page.click('#relayTestBtn');
+      await page.waitForFunction(() => /送れます|⚠/.test(document.getElementById('relayNote').textContent), null, { timeout: 10000 });
+      const rn = await page.textContent('#relayNote');
+      ck(/✓/.test(rn) && /chapter@example\.com/.test(rn) && /v9/.test(rn), '2d) 代理送信を確かめる: ' + rn);
+      let payload = null;
+      env.onFetch = (url, o) => { payload = JSON.parse(o.payload); return json({ success: true }); };
+      await page.fill('#testTo', 'check@example.com');
+      await page.click('#mailTestBtn');
+      await page.waitForFunction(() => /送りました|⚠/.test(document.getElementById('mailTestNote').textContent), null, { timeout: 10000 });
+      ck(payload && payload.to === 'check@example.com' && payload.token === 'tok9' && /✓/.test(await page.textContent('#mailTestNote')),
+         '2d) テストメールを送る: ' + JSON.stringify(payload) + ' ' + await page.textContent('#mailTestNote'));
+      ck(dialogs.some((d) => /check@example\.com あてに、テストメールを1通送ります/.test(d)), '2d) テストメールを送る前に確かめない: ' + dialogs.join(' / '));
+      ck(!env.props.MAIL_WEB_APP_URL, '2d) 確かめただけで、代理送信の設定を保存した');
+      await page.close();
+      env.onFetch = null;
     }
 
     // ---- 3) 次回のシートが無い：過ぎた回が選ばれたら赤字で知らせ、送る前の確認にも出す ----
@@ -218,7 +324,8 @@ try {
     process.exit(1);
   }
   console.log('メールの確認・一括送信の画面（ブラウザ）: 検査 ' + checks + ' 件 OK: 次回のリンク・キャンセル・記号・全角アドレス・送信済みで二重に送らない・過ぎた回の知らせ・'
-    + '代理送信が動かないときは止めて理由と「自分のGmailから送る」・送れなかった方がいるのに完了と出さない・代理送信を確かめる');
+    + '代理送信が動かないときは止めて理由と「自分のGmailから送る」・送れなかった方がいるのに完了と出さない・'
+    + '開いたときに送信元を確かめる・Web App のテスト（確かめる・テストメール・メニュー）');
 })().catch((e) => {
   console.log('NG 検査が止まった: ' + (e && e.stack ? e.stack.split('\n').slice(0, 2).join(' / ') : e));
   fails.forEach((f) => console.log('  - ' + f));   // 止まる前に見つかったもの
