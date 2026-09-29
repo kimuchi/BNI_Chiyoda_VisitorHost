@@ -33,6 +33,15 @@
       <span id="meetNote"></span>
     </div>
     
+    <!-- どこから送るか・送れる状態か（代理送信の Web App を使うときは、開いたときに送らずに確かめる） -->
+    <div id="routeBox" style="margin:8px 0; padding:8px 12px; border-radius:6px; font-size:13px; line-height:1.6; background:#f4f6fb;">
+      <span id="routeNote">送信元を確かめています...</span>
+      <div id="routeWhy" style="display:none; white-space:pre-wrap; margin-top:4px;"></div>
+      <label id="directWrap" style="display:none; margin-top:6px; font-weight:bold;">
+        <input type="checkbox" id="useDirect"> <span id="directLabel">代理送信を使わず、自分のGmailから送る</span>
+      </label>
+    </div>
+
     <div class="cc-container">
       <label>共通 Cc: <input type="text" id="commonCc" value="" placeholder="例: info@example.com"></label>
       <label>共通 Bcc: <input type="text" id="commonBcc" value="" placeholder="例: admin@example.com"></label>
@@ -84,6 +93,7 @@
     // 開いているシートに頼らず、開催日を選んで作る。
     // （ウェブアプリには「開いているシート」が無いため）
     window.onload = function() {
+      checkRoute();
       google.script.run.withSuccessHandler(function(c){
         var sel = document.getElementById('meetSel');
         if (!c || !c.ok || !c.sheets.length) {
@@ -104,6 +114,39 @@
           "<p style='color:red;font-weight:bold;'>" + ((err && err.message) ? err.message : err) + "</p>";
       }).getEmailContext();
     };
+
+    // 開いたときに、どこから送るか・送れる状態かを確かめて出す。代理送信の Web App が動いていなければ、
+    // 送る前に「自分のGmailから送る」を選んでおく（以前は送ってみて初めて、全員分のエラーで分かった）
+    function checkRoute() {
+      google.script.run.withSuccessHandler(renderRoute).withFailureHandler(function (e) {
+        renderRoute({ ok: true, route: 'unknown', message: '送信元を確かめられませんでした（' + ((e && e.message) ? e.message : e) + '）。送ってみて、送れなければ理由が出ます。' });
+      }).getMailSendStatus();
+    }
+    function renderRoute(st) {
+      st = st || {};
+      var box = document.getElementById('routeBox'), note = document.getElementById('routeNote'), why = document.getElementById('routeWhy');
+      senderMe = st.me || senderMe;
+      document.getElementById('directLabel').innerText = '代理送信を使わず、自分のGmail' + (senderMe ? '（' + senderMe + '）' : '') + 'から送る';
+      why.style.display = 'none'; why.innerText = '';
+      if (st.route === 'relay' && !st.ok) {
+        box.style.background = '#fdecea'; box.style.border = '2px solid #e74c3c';
+        note.innerHTML = '<b style="color:#c0392b;">⚠ 代理送信の Web App が動いていません。このままでは送れません。</b>';
+        why.innerText = st.message || ''; why.style.display = 'block';
+        document.getElementById('directWrap').style.display = 'block';
+        document.getElementById('useDirect').checked = true;       // 送れる方（自分のGmail）を選んでおく
+        return;
+      }
+      box.style.border = 'none';
+      if (st.route === 'relay') {
+        box.style.background = st.old ? '#fff8e1' : '#e8f5e9';
+        note.innerText = (st.old ? '送信元：代理送信の Web App。' : '✓ 送信元：代理送信の Web App。') + (st.message || '');
+        document.getElementById('directWrap').style.display = 'block';  // 選びたいときのために出しておく（既定は代理送信）
+        document.getElementById('useDirect').checked = false;
+        return;
+      }
+      box.style.background = '#f4f6fb';
+      note.innerText = st.message || '';
+    }
 
     function loadDrafts() {
       var sheet = document.getElementById('meetSel').value;
@@ -177,7 +220,9 @@
         if (drafts[j].sentAt) again++;
         if (drafts[j].cancelled) cancelledOn++;
       }
+      var direct = document.getElementById('directWrap').style.display !== 'none' && document.getElementById('useDirect').checked;
       var warn = (linkWarning ? linkWarning + "\n\n" : "")
+        + (direct ? "送信元：自分のGmail" + (senderMe ? "（" + senderMe + "）" : "") + "（代理送信は使いません）\n" : "")
         + (again ? "⚠ このうち " + again + " 名には、すでに送っています（もう一度送ります）。\n" : "")
         + (cancelledOn ? "⚠ このうち " + cancelledOn + " 名は、Spreadingでキャンセルになっています。\n" : "");
       if(!confirm(warn + (warn ? "\n" : "") + "チェックが入っている全員にメールを順番に送信します。\nよろしいですか？")) return;
@@ -199,7 +244,7 @@
         return;
       }
 
-      sendOpt = {};
+      sendOpt = direct ? { direct: true } : {};
       runSend();
     }
 

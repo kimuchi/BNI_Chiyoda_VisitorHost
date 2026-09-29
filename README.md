@@ -133,7 +133,8 @@ BNI_Chiyoda_VisitorHost/
     ├── check_csv_dialog.js   #   「CSVから名簿・PDF作成」の画面を Chromium で（過ぎた回の再編集はその回に書き戻す・Shift_JIS のCSV・
     │                         #     キャンセルの方の知らせ・PDFのみ再作成・PDFを作れなかったとき）
     ├── check_email_dialog.js #   「メールの確認・一括送信」の画面を Chromium で（次回のPDFのリンク・キャンセル・件名の記号・全角のアドレス・
-    │                         #     送信済みで二重に送らない・過ぎた回の知らせ・代理送信の Web App が動かないときは止めて「自分のGmailから送る」）
+    │                         #     送信済みで二重に送らない・過ぎた回の知らせ・代理送信の Web App が動かないときは止めて「自分のGmailから送る」・
+    │                         #     Web App が動いているかのテスト：開いたときの確かめ・代理送信を確かめる・テストメール・メニューのメール送信のテスト）
     ├── lib_gas_page.js       #   画面を Chromium で開き、google.script.run を Node で動かす本番のコードにつなぐ
     ├── check_allocation_dialog.js # 「割り振り表」の画面を Chromium で（読み込んだ回に書き込む・Spreadingの文字をHTMLとして動かさない・確度とメモ）
     ├── check_role_terms.js   #   期の替わり目（担当者を入れていない期で、名簿の「役職」を消さない・前の期の担当者を使う・登録した期は反映する・
@@ -433,7 +434,7 @@ clasp deployments
 
 ### 更新が反映されたかの確かめ方
 
-`コード.js` の `SYSTEM_VERSION_`（例: `2026-09-29p`）が、ウェブアプリのトップページの下と
+`コード.js` の `SYSTEM_VERSION_`（例: `2026-09-29q`）が、ウェブアプリのトップページの下と
 「定例会スライド（前半）」「定例会スライド（後半）」の画面の右上に **「版 …」** として出ます。
 機能を変えたらこの値を変え、`clasp push`・`clasp version`・`clasp deploy` のあとに画面で確かめてください。
 
