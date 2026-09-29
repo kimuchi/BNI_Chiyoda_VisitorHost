@@ -53,6 +53,7 @@
   <div id="step2" class="hidden">
     <h3>データの全件確認・編集</h3>
     <p id="targetNote" style="font-weight:bold; color:#0044cc; margin:4px 0 8px;"></p>
+    <p id="cancelNote" style="font-weight:bold; color:#c00; margin:4px 0 8px;"></p>
     <p style="font-size:12px; color:#555;">※スペースが無かった氏名（赤色）や、招待者が不明な箇所（黄色）は自動推測されています。修正してください。<br>※ 操作列の「🗑」で行を削除、「→Guest／→Visitor」で種別を切り替えられます（自動で番号が振り直されます）。</p>
 
     <button class="btn-sort" onclick="sortByFurigana()">ふりがなでソート</button>
@@ -127,9 +128,17 @@
         if (sel.options[i].value === m.dateValue) { sel.selectedIndex = i; return; }
       }
       var opt = document.createElement('option');
-      opt.value = m.dateValue; opt.dataset.display = m.display; opt.text = m.display + '（読み込んだ回）';
+      opt.value = m.dateValue; opt.dataset.display = m.display; opt.dataset.added = '1'; opt.text = m.display + '（読み込んだ回）';
       sel.appendChild(opt);
       sel.selectedIndex = sel.options.length - 1;
+    }
+    // 再編集のあとで最初の画面に戻るときは、上の定例会を既定（次回）に戻す
+    // （読み込んだ過去の回が選ばれたままだと、続けてCSVを取り込んだときにその回に作ってしまうため）
+    function resetMeeting() {
+      var sel = document.getElementById('meetingSelect');
+      for (var i = sel.options.length - 1; i >= 0; i--) if (sel.options[i].dataset.added) sel.remove(i);
+      if (loadedSheet && sel.options.length) sel.selectedIndex = 0;
+      loadedSheet = ''; loadedMeeting = null;
     }
 
     function regeneratePdfOnly() {
@@ -172,8 +181,13 @@
       displayKeys = ["_No"];
       for(var i=0; i<parsedHeader.length; i++) displayKeys.push(parsedHeader[i]);
       renderTable();
+      var cancelled = parsedData.filter(function (r) { return isCancelled(r); }).map(function (r) { return r["参加者氏名"] || r._No; });
+      document.getElementById('cancelNote').innerText = cancelled.length
+        ? '⚠ Spreadingでキャンセルになっている方がいます（灰色の行）：' + cancelled.join('、') + '。ビジターリストに載せない場合は「🗑」で削除してください。'
+        : '';
       document.getElementById('step2').classList.remove('hidden');
     }
+    function isCancelled(r) { return /キャンセル|cancel/i.test(String(r["ステータス"] || r["出席ステータス"] || "")); }
 
     function collectEdits() {
       var tbody = document.getElementById('dataBody');
@@ -214,6 +228,7 @@
       for (var r = 0; r < parsedData.length; r++) {
         var row = parsedData[r];
         var tr = document.createElement('tr');
+        if (isCancelled(row)) { tr.style.background = '#e6e6e6'; tr.title = 'Spreadingでキャンセルになっている方'; }
         tr.draggable = true;
         tr.dataset.index = r;
         tr.addEventListener('dragstart', rowDragStart);
@@ -333,6 +348,7 @@
 
     function showError(err) {
       alert("エラーが発生しました: " + err.message);
+      resetMeeting();
       document.getElementById('loading').classList.add('hidden');
       document.getElementById('step1').classList.remove('hidden');
     }

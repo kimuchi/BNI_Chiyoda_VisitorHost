@@ -60,6 +60,7 @@
     var commonCc = "";
     var commonBcc = "";
     var linkWarning = "";   // 本文に入れるPDFのリンクが無いときの知らせ（送る前の確認にも出す）
+    var pastSheets = {};    // 過ぎた回のシート（シート名 → 開催日）。次回のシートがまだ無いと、既定が過ぎた回になるため知らせる
     function fmtSent(iso) {
       var t = new Date(iso);
       if (isNaN(t.getTime())) return '';
@@ -78,10 +79,12 @@
         var sel = document.getElementById('meetSel');
         if (!c || !c.ok || !c.sheets.length) {
           sel.innerHTML = '<option value="">参加者シートがありません</option>';
-          document.getElementById('emailContainer').innerHTML =
-            "<p style='color:red;font-weight:bold;'>「〇〇参加者」シートが見つかりません。先に「1. CSVから名簿・PDF作成」で作成してください。</p>";
+          document.getElementById('emailContainer').innerHTML = "<p style='color:red;font-weight:bold;'>"
+            + esc(c && !c.ok && c.message ? c.message : "「〇〇参加者」シートが見つかりません。先に「1. CSVから名簿・PDF作成」で作成してください。") + "</p>";
           return;
         }
+        pastSheets = {};
+        c.sheets.forEach(function (x) { if (x.past) pastSheets[x.sheet] = x.label; });
         sel.innerHTML = c.sheets.map(function(x){
           return '<option value="' + x.sheet + '"' + (x.sheet === c.defaultSheet ? ' selected' : '') + '>'
                + x.label + '（' + x.sheet + '）</option>';
@@ -115,10 +118,15 @@
           + '先に「1. CSVから名簿・PDF作成」（メンバーブックは「メンバーブックの編集・PDF出力」）で作ってください。'
         : '';
       var skipped = (data.drafts || []).filter(function (d) { return d.send === false; }).length;
+      if (pastSheets[data.sheet]) {
+        linkWarning = '⚠ 選ばれているのは過ぎた回（' + pastSheets[data.sheet] + '）です。次回の案内なら、先に「1. CSVから名簿・PDF作成」で次回の名簿を作ってください。'
+          + (linkWarning ? '\n' + linkWarning : '');
+      }
       document.getElementById('meetNote').innerText =
         '「' + data.sheet + '」を読み込みました。'
         + (data.date ? '本文の{{date}}には「' + data.date + '」が入ります。' : '')
         + (skipped ? '\nすでに送った方・Spreadingでキャンセルの方（' + skipped + '名）は、チェックを外してあります。' : '')
+        + (data.noEmail && data.noEmail.length ? '\nメールアドレスが無いため送れない方：' + data.noEmail.join('、') : '')
         + (linkWarning ? '\n' + linkWarning : '');
       document.getElementById('meetNote').style.color = linkWarning ? '#c00' : '';
 

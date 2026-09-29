@@ -2,7 +2,7 @@
 
 // 反映されたか確かめるための版。変更したら日付を更新する。
 // clasp push / デプロイが効いているかは、これを画面で見れば分かる。
-var SYSTEM_VERSION_ = '2026-09-29f';
+var SYSTEM_VERSION_ = '2026-09-29g';
 
 function getSystemVersion() { return SYSTEM_VERSION_; }
 
@@ -1211,6 +1211,7 @@ function getEmailContext() {
     list.sort(function (a, b) { return b.time - a.time; });
 
     var today = new Date(); today.setHours(0, 0, 0, 0);
+    list.forEach(function (x) { x.past = x.time > 0 && x.time < today.getTime(); });   // 過ぎた回（画面で知らせる）
     var future = list.filter(function (x) { return x.time >= today.getTime(); });
     // 今日以降でいちばん近いもの。無ければ直近の過去。
     var def = future.length ? future[future.length - 1] : (list.length ? list[0] : null);
@@ -1251,13 +1252,13 @@ function generateEmailDrafts(sheetName) {
   if (!d) { var raw = props.getProperty('LATEST_MEETING_DATE') || ""; if (raw) d = new Date(raw); }
   if (d && !isNaN(d.getTime())) dateFormatted = d.getFullYear() + "年" + (d.getMonth() + 1) + "月" + d.getDate() + "日";
   
-  var drafts = [], sent = mailSentMap_(sheet.getName());
+  var drafts = [], noEmail = [], sent = mailSentMap_(sheet.getName());
   for (var i = 1; i < data.length; i++) {
     var name = data[i][nameIdx], email = data[i][emailIdx], type = data[i][typeIdx];
     var inviter = inviterIdx !== -1 ? data[i][inviterIdx] : "";
     
-    email = String(email == null ? "" : email);
-    if (email.trim() === "") continue;
+    email = String(email == null ? "" : email).normalize('NFKC').trim();   // 全角の「＠」「．」も半角に
+    if (email === "") { if (name) noEmail.push(String(name)); continue; }
     var tplSubj = "", tplBody = "";
     if (type === "Visitor") { tplSubj = tpls.visitorSubj; tplBody = tpls.visitorBody; }
     else if (type === "Guest") { tplSubj = tpls.guestSubj; tplBody = tpls.guestBody; }
@@ -1274,7 +1275,7 @@ function generateEmailDrafts(sheetName) {
                   cancelled: cancelled, status: status, sentAt: sentAt, sheet: sheet.getName() });
   }
   return { drafts: drafts, cc: tpls.cc, bcc: tpls.bcc, sheet: sheet.getName(), date: dateFormatted,
-           visitorList: listUrl, memberBook: bookUrl };
+           visitorList: listUrl, memberBook: bookUrl, noEmail: noEmail };
 }
 
 // その参加者シート（開催日）のビジターリストPDFのURL。作ったときに控えたID（VISITOR_PDF_ID_＋シート名）から求める。
@@ -1304,7 +1305,7 @@ function sendSingleEmail(e, cc, bcc) {
     var options = { name: chapterLabel_() };
     if (cc && cc.trim() !== "") options.cc = cc.trim();
     if (bcc && bcc.trim() !== "") options.bcc = bcc.trim();
-    var toEmail = e.email ? e.email.toString().trim() : "";
+    var toEmail = e.email ? e.email.toString().normalize('NFKC').trim() : "";
     if (!toEmail || toEmail.indexOf('@') === -1) return { success: false, error: "無効なメールアドレス形式 (" + toEmail + ")" };
 
     var cfg = getActiveMailWebApp_();
