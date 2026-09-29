@@ -173,7 +173,11 @@
  function applyRoutine(R){
    var note=document.getElementById('routineNote');
    if(!R || !R.ok || !R.found){
-     note.innerText = (R&&R.message) ? R.message : 'ルーティンチェックシートに該当する開催日が見つかりません。';
+     // その日の列が無い：前に選んでいた開催日の推薦のことば・抽選を残さない
+     pairs={ during:[{ g:'', r:'' }], after:[] }; renderPairs();
+     val('lt1',''); val('lt2',''); document.getElementById('rcNote').innerHTML='';
+     note.innerText = ((R&&R.message) ? R.message : 'ルーティンチェックシートに該当する開催日が見つかりません。')
+       + '（推薦のことば・抽選の欄は空にしました。手で入れてください）';
      note.style.color='#c60'; return;
    }
    if(R.meetingNo) val('no', R.meetingNo);

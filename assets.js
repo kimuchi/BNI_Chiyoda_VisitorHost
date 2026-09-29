@@ -185,7 +185,9 @@ function saveTemplateBase64(kind, base64, fileName) {
     else { file = folder.createFile(pptBlob); }
     PropertiesService.getScriptProperties().setProperty(def.prop, file.getId());
     console.log('[TPL] saved ' + kind + ' -> ' + file.getId());
-    return { ok: true, message: '「' + def.label + '」のテンプレートを登録しました。', status: getTemplateStatus() };
+    return { ok: true, message: '「' + def.label + '」のテンプレートを登録しました。'
+               + (check.pages > 1 ? '（' + check.pages + 'ページありますが、使うのは1ページ目だけです。1ページ目を人数ぶん写して作ります）' : ''),
+             status: getTemplateStatus() };
   } catch (e) {
     console.error('[TPL] ' + (e && e.stack ? e.stack : e));
     return { ok: false, message: '登録中にエラーが発生しました: ' + driveHelpHint_(e) };
@@ -203,14 +205,27 @@ function validateTemplate_(zipBlob, requiredIds) {
     if (!map[need[i]]) return { ok: false, message: '対応するテンプレートではありません（' + need[i] + ' が見つかりません）。' };
   }
   var xml = map['ppt/slides/slide1.xml'].getDataAsString('UTF-8');
-  var found = {}, m, re = /<p:cNvPr[^>]*\sid="(\d+)"/g;
+  var found = {}, text = {}, m, re = /<p:cNvPr[^>]*\sid="(\d+)"/g;
   while ((m = re.exec(xml)) !== null) found[m[1]] = true;
-  var missing = [];
-  for (var j = 0; j < requiredIds.length; j++) if (!found[requiredIds[j]]) missing.push(requiredIds[j]);
+  // 文字を入れる枠（p:sp で、文字の入れ物 p:txBody があるもの）。写真・動画の番号が合っているだけでは足りない
+  // （以前は、ビジター紹介のテンプレートをビジタープレゼンの欄で登録できてしまい、お名前が別の枠に入っていた）
+  findSpRanges_(xml).forEach(function (r) {
+    var sp = xml.substring(r.start, r.end), id = sp.match(/<p:cNvPr[^>]*\sid="(\d+)"/);
+    if (id && /<p:txBody\b/.test(sp)) text[id[1]] = true;
+  });
+  var missing = [], notText = [];
+  for (var j = 0; j < requiredIds.length; j++) {
+    if (!found[requiredIds[j]]) missing.push(requiredIds[j]);
+    else if (!text[requiredIds[j]]) notText.push(requiredIds[j]);
+  }
   if (missing.length) {
     return { ok: false, message: '選んだ種類とテンプレートのレイアウトが一致しません（シェイプID ' + missing.join(', ') + ' が見つかりません）。' };
   }
-  return { ok: true, hasNotes: !!map['ppt/notesSlides/notesSlide1.xml'] };
+  if (notText.length) {
+    return { ok: false, message: '選んだ種類とテンプレートのレイアウトが一致しません（シェイプID ' + notText.join(', ')
+      + ' が文字の枠ではありません）。別の種類のテンプレートを選んでいないか確かめてください。' };
+  }
+  return { ok: true, hasNotes: !!map['ppt/notesSlides/notesSlide1.xml'], pages: slideEntries_(map).length };
 }
 
 function getTemplateBlob_(kind) {

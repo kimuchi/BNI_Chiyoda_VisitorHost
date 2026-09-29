@@ -39,7 +39,14 @@ function setTextInShape_(xml, shapeId, newText) {
     var m = sp.match(/<p:cNvPr[^>]*\sid="(\d+)"/);
     if (!m || m[1] !== String(shapeId)) continue;
     var runs = findTagRanges_(sp, 'a:r');
-    if (!runs.length) continue;
+    if (!runs.length) {
+      // PowerPointで見本の文字を消した枠は、ラン（<a:r>）が無くなる。入れる文字があれば、段落の書式でランを作って入れる
+      // （以前は何もせず、お名前・専門分野などが空のまま「作成しました」になっていた）
+      if (newText == null || newText === '') return xml;
+      sp = addRunToShape_(sp);
+      runs = findTagRanges_(sp, 'a:r');
+      if (!runs.length) return xml;                  // 文字の入れ物が無い枠（写真など）
+    }
     var updated = replaceFirstT_(sp.substring(runs[0].start, runs[0].end), newText);
     // 後ろのランから順に削除し、先頭ランを差し替える（位置ずれを防ぐため降順）
     var out = sp;
@@ -57,7 +64,9 @@ function setCategoryInShape_(xml, shapeId, category) {
     var sp = xml.substring(spRanges[i].start, spRanges[i].end);
     var m = sp.match(/<p:cNvPr[^>]*\sid="(\d+)"/);
     if (!m || m[1] !== String(shapeId)) continue;
-    var runs = findTagRanges_(sp, 'a:r'), out = sp;
+    var runs = findTagRanges_(sp, 'a:r');
+    if (!runs.length) { sp = addRunToShape_(sp); runs = findTagRanges_(sp, 'a:r'); }   // 見本の文字を消した枠
+    var out = sp;
     if (runs.length >= 3) {
       var texts = ['【', category, '】'];
       for (var j = 2; j >= 0; j--) {
@@ -241,11 +250,32 @@ function fitTextAndPush_(xml, shapeId, belowId, text, minPt) {
   return moveShapeDown_(xml, belowId, Math.max(0, growOf(two)));
 }
 
+// 置き換える文字は関数で返す。文字列で渡すと、お名前・会社名の「$&」「$'」「$1」を置き換えの記号として読み、
+// 見本の文字が混ざったり、XMLが壊れたりする（PowerPointで開けない・修復を求められる）
 function replaceFirstT_(runXml, text) {
   var esc = escapeXml_(text);
   // <a:t>…</a:t> / <a:t/>
-  if (/<a:t(?=[\s/])[^>]*\/>/.test(runXml)) return runXml.replace(/<a:t(?=[\s/])[^>]*\/>/, '<a:t>' + esc + '</a:t>');
-  return runXml.replace(/(<a:t(?=[\s>])[^>]*>)[\s\S]*?(<\/a:t>)/, '$1' + esc + '$2');
+  if (/<a:t(?=[\s/])[^>]*\/>/.test(runXml)) return runXml.replace(/<a:t(?=[\s/])[^>]*\/>/, function () { return '<a:t>' + esc + '</a:t>'; });
+  return runXml.replace(/(<a:t(?=[\s>])[^>]*>)[\s\S]*?(<\/a:t>)/, function (all, open, close) { return open + esc + close; });
+}
+
+// 文字の無い枠（見本の文字を消した枠）の最初の段落に、空のランを1本足す。書式は段落の終わりの書式（endParaRPr）から採る。
+// 文字の入れ物（p:txBody の段落）が無い枠は、そのまま返す
+function addRunToShape_(sp) {
+  var tb = findTagRanges_(sp, 'p:txBody');
+  if (!tb.length) return sp;
+  var body = sp.substring(tb[0].start, tb[0].end), ps = findTagRanges_(body, 'a:p');
+  if (!ps.length) return sp;
+  var p = body.substring(ps[0].start, ps[0].end);
+  var end = p.match(/<a:endParaRPr\b([^>]*?)(\/>|>([\s\S]*?)<\/a:endParaRPr>)/);
+  var attrs = end ? end[1].replace(/\s(?:dirty|err)="[^"]*"/g, '') : ' lang="ja-JP"';
+  var run = '<a:r><a:rPr' + attrs + (end && end[3] ? '>' + end[3] + '</a:rPr>' : '/>') + '<a:t></a:t></a:r>';
+  var np;
+  if (/^<a:p\b[^>]*\/>$/.test(p)) np = p.substring(0, p.length - 2) + '>' + run + '</a:p>';
+  else if (end) { var at = p.indexOf(end[0]); np = p.substring(0, at) + run + p.substring(at); }
+  else { var close = p.lastIndexOf('</a:p>'); np = p.substring(0, close) + run + p.substring(close); }
+  body = body.substring(0, ps[0].start) + np + body.substring(ps[0].end);
+  return sp.substring(0, tb[0].start) + body + sp.substring(tb[0].end);
 }
 
 function escapeXml_(s) {
@@ -330,11 +360,51 @@ function buildPptxFromTemplate_(templateBlob, dataList, builderFn, fileName) {
   var map = unzipToMap_(templateBlob);
   var slide1 = xmlOf_(map, 'ppt/slides/slide1.xml');
   if (!slide1) throw new Error('テンプレートに ppt/slides/slide1.xml がありません。');
+  keepOnlyFirstSlide_(map);
   putXml_(map, 'ppt/slides/slide1.xml', builderFn(slide1, dataList[0]));
   var rest = [];
   for (var i = 1; i < dataList.length; i++) rest.push(builderFn(slide1, dataList[i]));
   addSlidesToMap_(map, rest);
+  syncSections_(map);                                // PowerPointのセクションがあれば、足したページも1ページ目のセクションへ
   return zipFromMap_(map, fileName);
+}
+
+// 部品の関係ファイルの場所（ppt/notesSlides/notesSlide2.xml → ppt/notesSlides/_rels/notesSlide2.xml.rels）
+function partRelsPath_(path) { return path.replace(/^(.*\/)?([^\/]+)$/, function (all, dir, base) { return (dir || '') + '_rels/' + base + '.rels'; }); }
+
+// テンプレートの2ページ目以降を取り除く（1ページ目だけを人数ぶん写すため）。取り除いた枚数を返す。
+// 以前は残りのページが出力にそのまま残り（前に作ったファイルを登録すると、先週のビジターのページ）、
+// 足したページの名前がテンプレートのページと重なって、同じページが2回出ることもあった
+function keepOnlyFirstSlide_(map) {
+  var entries = slideEntries_(map), keep = 'ppt/slides/slide1.xml', drop = [], kept = [];
+  entries.forEach(function (e) { (e.path === keep ? kept : drop).push(e); });
+  if (!kept.length) return 0;                        // 1ページ目が並びに無い（見たことのない作り）ときは触らない
+  // 並びに無いページの部品（どこからも使われていない slide2.xml など）も、足すページの名前と重なるので除く
+  var dropPaths = drop.map(function (e) { return e.path; }).filter(Boolean);
+  for (var p in map) if (/^ppt\/slides\/slide\d+\.xml$/.test(p) && p !== keep && dropPaths.indexOf(p) < 0) dropPaths.push(p);
+  if (!dropPaths.length && !drop.length) return 0;
+  var ct = xmlOf_(map, '[Content_Types].xml'), prsRels = xmlOf_(map, 'ppt/_rels/presentation.xml.rels') || '';
+  var prs = xmlOf_(map, 'ppt/presentation.xml') || '';
+  var gone = [];
+  dropPaths.forEach(function (path) {
+    var rels = xmlOf_(map, partRelsPath_(path)) || '', m, re = /Target="\.\.\/notesSlides\/(notesSlide\d+\.xml)"/g;
+    while ((m = re.exec(rels)) !== null) gone.push('ppt/notesSlides/' + m[1]);   // そのページのノート
+    gone.push(path);
+  });
+  gone.forEach(function (path) {
+    delete map[path]; delete map[partRelsPath_(path)];
+    ct = ct.replace(new RegExp('<Override PartName="/' + path.replace(/[.\/]/g, '\\$&') + '"[^>]*/>'), '');
+  });
+  drop.forEach(function (e) {
+    prsRels = prsRels.replace(new RegExp('<Relationship\\b[^>]*\\bId="' + e.rid + '"[^>]*/>'), '');
+    prs = prs.replace(new RegExp('<p:sld r:id="' + e.rid + '"\\s*/>', 'g'), '');   // 目的別スライドショーの中の、そのページ
+  });
+  putXml_(map, '[Content_Types].xml', ct);
+  putXml_(map, 'ppt/_rels/presentation.xml.rels', prsRels);
+  putXml_(map, 'ppt/presentation.xml', prs);
+  setSlideEntries_(map, kept);
+  syncSections_(map);                                // セクションから、取り除いたページを外す
+  return drop.length;
 }
 
 // --- {{トークン}} の置換 -------------------------------------------------
@@ -398,8 +468,9 @@ function replaceInParagraph_(seg, findHits) {
   var out = seg;
   for (var j = ts.length - 1; j >= 0; j--) {
     var innerOld = seg.substring(ts[j].start, ts[j].end);
-    var innerNew = innerOld.replace(/(<a:t(?=[\s>])[^>]*>)[\s\S]*?(<\/a:t>)/, '$1' + escapeXml_(texts[j]) + '$2');
-    if (/<a:t(?=[\s/])[^>]*\/>/.test(innerOld)) innerNew = innerOld.replace(/<a:t(?=[\s/])[^>]*\/>/, '<a:t>' + escapeXml_(texts[j]) + '</a:t>');
+    var escT = escapeXml_(texts[j]);                 // 関数で置き換える（文字の「$&」「$1」を記号として読まない）
+    var innerNew = innerOld.replace(/(<a:t(?=[\s>])[^>]*>)[\s\S]*?(<\/a:t>)/, function (all, open, close) { return open + escT + close; });
+    if (/<a:t(?=[\s/])[^>]*\/>/.test(innerOld)) innerNew = innerOld.replace(/<a:t(?=[\s/])[^>]*\/>/, function () { return '<a:t>' + escT + '</a:t>'; });
     out = out.substring(0, ts[j].start) + innerNew + out.substring(ts[j].end);
   }
   return out;

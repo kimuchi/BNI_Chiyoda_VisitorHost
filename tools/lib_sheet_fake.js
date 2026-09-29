@@ -13,6 +13,8 @@
 //   ・new Date()（引数なし）は now を返す（「今日」を固定する）
 // PDFの中身は「%PDF-1.4」の次の行から、セルをタブ・行を改行でつないだ文字にしてある（検査で読みやすいように）。
 
+const { readZip, writeZip } = require('./lib_zip');
+
 class FakeBlob {
   constructor(buf, type, name) { this._buf = Buffer.isBuffer(buf) ? buf : Buffer.from(String(buf == null ? '' : buf), 'utf8'); this._type = type || ''; this._name = name || ''; }
   getBytes() { return Array.from(this._buf).map((b) => (b > 127 ? b - 256 : b)); }
@@ -233,6 +235,11 @@ function makeEnv(opt) {
         return fileObj(id);
       },
       getFoldersByName: (n) => { let used = !children[n]; return { hasNext: () => !used, next: () => { used = true; return children[n]; } }; },
+      getFilesByName: (n) => {
+        const list = Object.values(env.drive.files).filter((f) => f.parent === fid && f.name === n && !f.trashed);
+        let i = 0;
+        return { hasNext: () => i < list.length, next: () => fileObj(list[i++].id) };
+      },
       createFolder: (n) => { children[n] = makeFolder(fid + '/' + n, n); return children[n]; },
       getFiles: () => ({ hasNext: () => false, next: () => null }),
     };
@@ -260,6 +267,12 @@ function makeEnv(opt) {
       base64Encode: (b) => Buffer.from(Array.isArray(b) ? b.map((x) => x & 255) : String(b)).toString('base64'),
       base64Decode: (s) => Array.from(Buffer.from(String(s), 'base64')).map((b) => (b > 127 ? b - 256 : b)),
       getUuid: () => 'uuid-' + env.fetchLog.length,
+      zip: (blobs, name) => {                     // pptx の組み立て（ビジター・代理スライドなど）
+        const f = {};
+        blobs.forEach((b) => { f[b.getName()] = b._buf; });
+        return new FakeBlob(writeZip(f), 'application/zip', name);
+      },
+      unzip: (blob) => { const f = readZip(blob._buf); return Object.keys(f).map((n) => new FakeBlob(f[n], '', n)); },
     },
     PropertiesService: { getScriptProperties: store, getDocumentProperties: store, getUserProperties: store },
     LockService: { getScriptLock: () => ({ tryLock: () => true, waitLock: () => {}, releaseLock: () => {}, hasLock: () => true }),

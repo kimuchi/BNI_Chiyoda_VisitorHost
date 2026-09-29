@@ -257,6 +257,25 @@ const shown = (el) => !!el && el.style.display !== 'none' && el.style.display !=
      'メンバーのページなしの作成がおかしい: ' + JSON.stringify({ n: pagesOf(o).length, g: o.weeklyGuests }));
   ck(J(o.memberPages) === J({ newMembers: [], renewMembers: [] }) && o.networkingLeaders.show === true && o.networkingLeaders.items.length === 0
      && lastCall()[1]['新メンバー'] === '該当者なし', '新メンバーなし・ネットワーキングリーダーの原稿なしの渡し方: ' + J([o.memberPages, o.networkingLeaders]));
+
+  // ルーティンチェックシートにその日の列が無い開催日に選び直すと、前の日のメインプレゼン・コアバリュー・一般規定・カテゴリーを残さない
+  // （以前は前の日の値のまま、その日のスライドを作っていた。メインプレゼンは、その日のスピーカーローテーションのお2人にする）
+  routine = Object.assign({}, routine, { coreValue: 'Accountability', generalPolicy: 3, wantedCategories: ['見本分野'], openCategory: '開放の見本',
+    reviewCategory: '審査の見本', mainPresenters: [{ raw: 'Gさん', name: NM(6) }, { raw: 'Hさん', name: NM(7) }], mainPresentersRaw: '①Gさん②Hさん' });
+  step('前半：列のある日を読み込む', () => run('reload()'));
+  ck(els.mp1.value === NM(6) && els.core.value === 'Accountability' && els.gp.value === '3' && els.t_開放カテゴリー.value === '開放の見本',
+     '前半：列のある日の値が入らない: ' + [els.mp1.value, els.core.value, els.gp.value, els.t_開放カテゴリー.value].join(' / '));
+  const routineFound = routine;
+  routine = { ok: true, found: false, message: 'ルーティンチェックシートに、この開催日の列が見つかりませんでした。' };
+  step('前半：列の無い日に選び直す', () => run('reload()'));
+  ck(els.core.value === '' && els.gp.value === '' && els.t_開放カテゴリー.value === '' && els.t_審査中カテゴリー.value === '' && els['t_求める専門分野'].value === '',
+     '前半：列の無い日に、前の日のコアバリュー・一般規定・カテゴリーが残った: ' + [els.core.value, els.gp.value, els.t_開放カテゴリー.value].join(' / '));
+  ck(els.mp1.value === NM(0) && els.mp2.value === NM(1), '前半：列の無い日のメインプレゼンが、その日のローテーションのお2人でない: ' + els.mp1.value + ' / ' + els.mp2.value);
+  ck(/空にしました/.test(els.coreNote.innerText), '前半：列の無い日に、欄を空にしたことを知らせない: ' + els.coreNote.innerText);
+  step('前半：列の無い日で作る', () => run('gen()'));
+  ck(lastOpts().coreValue === '' && lastOpts().generalPolicy === 0 && lastCall()[1]['開放カテゴリー'] === '',
+     '前半：列の無い日に、前の日の値で作った: ' + J([lastOpts().coreValue, lastOpts().generalPolicy, lastCall()[1]['開放カテゴリー']]));
+  routine = routineFound;
 }
 
 // ===================== 後半 =====================
@@ -356,6 +375,15 @@ const shown = (el) => !!el && el.style.display !== 'none' && el.style.display !=
   ck(lastCall()[1]['抽選1氏名'] === N(12) && lastCall()[1]['抽選2氏名'] === N(13),
      '「更新した」のあとに渡した抽選: ' + [lastCall()[1]['抽選1氏名'], lastCall()[1]['抽選2氏名']].join(' / '));
   step('定例会中の組を外す（次の検査のため）', () => run("delPair('during',0)"));
+
+  // ルーティンチェックシートにその日の列が無い開催日に選び直すと、前の日の推薦のことば・抽選を残さない
+  const routineFound2 = routine;
+  routine = { ok: true, found: false, message: 'ルーティンチェックシートに、この開催日の列が見つかりませんでした。' };
+  step('後半：列の無い日に選び直す', () => { els.lt1.value = N(12); run('reload()'); });
+  ck(rows('during') === 1 && rows('after') === 0 && els.rp_during_g_0.value === '' && els.lt1.value === '' && els.lt2.value === '',
+     '後半：列の無い日に、前の日の推薦のことば・抽選が残った: ' + [rows('during'), rows('after'), els.rp_during_g_0.value, els.lt1.value].join(' / '));
+  ck(/空にしました/.test(els.routineNote.innerText), '後半：列の無い日に、欄を空にしたことを知らせない: ' + els.routineNote.innerText);
+  routine = routineFound2;
 
   // 開催日を選び直すと、その日のルーティンチェックシートの組に入れ替わる（記載が無ければ空の1組）
   routine = Object.assign({}, routine, { recommendations: [], recommendationsRaw: '' });

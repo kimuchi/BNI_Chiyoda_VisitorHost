@@ -198,7 +198,7 @@ function offRenumber_(xml, map) {
 }
 function offSetIdName_(shapeXml, id, name) {
   return shapeXml.replace(/(<p:cNvPr\b[^>]*?\sid=")\d+(")/, '$1' + id + '$2')
-                 .replace(/(<p:cNvPr\b[^>]*?\sname=")[^"]*(")/, '$1' + escapeXml_(name) + '$2')
+                 .replace(/(<p:cNvPr\b[^>]*?\sname=")[^"]*(")/, function (all, a, b) { return a + escapeXml_(name) + b; })
                  .replace(/<a16:creationId\b[^>]*\/>/, '');
 }
 function offSetGeom_(shapeXml, g) {
@@ -240,7 +240,7 @@ function offParagraph_(pXml, text) {
   var end = pXml.match(/<a:endParaRPr\b([^>]*?)(\/>|>([\s\S]*?)<\/a:endParaRPr>)/);
   var rPr = end ? '<a:rPr' + end[1].replace(/\sdirty="\d"/, '') + (end[3] ? '>' + end[3] + '</a:rPr>' : '/>') : '<a:rPr lang="ja-JP"/>';
   var run = '<a:r>' + rPr + '<a:t>' + escapeXml_(text) + '</a:t></a:r>';
-  return end ? pXml.replace(end[0], run + end[0]) : pXml.replace('</a:p>', run + '</a:p>');
+  return end ? pXml.replace(end[0], function (e) { return run + e; }) : pXml.replace('</a:p>', function (e) { return run + e; });
 }
 // 文字の大きさ（pt）をそろえる（ラン・段落末・既定の書式すべて）
 function offSetSize_(xml, pt) {
@@ -733,7 +733,7 @@ function offMembershipTokens_(xml) {
       }
       out = out.substring(0, trs[r].start) + row + out.substring(trs[r].end);
     }
-    if (out !== seg) xml = xml.replace(seg, out);
+    if (out !== seg) xml = xml.replace(seg, function () { return out; });
   });
   return xml;
 }

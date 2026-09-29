@@ -279,8 +279,10 @@ function applyMemberPages_(parts, lists, cache) {
     if (!any) res.hidden.push(path);
     else res.pages.push(path);
     if (any && !res['new'].length && !res.renew.length) {
-      people['new'].forEach(function (p) { res['new'].push({ path: path, name: p.name, years: 0 }); });
-      people.renew.forEach(function (p) { res.renew.push({ path: path, name: p.name, years: p.years }); });
+      r.placed['new'].forEach(function (p) { res['new'].push({ path: path, name: p.name, years: 0 }); });
+      r.placed.renew.forEach(function (p) { res.renew.push({ path: path, name: p.name, years: p.years }); });
+      res.crowded = r.placed.crowded;
+      res.noSlot = r.placed.noSlot;
     }
   });
   var moved = fpNewBeforeRenew_(parts, blocks, sz.W, sz.H);
@@ -399,15 +401,22 @@ function fpFillBothPage_(xml, news, renews, H) {
     if (a > b && a > 0.3) slots['new'].push(s);
     else if (b > a && b > 0.3) slots.renew.push(s);
   });
+  // placed … 実際に入れた方。crowded … 枠より多く、最後の枠にまとめて入れた欄。noSlot … 氏名の枠が無くて入れられなかった方
+  var placed = { 'new': [], renew: [], crowded: [], noSlot: [] };
   ['new', 'renew'].forEach(function (k) {
-    var list = k === 'new' ? news : renews;
-    slots[k].sort(function (a, b) { return a.ay - b.ay; }).forEach(function (s, i) {
-      var p = list[i], text = p ? p.name + (k === 'renew' && p.years ? '（' + p.years + '年）' : '') : '';   // 欄の見出しが「更新メンバー」なので「年」だけ
-      xml = setParagraphsInShape_(xml, s.id, [text]);
+    var list = k === 'new' ? news : renews, ss = slots[k].sort(function (a, b) { return a.ay - b.ay; });
+    var label = function (p) { return p.name + (k === 'renew' && p.years ? '（' + p.years + '年）' : ''); };   // 欄の見出しが「更新メンバー」なので「年」だけ
+    ss.forEach(function (s, i) {
+      // 枠より人数が多いときは、最後の枠に残りの方をまとめて入れる（以前は入らない方を黙って落とし、知らせには全員の名前が出ていた）
+      var ps = i === ss.length - 1 ? list.slice(i) : (list[i] ? [list[i]] : []);
+      if (ps.length > 1) placed.crowded.push(k);
+      ps.forEach(function (p) { placed[k].push(p); });
+      xml = setParagraphsInShape_(xml, s.id, [ps.map(label).join('、')]);
       xml = fpFitPara_(xml, s.id, 0, s.acx, 1);
     });
+    if (!ss.length) list.forEach(function (p) { placed.noSlot.push(p.name); });
   });
-  return { xml: xml };
+  return { xml: xml, placed: placed };
 }
 function fpMemberMessage_(res, people) {
   var msg = [], nm = function (list) {
@@ -423,6 +432,12 @@ function fpMemberMessage_(res, people) {
     return { renew: '更新メンバー', 'new': '新メンバー', both: '新規および更新メンバー' }[e.kind]; });
   if (res.ethics.length) out += eth.length ? '\n倫理規定のページを、' + eth.join('・') + 'のあとに表示しました。'
                                            : '\n倫理規定のページも非表示にしました（新メンバー・更新メンバーがいないため）。';
+  if ((res.crowded || []).length) {
+    out += '\n「新規および更新メンバー」のページは氏名の枠より人数が多いため、'
+      + res.crowded.map(function (k) { return k === 'new' ? '新メンバー' : '更新メンバー'; }).join('・')
+      + 'の最後の枠に、残りの方をまとめて入れました（枠を増やすときはテンプレートを直してください）。';
+  }
+  if ((res.noSlot || []).length) out += '\n「新規および更新メンバー」のページに氏名の枠が見つからず、入れられなかった方: ' + res.noSlot.join('、');
   if (res.unmatched.length) out += '\n名簿に無い方（会社名・カテゴリーは空です）: ' + res.unmatched.join('、');
   if (res.noPhoto.length) out += '\n新メンバー・更新メンバーで写真が見つからない方（写真なし）: ' + res.noPhoto.join('、');
   return out;

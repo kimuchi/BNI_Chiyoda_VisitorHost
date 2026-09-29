@@ -571,7 +571,7 @@ function mpNumberBox_(model, id, text, color, sizePt) {
     .replace(/<a:extLst>[\s\S]*?<\/a:extLst>/, '')                 // 図形固有の識別子は引き継がない
     .replace(/<a:srgbClr val="[0-9A-Fa-f]{6}"\/>/, '<a:srgbClr val="' + color + '"/>')
     .replace(/(<a:rPr\b[^>]*?)\ssz="\d+"/, '$1 sz="' + Math.round(sizePt * 100) + '"')
-    .replace(/<a:t>[^<]*<\/a:t>/, '<a:t>' + escapeXml_(text) + '</a:t>');
+    .replace(/<a:t>[^<]*<\/a:t>/, function () { return '<a:t>' + escapeXml_(text) + '</a:t>'; });
 }
 
 // 1秒ごとに1枚ずつ消していくアニメーション。テンプレートと同じ形で組み立てる。

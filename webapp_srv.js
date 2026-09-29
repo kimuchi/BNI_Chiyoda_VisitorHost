@@ -167,7 +167,7 @@ function doGet(e) {
     // 画面から別の画面を開くとき（BNI 素材フォルダの画面の「公式ファイルから雛形を作る」など）に使うURL。
     // ダイアログではこの値が無いので、画面の側は WEBAPP_URL があるかどうかで開き方を変える
     bar += '<script>var WEBAPP_URL = ' + JSON.stringify(getWebAppUrl_()).replace(/</g, '\\u003c') + ';</script>';
-    content = content.replace(/(<body[^>]*>)/i, '$1' + bar);
+    content = content.replace(/(<body[^>]*>)/i, function (b) { return b + bar; });
 
     return HtmlService.createHtmlOutput(content)
       .setTitle(page.label + ' | 名簿システム')

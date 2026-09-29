@@ -216,7 +216,12 @@ function talkEnv_(d) {
     people: function () {
       return once('people', function () {
         var name = sheetKeyOf_(d) + '参加者';
-        if (!getSS_().getSheetByName(name)) return null;
+        if (!getSS_().getSheetByName(name)) {
+          // 移行前の4桁の名前（0923参加者）しか無い回。ほかの機能と同じく、そちらを読む（その開催日のものに限る）
+          var old = Utilities.formatDate(d, 'Asia/Tokyo', 'MMdd'), od = meetingDateFromKey_(old);
+          if (!getSS_().getSheetByName(old + '参加者') || !od || sheetKeyOf_(od) !== sheetKeyOf_(d)) return null;
+          name = old + '参加者';
+        }
         var data = loadSheetData(name), out = [];
         for (var i = 0; i < data.rows.length; i++) {
           var p = visitorPostPerson_(data.rows[i]);
