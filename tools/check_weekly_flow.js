@@ -148,6 +148,13 @@ step('メールの下書き', () => {
   ck(v && v.body.includes(url0930), '6) 9/30 の案内に 9/30 のビジターリストのURLが入っていない（最後に作った別の開催日のURLになる）: ' + (v && (v.body.match(/https:\/\/drive\.example\/\w+/g) || []).join(',')));
   ck(v && !v.body.includes(url1007), '6) 9/30 の案内に次の週（10/07）のビジターリストのURLが入っている');
   ck(v && v.body.includes('https://drive.example/MEMBERBOOK'), '6) メンバーブックのURLが入っていない');
+  // PDFを作った方以外（そのファイルの権限が無い方）がメールの画面を開いても、その開催日のリンクが入る
+  env.denied.add(env.idOfUrl(url0930));
+  const other = srv.generateEmailDrafts('20260930参加者');
+  env.denied.clear();
+  const ov = other.drafts.find((d) => d.type === 'Visitor');
+  ck(other.visitorList === url0930 && ov && ov.body.includes(url0930), '6) PDFの権限が無い方が開くと、リンクが入らない: ' + other.visitorList);
+  env.errors.length = 0;   // 開けなかったことの記録（console.warn ではなく error なら残る）は、ここでは想定どおり
   const res2 = srv.generateEmailDrafts('20261007参加者');
   ck(res2.date === '2026年10月7日' && res2.drafts.length === 1 && res2.drafts[0].body.includes(url1007), '6) 10/07 の下書きの日付・URLが違う');
 });
