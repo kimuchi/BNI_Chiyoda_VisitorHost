@@ -52,6 +52,7 @@
 
   <div id="step2" class="hidden">
     <h3>データの全件確認・編集</h3>
+    <p id="targetNote" style="font-weight:bold; color:#0044cc; margin:4px 0 8px;"></p>
     <p style="font-size:12px; color:#555;">※スペースが無かった氏名（赤色）や、招待者が不明な箇所（黄色）は自動推測されています。修正してください。<br>※ 操作列の「🗑」で行を削除、「→Guest／→Visitor」で種別を切り替えられます（自動で番号が振り直されます）。</p>
 
     <button class="btn-sort" onclick="sortByFurigana()">ふりがなでソート</button>
@@ -70,6 +71,8 @@
 
   <script>
     var parsedData = null, parsedHeader = null, membersList = [], displayKeys = [];
+    // 再編集で読み込んだシートと、その開催日（「作成する」でこの日に書き戻す）
+    var loadedSheet = '', loadedMeeting = null;
     var dragSrcRow = null;
 
     window.onload = function() {
@@ -109,7 +112,24 @@
       if (!sel.value) return alert('定例会を選択してください');
       document.getElementById('step1').classList.add('hidden');
       document.getElementById('loading').classList.remove('hidden');
-      google.script.run.withSuccessHandler(showEditor).withFailureHandler(showError).loadSheetData(sheetName);
+      google.script.run.withSuccessHandler(function(res) {
+        loadedSheet = sheetName;
+        loadedMeeting = res.meeting || null;
+        if (loadedMeeting) selectMeeting(loadedMeeting);
+        showEditor(res);
+      }).withFailureHandler(showError).loadSheetData(sheetName);
+    }
+
+    // 再編集では、読み込んだシートの開催日を選ぶ（開催日が過ぎて候補に無い回は、候補に足して選ぶ）
+    function selectMeeting(m) {
+      var sel = document.getElementById('meetingSelect');
+      for (var i = 0; i < sel.options.length; i++) {
+        if (sel.options[i].value === m.dateValue) { sel.selectedIndex = i; return; }
+      }
+      var opt = document.createElement('option');
+      opt.value = m.dateValue; opt.dataset.display = m.display; opt.text = m.display + '（読み込んだ回）';
+      sel.appendChild(opt);
+      sel.selectedIndex = sel.options.length - 1;
     }
 
     function regeneratePdfOnly() {
@@ -132,6 +152,7 @@
 
       document.getElementById('step1').classList.add('hidden');
       document.getElementById('loading').classList.remove('hidden');
+      loadedSheet = ''; loadedMeeting = null;   // CSVから作るときは、上で選んだ定例会に作る
 
       var reader = new FileReader();
       reader.onload = function(e) {
@@ -142,6 +163,10 @@
 
     function showEditor(result) {
       document.getElementById('loading').classList.add('hidden');
+      var sel = document.getElementById('meetingSelect'), opt = sel.options[sel.selectedIndex];
+      document.getElementById('targetNote').innerText = '書き込み先：' + (opt ? opt.dataset.display : '（定例会が選ばれていません）')
+        + (loadedSheet ? (loadedMeeting ? '（読み込んだ「' + loadedSheet + '」に書き戻します）'
+                                        : '（「' + loadedSheet + '」の開催日が分からないため、上で選んだ定例会に作ります）') : '');
       parsedData = result.rows; parsedHeader = result.header; membersList = result.membersList;
 
       displayKeys = ["_No"];
@@ -288,6 +313,10 @@
     }
 
     function submitFinal() {
+      var sel0 = document.getElementById('meetingSelect'), opt0 = sel0.options[sel0.selectedIndex];
+      if (!opt0 || !sel0.value) return alert('定例会が選ばれていません。画面を開き直してください。');
+      if (loadedSheet && !loadedMeeting
+          && !confirm('読み込んだ「' + loadedSheet + '」の開催日が分からないため、「' + opt0.dataset.display + '」の名簿・PDFとして作成します。よろしいですか？')) return;
       document.getElementById('step2').classList.add('hidden');
       document.getElementById('loading').classList.remove('hidden');
       document.getElementById('loading').innerText = 'シートとPDFを作成しています... 少し時間がかかります。';

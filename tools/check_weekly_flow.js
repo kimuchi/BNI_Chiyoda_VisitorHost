@@ -109,6 +109,8 @@ step('再編集して作り直す', () => {
   ck(loaded.rows.map((x) => x._No + ':' + x['参加者氏名']).join(',') === 'V01:見本 太郎,V02:無メール 氏,V03:例示 次郎,G01:仮設 月子,代理4:代理 太一',
      '4) 読み戻した番号・氏名が違う: ' + loaded.rows.map((x) => x._No + ':' + x['参加者氏名']).join(','));
   ck(loaded.rows[2]['メモ（ビジターリストに表示）'] === 'よろしく, お願いします', '4) 備考がメモの欄に戻らない');
+  ck(loaded.meeting && loaded.meeting.dateValue === '2026/09/30' && loaded.meeting.display === cand.display,
+     '4) 読み込んだシートの開催日（書き戻す先）が違う: ' + JSON.stringify(loaded.meeting));
   ck(loaded.rows[0]['メール'] === 'taro@example.com' && loaded.rows[0]['種別'] === 'Visitor', '4) メール・種別が読み戻せない');
   loaded.rows[2]['会社名'] = '例示工務店（新）';
   const before = env.drive.created.length;
