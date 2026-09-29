@@ -118,9 +118,10 @@ const lastCall = (name) => calls.filter((c) => c.name === name).pop();
     // ---- 2) CSV（Shift_JIS）から、上で選んだ定例会（10/7）に作る ----
     {
       const { page } = await openDialog(browser);
-      const csv = ['Name,Furigana,Company Name,Business Category,Inviter,Email,Type',
-        '翌週 来子,よくしゅう らいこ,翌週社,デザイン,例示 五月,raiko@example.com,Visitor',
-        '代理 太一,だいり たいち,代理商会,保険,仮名 四郎,taichi@example.com,Substitute'].join('\r\n') + '\r\n';
+      const csv = ['Name,Furigana,Company Name,Business Category,Inviter,Email,Type,Status',
+        '翌週 来子,よくしゅう らいこ,翌週社,デザイン,例示 五月,raiko@example.com,Visitor,参加予定',
+        '取消 次子,とりけし つぎこ,取消社,印刷,例示 五月,tori@example.com,Visitor,キャンセル',
+        '代理 太一,だいり たいち,代理商会,保険,仮名 四郎,taichi@example.com,Substitute,'].join('\r\n') + '\r\n';
       const sjis = execFileSync('python3', ['-c', 'import sys; sys.stdout.buffer.write(sys.stdin.buffer.read().decode("utf-8").encode("cp932"))'], { input: Buffer.from(csv, 'utf8') });
       await page.setInputFiles('#csvFile', { name: 'visitors.csv', mimeType: 'text/csv', buffer: sjis });
       await page.click('button:has-text("全データを解析して編集画面へ")');
@@ -129,12 +130,18 @@ const lastCall = (name) => calls.filter((c) => c.name === name).pop();
       ck(/2026\/10\/7\(水\) 第536回/.test(note) && !/書き戻/.test(note), '2) CSVの書き込み先が 10/7 と出ない: ' + note);
       const names = await page.locator('#dataBody tr input[type=text]').evaluateAll((els) => els.map((e) => e.value));
       ck(names.includes('翌週 来子') && names.includes('例示 五月'), '2) Shift_JIS のCSVが読めていない（文字化け）: ' + names.slice(0, 6).join(','));
+      const cn = await page.textContent('#cancelNote');
+      ck(/キャンセル/.test(cn) && /取消 次子/.test(cn), '2) キャンセルの方を編集画面で知らせない: ' + cn);
+      // キャンセルの方は、知らせに従って削除する（確認はOK）
+      const delIdx = await page.locator('#dataBody tr').evaluateAll((trs) => trs.findIndex((tr) => Array.from(tr.querySelectorAll('input')).some((i) => i.value === '取消 次子')));
+      await page.locator('#dataBody tr').nth(delIdx).locator('button.btn-del').click();
       await page.click('button:has-text("この内容でシートとPDFを作成する")');
       await page.waitForFunction(() => /処理が完了しました/.test(document.getElementById('loading').textContent), null, { timeout: 10000 });
       const c = lastCall('createFinalSheet');
       ck(c && c.args[0] === '2026/10/07', '2) 10/7 に作っていない: ' + JSON.stringify(c && c.args.slice(0, 2)));
       const data = env.values('20261007参加者');
       ck(data && data.some((r) => r[0] === 'V01' && r[1] === '翌週 来子') && data.some((r) => r[0] === '代理4' && r[1] === '代理 太一'), '2) 10/7 の名簿の中身が違う: ' + JSON.stringify(data && data.slice(0, 3)));
+      ck(data && !data.some((r) => r[1] === '取消 次子'), '2) 削除したキャンセルの方が名簿に残った');
       ck(env.sheet('20260930参加者').isSheetHidden() && !env.sheet('20261007参加者').isSheetHidden(), '2) 前の回のアーカイブ・今回の表示が違う');
       const id = env.props['VISITOR_PDF_ID_20261007参加者'];
       ck(id && env.fileText(id).includes('翌週 来子'), '2) 10/7 のPDFに中身が無い');
@@ -167,6 +174,8 @@ const lastCall = (name) => calls.filter((c) => c.name === name).pop();
       ck(dialogs.some((d) => /^alert:.*PDFを作れませんでした/.test(d)), '4) PDFを作れなかったことを知らせない: ' + dialogs.join(' / '));
       ck(env.fileText('F0') === before, '4) 作れなかったのに、前のPDFを書き換えた');
       ck(await visible(page, '#step1'), '4) はじめの画面に戻らない');
+      ck(await page.inputValue('#meetingSelect') === '2026/10/07' && await page.locator('#meetingSelect option').count() === 4,
+         '4) 失敗して戻ったあと、上の定例会が読み込んだ過去の回のまま: ' + await page.inputValue('#meetingSelect'));
       env.fetchPlan = [];
       await page.close();
     }

@@ -184,6 +184,7 @@ step('メールの下書き', () => {
   ck(v && v.body.includes(url0930), '6) 9/30 の案内に 9/30 のビジターリストのURLが入っていない（最後に作った別の開催日のURLになる）: ' + (v && (v.body.match(/https:\/\/drive\.example\/\w+/g) || []).join(',')));
   ck(v && !v.body.includes(url1007), '6) 9/30 の案内に次の週（10/07）のビジターリストのURLが入っている');
   ck(v && v.body.includes('https://drive.example/MEMBERBOOK'), '6) メンバーブックのURLが入っていない');
+  ck(JSON.stringify(res.noEmail) === '["無メール 氏"]', '6) メールアドレスの無い方を画面に返していない: ' + JSON.stringify(res.noEmail));
   // PDFを作った方以外（そのファイルの権限が無い方）がメールの画面を開いても、その開催日のリンクが入る
   env.denied.add(env.idOfUrl(url0930));
   const other = srv.generateEmailDrafts('20260930参加者');
@@ -254,6 +255,7 @@ step('メールの画面', () => {
   warn.els.meetSel.value = '20260923参加者';
   warn.step('9/23 を選ぶ', () => warn.run('loadDrafts()'));
   ck(/ビジターリストのPDFがありません/.test(warn.els.meetNote.innerText), '6) PDFの無い開催日で警告が出ない: ' + warn.els.meetNote.innerText);
+  ck(/過ぎた回（2026年9月23日）/.test(warn.els.meetNote.innerText), '6) 過ぎた回を選んだことを知らせない: ' + warn.els.meetNote.innerText);
   const b3 = env.mail.length;
   warn.step('送る', () => warn.run('startSending()'));
   ck(warn.log.confirms.length === 1 && /ビジターリストのPDFがありません/.test(warn.log.confirms[0]), '6) 送る前の確認に、リンクが無いことが出ない');
@@ -284,6 +286,9 @@ step('メールの送信', () => {
   const m = env.mail[b] || {};
   ck(m.to === 'taro@example.com' && m.subject === drafts[0].subject && m.options.cc === 'cc@example.com' && !('bcc' in m.options),
      '6) 送ったメールの宛先・CC・BCCが違う: ' + JSON.stringify(m));
+  const zen = srv.sendSingleEmail({ email: 'ｚｅｎ＠ｅｘａｍｐｌｅ．ｃｏｍ', subject: 's', body: 'b' }, '', '');
+  ck(zen.success === true && env.mail[env.mail.length - 1].to === 'zen@example.com', '6) 全角で入力されたメールアドレスに送れない: ' + JSON.stringify(zen));
+  env.mail.pop();
   const bad = srv.sendSingleEmail({ email: 'no-at-mark', subject: 's', body: 'b' }, '', '');
   ck(bad.success === false && env.mail.length === b + 1, '6) おかしなアドレスに送ろうとした');
 });
