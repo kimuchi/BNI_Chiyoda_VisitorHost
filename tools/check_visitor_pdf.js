@@ -128,10 +128,18 @@ const srv = {
     const r = plan ? plan(url) : exportPdf(url);
     return { getResponseCode: () => r.code, getBlob: () => blobOf(r.body, r.type), getContent: () => signed(r.body) };
   } },
-  Drive: { Files: { update: (meta, id, blob) => {
-    if (!drive.files || !drive.files[id]) throw new Error('File not found: ' + id);
-    drive.updated.push({ id, meta, blob }); drive.files[id].blob = blob; return {};
-  } } },
+  Drive: { Files: {
+    get: (id) => {
+      if (!drive.files || !drive.files[id]) throw new Error('File not found: ' + id);
+      return { id, trashed: !!drive.files[id].trashed };
+    },
+    update: (meta, id, blob) => {
+      if (!drive.files || !drive.files[id]) throw new Error('File not found: ' + id);
+      if (meta && meta.trashed === false) drive.files[id].trashed = false;
+      if (blob) { drive.updated.push({ id, meta, blob }); drive.files[id].blob = blob; }
+      return {};
+    },
+  } },
   DriveApp: {
     Access: { ANYONE_WITH_LINK: 'ANYONE_WITH_LINK' }, Permission: { VIEW: 'VIEW' },
     getFileById: (id) => ({

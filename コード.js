@@ -2,7 +2,7 @@
 
 // 反映されたか確かめるための版。変更したら日付を更新する。
 // clasp push / デプロイが効いているかは、これを画面で見れば分かる。
-var SYSTEM_VERSION_ = '2026-09-29d';
+var SYSTEM_VERSION_ = '2026-09-29e';
 
 function getSystemVersion() { return SYSTEM_VERSION_; }
 
@@ -788,14 +788,26 @@ function fetchSheetPdf_(sheet, url, fileName) {
   }
 }
 
+// 前に作ったPDFの中身を差し替える（URL・共有はそのまま）。ゴミ箱にあれば戻してから（ゴミ箱のままだとリンクが開けない）。
+// 差し替えられない（消した・権限が無いなど）ときは false（呼び出し側で新しく作る）
+function replacePdfFile_(id, blob, fileName) {
+  try {
+    var meta = Drive.Files.get(id, { fields: 'id,trashed', supportsAllDrives: true });
+    if (meta && meta.trashed) Drive.Files.update({ trashed: false }, id, null, { supportsAllDrives: true });
+    Drive.Files.update({ name: fileName }, id, blob, { supportsAllDrives: true });
+    return true;
+  } catch (e) {
+    console.warn('[PDF] 前のPDFを差し替えられないので、新しく作ります: ' + (e && e.message ? e.message : e));
+    return false;
+  }
+}
+
 function exportSheetToPdf(sheet, fileName, fileIdPropKey) {
   var ss = getSS_(), spreadsheetId = ss.getId(), sheetId = sheet.getSheetId(), lastRow = sheet.getLastRow();
   var url = "https://docs.google.com/spreadsheets/d/" + spreadsheetId + "/export?exportFormat=pdf&format=pdf&size=A4&portrait=true&fitw=true&sheetnames=false&printtitle=false&pagenumbers=false&gridlines=false&fzr=false&gid=" + sheetId + "&r1=0&c1=0&r2=" + lastRow + "&c2=7";
   var blob = fetchSheetPdf_(sheet, url, fileName), props = PropertiesService.getScriptProperties();
   var existingId = fileIdPropKey ? props.getProperty(fileIdPropKey) : null;
-  if (existingId) {
-    try { Drive.Files.update({name: fileName}, existingId, blob); return DriveApp.getFileById(existingId).getUrl(); } catch(e) { existingId = null; }
-  }
+  if (existingId && replacePdfFile_(existingId, blob, fileName)) return DriveApp.getFileById(existingId).getUrl();
   var file = DriveApp.getFileById(spreadsheetId), folder = file.getParents().hasNext() ? file.getParents().next() : DriveApp.getRootFolder();
   var pdfFile = folder.createFile(blob);
   pdfFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
@@ -1621,9 +1633,7 @@ function exportAllocationSheetToPdf(sheet, fileName, fileIdPropKey) {
           + "&r1=0&c1=0&r2=" + lastRow + "&c2=8";
   var blob = fetchSheetPdf_(sheet, url, fileName), props = PropertiesService.getScriptProperties();
   var existingId = fileIdPropKey ? props.getProperty(fileIdPropKey) : null;
-  if (existingId) {
-    try { Drive.Files.update({name: fileName}, existingId, blob); return DriveApp.getFileById(existingId).getUrl(); } catch(e) { existingId = null; }
-  }
+  if (existingId && replacePdfFile_(existingId, blob, fileName)) return DriveApp.getFileById(existingId).getUrl();
   var file = DriveApp.getFileById(spreadsheetId), folder = file.getParents().hasNext() ? file.getParents().next() : DriveApp.getRootFolder();
   var pdfFile = folder.createFile(blob);
   pdfFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
