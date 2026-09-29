@@ -314,6 +314,17 @@ step('割り振り表', () => {
   ck(JSON.stringify(back.roomAlloc.V01) === '["6"]' && JSON.stringify(back.roomAlloc.V03) === '["7"]', '7) ルームメンバーが読み戻せない: ' + JSON.stringify(back.roomAlloc));
   ck(JSON.stringify(back.orienAlloc.V01) === '["7"]', '7) オリエンが読み戻せない: ' + JSON.stringify(back.orienAlloc));
   ck(back.connectReq.V01 === 'IT関係の方', '7) つなげたいメンバーが読み戻せない: ' + JSON.stringify(back.connectReq));
+  // 名前が1字だけ違うメンバー（見本 一郎・見本 二郎）がいても、招待者を取り違えない。待機リストからは本当の招待者を除く
+  env.sheet('メンバー名簿').appendRow(MEMBER_HEAD.map((h, i) => (i === 0 ? '9' : i === 2 ? '見本 二郎' : '')));
+  env.ss.insertSheet('20261104参加者').getRange(1, 1, 2, 9).setValues([
+    ['No.', '参加者氏名', 'ふりがな', 'カテゴリー', '会社名', '招待者', '備考', '種別', 'メール'],
+    ['V01', '似名 来人', 'にな くると', '', '', '見本 二郎', '', 'Visitor', '']]);
+  const sim = srv.getAllocationData('2026/11/04');
+  ck(sim.visitors[0].inviter === '見本 二郎', '7) 名前が1字違いのメンバーに、招待者を取り違えた: ' + sim.visitors[0].inviter);
+  ck(!sim.pool.some((m) => m.no === '9') && sim.pool.some((m) => m.no === '1'), '7) 待機リストから、本当の招待者でない方を除いた: ' + sim.pool.map((m) => m.no).join(','));
+  env.ss.deleteSheet(env.sheet('20261104参加者'));
+  const rosterSheet = env.sheet('メンバー名簿');
+  rosterSheet._values = rosterSheet._values.filter((r) => r[0] !== '9');
   const orienSheet = env.values('20260930オリエン'), openNet = env.values('20260930オープンネット');
   ck(orienSheet && orienSheet.some((r) => String(r[1]).includes('見本 太郎') && String(r[2]).includes('空想 七海')), '7) オリエンの表が違う');
   ck(openNet && openNet.some((r) => String(r[1]).includes('例示 次郎') && r[3] === '模擬 六助'), '7) オープンネットの表が違う');

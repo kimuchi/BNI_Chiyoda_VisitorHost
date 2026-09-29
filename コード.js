@@ -2,7 +2,7 @@
 
 // 反映されたか確かめるための版。変更したら日付を更新する。
 // clasp push / デプロイが効いているかは、これを画面で見れば分かる。
-var SYSTEM_VERSION_ = '2026-09-29h';
+var SYSTEM_VERSION_ = '2026-09-29i';
 
 function getSystemVersion() { return SYSTEM_VERSION_; }
 
@@ -416,6 +416,37 @@ function findInviterMember_(inviter, membersList) {
   }
   var hits = exact.length ? exact : partial;
   return { member: hits[0] || null, ambiguous: hits.length > 1 };
+}
+
+// 参加者シートの招待者を名簿の氏名にそろえる（割り振り表）。同じ字の方を先に探し（findInviterMember_）、2人以上に当たるときはシートの字のまま。
+// どなたにも当たらないときだけ、異体字などの1字違いで1人に決まる方に合わせる
+// （以前は名簿で最初に「似ている」方を選んでいたため、「見本 甲」「見本 乙」のような方がいると別の方になっていた）
+function resolveInviterName_(inviter, membersList) {
+  var raw = inviter == null ? '' : String(inviter).trim();
+  if (!raw) return '';
+  var hit = findInviterMember_(raw, membersList);
+  if (hit.member) return hit.ambiguous ? raw : hit.member.name;
+  var key = inviterKey_(raw), cands = membersList.filter(function (m) {
+    var n = String(m.name || '').replace(/[\s\u3000]/g, '');
+    return n && fuzzyNameMatch(key, n);
+  });
+  return cands.length === 1 ? cands[0].name : raw;
+}
+
+// 参加者シートの列（ビジターの確度・メモなど）。Spreadingの列名と、シートに書いた列名のどちらでも読む
+var VISITOR_DETAIL_KEYS_ = {
+  kakudo: ['メンバーになる確度', '入会見込み'],
+  shincho: ['慎重・即決など', '決裁スピード'],
+  memoMember: ['メモ（非表示）', 'メモ（メンバー向け）'],
+  memoList: ['メモ（ビジターリストに表示）', '備考']
+};
+function visitorDetail_(details, kind) {
+  var keys = VISITOR_DETAIL_KEYS_[kind] || [];
+  for (var i = 0; i < keys.length; i++) {
+    var v = details ? details[keys[i]] : '';
+    if (v !== undefined && v !== null && String(v).trim() !== '') return String(v);
+  }
+  return '';
 }
 
 function analyzeCsvData(csvText) {
@@ -1396,7 +1427,7 @@ function getAllocationData(meetingDateVal) {
     var detailsObj = {};
     for(var j=0; j<headers.length; j++) detailsObj[headers[j]] = row[j];
     // 招待者名をメンバーリストと照合して正規化（異体字対応: 邊/邉 等）
-    var rawInviter = matchInviterToMember(row[invIdx], membersList);
+    var rawInviter = resolveInviterName_(row[invIdx], membersList);
     visitors.push({ no: String(row[noIdx]), name: row[nameIdx], cat: row[catIdx], inviter: rawInviter, details: detailsObj });
     if(rawInviter) inviters[normalizeSpace(rawInviter)] = true;
   }
@@ -1421,8 +1452,10 @@ function getAllocationData(meetingDateVal) {
              var row = aData[i];
              if(!row[0] || String(row[0]).indexOf("※")===0) break; 
              
-             var savedName = normalizeSpace(row[nameColIdx]);
-             var matchedVisitor = visitors.filter(function(v) { return normalizeSpace(v.name) === savedName; })[0];
+             var savedName = normalizeSpace(row[nameColIdx]), savedNo = String(row[0]).trim();
+             // 番号と名前がそろう方を先に（同じ名前の方が2人いても取り違えない）。無ければ名前で
+             var matchedVisitor = visitors.filter(function(v) { return String(v.no) === savedNo && normalizeSpace(v.name) === savedName; })[0]
+                               || visitors.filter(function(v) { return normalizeSpace(v.name) === savedName; })[0];
              if (!matchedVisitor) continue; 
              
              var vNo = String(matchedVisitor.no);
@@ -1430,7 +1463,7 @@ function getAllocationData(meetingDateVal) {
              var fName = facilIdx !== -1 ? row[facilIdx] : ""; 
              
              if (fName && String(fName).indexOf("【合同】") === 0) {
-                 var targetName = String(fName).replace("【合同】", "").replace("と同室", "").trim();
+                 var targetName = normalizeSpace(String(fName).replace("【合同】", "").replace("と同室", ""));
                  var targetV = visitors.filter(function(v) { return normalizeSpace(v.name) === targetName; })[0];
                  if(targetV) mergedWith[vNo] = String(targetV.no);
              } else if(fName) { 
@@ -1749,7 +1782,10 @@ function callGeminiAutoAllocation(currentState, maxRoomSize) {
   }
 
   var memberPriorities = getMemberPriorities();
-  var availableHosts = currentState.hosts.map(String).filter(function(h) { return !usedInRooms.has(h); });
+  // 待機リストに居ない方（今週の招待者・代理を出して欠席の方・名簿に居ない方）は、ファシリ・オリエンにしない
+  var poolNos = {};
+  (currentState.pool || []).forEach(function (m) { poolNos[String(m.no)] = true; });
+  var availableHosts = currentState.hosts.map(String).filter(function(h) { return poolNos[h] && !usedInRooms.has(h); });
   availableHosts.sort(function(a, b) {
     var pA = memberPriorities[a] !== undefined ? memberPriorities[a] : Infinity;
     var pB = memberPriorities[b] !== undefined ? memberPriorities[b] : Infinity;
@@ -1757,8 +1793,8 @@ function callGeminiAutoAllocation(currentState, maxRoomSize) {
   });
 
   var sortedVisitors = currentState.visitors.filter(function(v) { return !currentState.mergedWith[v.no]; }).sort(function(a, b) {
-    var kA = parseInt(String(a.details['メンバーになる確度'] || "0").replace(/[Ａ-Ｚａ-ｚ０-９]/g, function(s) { return String.fromCharCode(s.charCodeAt(0) - 0xFEE0); })) || 0;
-    var kB = parseInt(String(b.details['メンバーになる確度'] || "0").replace(/[Ａ-Ｚａ-ｚ０-９]/g, function(s) { return String.fromCharCode(s.charCodeAt(0) - 0xFEE0); })) || 0;
+    var kA = parseInt(String(visitorDetail_(a.details, 'kakudo') || "0").replace(/[Ａ-Ｚａ-ｚ０-９]/g, function(s) { return String.fromCharCode(s.charCodeAt(0) - 0xFEE0); })) || 0;
+    var kB = parseInt(String(visitorDetail_(b.details, 'kakudo') || "0").replace(/[Ａ-Ｚａ-ｚ０-９]/g, function(s) { return String.fromCharCode(s.charCodeAt(0) - 0xFEE0); })) || 0;
     if (kA !== kB) return kB - kA; 
     
     var typePriority = { "Visitor": 3, "Guest": 2, "Substitute": 1 };
@@ -1812,7 +1848,7 @@ function callGeminiAutoAllocation(currentState, maxRoomSize) {
     return {
       no: String(v.no), name: v.name, category: v.cat, inviter: v.inviter,
       connectReq: currentState.connectReq[v.no] || "",
-      memos: v.details['メモ（非表示）'] + " " + v.details['メモ（ビジターリストに表示）'],
+      memos: (visitorDetail_(v.details, 'memoMember') + " " + visitorDetail_(v.details, 'memoList')).trim(),
       mergedWith: currentState.mergedWith[v.no] || ""
     };
   });
@@ -1852,17 +1888,23 @@ function callGeminiAutoAllocation(currentState, maxRoomSize) {
   var resData = JSON.parse(response.getContentText());
   if(resData.error) throw new Error(resData.error.message);
   
-  var text = resData.candidates[0].content.parts[0].text;
-  var jsonStr = text.match(/\{[\s\S]*\}/)[0]; 
-  var aiResult = JSON.parse(jsonStr);
+  // 返事の形が違う（途中で切れた・JSONでない）ときは、分かる言葉で止める
+  var text = (((resData.candidates || [])[0] || {}).content || {}).parts ? resData.candidates[0].content.parts[0].text : '';
+  var jsonMatch = String(text || '').match(/\{[\s\S]*\}/), aiResult = null;
+  try { aiResult = jsonMatch ? JSON.parse(jsonMatch[0]) : null; } catch (e) { aiResult = null; }
+  if (!aiResult || !Array.isArray(aiResult.allocations)) throw new Error("AIの返事を読み取れませんでした。もう一度「AIに提案させる」を押してください。");
 
+  // 画面にあるビジター・待機メンバーの番号だけを使う（知らない番号は捨てる）
+  var visitorNos = {};
+  currentState.visitors.forEach(function (v) { visitorNos[String(v.no)] = true; });
   aiResult.allocations.forEach(function(alloc) {
     var vNo = String(alloc.visitorNo);
+    if (!visitorNos[vNo]) return;
     if(!currentState.roomAlloc[vNo] && !currentState.mergedWith[vNo]) currentState.roomAlloc[vNo] = [];
-    if(alloc.room && !currentState.mergedWith[vNo]) {
+    if(Array.isArray(alloc.room) && !currentState.mergedWith[vNo]) {
       alloc.room.forEach(function(r){
         var rStr = r ? String(r).trim() : "";
-        if(rStr !== "" && !usedInRooms.has(rStr)) { 
+        if(rStr !== "" && poolNos[rStr] && !usedInRooms.has(rStr)) { 
           currentState.roomAlloc[vNo].push(rStr); 
           usedInRooms.add(rStr); 
         }

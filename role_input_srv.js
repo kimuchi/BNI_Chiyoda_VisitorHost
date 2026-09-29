@@ -159,20 +159,32 @@ function roleTermLabel_(term) {
   return (half % 2 === 0) ? (y + '年4月〜9月') : (y + '年10月〜' + (y + 1) + '年3月');
 }
 
-// 保存してある期ごとの担当者（{ '24': { president: '…', … }, … }）
+// 保存してある期ごとの担当者（{ '24': { president: '…', … }, … }）。
+// 担当者が1人も入っていない期は、登録していない期として扱う（ここに含めない）。
+// 以前は、何も保存していないときにも空の24期を作り、それを「登録した期」として扱っていた。
+// そのため期が替わる 10/1 に、空の担当者で名簿の「役職」を消してしまい、24期は前の期の担当者も使わなかった。
+// その空の期は、前の版で「役職・チーム」を保存したときにも一緒に保存されていたので、読むときに落とす
 function roleHolderTerms_() {
   var props = PropertiesService.getScriptProperties(), all = null, old = null, i;
   try { all = JSON.parse(props.getProperty(ROLE_HOLDERS_TERMS_KEY_) || 'null'); } catch (e) { all = null; }
-  if (all && typeof all === 'object') return all;
+  if (all && typeof all === 'object') {
+    Object.keys(all).forEach(function (t) { if (!roleHasHolder_(all[t])) delete all[t]; });
+    return all;
+  }
   try { old = JSON.parse(props.getProperty(ROLE_HOLDERS_KEY_) || 'null'); } catch (e) { old = null; }
+  all = {};
+  if (!roleHasHolder_(old)) return all;   // 何も保存していなければ、どの期も未登録（名簿の役職も自動では書き換えない）
   var base = {};
   for (i = 0; i < ROLE_DEFS_.length; i++) {
     var k = ROLE_DEFS_[i].key;
-    base[k] = (old && typeof old[k] === 'string') ? old[k] : '';
+    base[k] = (typeof old[k] === 'string') ? old[k] : '';
   }
-  all = {};
   all[roleHoldersBaseTerm_()] = base;
   return all;
+}
+// 担当者が1人でも入っているか
+function roleHasHolder_(h) {
+  return !!h && typeof h === 'object' && ROLE_DEFS_.some(function (d) { return typeof h[d.key] === 'string' && !!h[d.key].trim(); });
 }
 // 前の保存先の担当者の期（2026年10月〜2027年3月。期の番号を付け直しても同じ半期を指す）
 function roleHoldersBaseTerm_() {
@@ -535,7 +547,10 @@ function roleRosterAutoSync_() {
   try {
     var now = roleTermOf_(new Date()), st = roleRosterState_(), res = null;
     if (st.seen === now) return null;
-    var ready = roleHoldersOfTerm_(roleHolderTerms_(), now).registered || roleTeamsOfTerm_(roleTeamTerms_(), now).registered;
+    var hs = roleHoldersOfTerm_(roleHolderTerms_(), now), tms = roleTeamsOfTerm_(roleTeamTerms_(), now);
+    // 担当者もチームの顔ぶれも入っていない期では書き換えない（空の内容で、役員の「役職」を消してしまわないように）
+    var ready = (hs.registered && roleHasHolder_(hs.holders))
+             || (tms.registered && tms.teams.some(function (t) { return t.members.length > 0 || !!t.leader; }));
     if (ready && !(st.applied >= now)) {
       res = roleRosterApply_(now, st);
       console.log('[ROLE] 期が替わったので反映: ' + res.message);

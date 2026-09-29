@@ -33,7 +33,9 @@ run "ビジターリスト・割り振り表のシートとPDF（作った日は
 run "CSVから名簿・PDF作成の画面（ブラウザ：過ぎた回の再編集はその回に書き戻す・Shift_JIS のCSV）" node tools/check_csv_dialog.js
 run "メールの確認・一括送信の画面（ブラウザ：リンク・キャンセル・記号・二重に送らない）" node tools/check_email_dialog.js
 run "ビジター情報の投稿文" node tools/check_visitor_post.js
-run "割り振り表のAI" node tools/check_allocation_ai.js
+run "割り振り表のAI（待機リストに居ないビジターホスト・知らない番号・確度とメモ）" node tools/check_allocation_ai.js
+run "割り振り表の画面（ブラウザ：読み込んだ回に書き込む・Spreadingの文字を動かさない）" node tools/check_allocation_dialog.js
+run "期の替わり目の担当者と名簿の役職（未登録の期で役職を消さない）" node tools/check_role_terms.js
 
 echo "── スライド"
 run "定例会スライド（指示どおりか）" node tools/check_meeting_slides.js
