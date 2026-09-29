@@ -134,6 +134,8 @@ BNI_Chiyoda_VisitorHost/
     ├── check_email_dialog.js #   「メールの確認・一括送信」の画面を Chromium で（次回のPDFのリンク・キャンセル・件名の記号・全角のアドレス・
     │                         #     送信済みで二重に送らない・過ぎた回の知らせ）
     ├── lib_gas_page.js       #   画面を Chromium で開き、google.script.run を Node で動かす本番のコードにつなぐ
+    ├── check_allocation_dialog.js # 「割り振り表」の画面を Chromium で（読み込んだ回に書き込む・Spreadingの文字をHTMLとして動かさない・確度とメモ）
+    ├── check_role_terms.js   #   期の替わり目（担当者を入れていない期で、名簿の「役職」を消さない・前の期の担当者を使う・登録した期は反映する）
     ├── check_gas_names.py    #   名前の衝突・参照先HTMLの検査
     ├── check_html.py         #   divの対応・スクリプトの構文・共通部品の読み込み漏れ
     ├── check_manual_links.py #   マニュアルの導線 ↔ 実際のメニュー
@@ -421,7 +423,7 @@ clasp deployments
 
 ### 更新が反映されたかの確かめ方
 
-`コード.js` の `SYSTEM_VERSION_`（例: `2026-09-29h`）が、ウェブアプリのトップページの下と
+`コード.js` の `SYSTEM_VERSION_`（例: `2026-09-29i`）が、ウェブアプリのトップページの下と
 「定例会スライド（前半）」「定例会スライド（後半）」の画面の右上に **「版 …」** として出ます。
 機能を変えたらこの値を変え、`clasp push`・`clasp version`・`clasp deploy` のあとに画面で確かめてください。
 

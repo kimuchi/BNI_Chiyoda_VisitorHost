@@ -126,6 +126,41 @@ const ANSWER = J({ allocations: [{ visitorNo: 'V01', room: ['03', '04'] }, { vis
   ck(prof[0]['カテゴリー'] === '司法書士' && prof[1]['カテゴリー'] === '整体院', '同じ氏名の方の取り違え: ' + J(prof));
 }
 
+// ---------- 待機リストに居ないビジターホスト（今週の招待者・代理を出して欠席の方）は、ファシリ・オリエンにしない ----------
+{
+  const { box } = makeServer(ROSTER, ANSWER);
+  const st = state();
+  st.hosts = ['06', '01', '02'];                      // 06 は V01 の招待者（待機リストに居ない）
+  box.getMemberPriorities = () => ({ '06': 1, '01': 2, '02': 3 });
+  const res = box.callGeminiAutoAllocation(st, 5);
+  const used = Object.values(res.facilAlloc).concat(...Object.values(res.orienAlloc));
+  ck(!used.includes('06'), '待機リストに居ない方（招待者）をファシリ・オリエンにした: ' + J({ facil: res.facilAlloc, orien: res.orienAlloc }));
+  ck(res.facilAlloc.V01 === '01' && res.facilAlloc.V02 === '02', '待機リストに居るビジターホストが使われない: ' + J(res.facilAlloc));
+}
+
+// ---------- 返事の確かめ：知らない番号は捨てる。形が違う返事は分かる言葉で止める ----------
+{
+  const odd = J({ allocations: [{ visitorNo: 'V99', room: ['03'] }, { visitorNo: 'V01', room: ['99', '03'] }, { visitorNo: 'V02', room: '04' }] });
+  const { box } = makeServer(ROSTER, odd);
+  const res = box.callGeminiAutoAllocation(state(), 5);
+  ck(!('V99' in res.roomAlloc) && J(res.roomAlloc.V01) === J(['03']), '知らないビジター・メンバーの番号を入れた: ' + J(res.roomAlloc));
+  const bad = makeServer(ROSTER, 'すみません、うまく作れませんでした').box;
+  let err = null;
+  try { bad.callGeminiAutoAllocation(state(), 5); } catch (e) { err = e; }
+  ck(err && /AIの返事を読み取れませんでした/.test(err.message), 'JSONでない返事のときの知らせ: ' + (err && err.message));
+}
+
+// ---------- 参加者シートの列名（入会見込み・備考・メモ（メンバー向け））でも、確度とメモを渡す ----------
+{
+  const { box, fetches } = makeServer(ROSTER, ANSWER);
+  const st = state();
+  st.visitors = st.visitors.map((v, i) => Object.assign({}, v, { details: { '入会見込み': i === 1 ? '5' : '1', '種別': v.details['種別'], '備考': i === 0 ? '相続に強い方とつながりたい' : '', 'メモ（メンバー向け）': i === 0 ? '内部メモ' : '' } }));
+  const res = box.callGeminiAutoAllocation(st, 5);
+  ck(res.facilAlloc.V02 === '01', '入会見込みの高いビジター（V02）に、優先のビジターホストが付かない: ' + J(res.facilAlloc));
+  const prompt = fetches[0].payload.contents[0].parts[0].text;
+  ck(prompt.includes('内部メモ 相続に強い方とつながりたい') && !prompt.includes('undefined'), 'ビジターのメモが渡らない・undefined が入る');
+}
+
 // ---------- 名簿に居ない方（古い「メンバーリスト」シートだけの方）は番号と氏名だけ ----------
 {
   const { box } = makeServer(ROSTER, ANSWER);

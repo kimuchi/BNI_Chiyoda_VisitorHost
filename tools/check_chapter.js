@@ -219,8 +219,8 @@ ck(!/ずらしました/.test(F.saveChapterSettings({ name: 'Active', region: 'B
 // ===== 6. 空のスプレッドシートから始めたとき =====
 delete props.BNI_CHAPTER; delete props.BNI_ROLE_HOLDERS_TERMS; delete props.BNI_ROLE_HOLDERS; resetCache();
 let all = F.roleHolderTerms_();
-ck(all[24] && Object.values(all[24]).every((v) => v === '') && vm.runInContext('ROLE_DEFS_', sandbox).every((d) => !('holder' in d)),
-   '何も保存していないのに担当者が入る（担当者の初期値はコードに持たない）: ' + J(all[24]));
+ck(Object.keys(all).length === 0 && vm.runInContext('ROLE_DEFS_', sandbox).every((d) => !('holder' in d)),
+   '何も保存していないのに、登録した期がある（空の期を登録済みとして扱うと、期が替わった日に名簿の役職を消す）: ' + J(all));
 props.BNI_SETUP = J({ mode: 'fresh', at: '2026/09/26' }); resetCache();
 home = F.getHomeStatus();
 chk = (home.checks || []).find((c) => c.key === 'chapter');

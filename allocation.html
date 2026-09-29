@@ -68,6 +68,7 @@
   </div>
 
   <div id="workspace" class="layout" style="display:none;">
+    <p id="targetNote" style="font-weight:bold; color:#0044cc; margin:0 0 8px; width:100%;"></p>
     
     <div class="dashboard">
       <div class="stat-box"><div class="stat-title">ビジター数</div><div class="stat-value" id="statVis">0</div></div>
@@ -123,6 +124,21 @@
   <script>
     var state = { visitors: [], pool: [], facilAlloc: {}, orienAlloc: {}, roomAlloc: {}, connectReq: {}, hosts: [], mergedWith: {}, priorities: {} };
 
+    // Spreadingから来た文字（氏名・会社・メモ・URLなど）は、HTMLとして読ませない
+    // （「<」や「"」で表示が崩れる・書かれたタグが画面の中で動いてしまうため）
+    function esc(s) {
+      return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+    // 参加者シートの列（Spreadingの列名と、シートに書いた列名のどちらでも読む）
+    function detailOf(details, keys) {
+      for (var i = 0; i < keys.length; i++) {
+        var v = details ? details[keys[i]] : '';
+        if (v !== undefined && v !== null && String(v).trim() !== '') return String(v);
+      }
+      return '';
+    }
+
     window.onload = function() {
       google.script.run.withSuccessHandler(function(candidates) {
         var sel = document.getElementById('meetingSelect');
@@ -132,12 +148,17 @@
           opt.value = candidates[i].dateValue; opt.dataset.display = candidates[i].display; opt.text = candidates[i].display;
           sel.appendChild(opt);
         }
+      }).withFailureHandler(function(err) {
+        document.getElementById('meetingSelect').innerHTML = '<option value="">読み込めませんでした</option>';
+        alert("定例会の候補を読み込めませんでした: " + (err && err.message ? err.message : err));
       }).getMeetingCandidates();
     };
 
     function loadData() {
       var sel = document.getElementById('meetingSelect');
       if (!sel.value) return alert('定例会を選択してください');
+      // 読み込んだ回。「作成する」はこの回に書き込む（上の選択をあとで変えても、別の回の割り振り表とPDFを上書きしない）
+      var meeting = { dateValue: sel.value, display: sel.options[sel.selectedIndex].dataset.display };
       
       document.getElementById('loading').style.display = 'block';
       document.getElementById('workspace').style.display = 'none';
@@ -145,6 +166,7 @@
       google.script.run.withSuccessHandler(function(data) {
         document.getElementById('loading').style.display = 'none';
         state = data;
+        state.meeting = meeting;   // AIの返事にもそのまま付いて戻る（あとから届いた返事を別の回に書かない）
         if(!state.roomAlloc) state.roomAlloc = {};
         if(!state.connectReq) state.connectReq = {};
         if(!state.mergedWith) state.mergedWith = {};
@@ -155,7 +177,7 @@
       }).withFailureHandler(function(err){
         alert("エラー: " + err.message);
         document.getElementById('loading').style.display = 'none';
-      }).getAllocationData(sel.value);
+      }).getAllocationData(meeting.dateValue);
     }
 
     function runAI() {
@@ -304,6 +326,7 @@
     }
 
     function render() {
+      document.getElementById('targetNote').innerText = state.meeting ? '書き込み先：' + state.meeting.display : '';
       updateDashboard(); 
       
       var tbody = document.getElementById('visitorTableBody');
@@ -313,10 +336,10 @@
       for (var i = 0; i < state.visitors.length; i++) {
         var v = state.visitors[i];
         
-        var kakudo = v.details['メンバーになる確度'] || '-';
-        var shincho = v.details['慎重・即決など'] || '-';
-        var memoHite = v.details['メモ（非表示）'] || '';
-        var memoDisp = v.details['メモ（ビジターリストに表示）'] || '';
+        var kakudo = detailOf(v.details, ['メンバーになる確度', '入会見込み']) || '-';
+        var shincho = detailOf(v.details, ['慎重・即決など', '決裁スピード']) || '-';
+        var memoHite = detailOf(v.details, ['メモ（非表示）', 'メモ（メンバー向け）']);
+        var memoDisp = detailOf(v.details, ['メモ（ビジターリストに表示）', '備考']);
         var combinedMemo = (memoHite ? memoHite + "\n" : "") + memoDisp;
         var shortMemo = combinedMemo.length > 40 ? combinedMemo.substring(0, 40) + '...' : combinedMemo;
         
@@ -325,17 +348,17 @@
         
         var tr = document.createElement('tr');
         var html = `
-          <td align="center">${v.no}</td>
-          <td style="font-size:12px; font-weight:bold;">${v.name}<br>
-            <button id="btn_${v.no}" class="toggle-btn" onclick="toggleDetail('${v.no}')">▼ 全情報</button>
+          <td align="center">${esc(v.no)}</td>
+          <td style="font-size:12px; font-weight:bold;">${esc(v.name)}<br>
+            <button id="btn_${esc(v.no)}" class="toggle-btn" onclick="toggleDetail('${esc(v.no)}')">▼ 全情報</button>
           </td>
-          <td style="font-size:11px;">${v.cat}</td>
+          <td style="font-size:11px;">${esc(v.cat)}</td>
           <td class="info-col">
-            <span class="info-label">確度:</span> ${kakudo} / <span class="info-label">特性:</span> ${shincho}<br>
-            <span class="info-label">メモ:</span> <span style="font-size:10px;">${shortMemo.replace(/\n/g, '<br>') || '-'}</span>
+            <span class="info-label">確度:</span> ${esc(kakudo)} / <span class="info-label">特性:</span> ${esc(shincho)}<br>
+            <span class="info-label">メモ:</span> <span style="font-size:10px;">${esc(shortMemo).replace(/\n/g, '<br>') || '-'}</span>
           </td>
-          <td><textarea class="connect-input" rows="3" placeholder="名前を改行で入力" onblur="handleConnectInput('${v.no}', this.value)">${state.connectReq[v.no] || ''}</textarea></td>
-          <td style="font-size:11px;">${v.inviter}</td>
+          <td><textarea class="connect-input" rows="3" placeholder="名前を改行で入力" onblur="handleConnectInput('${esc(v.no)}', this.value)">${esc(state.connectReq[v.no] || '')}</textarea></td>
+          <td style="font-size:11px;">${esc(v.inviter)}</td>
         `;
         
         var tdFacilRoom = document.createElement('td');
@@ -347,12 +370,12 @@
         } else {
           mergeSelectHtml = `<select onchange="setMerge('${v.no}', this.value)" style="width:100%; font-size:10px; padding:2px; margin-bottom:5px; border:1px solid #ccc; background:#fafafa;">
             <option value="">-- 単独ルーム（通常） --</option>
-            ${state.visitors.filter(ov => ov.no !== v.no && !state.mergedWith[ov.no]).map(ov => `<option value="${ov.no}" ${state.mergedWith[v.no]===ov.no ? 'selected':''}>合同先: ${ov.no} ${ov.name}</option>`).join('')}
+            ${state.visitors.filter(ov => ov.no !== v.no && !state.mergedWith[ov.no]).map(ov => `<option value="${esc(ov.no)}" ${state.mergedWith[v.no]===ov.no ? 'selected':''}>合同先: ${esc(ov.no)} ${esc(ov.name)}</option>`).join('')}
           </select>`;
         }
 
         if (isMerged) {
-          tdFacilRoom.innerHTML = mergeSelectHtml + `<div style="text-align:center; padding:10px; background:#f9f9f9; color:#888; font-weight:bold; border-radius:4px; border:1px dashed #ccc;">【合同】${state.mergedWith[v.no]} と同室</div>`;
+          tdFacilRoom.innerHTML = mergeSelectHtml + `<div style="text-align:center; padding:10px; background:#f9f9f9; color:#888; font-weight:bold; border-radius:4px; border:1px dashed #ccc;">【合同】${esc(state.mergedWith[v.no])} と同室</div>`;
           tr.innerHTML = html;
           tr.appendChild(tdFacilRoom);
         } else {
@@ -362,7 +385,7 @@
           dzFacil.className = 'dropzone'; dzFacil.setAttribute('ondragover', 'allowDrop(event)'); dzFacil.setAttribute('ondragleave', 'leaveDrop(event)'); dzFacil.setAttribute('ondrop', `dropFacil(event, '${v.no}')`);
           if (state.facilAlloc[v.no]) {
             var m = state.pool.find(p => String(p.no) === String(state.facilAlloc[v.no]));
-            if(m) dzFacil.innerHTML = `<div class="chip chip-facil" draggable="true" ondragstart="dragStart(event, '${m.no}')">${m.name} <span class="del-btn" onclick="removeFacil('${v.no}')">×</span></div>`;
+            if(m) dzFacil.innerHTML = `<div class="chip chip-facil" draggable="true" ondragstart="dragStart(event, '${esc(m.no)}')">${esc(m.name)} <span class="del-btn" onclick="removeFacil('${esc(v.no)}')">×</span></div>`;
           }
           tdFacil.appendChild(dzFacil); 
 
@@ -372,7 +395,7 @@
           if (state.roomAlloc[v.no]) {
             state.roomAlloc[v.no].forEach(mId => {
               var m = state.pool.find(p => String(p.no) === String(mId));
-              if(m) dzRoom.innerHTML += `<div class="chip chip-room" style="margin:2px;" draggable="true" ondragstart="dragStart(event, '${m.no}')">${m.name} <span class="del-btn" onclick="removeRoom('${v.no}', '${m.no}')">×</span></div>`;
+              if(m) dzRoom.innerHTML += `<div class="chip chip-room" style="margin:2px;" draggable="true" ondragstart="dragStart(event, '${esc(m.no)}')">${esc(m.name)} <span class="del-btn" onclick="removeRoom('${esc(v.no)}', '${esc(m.no)}')">×</span></div>`;
             });
           }
           tdRoom.appendChild(dzRoom); 
@@ -389,7 +412,7 @@
         if (state.orienAlloc[v.no]) {
           state.orienAlloc[v.no].forEach(mId => {
             var m = state.pool.find(p => String(p.no) === String(mId));
-            if(m) dzOrien.innerHTML += `<div class="chip chip-orien" style="margin:2px;" draggable="true" ondragstart="dragStart(event, '${m.no}')">${m.name} <span class="del-btn" onclick="removeOrien('${v.no}', '${m.no}')">×</span></div>`;
+            if(m) dzOrien.innerHTML += `<div class="chip chip-orien" style="margin:2px;" draggable="true" ondragstart="dragStart(event, '${esc(m.no)}')">${esc(m.name)} <span class="del-btn" onclick="removeOrien('${esc(v.no)}', '${esc(m.no)}')">×</span></div>`;
           });
         }
         tdOrien.appendChild(dzOrien); tr.appendChild(tdOrien);
@@ -402,8 +425,9 @@
         for(var key in v.details) {
           var val = v.details[key];
           if(val && String(val).trim() !== "" && key !== "_No" && key !== "出席ステータス" && key !== "支払状況") {
-            var displayVal = String(val).indexOf('http') === 0 ? `<a href="${val}" target="_blank" style="color:#0055ff;">リンクを開く</a>` : String(val).replace(/\n/g, '<br>');
-            detailHtml += `<tr><th>${key}</th><td>${displayVal}</td></tr>`;
+            var displayVal = /^https?:\/\/[^\s"'<>]+$/i.test(String(val).trim())
+              ? `<a href="${esc(String(val).trim())}" target="_blank" rel="noopener" style="color:#0055ff;">リンクを開く</a>` : esc(val).replace(/\n/g, '<br>');
+            detailHtml += `<tr><th>${esc(key)}</th><td>${displayVal}</td></tr>`;
           }
         }
         detailHtml += `</table></div></td>`;
@@ -507,10 +531,11 @@
     }
 
     function generateSheet() {
+      var m = state.meeting;   // 読み込んだ回（上の選択を変えていても、この回に書き込む）
+      if (!m) return alert('先に「データを読み込む」を押してください。');
       document.getElementById('workspace').style.display = 'none';
       document.getElementById('loading').style.display = 'block';
       document.getElementById('loading').innerHTML = 'シートとPDFを作成しています... お待ちください。';
-      var sel = document.getElementById('meetingSelect'), dateVal = sel.value, displayVal = sel.options[sel.selectedIndex].dataset.display;
       google.script.run.withSuccessHandler(function(msg){
         // 画面は消さない（ウェブアプリでは上の帯の「← メニューに戻る」から戻れる）
         var back = (typeof WEBAPP_URL === 'string' && WEBAPP_URL)
@@ -520,7 +545,7 @@
         alert("エラー: " + err.message);
         document.getElementById('workspace').style.display = 'flex';
         document.getElementById('loading').style.display = 'none';
-      }).saveAllocationSheet(dateVal, displayVal, state.visitors, state.pool, state.facilAlloc, state.orienAlloc, state.roomAlloc, state.connectReq, state.mergedWith);
+      }).saveAllocationSheet(m.dateValue, m.display, state.visitors, state.pool, state.facilAlloc, state.orienAlloc, state.roomAlloc, state.connectReq, state.mergedWith);
     }
   </script>
 </body>
