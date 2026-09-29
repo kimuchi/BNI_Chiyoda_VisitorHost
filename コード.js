@@ -2,7 +2,7 @@
 
 // 反映されたか確かめるための版。変更したら日付を更新する。
 // clasp push / デプロイが効いているかは、これを画面で見れば分かる。
-var SYSTEM_VERSION_ = '2026-09-29m';
+var SYSTEM_VERSION_ = '2026-09-29n';
 
 function getSystemVersion() { return SYSTEM_VERSION_; }
 
@@ -361,15 +361,25 @@ function normalizeSpace(str) { return str ? str.toString().replace(/[\s]+/g, ' '
 
 // 割り振り表・ビジターホスト設定などが使う「番号と氏名」の一覧。
 // 正本は「メンバー名簿」。旧「メンバーリスト」シートしか無い環境ではそちらを読む。
-function getMembersList() {
+// opts.withoutNo … 番号（No）がまだ無い方も入れる（no は ''）。招待者・代理・ルーティンチェックシートの名前の照合で使う
+//   （以前は番号の無い方＝Spreadingから足したばかりの新メンバーなどが照合から漏れ、招待者が名簿に合わず、
+//    その方の代理は、みんなに共有するビジターリストに「代理??」と出ていた）。
+//   番号で引くもの（割り振り表・ビジターホスト）は、これまでどおり番号のある方だけ
+function getMembersList(opts) {
+  var withoutNo = !!(opts && opts.withoutNo);
   var ss = getSS_();
   var sh = ss.getSheetByName('メンバー名簿');
   if (sh && sh.getLastRow() > 1) {
     var d = sh.getDataRange().getValues(), out = [];
+    // 見出しの名前で列を引く（シートに列を足した・動かしても、別の列を氏名として読まない）
+    var head = d[0].map(function (x) { return String(x == null ? '' : x).trim(); });
+    var noCol = head.indexOf('No'), nmCol = head.indexOf('氏名');
+    if (noCol < 0) noCol = 0;
+    if (nmCol < 0) nmCol = 2;
     for (var i = 1; i < d.length; i++) {
-      var no = String(d[i][0] == null ? '' : d[i][0]).trim();
-      var nm = String(d[i][2] == null ? '' : d[i][2]).trim();
-      if (!no || !nm) continue;
+      var no = String(d[i][noCol] == null ? '' : d[i][noCol]).trim();
+      var nm = String(d[i][nmCol] == null ? '' : d[i][nmCol]).trim();
+      if (!nm || (!no && !withoutNo)) continue;
       out.push({ no: no, name: normalizeSpace(nm) });
     }
     if (out.length) return out;
@@ -488,7 +498,7 @@ function analyzeCsvData(csvText) {
     if (tA !== tB) return tA - tB;
     return (a["ふりがな"] || "").localeCompare((b["ふりがな"] || ""), 'ja');
   });
-  var membersList = getMembersList(), vCount = 1, gCount = 1, results = [];
+  var membersList = getMembersList({ withoutNo: true }), vCount = 1, gCount = 1, results = [];
   for (var i = 0; i < rows.length; i++) {
     var r = rows[i], origName = r["参加者氏名"] || "", origKana = r["ふりがな"] || "";
     r._needsNameReview = needsSpaceReview(origName) || needsSpaceReview(origKana);
@@ -717,7 +727,7 @@ function loadSheetData(sheetName) {
     internalKeys.push(key);
     if (key !== "_No") header.push(key);
   }
-  var membersList = getMembersList(), rows = [], vCount = 1, gCount = 1;
+  var membersList = getMembersList({ withoutNo: true }), rows = [], vCount = 1, gCount = 1;
   for (var i = 1; i < data.length; i++) {
     if (data[i].join('').trim() === '') continue;
     var obj = {};
@@ -761,7 +771,7 @@ function createFinalSheet(meetingDateVal, meetingDisplay, finalRows, originalHea
   if (dataHeaders.indexOf("種別") === -1) { dataHeaders.push("種別"); otherKeys.push("種別"); }
   if (dataHeaders.indexOf("メール") === -1) { dataHeaders.push("メール"); otherKeys.push("メール"); }
   // 代理の番号は、編集画面で直した招待者の欄から付け直す（画面の番号は取り込んだときのまま動かないため）
-  var subMembers = getMembersList();
+  var subMembers = getMembersList({ withoutNo: true });   // 番号の無い方の代理は「代理」（「代理??」にしない）
   for (var s = 0; s < finalRows.length; s++) {
     if (finalRows[s]["種別"] !== "Substitute") continue;
     var sub = findInviterMember_(finalRows[s]["招待者"], subMembers);
@@ -1249,12 +1259,19 @@ function meetingDateFromKey_(key) {
   if (saved) { var sd = new Date(saved); if (!isNaN(sd.getTime())) return sd; }
   var mm = parseInt(key.substring(0, 2), 10), dd = parseInt(key.substring(2, 4), 10);
   if (!mm || !dd) return null;
-  var today = new Date(), y = today.getFullYear(), best = null;
-  for (var k = -1; k <= 1; k++) {
-    var cand = new Date(y + k, mm - 1, dd);
-    if (!best || Math.abs(cand - today) < Math.abs(best - today)) best = cand;
+  // 4桁の名前は、年を付ける前（2026年9月まで）に作ったもの。開催日は作った日から先でもせいぜい1か月半なので、
+  // 「今日から45日先まで」かつ「2026/11/30 まで」の中で、いちばん新しい年の日とみなす。
+  // 以前は今日にいちばん近い年にしていたため、半年より前の回（3/25 など）が来年の回とみなされ、
+  // メールの画面の既定になったり、再編集で来年の日付のシートとPDFを作ったりしていた
+  var today = new Date(), limit = new Date(today.getTime());
+  limit.setDate(limit.getDate() + 45);
+  var cap = new Date(2026, 10, 30);
+  if (limit.getTime() > cap.getTime()) limit = cap;
+  for (var y = today.getFullYear() + 1; y >= today.getFullYear() - 5; y--) {
+    var cand = new Date(y, mm - 1, dd);
+    if (cand.getMonth() === mm - 1 && cand.getTime() <= limit.getTime()) return cand;
   }
-  return best;
+  return null;
 }
 
 // メール画面の初期表示。対象にできる参加者シートと、既定の開催日を返す。
@@ -1272,14 +1289,19 @@ function getEmailContext() {
                            : names[i],
                   time: d ? d.getTime() : 0 });
     }
-    // 開催日の新しい順に並べる
-    list.sort(function (a, b) { return b.time - a.time; });
+    // 開催日の新しい順に並べる。同じ開催日なら、年の付いた名前（20260930参加者）を先に
+    list.sort(function (a, b) { return (b.time - a.time) || (b.key.length - a.key.length); });
 
     var today = new Date(); today.setHours(0, 0, 0, 0);
     list.forEach(function (x) { x.past = x.time > 0 && x.time < today.getTime(); });   // 過ぎた回（画面で知らせる）
     var future = list.filter(function (x) { return x.time >= today.getTime(); });
-    // 今日以降でいちばん近いもの。無ければ直近の過去。
-    var def = future.length ? future[future.length - 1] : (list.length ? list[0] : null);
+    // 今日以降でいちばん近いもの。無ければ直近の過去。同じ開催日に移行前の4桁の名前のシートもあるときは、年の付いた方
+    // （以前は4桁の方＝古い回のシートが既定になり、その宛先とPDFのリンクで下書きを作っていた）
+    var def = null;
+    if (future.length) {
+      var soon = future[future.length - 1].time;
+      def = future.filter(function (x) { return x.time === soon; })[0];
+    } else if (list.length) def = list[0];
     return { ok: true, sheets: list, defaultSheet: def ? def.sheet : '' };
   } catch (e) {
     console.error('[MAIL] ' + (e && e.stack ? e.stack : e));

@@ -43,7 +43,7 @@ function countVisitorsByInviter_(sheet) {
   var stIdx = hd.indexOf('ステータス') >= 0 ? hd.indexOf('ステータス') : hd.indexOf('出席ステータス');
   if (noIdx < 0 || invIdx < 0) throw new Error('「' + sheet.getName() + '」に「No.」または「招待者」の列がありません。');
 
-  var members = getMembersList(), counts = {}, visitors = 0, noInviter = [], cancelled = [];
+  var members = getMembersList({ withoutNo: true }), counts = {}, visitors = 0, noInviter = [], cancelled = [];
   for (var r = h + 1; r < data.length; r++) {
     var no = String(data[r][noIdx] == null ? '' : data[r][noIdx]).trim();
     if (!/^V/i.test(no)) continue;          // ビジターのみ。ゲスト(G)・代理は対象外
@@ -89,7 +89,7 @@ function fillRouletteVisitorCounts() {
   var targets = findRouletteSheets_();
   if (!targets.length) return { ok: false, message: '「' + ROULETTE_PREFIX_ + '」で始まるシートが見つかりません。' };
 
-  var members = getMembersList(), filled = 0, written = 0, unknown = [], sheetNames = [];
+  var members = getMembersList({ withoutNo: true }), filled = 0, written = 0, unknown = [], sheetNames = [];
   for (var t = 0; t < targets.length; t++) {
     var sh = targets[t], data = sh.getDataRange().getValues();
     var hr = findRouletteHeaderRow_(data);

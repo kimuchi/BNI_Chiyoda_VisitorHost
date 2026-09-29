@@ -504,10 +504,12 @@ function roleRosterPlan_(term) {
       for (j = 0; j < t.members.length; j++) entry(t.members[j].name).labels.push(roleTeamMemberLabel_(t, t.members[j]));
     }
   }
-  var sh = ensureMemberSheet_(), col = MEMBER_HEADERS_.indexOf('役職') + 1;
-  var data = sh.getDataRange().getValues(), changes = [], column = [];
+  var sh = ensureMemberSheet_(), data = sh.getDataRange().getValues(), changes = [], column = [];
+  // 見出しの名前で列を引く（シートに列を足した・動かしても、ほかの列を「役職」として書き換えない）
+  var cx = memberColumns_(data[0]).idx, col = cx['役職'] + 1, nameCol = cx['氏名'];
+  if (col < 1 || nameCol < 0) throw new Error('メンバー名簿のシートの見出しに「役職」「氏名」の列が見つかりません。1行目の見出しを確かめてください。');
   for (var r = 1; r < data.length; r++) {
-    var name = String(data[r][2] == null ? '' : data[r][2]).trim();
+    var name = String(data[r][nameCol] == null ? '' : data[r][nameCol]).trim();
     var cur = String(data[r][col - 1] == null ? '' : data[r][col - 1]).trim(), to = cur;
     var h = name ? byName[normName_(name)] : null;
     if (h) { h.found = true; to = h.labels.join('・'); }
@@ -568,8 +570,14 @@ function roleRosterAutoSync_() {
 // 取り込んだ役職が前の期のままでも、「役職・チーム（半期ごと）」の登録どおりになる。お知らせの文を返す
 function roleRosterAfterImport_() {
   try {
-    var st = roleRosterState_();
+    var st = roleRosterState_(), now = roleTermOf_(new Date());
     if (!st.applied) return '';
+    // 期が替わったのに、いまの期の役職・チームがまだ登録されていない：取り込んだ役職（新しい期の役員）を、
+    // 前の期の内容に戻さない（以前は、新しいプレジデントの役職を消して、前のプレジデントに戻していた）
+    if (st.applied < now) {
+      return '\n\n役職は取り込んだとおりです（' + now + '期の「役職・チーム（半期ごと）」がまだ登録されていないため、'
+        + st.applied + '期の内容には合わせ直していません）。';
+    }
     var res = roleRosterApply_(st.applied, st);
     roleRosterSaveState_(st);
     return res.changes.length

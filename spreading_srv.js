@@ -203,6 +203,13 @@ function importSpreadingMembers(memberJson, renumber) {
            + '退会された方か、氏名の書き方が違う可能性があります。自動では消していません:\n'
            + plan.missing.map(function (x) { return x.name; }).join('、');
     }
+    // 番号の無い方は、割り振り表・ビジターホストの一覧に出ない（番号で引くため）。黙っていない
+    var noNo = cur.filter(function (m) { return !String(m.no || '').trim(); }).map(function (m) { return m.name; });
+    if (noNo.length) {
+      msg += '\n\n番号（No）の無い方が ' + noNo.length + '名います: ' + noNo.join('、')
+           + '\n番号が無いと、割り振り表・ビジターホストの一覧に出ません。「番号を振り直す」にチェックを入れて取り込み直すか、'
+           + 'メンバー名簿で番号を入れてください。';
+    }
     msg += '\n\n写真・一言コメント・紹介してほしい人・協業したい人・更新期限日はそのまま残しています。'
          + '\n取り込む前の名簿は控えてあります（メンバー名簿の画面の「取り込む前に戻す」で戻せます）。';
     if (typeof roleRosterAfterImport_ === 'function') msg += roleRosterAfterImport_();

@@ -47,6 +47,13 @@ function rotLoad_() {
     var holidays = [];
     try { holidays = getHolidays(); } catch (e) {}
     st.anchor = { date: fmtDate_(rotNextMeeting_(holidays)), pointer: 0 };
+    // まだ何も保存していないとき：起点（最初に見たときの次の開催日の先頭から）を1回だけ残しておく。
+    // 以前は見るたびに「次の開催日から」になり、同じ回の発表者が、見た週によって変わっていた
+    // （前半スライドの表・書記兼会計の初期値・告知の文）。並び順はこれまでどおり名簿の順のまま
+    if (!raw) {
+      try { PropertiesService.getScriptProperties().setProperty(ROT_KEY_, JSON.stringify({ anchor: st.anchor, provisional: true })); }
+      catch (e) { console.warn('[ROT] 起点を残せませんでした: ' + (e && e.message ? e.message : e)); }
+    }
   }
   st.anchor.pointer = parseInt(st.anchor.pointer, 10) || 0;
   if (typeof st.header !== 'string') st.header = d.header;
@@ -283,7 +290,7 @@ function getSpeakerRotation() {
     });
     return {
       ok: true, order: st.order, excluded: st.excluded, anchor: st.anchor, header: st.header, notes: st.notes,
-      updated: st.updated, rebased: rb.rebased, openDate: fmtDate_(rb.open),
+      updated: st.updated, provisional: !st.updated, rebased: rb.rebased, openDate: fmtDate_(rb.open),
       missing: missing, holidayHints: hints, weeks: weeks, fbText: rotFbText_(weeks[0], (weeks[0] || {}).secretary || ''),
       secretary: (weeks[0] || {}).secretary || '',
       members: env.members.map(function (m) {
@@ -371,7 +378,7 @@ function getSpeakerRotationWeeks(dateStr) {
     routineResetCache_();
     var st = rotLoad_(), env = rotEnv_(d);
     env.skip = rotSkip_(st);
-    return { ok: true, weeks: rotWeeks_(st, d, ROT_SLIDE_WEEKS_, env), header: st.header, notes: st.notes };
+    return { ok: true, weeks: rotWeeks_(st, d, ROT_SLIDE_WEEKS_, env), header: st.header, notes: st.notes, provisional: !st.updated };
   } catch (e) {
     return { ok: false, message: 'スピーカーローテーションを読めませんでした: ' + (e && e.message ? e.message : e) };
   }

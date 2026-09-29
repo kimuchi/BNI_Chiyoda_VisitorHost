@@ -85,9 +85,38 @@ const blank = () => ({ president: '', vice: '', secretary: '', vhc: '', mentor: 
      'D) 24期を登録してあるのに、10/1 に名簿の役職がその期の内容にならない: ' + roles(env));
 }
 
+// ---- E) 10/5（24期）に名簿を取り込んだ：24期の担当者がまだ登録されていなければ、取り込んだ役職を23期の内容に戻さない ----
+{
+  const h23 = Object.assign(blank(), { president: '見本 一郎', secretary: '試験 花子' });
+  const { env, srv } = server(new Date(2026, 9, 5, 9, 0), {
+    BNI_ROLE_HOLDERS_TERMS: J({ 23: h23 }), BNI_ROLE_ROSTER_STATE: J({ applied: 23, seen: 24 }) });
+  // 取り込み（Spreading・OCR）で、新しい期のプレジデント（例示 五月）が入った名簿
+  const v = env.values('メンバー名簿'), col = HEAD.indexOf('役職');
+  v.forEach((r, i) => { if (i) r[col] = r[2] === '例示 五月' ? 'プレジデント' : r[2] === '試験 花子' ? '書記兼会計' : ''; });
+  env.sheet('メンバー名簿').getRange(1, 1, v.length, HEAD.length).setValues(v);
+  const msg = srv.roleRosterAfterImport_();
+  ck(roles(env) === '見本 一郎: | 試験 花子:書記兼会計 | 架空 三郎: | 仮名 四郎: | 例示 五月:プレジデント',
+     'E) 24期に取り込んだ役職を、23期の内容に戻した: ' + roles(env));
+  ck(/取り込んだとおり/.test(msg) && /24期/.test(msg), 'E) 合わせ直さなかったことを知らせない: ' + msg);
+}
+
+// ---- F) チャプターの設定の画面を 9/30（23期）に開き、10/1 に期の欄を触らずに保存：期の番号を付け直さない ----
+{
+  const h23 = Object.assign(blank(), { president: '見本 一郎' }), h24 = Object.assign(blank(), { president: '例示 五月' });
+  const { env, srv } = server(new Date(2026, 9, 1, 9, 0), { BNI_ROLE_HOLDERS_TERMS: J({ 23: h23, 24: h24 }) });
+  const r = srv.saveChapterSettings({ name: '見本', region: '', term: '23', loadedTerm: 23, meetingBaseDate: '2026/03/18', meetingBaseCount: '509' });
+  const base = JSON.parse(env.props.BNI_CHAPTER || '{}').termBase, keys = Object.keys(JSON.parse(env.props.BNI_ROLE_HOLDERS_TERMS || '{}')).join(',');
+  ck(r.ok && base === 23 && keys === '23,24' && /いまの期 24期/.test(r.message),
+     'F) 9/30 に開いた設定の画面を 10/1 に保存したら、期の番号がずれた: ' + J({ base, keys, msg: r.message }));
+  // 期の欄を変えたときは、開いたときの期からの分だけずらす（23 → 25 で +2）
+  const r2 = srv.saveChapterSettings({ name: '見本', region: '', term: '25', loadedTerm: 23, meetingBaseDate: '2026/03/18', meetingBaseCount: '509' });
+  ck(r2.ok && JSON.parse(env.props.BNI_CHAPTER).termBase === 25 && Object.keys(JSON.parse(env.props.BNI_ROLE_HOLDERS_TERMS)).join(',') === '25,26',
+     'F) 期の欄を変えたときのずらし方: ' + J({ base: JSON.parse(env.props.BNI_CHAPTER).termBase, keys: Object.keys(JSON.parse(env.props.BNI_ROLE_HOLDERS_TERMS)) }));
+}
+
 if (fails.length) {
   console.log('NG ' + fails.length + '件 / ' + checks + '件の検査');
   fails.forEach((f) => console.log('  - ' + f));
   process.exit(1);
 }
-console.log('期の替わり目の担当者と名簿の役職: 検査 ' + checks + ' 件 OK: 未登録の期で役職を消さない・空の期を登録扱いしない・前の期の担当者を使う・登録した期は反映する');
+console.log('期の替わり目の担当者と名簿の役職: 検査 ' + checks + ' 件 OK: 未登録の期で役職を消さない・空の期を登録扱いしない・前の期の担当者を使う・登録した期は反映する・新しい期の取り込みを前の期に戻さない・期の替わり目に設定を保存しても番号をずらさない');

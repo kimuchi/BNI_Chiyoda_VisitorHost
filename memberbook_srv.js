@@ -17,7 +17,7 @@ function getMemberBookData() {
   try {
     var m = getMemberMaster();
     if (!m.ok) return m;
-    return { ok: true, members: m.members, cover: m.cover, categories: m.categories, presidents: coverPresidentList_(m.cover.termNo),
+    return { ok: true, members: m.members, rev: m.rev, cover: m.cover, categories: m.categories, presidents: coverPresidentList_(m.cover.termNo),
              drive: memberBookDriveInfo_() };
   } catch (e) {
     console.error('[MBOOK] ' + (e && e.stack ? e.stack : e));
@@ -26,10 +26,11 @@ function getMemberBookData() {
 }
 
 // 編集画面から一覧をまとめて保存する（並べ替え・削除・追加）。空の一覧は受け付けない
-// （画面が名簿を読み込めていないまま保存すると、名簿が消えてしまうため）
-function saveMemberBookData(members, cover) {
+// （画面が名簿を読み込めていないまま保存すると、名簿が消えてしまうため）。
+// rev … 画面が読み込んだときの名簿の版。そのあとでほかの方が名簿を変えていたら保存しない（saveMemberMaster）
+function saveMemberBookData(members, cover, rev) {
   if (!members || !members.length) return { ok: false, message: 'メンバーが0名のため保存しませんでした。画面を開き直してください。' };
-  return saveMemberMaster(members, cover);
+  return saveMemberMaster(members, cover, rev);
 }
 
 // 1人ぶんだけ名簿に書く（メンバーブックの編集画面の「反映」。押したらすぐ名簿に残る）。
@@ -37,28 +38,45 @@ function saveMemberBookData(members, cover) {
 // 見つからない（画面で足したばかりの方）ときは、名簿の最後に足す
 var MB_EDIT_FIELDS_ = { cat: '業種区分', name: '氏名', title: 'カテゴリー', company: '会社名', role: '役職',
                         comment: '一言コメント', refer: '紹介してほしい人', collab: '協業したい人', position: '会社での役職' };
-function saveMemberBookMember(origName, m) {
+// rev … 画面が持っている名簿の版。1人ぶんの書き込みは、ほかの方の変更があってもその方の行だけなので書く。
+//        書く前の版が画面のものと同じなら、書いたあとの版を返す（画面は次の保存にそれを使う）。
+//        違えば返さない（画面の一覧は古いので、並べ替え・削除の保存は、開き直すまで止まる）
+function saveMemberBookMember(origName, m, rev) {
   var lock = LockService.getScriptLock();
   try {
     if (!m || !String(m.name || '').trim()) return { ok: false, message: '氏名が空です。' };
     if (!lock.tryLock(15000)) return { ok: false, message: 'ほかの方が保存中です。少し待ってから、もう一度「反映」を押してください。' };
     var sh = ensureMemberSheet_(), n = MEMBER_HEADERS_.length;
+    var before = rev ? currentRosterRev_(sh) : '';   // 書く前の版（見出しを足す前に）
     if (sh.getMaxColumns() < n) sh.insertColumnsAfter(sh.getMaxColumns(), n - sh.getMaxColumns());
-    // 以前の名簿には「会社での役職」の列が無い → 見出しを足す
-    var head = sh.getRange(1, 1, 1, n).getValues()[0];
-    if (String(head[n - 1] || '') !== MEMBER_HEADERS_[n - 1]) {
-      sh.getRange(1, 1, 1, n).setValues([MEMBER_HEADERS_]).setFontWeight('bold').setBackground('#f2f6ff');
-    }
-    var last = sh.getLastRow(), rows = last > 1 ? sh.getRange(2, 1, last - 1, n).getValues() : [];
-    var key = normName_(origName || m.name), at = -1;
-    for (var i = 0; i < rows.length; i++) if (normName_(rows[i][2]) === key) { at = i; break; }
-    var row = at >= 0 ? rows[at] : MEMBER_HEADERS_.map(function () { return ''; });
-    Object.keys(MB_EDIT_FIELDS_).forEach(function (k) {
-      if (m[k] !== undefined) row[MEMBER_HEADERS_.indexOf(MB_EDIT_FIELDS_[k])] = String(m[k] == null ? '' : m[k]);
+    // 見出しの名前で列を引く（シートに列を足した・動かしたときも、ほかの方の列に書かない）。
+    // 以前の名簿には「会社での役職」などの列が無い → 決まった位置が空いていれば、見出しを足す
+    var w = Math.max(n, sh.getLastColumn()), head = sh.getRange(1, 1, 1, w).getValues()[0];
+    var cx = memberColumns_(head).idx, addHead = false, lost = [];
+    MEMBER_HEADERS_.forEach(function (h, i) {
+      if (cx[h] < 0) lost.push(h);
+      else if (!String(head[cx[h]] == null ? '' : head[cx[h]]).trim()) { head[cx[h]] = h; addHead = true; }
     });
-    if (at >= 0) sh.getRange(at + 2, 1, 1, n).setValues([row]);
-    else sh.getRange(last + 1, 1, 1, n).setValues([row]);
-    return { ok: true, added: at < 0, message: '「' + String(m.name).trim() + '」を名簿に保存しました。' };
+    var needed = Object.keys(MB_EDIT_FIELDS_).map(function (k) { return MB_EDIT_FIELDS_[k]; }).concat(['氏名']);
+    var miss = lost.filter(function (h) { return needed.indexOf(h) >= 0; });
+    if (miss.length) {
+      return { ok: false, message: 'メンバー名簿のシートの見出しに「' + miss.join('」「') + '」の列が見つからないため、保存しませんでした。'
+        + '1行目の見出しを確かめてください（列を足したり、見出しを書き換えたりしていないか）。' };
+    }
+    if (addHead) sh.getRange(1, 1, 1, w).setValues([head]).setFontWeight('bold').setBackground('#f2f6ff');
+    var last = sh.getLastRow(), rows = last > 1 ? sh.getRange(2, 1, last - 1, w).getValues() : [];
+    var key = normName_(origName || m.name), at = -1;
+    for (var i = 0; i < rows.length; i++) if (normName_(rows[i][cx['氏名']]) === key) { at = i; break; }
+    var row = at >= 0 ? rows[at] : head.map(function () { return ''; });
+    Object.keys(MB_EDIT_FIELDS_).forEach(function (k) {
+      if (m[k] !== undefined) row[cx[MB_EDIT_FIELDS_[k]]] = String(m[k] == null ? '' : m[k]);
+    });
+    if (at >= 0) sh.getRange(at + 2, 1, 1, w).setValues([row]);
+    else sh.getRange(last + 1, 1, 1, w).setValues([row]);
+    var stale = !!rev && before !== rev;
+    return { ok: true, added: at < 0, rev: (!rev || stale) ? '' : rosterRevAfterWrite_(sh), stale: stale,
+             message: '「' + String(m.name).trim() + '」を名簿に保存しました。'
+               + (stale ? '\nこの画面を開いたあとで、ほかの方が名簿を変えています。並べ替え・削除・追加の前に、画面を開き直してください。' : '') };
   } catch (e) {
     console.error('[MBOOK] ' + (e && e.stack ? e.stack : e));
     return { ok: false, message: '保存に失敗しました: ' + (e && e.message ? e.message : e) };
