@@ -53,7 +53,7 @@ function countVisitorsByInviter_(sheet) {
     if (!/^V/i.test(no)) continue;          // ビジターのみ。ゲスト(G)・代理は対象外
     visitors++;
     // 招待者名はメンバー名簿の表記にそろえる（川邉/川辺などの異体字対応）
-    var key = rouletteKey_(matchInviterToMember(data[r][invIdx], members));
+    var key = rouletteKey_(resolveInviterName_(data[r][invIdx], members));   // 同じ字の方を先に（似た名前の方と数を取り違えない）
     if (!key) { noInviter.push(String(data[r][nmIdx >= 0 ? nmIdx : noIdx] || no)); continue; }
     counts[key] = (counts[key] || 0) + 1;
   }
@@ -100,7 +100,7 @@ function fillRouletteVisitorCounts() {
       var mei = String(data[r][ROULETTE_NAME_COL_] || '').trim();
       if (!sei && !mei) { out.push(['']); continue; }   // 空行はそのまま空に
       // ルーレット側の氏名もメンバー名簿の表記にそろえてから照合する
-      var key = rouletteKey_(matchInviterToMember(sei + mei, members));
+      var key = rouletteKey_(resolveInviterName_(sei + ' ' + mei, members));
       var n = tally.counts[key];
       if (n === undefined) n = tally.counts[rouletteKey_(sei + mei)];
       out.push([n === undefined ? 0 : n]);

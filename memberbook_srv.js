@@ -165,6 +165,7 @@ function getZoomGuideContext() {
 }
 function saveZoomGuideSettings(data) {
   try {
+    requireSheetAccess_();
     var props = PropertiesService.getScriptProperties();
     props.setProperty('BNI_ZOOM_EXAMPLE_NUM', String((data && data.exampleNum) || '4'));
     props.setProperty('BNI_ZOOM_TITLE', String((data && data.title) || ''));

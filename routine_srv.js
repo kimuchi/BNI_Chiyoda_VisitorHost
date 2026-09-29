@@ -200,17 +200,36 @@ function routineMemberName_(raw) {
   push(s0.replace(/(さん|様|さま|くん|君|ちゃん|氏)?へ$/, '$1'));   // 「山内さんへ」
   push(s0.replace(/(さん|様|さま|くん|君|ちゃん|氏)?へ?$/, ''));    // 「長尾くん」
   push(s0.replace(/^[0-9０-９]+\s*番?/, ''));            // 「３５番船越さん」
-  var parts = s0.split(/[\s　]+/);
-  if (parts.length > 1) push(parts[parts.length - 1]);   // 「内装業　岩渕さん」
+  var parts = s0.split(/[\s　]+/), lastWord = '';
   push(s0.replace(/[（(].*$/, ''));                       // 「谷口さん（代理）」
+  if (parts.length > 1) {                                  // 「内装業　岩渕さん」（うしろの語が名字のとき）
+    lastWord = String(parts[parts.length - 1]).replace(/[\s　]/g, '');
+    push(parts[parts.length - 1]);
+  }
 
-  var members = getMembersList(), i, k;
-  for (k = 0; k < tries.length; k++) {
-    var full = matchInviterToMember(tries[k], members);
-    for (i = 0; i < members.length; i++) {
-      if (normName_(members[i].name) === normName_(full)) {
-        return { raw: s0, name: members[i].name, matched: true };
+  // 名簿と比べる。どの段も、当たる方が1人のときだけ決める（同じ名字・似た氏名の方が2人以上なら決めない＝画面で選ぶ）。
+  //   1) 氏名がそのまま同じ → 2) 名字がそのまま同じ → 3) 名簿の氏名の頭と同じ（異体字をそろえて。「川辺さん」→「川邉 真由子」）
+  //   → 4) 一部が重なる・1字違い（書き間違い）。4) は、うしろの語だけ（お名前のことがある）では比べない
+  //      （「新人 花子さん」が、名簿の「試験 花子」になってしまうため）
+  // 以前は名簿で最初に「似ている」方を選んでいたため、「見本 学」「見本 誠」がいると「見本 誠」と書いても「見本 学」になっていた
+  var members = getMembersList(), i, k, step;
+  var keys = members.map(function (m) {
+    return { name: m.name, full: routineFoldName_(m.name), sur: routineFoldName_(String(m.name).trim().split(/[\s　]+/)[0]) };
+  });
+  for (step = 0; step < 4; step++) {
+    for (k = 0; k < tries.length; k++) {
+      var t = routineFoldName_(String(tries[k]).replace(/(さん|様|さま|くん|君|ちゃん|氏)$/, '')), one = [];
+      if (!t || (step >= 2 && t.length < 2)) continue;
+      if (step === 3 && tries[k] === lastWord && parts.length > 1) continue;
+      for (i = 0; i < keys.length; i++) {
+        var m = keys[i];
+        var same = step === 0 ? m.full === t
+                 : step === 1 ? m.sur === t
+                 : step === 2 ? m.full.indexOf(t) === 0
+                 : fuzzyNameMatch(t, m.full);
+        if (same && one.indexOf(m.name) < 0) one.push(m.name);
       }
+      if (one.length === 1) return { raw: s0, name: one[0], matched: true };
     }
   }
   // 字の違い（「川辺さん」と名簿の「川邉 真由子」など）でも、名字が1人に決まるなら合わせる
@@ -426,8 +445,16 @@ function routineRosterName_(text, roster, hint) {
   if (exact.length) return one(exact);
   var sur = keys.filter(function (k) { return k.sur === t; });
   if (sur.length) return one(sur);
+  // routineMemberName_ は、うしろの語（お名前のことがある）・1字違いでも当てる。名簿に無い新メンバー（「新人 花子さん」）が、
+  // お名前の重なる別のメンバー（「試験 花子」）・1字違いのメンバー（「新人 花代」）にならないよう、
+  // 書いてある字の終わり（前に付いたカテゴリーと、うしろの「くん」などを除く）が、当たった方の氏名の頭と同じときだけ採る
   var hit = routineMemberName_(text);
-  if (hit.matched) return hit.name;
+  if (hit.matched) {
+    var hf = routineFoldName_(hit.name), tt = t;
+    for (var g = 0; g < 3; g++) tt = tt.replace(/\([^()]*\)$/, '');          // うしろの（カテゴリー）（1年）など
+    tt = tt.replace(/(さん|くん|君|ちゃん|様|さま|氏)?へ?$/, '');
+    for (var n = Math.min(2, tt.length); n <= tt.length; n++) if (hf.indexOf(tt.slice(-n)) === 0) return hit.name;
+  }
   var best = [], bestLen = 0;
   keys.forEach(function (k) {
     [k.full, k.sur].forEach(function (w) {

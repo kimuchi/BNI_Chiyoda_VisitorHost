@@ -94,4 +94,8 @@ env.addFile('A30', new env.FakeBlob('%PDF-1.4\n9/30 の割り振り表（共有�
     process.exit(1);
   }
   console.log('割り振り表の画面（ブラウザ）: 検査 ' + checks + ' 件 OK: 読み込んだ回に書き込む・Spreadingの文字を動かさない・確度とメモ');
-})().catch((e) => { console.log('NG 検査が止まった: ' + (e && e.stack ? e.stack : e)); process.exit(1); });
+})().catch((e) => {
+  console.log('NG 検査が止まった: ' + (e && e.stack ? e.stack.split('\n').slice(0, 2).join(' / ') : e));
+  fails.forEach((f) => console.log('  - ' + f));   // 止まる前に見つかったもの
+  process.exit(1);
+});

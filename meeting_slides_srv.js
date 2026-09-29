@@ -1071,7 +1071,7 @@ function insertMemberPresen_(parts, items) {
           + (auto ? '自動で次へ' : 'クリックで次へ') + '）。';
   if (built.noPhoto && built.noPhoto.length) msg += '\n写真が見つからない方: ' + built.noPhoto.join('、');
   if (sp.missingLayout.length) msg += '\n※ 同じ名前のレイアウトが無いページがありました（見た目が変わる可能性があります）。';
-  return { message: msg, paths: sp.paths, auto: auto };
+  return { message: msg, paths: sp.paths, auto: auto, gone: built.gone || [], opened: built.opened || 0 };
 }
 
 // pptxの中身を書き換える本体。Driveの読み書きから切り離してあるので、
@@ -1143,7 +1143,15 @@ function editMeetingSlides_(parts, map, rules, o) {
   var core = o.coreValue ? applyCoreValue_(parts, o.coreValue) : null;
   var policy = o.generalPolicy ? applyGeneralPolicy_(parts, o.generalPolicy) : null;
   var audio = o.music ? applyMeetingAudio_(parts, o.music) : null;
-  return { touched: touched, byPattern: byPattern, core: core, policy: policy,
+  // 写真の索引にあるのに開けなかった方（写真なしで作った）。1枚も開けないときは、写真の無いスライドで
+  // 同じ開催日のスライドを置き換えないよう止める（写真のフォルダを見る権限が無い・索引が古いなど）
+  var gone = (photoCache.gone || []).slice();
+  ((weekly && weekly.gone) || []).forEach(function (n) { if (gone.indexOf(n) < 0) gone.push(n); });
+  if (gone.length && !((photoCache.opened || 0) + ((weekly && weekly.opened) || 0))) {
+    throw new Error('メンバーの写真を1枚も開けませんでした（' + gone.length + '名）。写真のフォルダ（02_メンバー写真）を見る権限があるかを確かめ、'
+      + '「⚙️ 設定」＞「メンバー写真」で「索引を作り直す」を押してから、もう一度お試しください。');
+  }
+  return { touched: touched, byPattern: byPattern, core: core, policy: policy, photoGone: gone,
            photos: photos, audio: audio, referral: referral, weekly: weekly, guests: guests,
            reco: reco, renewal: renewal, rotation: rotation, roles: roles,
            members: members, vp: vp, leaders: leaders };
@@ -1195,6 +1203,10 @@ function generateMeetingSlides(kind, values, meetingDateVal, opts) {
     if (info.core) msg += '\n' + info.core.message;
     if (info.policy) msg += '\n' + info.policy.message;
     if (info.photos && info.photos.message) msg += '\n' + info.photos.message;
+    if (info.photoGone && info.photoGone.length) {
+      msg += '\n⚠ 写真の索引にあるのに、写真のファイルを開けなかった方（写真なしで作りました）: ' + info.photoGone.join('、')
+           + '。「⚙️ 設定」＞「メンバー写真」で「索引を作り直す」を押してください。';
+    }
     if (info.audio && info.audio.message) msg += '\n' + info.audio.message;
     if (info.referral && info.referral.message) msg += '\n' + info.referral.message;
     if (info.weekly && info.weekly.message) msg += '\n' + info.weekly.message;

@@ -330,6 +330,25 @@ step('割り振り表', () => {
   ck(openNet && openNet.some((r) => String(r[1]).includes('例示 次郎') && r[3] === '模擬 六助'), '7) オープンネットの表が違う');
 });
 
+// ---- 7b) ビジターホスト・優先順位は、名簿の番号がずれても同じ方のまま（OCR・Spreadingの取り込みで番号がずれる） ----
+step('ビジターホストと番号のずれ', () => {
+  srv.saveVisitorHosts(['3', '4']);                    // 架空 三郎・仮名 四郎
+  srv.saveMemberPriorities({ 3: 1, 4: 2 });
+  const sh = env.sheet('メンバー名簿'), vals = sh._values;
+  // 新メンバーが No.3 に入り、3番から後ろが1つずつずれた
+  const shifted = [vals[0], vals[1], vals[2], MEMBER_HEAD.map((h, i) => (i === 0 ? '3' : i === 2 ? '新入 太郎' : ''))]
+    .concat(vals.slice(3).map((r) => r.map((v, i) => (i === 0 ? String(Number(v) + 1) : v))));
+  const saved = vals.map((r) => r.slice());
+  sh._values = shifted;
+  ck(JSON.stringify(srv.getVisitorHosts()) === JSON.stringify(['4', '5']), '7b) 番号がずれたら、ビジターホストが別の方になった: ' + JSON.stringify(srv.getVisitorHosts()));
+  ck(JSON.stringify(srv.getMemberPriorities()) === JSON.stringify({ 4: 1, 5: 2 }), '7b) 番号がずれたら、優先順位が別の方に移った: ' + JSON.stringify(srv.getMemberPriorities()));
+  sh._values = saved;
+  // 前の版で番号だけ保存したもの：最初に読んだときに、いまの名簿の氏名を付けて控える
+  delete env.props.VISITOR_HOSTS_N; env.props.VISITOR_HOSTS = JSON.stringify(['5']);
+  ck(JSON.stringify(srv.getVisitorHosts()) === '["5"]' && /例示 ?五月/.test(env.props.VISITOR_HOSTS_N || ''), '7b) 前の版の保存に、氏名を付けて控えない');
+  srv.saveVisitorHosts([]); srv.saveMemberPriorities({});
+});
+
 // ---- 8) 作成済みPDFの確認・PDFのみ再作成 ----
 step('作成済みPDFの確認', () => {
   // 前の回（9/23）のPDFを作り直しても、「作成済みPDFの確認」は次回（9/30）のものを出す
@@ -343,6 +362,28 @@ step('作成済みPDFの確認', () => {
   srv.regeneratePdfOnly('20260930参加者');
   ck(env.fileText(id0930).includes('手で直した会社'), '8) PDFのみ再作成で、手で直した内容が入らない');
   ck(srv.getPdfLinks().visitorList === url0930, '8) PDFのみ再作成のあと、作成済みPDFのリンクが変わった');
+});
+
+// ---- 9) スプレッドシートを開けない方（ウェブアプリのURLだけ知っている方）は、設定を読めない・書き換えられない ----
+step('設定の読み書きは編集者だけ', () => {
+  const realGet = srv.SpreadsheetApp.getActiveSpreadsheet, realOpen = srv.SpreadsheetApp.openById;
+  env.props.BNI_SPREADSHEET_ID = 'SSID'; env.props.GEMINI_API_KEY = 'secret-key'; env.props.MAIL_TPL_BCC = 'host@example.com';
+  srv.SpreadsheetApp.getActiveSpreadsheet = () => null;                       // ウェブアプリ（開いているスプレッドシートが無い）
+  srv.SpreadsheetApp.openById = () => { throw new Error('You do not have permission to access the requested document.'); };
+  const tries = [['getApiSettings', []], ['saveApiSettings', [{ apiKey: 'x', modelName: 'y' }]], ['getTemplates', []],
+                 ['saveTemplates', [{ bcc: 'evil@example.com' }]], ['getMailWebAppSettings', []], ['saveMailWebAppSettings', [{ webAppUrl: 'https://evil.example/' }]],
+                 ['saveAllocationNote', ['書き換え']], ['getChapterSettings', []], ['saveChapterSettings', [{ name: '乗っ取り' }]]];
+  tries.forEach(([fn, args]) => {
+    let out = null, err = null;
+    try { out = srv[fn](...args); } catch (e) { err = e; }
+    const leaked = JSON.stringify(out || '').includes('secret-key') || JSON.stringify(out || '').includes('host@example.com');
+    ck((err || (out && out.ok === false)) && !leaked, '9) スプレッドシートを開けない方が ' + fn + ' を使えた: ' + JSON.stringify(out).slice(0, 120));
+  });
+  ck(env.props.GEMINI_API_KEY === 'secret-key' && env.props.MAIL_TPL_BCC === 'host@example.com' && !env.props.MAIL_WEB_APP_URL
+     && env.props.ALLOCATION_NOTE === undefined, '9) スプレッドシートを開けない方が、設定を書き換えた');
+  srv.SpreadsheetApp.getActiveSpreadsheet = realGet; srv.SpreadsheetApp.openById = realOpen;
+  ck(srv.getApiSettings().apiKey === 'secret-key', '9) 編集者（開ける方）が設定を読めない');
+  env.errors.length = 0;
 });
 
 ck(env.errors.length === 0, '途中でエラーの記録が出た: ' + env.errors.slice(0, 3).join(' / '));

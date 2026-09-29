@@ -159,6 +159,7 @@ function makeUi() {
 let book = null;
 S.sandbox.SpreadsheetApp = { getActiveSpreadsheet: () => book, getUi: () => makeUi() };
 F.getSS_ = () => book;
+F.requireSheetAccess_ = () => {};   // 設定を読み書きできる方か（本番は webapp_srv.js。ここでは読み込まない）
 const names = () => book.getSheets().map((s) => s.getName());
 const valuesOf = (sh) => sh.getRange(1, 1, Math.max(sh.getLastRow(), 1), Math.max(sh.getLastColumn(), 1)).getValues();
 // 期日から曜日目安（検査の側でも数える）

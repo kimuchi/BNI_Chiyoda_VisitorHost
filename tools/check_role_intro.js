@@ -324,6 +324,19 @@ const S5 = F.slideText_(F.xmlOf_(parts5, sPath('support')));
 ck(S5.includes('見本　七子') && S5.includes(vhMembers.join('、')) && F.slideText_(F.xmlOf_(parts5, sPath('leader'))).includes('見本　一郎')
    && r5.filled.some((f) => f.base === 'プレジデント' && f.name === '見本　一郎'), '差し込み口の雛形に入れる: ' + S5.slice(0, 120));
 
+// ===== 写真の索引が古い（ファイルを開けない）方は、その方だけ写真なし。スライド全体を止めない =====
+{
+  const realDrive = sb.DriveApp;
+  sb.DriveApp = { getFileById: (id) => { if (id === 'photo1') throw new Error('No item with the given ID could be found, or you do not have permission to access it.'); return realDrive.getFileById(id); } };
+  const cache = { by: {}, seq: 0 }, map = {};
+  let threw = null, gone = null, ok = null;
+  try { gone = F.mpAddPhoto_(map, cache, '見本　二郎'); ok = F.mpAddPhoto_(map, cache, '見本　一郎'); } catch (e) { threw = e; }
+  ck(!threw, '写真のファイルを1枚開けないだけで止まった: ' + (threw && threw.message));
+  ck(gone === null && ok && ok.path && cache.opened === 1 && JSON.stringify(cache.gone) === JSON.stringify(['見本　二郎']),
+     '開けない写真の方だけ写真なしにし、名前を控える: ' + JSON.stringify({ gone, ok: !!ok, opened: cache.opened, list: cache.gone }));
+  sb.DriveApp = realDrive;
+}
+
 console.log(`役職のメンバー紹介: 検査 ${checks} 件`);
 if (fails.length) {
   console.log(`NG: ${fails.length} 件`);

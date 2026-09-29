@@ -44,6 +44,7 @@ function getAssetSettings() {
 
 function saveAssetSettings(linkOrId) {
   try {
+    requireSheetAccess_();
     var id = extractDriveId_(linkOrId);
     if (!id) return { ok: false, message: 'フォルダIDを認識できませんでした。共有リンク（.../folders/xxxx）またはIDを入力してください。' };
     var folder;

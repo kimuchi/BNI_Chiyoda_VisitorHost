@@ -60,6 +60,17 @@ const sandbox = {
   getMembersList: () => MEMBERS.map((m) => ({ no: m.no, name: m.name })),
   getHolidays: () => HOLIDAYS,
   normName_: (s) => String(s == null ? '' : s).replace(/[\s　]/g, ''),
+  // コード.js の fuzzyNameMatch と同じ（routineMemberName_ が、書き間違い・1字違いのときに使う）
+  fuzzyNameMatch(searchStr, memberStr) {
+    if (searchStr === memberStr) return true;
+    if (searchStr.indexOf(memberStr) !== -1 || memberStr.indexOf(searchStr) !== -1) return true;
+    if (searchStr.length === memberStr.length && searchStr.length >= 2) {
+      let diff = 0;
+      for (let i = 0; i < searchStr.length; i++) if (searchStr[i] !== memberStr[i]) diff++;
+      if (diff <= 1) return true;
+    }
+    return false;
+  },
   matchInviterToMember(inviterName, list) {
     const s = String(inviterName || '').replace(/[\s　さん]/g, '');
     if (!s) return '';
