@@ -162,7 +162,11 @@
  function mark(idx,status){
    var r=mkRows[idx]; if(!r) return;
    google.script.run.withSuccessHandler(function(res){
-     if(res&&res.ok) reload(); else alert((res&&res.message)||'保存に失敗しました。');
+     // 更新状況の一覧だけを読み直す（全部を読み直すと、手で直した推薦のことば・抽選が、ルーティンチェックシートの内容に戻ってしまう）
+     if(res&&res.ok) loadFrom('lists','更新状況','computeRenewalLists',[get('meeting')],function(L){
+       if(L.ok) applyLists(L); else show(L.message,false);
+     });
+     else alert((res&&res.message)||'保存に失敗しました。');
    }).withFailureHandler(fail).setRenewalMark(r.name,status,r.date);
  }
  // ルーティンチェックシートに書いてある内容を反映する

@@ -22,13 +22,19 @@ function openVisitorSlideDialog() {
 function parseParticipantSheet_(sheetName) {
   var sh = getSS_().getSheetByName(sheetName);
   if (!sh) return null;
-  var data = sh.getDataRange().getValues(), visitors = [], guests = [], dairi = [];
+  var data = sh.getDataRange().getValues(), visitors = [], guests = [], dairi = [], cancelled = [], statusIdx = -1;
   for (var i = 0; i < data.length; i++) {
     var row = data[i];
     var no   = String(row[0] == null ? '' : row[0]).trim();
     var name = String(row[1] == null ? '' : row[1]).trim();
+    if (no === 'No.') {                                  // 見出しの行：Spreadingのステータスの列を探す
+      statusIdx = row.map(function (h) { return String(h).trim(); }).indexOf('ステータス');
+      if (statusIdx < 0) statusIdx = row.map(function (h) { return String(h).trim(); }).indexOf('出席ステータス');
+    }
     // ヘッダー行・空行は値で判定して飛ばす（元ツールと同じ方式）
     if (!no || no === 'No.' || !name || name === '参加者氏名') continue;
+    // Spreadingでキャンセルになった方は、スライドに入れない（ようこそのページ・プレゼンのページに出さない）
+    if (statusIdx >= 0 && /キャンセル|cancel/i.test(String(row[statusIdx] == null ? '' : row[statusIdx]))) { cancelled.push(name); continue; }
     var item = {
       no: no,
       name: name,
@@ -42,7 +48,7 @@ function parseParticipantSheet_(sheetName) {
     else if (/^G/i.test(no)) guests.push(item);
     else visitors.push(item);
   }
-  return { visitors: visitors, guests: guests, dairi: dairi };   // 並び順はシートのまま（ソートしない）
+  return { visitors: visitors, guests: guests, dairi: dairi, cancelled: cancelled };   // 並び順はシートのまま（ソートしない）
 }
 
 function getVisitorSlideContext() {
@@ -50,7 +56,9 @@ function getVisitorSlideContext() {
     var sheets = getExistingVisitorSheets();          // 既存関数。新しい順
     var tpl = getTemplateStatus().templates, ready = {};
     for (var i = 0; i < tpl.length; i++) ready[tpl[i].kind] = tpl[i].registered;
-    return { ok: true, sheets: sheets, defaultSheet: sheets.length ? sheets[0] : '', templates: ready };
+    // 既定はメールと同じ「次回の定例会」（無ければ直近）。いちばん新しいシートだと、翌週の名簿を先に作ったときに翌週になってしまう
+    var ctx = getEmailContext(), def = (ctx && ctx.ok && ctx.defaultSheet) ? ctx.defaultSheet : (sheets.length ? sheets[0] : '');
+    return { ok: true, sheets: sheets, defaultSheet: def, templates: ready };
   } catch (e) {
     console.error('[VSLIDE] ' + (e && e.stack ? e.stack : e));
     return { ok: false, message: '初期表示の取得に失敗しました: ' + (e && e.message ? e.message : e), sheets: [], templates: {} };
@@ -62,9 +70,10 @@ function previewVisitorSlideData(sheetName) {
     if (!sheetName) return { ok: false, message: 'シートが選択されていません。' };
     var r = parseParticipantSheet_(sheetName);
     if (!r) return { ok: false, message: 'シート「' + sheetName + '」が見つかりません。' };
-    return { ok: true, visitors: r.visitors, guests: r.guests, dairi: r.dairi,
+    return { ok: true, visitors: r.visitors, guests: r.guests, dairi: r.dairi, cancelled: r.cancelled,
              message: 'ビジター' + r.visitors.length + '名・ゲスト' + r.guests.length
-                    + '名・代理' + r.dairi.length + '名を読み込みました。' };
+                    + '名・代理' + r.dairi.length + '名を読み込みました。'
+                    + (r.cancelled.length ? '\nSpreadingでキャンセルの方（スライドに入れません）: ' + r.cancelled.join('、') : '') };
   } catch (e) {
     console.error('[VSLIDE] ' + (e && e.stack ? e.stack : e));
     return { ok: false, message: '読み込みに失敗しました: ' + (e && e.message ? e.message : e) };
@@ -180,7 +189,8 @@ function generateAllIntroSlides(sheetName) {
     var saved = saveOutputFile_(blob, outName);
     console.log('[VSLIDE] all-intro ' + outName + ' slides=' + slides.length);
     return { ok: true, url: saved.url, downloadUrl: saved.downloadUrl, fileName: outName, slideCount: slides.length,
-             message: '紹介スライドをまとめて作成しました（' + counts.join(' / ') + '　合計' + slides.length + '枚）。' };
+             message: '紹介スライドをまとめて作成しました（' + counts.join(' / ') + '　合計' + slides.length + '枚）。'
+               + (parsed.cancelled.length ? '\nSpreadingでキャンセルの方は入れていません: ' + parsed.cancelled.join('、') : '') };
   } catch (e) {
     console.error('[VSLIDE] ' + (e && e.stack ? e.stack : e));
     return { ok: false, message: 'スライドの作成に失敗しました: ' + (e && e.message ? e.message : e) };
@@ -233,7 +243,9 @@ function generateVisitorSlides(sheetName, type) {
     var blob = buildPptxFromTemplate_(tplBlob, dataList, builder, outName);
     var saved = saveOutputFile_(blob, outName);
     console.log('[VSLIDE] saved ' + outName + ' -> ' + saved.url);
-    return { ok: true, message: '「' + def.label + '」を作成しました（' + countLabel + '）。', url: saved.url, downloadUrl: saved.downloadUrl, fileName: outName, slideCount: dataList.length };
+    return { ok: true, message: '「' + def.label + '」を作成しました（' + countLabel + '）。'
+               + (parsed.cancelled.length ? '\nSpreadingでキャンセルの方は入れていません: ' + parsed.cancelled.join('、') : ''),
+             url: saved.url, downloadUrl: saved.downloadUrl, fileName: outName, slideCount: dataList.length };
   } catch (e) {
     console.error('[VSLIDE] ' + (e && e.stack ? e.stack : e));
     return { ok: false, message: 'スライドの作成に失敗しました: ' + (e && e.message ? e.message : e) };

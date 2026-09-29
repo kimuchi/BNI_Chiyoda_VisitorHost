@@ -156,7 +156,7 @@ BNI_Chiyoda_VisitorHost/
     │                         #     隠れたシートから真っ白のPDFを作らない・PDFが返らないときは前のPDFを上書きしない）
     │  ── 画面をNodeで動かす（ブラウザ無し）──
     ├── lib_minidom.js        #   画面をNodeで動かすための簡易DOM
-    ├── check_meeting_dialog.js  # 定例会スライドの画面（前半・後半・ウィークリープレゼン）
+    ├── check_meeting_dialog.js  # 定例会スライドの画面（前半・後半・ウィークリープレゼン。名簿を渡さなければ架空の60名で動かす）
     ├── check_visitor_post.js #   ビジター情報の投稿文（入金の読み方・文面・画面）
     ├── check_role_input_dialog.js # 役職ごとの入力の画面（一覧・入力・保存までサーバーとつないで通す）
     ├── check_webapp_pages.js #   ウェブアプリの画面一覧（?p= での開き方・トップページのリンク）
@@ -426,7 +426,7 @@ clasp deployments
 
 ### 更新が反映されたかの確かめ方
 
-`コード.js` の `SYSTEM_VERSION_`（例: `2026-09-29k`）が、ウェブアプリのトップページの下と
+`コード.js` の `SYSTEM_VERSION_`（例: `2026-09-29l`）が、ウェブアプリのトップページの下と
 「定例会スライド（前半）」「定例会スライド（後半）」の画面の右上に **「版 …」** として出ます。
 機能を変えたらこの値を変え、`clasp push`・`clasp version`・`clasp deploy` のあとに画面で確かめてください。
 

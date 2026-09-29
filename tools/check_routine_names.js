@@ -56,6 +56,12 @@ const roster = ROSTER.map(([, n, t]) => ({ name: n, title: t }));
   ck(got === want, `新入会「${raw}」→「${got}」（${want || '名簿に無い'} のはず）`);
 });
 
+// ---- 「ー」「－」「なし」は、該当なし（その名前のページを作らない）----
+['ー', 'ー　', '－', 'なし', '−'].forEach((raw) => {
+  ck(srv.routineMemberList_(raw).length === 0, `「${raw}」を人の名前として読んだ: ` + JSON.stringify(srv.routineMemberList_(raw)));
+});
+ck(srv.routineMemberList_('見本 誠さん、ー').map((x) => x.name).join(',') === '見本 誠', '「見本 誠さん、ー」の「ー」を人として読んだ: ' + JSON.stringify(srv.routineMemberList_('見本 誠さん、ー')));
+
 // ---- トークスクリプトの招待者（参加者シートの招待者の氏名）も、書いてある方のまま ----
 ck(who('見本 誠').name === '見本 誠' && who('仮名 誠一').name === '仮名 誠一', 'トークスクリプトの招待者を、似た別の方にした');
 

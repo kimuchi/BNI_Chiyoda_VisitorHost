@@ -229,11 +229,10 @@ function setSlideShow_(xml, show) {
   });
 }
 
-function applyCoreValue_(parts, wanted) {
-  var w = coreValueOf_(wanted);
-  if (!w) return null;
-  // まず英語だけで探す。「責任」「伝統」のような語はふつうの文にも出てくるため、
-  // 英語で足りているならそちらを使う方が誤検出が少ない。
+// コアバリューのページを見分ける（テンプレートの字で）。
+// まず英語だけで探す。「責任」「伝統」のような語はふつうの文にも出てくるため、
+// 英語で足りているならそちらを使う方が誤検出が少ない。
+function coreValuePages_(parts) {
   var scan = function (useJa) {
     var cand = [], kinds = {}, path;
     for (path in parts) {
@@ -242,15 +241,24 @@ function applyCoreValue_(parts, wanted) {
       if (!xml) continue;
       var found = coreValuesInSlide_(xml, useJa);
       if (found.length !== 1) continue;
-      cand.push({ path: path, xml: xml, cv: found[0] });
+      cand.push({ path: path, cv: found[0] });
       kinds[found[0].label] = true;
     }
     var n = 0;
     for (var k in kinds) n++;
-    return { cand: cand, kinds: n };
+    return { cand: cand, kinds: n, useJa: useJa };
   };
   var res = scan(false);
-  if (res.kinds < 3) res = scan(true);
+  return res.kinds < 3 ? scan(true) : res;
+}
+
+// pages … 差し込み・書き換えの前に coreValuePages_ で見分けたもの（渡さなければ、ここで見分ける）。
+// 以前は書き換えのあとで見分けていたため、メンバーの会社名・カテゴリーに「Building」「Positive」などの字があると、
+// そのメンバーのページやスピーカーローテーションのページまで、コアバリューのページとして非表示にしていた
+function applyCoreValue_(parts, wanted, pages) {
+  var w = coreValueOf_(wanted);
+  if (!w) return null;
+  var res = pages || coreValuePages_(parts);
   var cand = res.cand, kindCount = res.kinds;
   if (kindCount < 3) {
     return { value: w.label, shown: 0, hidden: 0, kinds: kindCount,
@@ -258,9 +266,12 @@ function applyCoreValue_(parts, wanted) {
   }
   var shown = [], hidden = [];
   for (var i = 0; i < cand.length; i++) {
+    // いまの中身で見直す（書き換えでコアバリューのページでなくなったものは触らない）
+    var xml = xmlOf_(parts, cand[i].path), now = xml ? coreValuesInSlide_(xml, res.useJa) : [];
+    if (now.length !== 1 || now[0].label !== cand[i].cv.label) continue;
     var on = (cand[i].cv.label === w.label);
-    var out = setSlideShow_(cand[i].xml, on);
-    if (out !== cand[i].xml) putXml_(parts, cand[i].path, out);
+    var out = setSlideShow_(xml, on);
+    if (out !== xml) putXml_(parts, cand[i].path, out);
     (on ? shown : hidden).push(cand[i].path.replace(/^.*slide(\d+)\.xml$/, '$1'));
   }
   return { value: w.label, shown: shown.length, hidden: hidden.length, kinds: kindCount,
@@ -1084,6 +1095,9 @@ function editMeetingSlides_(parts, map, rules, o) {
   // 写真は1つの控えで取り込む。同じ方の写真は1枚だけ入れて使い回し、
   // 別の処理が同じ名前の画像を作って上書きし合うこと（写真の取り違い）も起きない。
   var photoCache = { by: {}, seq: 0 };
+  // コアバリューのページは、差し込み・書き換えの前に、テンプレートの字で見分けておく（メンバーの会社名などに英語の語が
+  // あっても、そのページをコアバリューのページとして非表示にしないように）
+  var corePages = o.coreValue ? coreValuePages_(parts) : null;
   // 前半：役職のメンバー紹介（リーダーシップチーム・コーディネーター・チームのページ）を、その期の方にする。
   // 画面で外したとき・その期の役職が読めないときは、差し込み口を空にするだけ（role_intro_srv.js）
   var roles = applyRoleIntro_(parts, o.roleIntro === false ? null : (o.roleIntroData || null), photoCache);
@@ -1140,7 +1154,7 @@ function editMeetingSlides_(parts, map, rules, o) {
   // 前半：スピーカーローテーションの表（以前は書記兼会計が作った画像）。
   // 「第○回」の書き換えのあとに入れる（表の中の先の回の番号まで、今回の番号にしないように）
   var rotation = o.speakerRotation ? applySpeakerRotation_(parts, o.speakerRotation) : null;
-  var core = o.coreValue ? applyCoreValue_(parts, o.coreValue) : null;
+  var core = o.coreValue ? applyCoreValue_(parts, o.coreValue, corePages) : null;
   var policy = o.generalPolicy ? applyGeneralPolicy_(parts, o.generalPolicy) : null;
   var audio = o.music ? applyMeetingAudio_(parts, o.music) : null;
   // 写真の索引にあるのに開けなかった方（写真なしで作った）。1枚も開けないときは、写真の無いスライドで
