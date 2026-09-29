@@ -36,6 +36,8 @@ run "ビジター情報の投稿文" node tools/check_visitor_post.js
 run "割り振り表のAI（待機リストに居ないビジターホスト・知らない番号・確度とメモ）" node tools/check_allocation_ai.js
 run "割り振り表の画面（ブラウザ：読み込んだ回に書き込む・Spreadingの文字を動かさない）" node tools/check_allocation_dialog.js
 run "期の替わり目の担当者と名簿の役職（未登録の期で役職を消さない）" node tools/check_role_terms.js
+run "ルーティンチェックシートの名前の照合（同じ名字・似た氏名・名簿に無い新メンバー）" node tools/check_routine_names.js
+run "メンバー名簿の画面（ブラウザ：読み込めていないときは保存させない）" node tools/check_member_master_dialog.js
 
 echo "── スライド"
 run "定例会スライド（指示どおりか）" node tools/check_meeting_slides.js

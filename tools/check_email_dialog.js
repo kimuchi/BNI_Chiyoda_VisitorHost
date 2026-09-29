@@ -127,4 +127,8 @@ async function sendAll(page) {
     process.exit(1);
   }
   console.log('メールの確認・一括送信の画面（ブラウザ）: 検査 ' + checks + ' 件 OK: 次回のリンク・キャンセル・記号・全角アドレス・送信済みで二重に送らない・過ぎた回の知らせ');
-})().catch((e) => { console.log('NG 検査が止まった: ' + (e && e.stack ? e.stack : e)); process.exit(1); });
+})().catch((e) => {
+  console.log('NG 検査が止まった: ' + (e && e.stack ? e.stack.split('\n').slice(0, 2).join(' / ') : e));
+  fails.forEach((f) => console.log('  - ' + f));   // 止まる前に見つかったもの
+  process.exit(1);
+});

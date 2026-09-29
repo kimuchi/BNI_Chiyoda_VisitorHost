@@ -92,6 +92,7 @@ function getVisitorPostSettings_() {
 // 末尾の決まり文句を保存する（空で保存すると初期の文面に戻る）
 function saveVisitorPostFooter(footer) {
   try {
+    requireSheetAccess_();
     var text = String(footer == null ? '' : footer).replace(/\r\n?/g, '\n').replace(/\s+$/, '');
     var props = PropertiesService.getScriptProperties();
     if (!text) props.deleteProperty(VP_SETTINGS_KEY_);

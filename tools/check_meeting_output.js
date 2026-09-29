@@ -99,6 +99,17 @@ const sandbox = {
     collab: i % 3 === 0 ? '税理士・社会保険労務士・司法書士・創業支援者・金融機関の融資担当' : '不動産賃貸管理' }, m)) }),
   normName_: (s) => String(s == null ? '' : s).replace(/[\s　]/g, ''),
   findPhotoIdForName_: (n) => PHOTO_OF[String(n).replace(/[\s　]/g, '')] || '',
+  // コード.js の fuzzyNameMatch と同じ（routineMemberName_ が、書き間違い・1字違いのときに使う）
+  fuzzyNameMatch(searchStr, memberStr) {
+    if (searchStr === memberStr) return true;
+    if (searchStr.indexOf(memberStr) !== -1 || memberStr.indexOf(searchStr) !== -1) return true;
+    if (searchStr.length === memberStr.length && searchStr.length >= 2) {
+      let diff = 0;
+      for (let i = 0; i < searchStr.length; i++) if (searchStr[i] !== memberStr[i]) diff++;
+      if (diff <= 1) return true;
+    }
+    return false;
+  },
   matchInviterToMember(inviterName, list) {
     if (!inviterName) return '';
     const s = String(inviterName).replace(/[\s　さん]/g, '');

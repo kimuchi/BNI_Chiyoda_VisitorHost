@@ -192,6 +192,8 @@ function getMemberMaster(opts) {
 function saveMemberMaster(members, cover) {
   try {
     if (!members) return { ok: false, message: '保存するデータがありません。' };
+    // 0名の名簿は保存しない（画面が名簿を読み込めていないまま保存すると、名簿が消えてしまうため）
+    if (!members.length) return { ok: false, message: 'メンバーが0名のため保存しませんでした。画面を開き直してください。' };
     var sh = ensureMemberSheet_();
     sh.clear();
     sh.appendRow(MEMBER_HEADERS_);

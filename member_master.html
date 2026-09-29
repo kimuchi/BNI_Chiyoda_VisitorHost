@@ -91,7 +91,7 @@
  <div id="msg"></div>
 
 <script>
- var members=[], cats=[], dirty=false;
+ var members=[], cats=[], dirty=false, loaded=false;   // loaded … 名簿を読み込めたか（読めていないまま保存すると、名簿がその数行だけになるため）
  window.onload=load;
  // まだ「名簿を保存」していない変更があるまま閉じようとしたら、ブラウザの確認を出す
  window.addEventListener('beforeunload', function(e){ if(dirty){ e.preventDefault(); e.returnValue=''; return ''; } });
@@ -113,12 +113,14 @@
    busy(true,'控えの名簿に戻しています...');
    google.script.run.withSuccessHandler(done).withFailureHandler(fail).restoreMemberBackup();
  }
- function load(keepMsg){ busy(true, keepMsg ? '' : '読み込み中...'); google.script.run.withSuccessHandler(function(r){
+ function load(keepMsg){ loaded=false; busy(true, keepMsg ? '' : '読み込み中...'); google.script.run.withSuccessHandler(function(r){
      busy(false);
-     if(!r.ok){ show(r.message,false); return; }
+     if(!r || !r.ok){ show(((r&&r.message)||'名簿を読み込めませんでした。')+'\n画面を開き直してください（読み込めるまで、追加・保存はできません）。',false); return; }
      if(!keepMsg) show('', null);
-     members=r.members||[]; cats=r.categories||[]; dirty=false; render(); renderBackup(r.backup);
-   }).withFailureHandler(fail).getMemberMaster(); }
+     members=r.members||[]; cats=r.categories||[]; dirty=false; loaded=true; render(); renderBackup(r.backup);
+   }).withFailureHandler(function(e){ loaded=false; fail(e); show('名簿を読み込めませんでした: '+((e&&e.message)?e.message:e)+'\n画面を開き直してください（読み込めるまで、追加・保存はできません）。',false); }).getMemberMaster(); }
+ // 名簿を読み込めていないときは、追加・削除・並べ替え・保存をさせない
+ function needLoaded(){ if(loaded) return true; show('名簿を読み込めていないため、追加・保存できません。画面を開き直してください。',false); return false; }
 
  function render(){
    var opt='<option value=""></option>';
@@ -156,16 +158,16 @@
      });
    }
  }
- function addRow(){ members.push({no:'',cat:'',name:'',kana:'',title:'',company:'',position:'',role:'',memo:'',photoFile:'',comment:'',refer:'',collab:'',joinDate:'',renewDate:'',expireDate:''}); dirty=true; render(); }
- function del(i){ if(!confirm((members[i].name||'この行')+' を削除しますか？')) return; members.splice(i,1); dirty=true; render(); }
- function mv(i,d){ var j=i+d; if(j<0||j>=members.length) return; var t=members[i]; members[i]=members[j]; members[j]=t; dirty=true; render(); }
+ function addRow(){ if(!needLoaded()) return; members.push({no:'',cat:'',name:'',kana:'',title:'',company:'',position:'',role:'',memo:'',photoFile:'',comment:'',refer:'',collab:'',joinDate:'',renewDate:'',expireDate:''}); dirty=true; render(); }
+ function del(i){ if(!needLoaded()) return; if(!confirm((members[i].name||'この行')+' を削除しますか？')) return; members.splice(i,1); dirty=true; render(); }
+ function mv(i,d){ if(!needLoaded()) return; var j=i+d; if(j<0||j>=members.length) return; var t=members[i]; members[i]=members[j]; members[j]=t; dirty=true; render(); }
 
  function busy(b,t){ var bs=document.querySelectorAll('button'); for(var i=0;i<bs.length;i++) bs[i].disabled=b; if(t) show(t,null); }
  function show(t,ok){ var m=document.getElementById('msg'); m.innerText=t; m.style.color= ok===true?'green':(ok===false?'#d00':'#0055ff'); }
  function fail(e){ show('エラー: '+((e&&e.message)?e.message:e),false); busy(false); }
  function done(r){ show(r.message, !!r.ok); busy(false); if(r.ok) load(true); }
 
- function save(){ busy(true,'保存中...'); google.script.run.withSuccessHandler(function(r){ if(r.ok) dirty=false; show(r.message,!!r.ok); busy(false); }).withFailureHandler(fail).saveMemberMaster(members,null); }
+ function save(){ if(!needLoaded()) return; busy(true,'保存中...'); google.script.run.withSuccessHandler(function(r){ if(r.ok) dirty=false; show(r.message,!!r.ok); busy(false); }).withFailureHandler(fail).saveMemberMaster(members,null); }
  function migrate(){ if(!confirm('旧「メンバーリスト」シートの内容をこの名簿へ移し、旧シートを非表示にします。よろしいですか？')) return; busy(true,'移行中...'); google.script.run.withSuccessHandler(done).withFailureHandler(fail).migrateMemberListSheet(); }
  function hosts(){ if(!confirm('メモ欄に「ビジターホスト」と書かれているメンバーを、ビジターホスト設定に反映します。よろしいですか？')) return; busy(true,'反映中...'); google.script.run.withSuccessHandler(done).withFailureHandler(fail).applyVisitorHostsFromMemo(); }
  function autoPhoto(){ busy(true,'照合中...'); google.script.run.withSuccessHandler(done).withFailureHandler(fail).autoFillMemberPhotos(); }

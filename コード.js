@@ -2,7 +2,7 @@
 
 // 反映されたか確かめるための版。変更したら日付を更新する。
 // clasp push / デプロイが効いているかは、これを画面で見れば分かる。
-var SYSTEM_VERSION_ = '2026-09-29i';
+var SYSTEM_VERSION_ = '2026-09-29j';
 
 function getSystemVersion() { return SYSTEM_VERSION_; }
 
@@ -203,6 +203,8 @@ function openMemberPhotoDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlSe
 function openArchiveDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('archive').setWidth(560).setHeight(620), 'シートの整理（アーカイブ）'); }
 function openAiDocsDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('ai_documents').setWidth(550).setHeight(500), 'AI参考資料の管理'); }
 
+// AI参考資料の一覧（開けるものだけ）。開けない登録は消さない
+// （以前は、そのファイルを見る権限の無い方が一覧を開いたり、割り振りのAIを使ったりしただけで、全員ぶんの登録を消していた）
 function getAiDocuments() {
   var json = PropertiesService.getScriptProperties().getProperty('AI_REF_DOCS');
   if (!json) return [];
@@ -210,18 +212,18 @@ function getAiDocuments() {
   for (var i = 0; i < docs.length; i++) {
     try { DriveApp.getFileById(docs[i].id); result.push(docs[i]); } catch(e) {}
   }
-  if (result.length !== docs.length) PropertiesService.getScriptProperties().setProperty('AI_REF_DOCS', JSON.stringify(result));
   return result;
 }
 
 function uploadAiDocumentBlob_(blob) {
+  requireSheetAccess_();
   var ss = getSS_(), file = DriveApp.getFileById(ss.getId());
   var folder = file.getParents().hasNext() ? file.getParents().next() : DriveApp.getRootFolder();
   var uploaded = folder.createFile(blob);
-  var docs = getAiDocuments();
+  var docs = JSON.parse(PropertiesService.getScriptProperties().getProperty('AI_REF_DOCS') || '[]');   // 開けない登録も残す
   docs.push({ id: uploaded.getId(), name: uploaded.getName(), uploadedAt: new Date().toISOString().slice(0, 10) });
   PropertiesService.getScriptProperties().setProperty('AI_REF_DOCS', JSON.stringify(docs));
-  return { msg: "「" + uploaded.getName() + "」を登録しました。", docs: docs };
+  return { msg: "「" + uploaded.getName() + "」を登録しました。", docs: getAiDocuments() };
 }
 
 // ダイアログからは base64 文字列で受け取る（フォーム＋ファイル送信は環境により
@@ -244,13 +246,14 @@ function uploadAiDocument(formObject) {
 }
 
 function deleteAiDocument(fileId) {
-  var docs = getAiDocuments(), newDocs = [];
+  requireSheetAccess_();
+  var docs = JSON.parse(PropertiesService.getScriptProperties().getProperty('AI_REF_DOCS') || '[]'), newDocs = [];
   for (var i = 0; i < docs.length; i++) {
     if (docs[i].id === fileId) { try { DriveApp.getFileById(fileId).setTrashed(true); } catch(e) {} }
     else newDocs.push(docs[i]);
   }
   PropertiesService.getScriptProperties().setProperty('AI_REF_DOCS', JSON.stringify(newDocs));
-  return newDocs;
+  return getAiDocuments();
 }
 
 // 作成済みPDFの確認。メールと同じく「次回の定例会」（無ければ直近）の開催日のPDFを出す。
@@ -269,10 +272,12 @@ function getPdfLinks() {
 }
 
 function getApiSettings() {
+  requireSheetAccess_();
   var props = PropertiesService.getScriptProperties();
   return { apiKey: props.getProperty('GEMINI_API_KEY') || "", modelName: props.getProperty('GEMINI_MODEL_NAME') || "gemini-2.5-flash" };
 }
 function saveApiSettings(data) {
+  requireSheetAccess_();
   var props = PropertiesService.getScriptProperties();
   props.setProperty('GEMINI_API_KEY', data.apiKey.trim()); props.setProperty('GEMINI_MODEL_NAME', data.modelName.trim());
   return "APIキーとモデルを保存しました。";
@@ -287,6 +292,7 @@ function getAllocationNote() {
   return note;
 }
 function saveAllocationNote(text) {
+  requireSheetAccess_();
   PropertiesService.getScriptProperties().setProperty('ALLOCATION_NOTE', text);
   return "保存しました。";
 }
@@ -1148,6 +1154,7 @@ var WEB_APP_URL = "";
 var SECRET_TOKEN = "ActiveChapterSecret2026";
 
 function getMailWebAppSettings() {
+  requireSheetAccess_();
   var props = PropertiesService.getScriptProperties();
   return {
     webAppUrl: props.getProperty('MAIL_WEB_APP_URL') || "",
@@ -1155,6 +1162,7 @@ function getMailWebAppSettings() {
   };
 }
 function saveMailWebAppSettings(data) {
+  requireSheetAccess_();
   var props = PropertiesService.getScriptProperties();
   props.setProperty('MAIL_WEB_APP_URL', (data.webAppUrl || "").trim());
   props.setProperty('MAIL_WEB_APP_TOKEN', (data.webAppToken || "").trim());
@@ -1170,6 +1178,7 @@ function getActiveMailWebApp_() {
 }
 
 function getTemplates() {
+  requireSheetAccess_();   // CC・BCC（メールアドレス）が入っているため
   var props = PropertiesService.getScriptProperties();
   return {
     cc: props.getProperty('MAIL_TPL_CC') || "", bcc: props.getProperty('MAIL_TPL_BCC') || "",
@@ -1183,6 +1192,7 @@ function getTemplates() {
 }
 
 function saveTemplates(data) {
+  requireSheetAccess_();
   var props = PropertiesService.getScriptProperties();
   props.setProperty('MAIL_TPL_CC', data.cc); props.setProperty('MAIL_TPL_BCC', data.bcc);
   props.setProperty('MAIL_TPL_VISITOR_SUBJ', data.visitorSubj); props.setProperty('MAIL_TPL_VISITOR_BODY', data.visitorBody);
@@ -1388,19 +1398,61 @@ function doPost(e) {
   }
 }
 
-function getVisitorHosts() {
-  var props = PropertiesService.getScriptProperties(), hosts = props.getProperty('VISITOR_HOSTS');
-  return hosts ? JSON.parse(hosts) : [];
+// === ビジターホスト・優先順位 ===
+// 番号と氏名の組で覚え、読むときに、いまの名簿でその氏名の方の番号に直す（同じ番号のままならそのまま。名簿に居なくなった方は外す）。
+// 以前は番号だけで覚えていたため、メンバーリスト(OCR)・Spreadingの取り込みで番号がずれると、
+// 別の方（入ったばかりの新メンバーなど）がビジターホストになり、AIの割り振りでファシリテーターにされていた
+function hostRosterMap_() {
+  var byNo = {}, byName = {};
+  getMembersList().forEach(function (m) {
+    var no = String(m.no), k = normalizeSpace(m.name).replace(/\s/g, '');
+    byNo[no] = k; (byName[k] = byName[k] || []).push(no);
+  });
+  return {
+    nameOf: function (no) { return byNo[String(no)] || ''; },
+    noOf: function (no, name) {
+      if (!name) return byNo[String(no)] !== undefined ? String(no) : '';
+      var c = byName[name] || [];
+      return c.indexOf(String(no)) >= 0 ? String(no) : (c[0] || '');
+    }
+  };
 }
-function saveVisitorHosts(hostIds) { PropertiesService.getScriptProperties().setProperty('VISITOR_HOSTS', JSON.stringify(hostIds)); return "保存しました。"; }
+function getVisitorHosts() {
+  var props = PropertiesService.getScriptProperties(), named = props.getProperty('VISITOR_HOSTS_N');
+  if (!named) {
+    var hosts = props.getProperty('VISITOR_HOSTS'), list = hosts ? JSON.parse(hosts).map(String) : [];
+    // 前の版で番号だけで保存したもの：いまの名簿の氏名を付けて控える（これから番号がずれても、同じ方のままになる）
+    if (list.length) { try { saveVisitorHosts(list); } catch (e) { console.warn('[HOST] ' + (e && e.message ? e.message : e)); } }
+    return list;
+  }
+  var m = hostRosterMap_(), out = [];
+  JSON.parse(named).forEach(function (h) { var no = m.noOf(h.no, h.name); if (no && out.indexOf(no) < 0) out.push(no); });
+  return out;
+}
+function saveVisitorHosts(hostIds) {
+  var m = hostRosterMap_(), props = PropertiesService.getScriptProperties(), list = (hostIds || []).map(String);
+  props.setProperty('VISITOR_HOSTS', JSON.stringify(list));
+  props.setProperty('VISITOR_HOSTS_N', JSON.stringify(list.map(function (no) { return { no: no, name: m.nameOf(no) }; })));
+  return "保存しました。";
+}
 
 function getMemberPriorities() {
-  var props = PropertiesService.getScriptProperties(), data = props.getProperty('MEMBER_PRIORITIES');
-  return data ? JSON.parse(data) : {};
+  var props = PropertiesService.getScriptProperties(), named = props.getProperty('MEMBER_PRIORITIES_N');
+  if (!named) {
+    var data = props.getProperty('MEMBER_PRIORITIES'), obj = data ? JSON.parse(data) : {};
+    if (Object.keys(obj).length) { try { saveMemberPriorities(obj); } catch (e) { console.warn('[HOST] ' + (e && e.message ? e.message : e)); } }
+    return obj;
+  }
+  var m = hostRosterMap_(), out = {};
+  JSON.parse(named).forEach(function (x) { var no = m.noOf(x.no, x.name); if (no) out[no] = x.p; });
+  return out;
 }
 
 function saveMemberPriorities(priorities) {
-  PropertiesService.getScriptProperties().setProperty('MEMBER_PRIORITIES', JSON.stringify(priorities));
+  var m = hostRosterMap_(), props = PropertiesService.getScriptProperties(), list = [], obj = priorities || {};
+  for (var no in obj) list.push({ no: String(no), name: m.nameOf(no), p: obj[no] });
+  props.setProperty('MEMBER_PRIORITIES', JSON.stringify(obj));
+  props.setProperty('MEMBER_PRIORITIES_N', JSON.stringify(list));
   return "保存しました。";
 }
 

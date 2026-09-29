@@ -157,4 +157,8 @@ const lastCall = (name) => calls.filter((c) => c.name === name).pop();
     process.exit(1);
   }
   console.log('CSVから名簿・PDF作成の画面（ブラウザ）: 検査 ' + checks + ' 件 OK: 過ぎた回の再編集はその回に書き戻す・Shift_JIS のCSV・PDFのみ再作成・PDFを作れなかったとき');
-})().catch((e) => { console.log('NG 検査が止まった: ' + (e && e.stack ? e.stack : e)); process.exit(1); });
+})().catch((e) => {
+  console.log('NG 検査が止まった: ' + (e && e.stack ? e.stack.split('\n').slice(0, 2).join(' / ') : e));
+  fails.forEach((f) => console.log('  - ' + f));   // 止まる前に見つかったもの
+  process.exit(1);
+});

@@ -100,6 +100,7 @@ function chapterFresh_() {
 // --- 画面から呼ぶ ---
 function getChapterSettings() {
   try {
+    requireSheetAccess_();
     var c = chapterInfo_(), now = roleTermOf_(new Date()), next = null;
     try { next = getMeetingCandidates()[0] || null; } catch (e) { next = null; }
     return {
@@ -122,6 +123,7 @@ function getChapterSettings() {
 // （中身が別の期に見えないように）
 function saveChapterSettings(s) {
   try {
+    requireSheetAccess_();
     s = s || {};
     var name = chapterName_(s.name);
     if (!name) return { ok: false, message: 'チャプター名を入れてください（例: Active）。' };

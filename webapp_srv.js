@@ -32,6 +32,17 @@ function getSS_() {
   return SpreadsheetApp.openById(id);
 }
 
+// 設定（GeminiのAPIキー・メールのCC/BCC・送信の設定・チャプターの設定・素材フォルダなど）を読む・書く前に、
+// この方がこのスプレッドシートを開けるかを確かめる。ウェブアプリは Google アカウントがあれば誰でも開け、
+// 画面から呼べる関数はどれでも呼べるため、URLを知っているだけの方（抜けたメンバーなど）に、
+// APIキーを読ませたり、メールのBCCを書き換えさせたりしないため
+function requireSheetAccess_() {
+  try { getSS_().getId(); }
+  catch (e) {
+    throw new Error('このスプレッドシートの編集者だけが使えます（' + (e && e.message ? e.message : e) + '）。');
+  }
+}
+
 // ウェブアプリに出す機能の一覧。キーは表示するHTMLファイル名（URLの ?p= に入る）。
 // 同じ画面を別の開き方で出すときは、file に画面のHTMLファイル名、params に画面へ渡す値を書く
 // （スピーカーローテーション … ?p=rotation で role_input.html を role=secretary・view=rotation で開く）。

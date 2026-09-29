@@ -298,7 +298,18 @@ function mpAddPhoto_(map, cache, name) {
   if (key in cache.by) return cache.by[key];
   var id = key ? findPhotoIdForName_(name) : '';
   if (!id) { cache.by[key] = null; return null; }
-  var blob = DriveApp.getFileById(id).getBlob();
+  // 写真の索引にあるのにファイルを開けない（ドライブで消した・入れ替えた・その写真を見る権限が無い）ときは、
+  // その方だけ写真なしにする（以前は1枚開けないだけで、スライド全体が作れなくなっていた）
+  var blob;
+  try { blob = DriveApp.getFileById(id).getBlob(); }
+  catch (e) {
+    console.warn('[MPRESEN] 写真のファイルを開けませんでした: ' + name + ' ' + (e && e.message ? e.message : e));
+    cache.gone = cache.gone || [];
+    if (cache.gone.indexOf(String(name)) < 0) cache.gone.push(String(name));
+    cache.by[key] = null;
+    return null;
+  }
+  cache.opened = (cache.opened || 0) + 1;
   var ext = String(blob.getContentType() || '').toLowerCase().indexOf('png') >= 0 ? 'png' : 'jpeg';
 
   // 写真の縦横比は、切り抜き（srcRect）を決めるのに要る。
@@ -931,7 +942,7 @@ function buildMemberPresenSlides_(map, items) {
   putXml_(map, '[Content_Types].xml', ct);
 
   var pruned = mpPruneMedia_(map);
-  return { slides: items.length, photos: cache.seq, noPhoto: noPhoto,
+  return { slides: items.length, photos: cache.seq, noPhoto: noPhoto, gone: cache.gone || [], opened: cache.opened || 0,
            prunedMedia: pruned, useTimings: timings };
 }
 
