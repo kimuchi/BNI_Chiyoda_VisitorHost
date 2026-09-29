@@ -30,6 +30,7 @@ const J = (x) => JSON.stringify(x);
   let maxCols = 15;                                   // 列を詰めた古い名簿（15列しかない）
   const sheet = {
     getLastRow: () => grid.length,
+    getLastColumn: () => Math.max(...grid.map((r) => { let n = r.length; while (n && (r[n - 1] === '' || r[n - 1] == null)) n--; return n; })),
     getMaxColumns: () => maxCols,
     insertColumnsAfter(after, n) { maxCols += n; },
     getRange(r, c, nr, nc) {
@@ -205,7 +206,8 @@ const STUB = (members, cats, cover, drive) => `
   window.__calls = [];
   window.__failNext = window.__failNext || {};        // 関数名 → 何回失敗させるか（ok:false を返す）
   window.__pdfAnswers = [];                            // saveMemberBookPdfToDrive の返事（空ならうまくいったことにする）
-  window.__data = ${J({ members, cats, presidents: PRESIDENTS, drive: drive || {},
+  window.__revN = 1;                                   // 名簿の版（ほかの方が変えたら window.__data.rev を変える）
+  window.__data = ${J({ members, cats, presidents: PRESIDENTS, drive: drive || {}, rev: 'R1',
     cover: Object.assign({}, cover, { termNo: 24, term: '24期', pname: PRESIDENTS[0].pname, prole: PRESIDENTS[0].prole, ptext: PRESIDENTS[0].ptext }) })};
   (function(){
     function runner(){
@@ -213,7 +215,7 @@ const STUB = (members, cats, cover, drive) => `
       r.withSuccessHandler = function(f){ ok = f; return r; };
       r.withFailureHandler = function(f){ ng = f; return r; };
       var answer = {
-        getMemberBookData: function(){ return { ok: true, members: JSON.parse(JSON.stringify(window.__data.members)), categories: window.__data.cats,
+        getMemberBookData: function(){ return { ok: true, rev: window.__data.rev, members: JSON.parse(JSON.stringify(window.__data.members)), categories: window.__data.cats,
           cover: Object.assign({}, window.__data.cover), presidents: JSON.parse(JSON.stringify(window.__data.presidents)), drive: window.__data.drive }; },
         saveMemberBookPdfToDrive: function(){ return window.__pdfAnswers.shift() || { ok: true, created: false,
           url: 'https://drive.test/file/d/MB/view', downloadUrl: 'https://drive.google.com/uc?export=download&id=MB',
@@ -224,8 +226,12 @@ const STUB = (members, cats, cover, drive) => `
           var map = {}, missing = [], failed = [], gone = [], ph = window.__photos || {}, bad = window.__photoFail || [], lost = window.__photoGone || [];
           (names || []).forEach(function(n){ if (bad.indexOf(n) >= 0) failed.push(n); else if (lost.indexOf(n) >= 0) gone.push(n); else if (ph[n]) map[n] = ph[n]; else missing.push(n); });
           return { ok: true, map: map, missing: missing, gone: gone, failed: failed }; },
-        saveMemberBookMember: function(o, m){ return { ok: true, message: '「' + m.name + '」を名簿に保存しました。' }; },
-        saveMemberBookData: function(){ return { ok: true, message: 'メンバー名簿を保存しました。' }; },
+        // 本物と同じく、名簿の版を確かめる（1人ぶんは書くが、版が古ければ新しい版を返さない。まとめての保存は断る）
+        saveMemberBookMember: function(o, m, rev){ var stale = rev !== window.__data.rev; window.__data.rev = 'R' + (++window.__revN);
+          return { ok: true, rev: stale ? '' : window.__data.rev, stale: stale, message: '「' + m.name + '」を名簿に保存しました。' }; },
+        saveMemberBookData: function(ms, c, rev){
+          if (rev !== window.__data.rev) return { ok: false, conflict: true, message: 'この画面を開いたあとで、ほかの方（または別の画面・取り込み）が名簿を変えました。' };
+          window.__data.rev = 'R' + (++window.__revN); return { ok: true, rev: window.__data.rev, message: 'メンバー名簿を保存しました。' }; },
         // プレジデントの項目は、渡した期（t）の設定として保存したことにする
         saveMemberBookCover: function(c, t){
           window.__data.presidents = window.__data.presidents.map(function(p){
@@ -425,6 +431,18 @@ const STUB = (members, cats, cover, drive) => `
     await page.waitForFunction((n) => window.__calls.slice(n).some((c) => c.fn === 'saveMemberBookData'), b2);
     call = await page.evaluate(() => window.__calls.filter((c) => c.fn === 'saveMemberBookData').pop());
     ck(call.args[0].length === 6 && call.args[0][5].name === '見本 追加' && call.args[0][5].company === '追加株式会社', '追加した方の保存: ' + J(call.args[0][5]));
+    // 名簿の版：保存のたびに新しい版を受け取って次の保存に付ける（自分の保存で止まらない）
+    await page.waitForFunction(() => /名簿に保存済み/.test(document.getElementById('saveState').textContent), null, { timeout: 5000 });
+    ck(call.args[2] && call.args[2] !== 'R1' && !/保存できませんでした/.test(await page.textContent('#saveState')),
+       '保存のあとの版を、次の保存に付けていない: ' + J(call.args[2]) + ' ' + await page.textContent('#saveState'));
+    // 画面を開いたあとで、ほかの方が名簿を変えた：並べ替えの保存（古い一覧で名簿全体を書き直す）を断り、開き直すよう知らせる
+    await page.evaluate(() => { window.__data.rev = 'OTHER'; mv(0, 1); });
+    await page.waitForFunction(() => /保存できませんでした/.test(document.getElementById('saveState').textContent), null, { timeout: 5000 });
+    ck(/ほかの方/.test(await page.textContent('#saveState')) && !/もう一度押してください/.test(await page.textContent('#saveState')),
+       'ほかの方が名簿を変えたときの知らせ: ' + await page.textContent('#saveState'));
+    await page.evaluate(() => { window.__data.rev = 'R' + window.__revN; });   // 以降の検査のため（開き直したことにする）
+    await page.evaluate(() => { rosterRev = window.__data.rev; lastError = ''; lastConflict = false; renderSaveState(); mv(1, -1); });
+    await page.waitForFunction(() => /名簿に保存済み/.test(document.getElementById('saveState').textContent), null, { timeout: 5000 });
     // 追加して、何も入れずに閉じると行は残らない
     await page.evaluate(() => addM());
     await page.click('button:has-text("閉じる")');

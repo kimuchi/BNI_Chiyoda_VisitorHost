@@ -118,7 +118,8 @@
       el('termWarn').hidden = !(cur && String(el('term').value) !== String(cur.term));
     }
     function save() {
-      var data = { name: el('name').value, region: el('region').value, term: el('term').value,
+      // loadedTerm … 画面を開いたときの期。開いたあとで期が替わっても（9/30 に開いて 10/1 に保存）、番号を付け直さないように
+      var data = { name: el('name').value, region: el('region').value, term: el('term').value, loadedTerm: cur ? cur.term : '',
                    meetingBaseDate: el('baseDate').value, meetingBaseCount: el('baseCount').value, seconds: {} };
       SEC_KEYS.forEach(function (k) { data.seconds[k] = secOf(k); });
       if (cur && String(data.term) !== String(cur.term)

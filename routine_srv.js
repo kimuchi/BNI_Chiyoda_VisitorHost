@@ -214,7 +214,7 @@ function routineMemberName_(raw) {
   //   → 4) 一部が重なる・1字違い（書き間違い）。4) は、うしろの語だけ（お名前のことがある）では比べない
   //      （「新人 花子さん」が、名簿の「試験 花子」になってしまうため）
   // 以前は名簿で最初に「似ている」方を選んでいたため、「見本 学」「見本 誠」がいると「見本 誠」と書いても「見本 学」になっていた
-  var members = getMembersList(), i, k, step;
+  var members = getMembersList({ withoutNo: true }), i, k, step;
   var keys = members.map(function (m) {
     return { name: m.name, full: routineFoldName_(m.name), sur: routineFoldName_(String(m.name).trim().split(/[\s　]+/)[0]) };
   });
@@ -475,7 +475,7 @@ function routineRoster_() {
   var list = [];
   try { list = (getMemberMaster({ membersOnly: true }).members || []).map(function (m) { return { name: m.name, title: m.title || '' }; }); } catch (e) {}
   if (!list.length) {
-    try { list = getMembersList().map(function (m) { return { name: m.name, title: '' }; }); } catch (e) {}
+    try { list = getMembersList({ withoutNo: true }).map(function (m) { return { name: m.name, title: '' }; }); } catch (e) {}
   }
   ROUTINE_ROSTER_ = list;
   return list;

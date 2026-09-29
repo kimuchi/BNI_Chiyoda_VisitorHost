@@ -36,6 +36,22 @@ function openMemberMasterDialog() {
     'メンバー名簿の管理');
 }
 
+// 名簿の見出し（1行目）から、項目ごとの列（0から）を引く → { idx: { 見出し: 列 or -1 }, extra: [{ col, name }] }。
+// 見出しの名前で読むので、シートに列を足したり動かしたりしても、ほかの列を1列ずれて読まない
+// （以前は決まった位置で読んでいたため、ふりがなを会社名として、など全部ずれ、次の保存でずれたまま残った）。
+// 見出しの無い列（「会社での役職」の列が無い古い名簿など）は、決まった位置。extra … 決まった見出しにない列
+function memberColumns_(head) {
+  var norm = function (x) { return String(x == null ? '' : x).normalize('NFKC').trim(); };
+  var h = (head || []).map(norm), known = MEMBER_HEADERS_.map(norm), idx = {}, extra = [];
+  MEMBER_HEADERS_.forEach(function (name, i) {
+    var at = h.indexOf(known[i]);
+    idx[name] = at >= 0 ? at : (!h[i] ? i : -1);
+  });
+  h.forEach(function (x, i) { if (x && known.indexOf(x) < 0) extra.push({ col: i, name: String(head[i]).trim() }); });
+  return { idx: idx, extra: extra };
+}
+function memberColLetter_(i) { var s = ''; i++; while (i > 0) { var m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; }
+
 function ensureMemberSheet_() {
   var ss = getSS_(), sh = ss.getSheetByName(MEMBER_SHEET_);
   if (!sh) {
@@ -152,49 +168,90 @@ function toDateStr_(v) {
   return String(v).trim();
 }
 
+// 名簿の版：いまのシートの中身から作る短い目印。画面が読み込んだときの版と、保存するときの版が違えば、
+// そのあいだにほかの方（取り込み・期の替わり目の役職の反映・別の画面・シートでの直接の書き込み）が名簿を変えている
+var ROSTER_CONFLICT_MSG_ = 'この画面を開いたあとで、ほかの方（または別の画面・取り込み）が名簿を変えました。'
+  + 'このまま保存すると、その変更を消してしまうため保存していません。直した内容を控えてから、画面を開き直してもう一度直してください。';
+function rosterRev_(values) {
+  var s = JSON.stringify((values || []).map(function (r) {
+    return r.map(function (v) {
+      return Object.prototype.toString.call(v) === '[object Date]' ? toDateStr_(v) : String(v == null ? '' : v).trim();
+    });
+  }));
+  var h = 0x811c9dc5;                                // FNV-1a（32bit）
+  for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+  return s.length + '-' + h.toString(16);
+}
+function currentRosterRev_(sh) { return rosterRev_((sh || ensureMemberSheet_()).getDataRange().getValues()); }
+// 書いたあとの版（作れなくても、書いたことは失敗にしない。画面は次の保存で開き直しを求められるだけ）
+function rosterRevAfterWrite_(sh) {
+  try { return currentRosterRev_(sh); } catch (e) { console.warn('[MEMBER] 名簿の版を作れませんでした: ' + (e && e.message ? e.message : e)); return ''; }
+}
+
 // opts.membersOnly … 名簿の行だけ返す（表紙・業種区分マスタを読まないぶん速い。サーバーの中から使う）
+// rev … 名簿の版（保存するときに渡すと、そのあいだにほかの方が変えていないか確かめる）
 function getMemberMaster(opts) {
   try {
     // 期が替わっていたら、役職・チーム（半期ごと）を「役職」に反映してから読む（role_input_srv.js）
     if (!(opts && opts.membersOnly) && typeof roleRosterAutoSync_ === 'function') roleRosterAutoSync_();
     var sh = ensureMemberSheet_(), data = sh.getDataRange().getValues(), members = [];
-    var col = function (r, i) { return String(r[i] == null ? '' : r[i]).trim(); };
+    var cx = memberColumns_(data[0]).idx;              // 見出しの名前で列を引く（列を足した・動かしたシートでも、ずれて読まない）
+    var cell = function (r, k) { var i = cx[k]; return i >= 0 ? r[i] : ''; };
+    var col = function (r, k) { var v = cell(r, k); return String(v == null ? '' : v).trim(); };
     for (var i = 1; i < data.length; i++) {
       var r = data[i];
-      if (!col(r, 2)) continue;                       // 氏名が無い行は飛ばす
+      if (!col(r, '氏名')) continue;                   // 氏名が無い行は飛ばす
       members.push({
-        no:        col(r, 0),
-        cat:       col(r, 1),
-        name:      col(r, 2),
-        kana:      col(r, 3),
-        title:     col(r, 4),     // カテゴリー（業務内容）
-        company:   col(r, 5),
-        role:      col(r, 6),     // 役職
-        memo:      col(r, 7),
-        photoFile: col(r, 8),
-        comment:   col(r, 9),
-        refer:     col(r, 10),
-        collab:    col(r, 11),
-        joinDate:   toDateStr_(r[12]),
-        renewDate:  toDateStr_(r[13]),
-        expireDate: toDateStr_(r[14]),
-        position:  col(r, 15)     // 会社での役職（肩書き）
+        no:        col(r, 'No'),
+        cat:       col(r, '業種区分'),
+        name:      col(r, '氏名'),
+        kana:      col(r, 'ふりがな'),
+        title:     col(r, 'カテゴリー'),     // カテゴリー（業務内容）
+        company:   col(r, '会社名'),
+        role:      col(r, '役職'),           // 役職
+        memo:      col(r, 'メモ'),
+        photoFile: col(r, '写真ファイル名'),
+        comment:   col(r, '一言コメント'),
+        refer:     col(r, '紹介してほしい人'),
+        collab:    col(r, '協業したい人'),
+        joinDate:   toDateStr_(cell(r, '入会日')),
+        renewDate:  toDateStr_(cell(r, '更新日')),
+        expireDate: toDateStr_(cell(r, '更新期限日')),
+        position:  col(r, '会社での役職')    // 会社での役職（肩書き）
       });
     }
-    if (opts && opts.membersOnly) return { ok: true, members: members };
-    return { ok: true, members: members, cover: getCoverInfo_(), categories: getCategoryMaster(), backup: getMemberBackupInfo_() };
+    if (opts && opts.membersOnly) return { ok: true, members: members, rev: rosterRev_(data) };
+    return { ok: true, members: members, rev: rosterRev_(data), cover: getCoverInfo_(), categories: getCategoryMaster(), backup: getMemberBackupInfo_() };
   } catch (e) {
     console.error('[MEMBER] ' + (e && e.stack ? e.stack : e));
     return { ok: false, message: 'メンバー名簿の読み込みに失敗しました: ' + (e && e.message ? e.message : e), members: [] };
   }
 }
 
-function saveMemberMaster(members, cover) {
+// rev … 画面から保存するとき、読み込んだときの名簿の版（getMemberMaster の rev）。
+//        そのあとで名簿が変わっていたら保存しない（以前は、画面を開いたときの古い一覧で名簿全体を書き直し、
+//        ほかの方が取り込んだメンバー・期の替わり目に反映した役職を黙って消していた）。
+//        サーバーの中からの呼び出し（取り込みなど。読んですぐ書く）は渡さない
+function saveMemberMaster(members, cover, rev) {
+  var lock = null;
   try {
     if (!members) return { ok: false, message: '保存するデータがありません。' };
     // 0名の名簿は保存しない（画面が名簿を読み込めていないまま保存すると、名簿が消えてしまうため）
     if (!members.length) return { ok: false, message: 'メンバーが0名のため保存しませんでした。画面を開き直してください。' };
     var sh = ensureMemberSheet_();
+    if (rev) {
+      lock = LockService.getScriptLock();
+      if (!lock.tryLock(15000)) { lock = null; return { ok: false, message: 'ほかの方が名簿を保存中です。少し待ってから、もう一度お試しください。' }; }
+      if (currentRosterRev_(sh) !== rev) return { ok: false, conflict: true, message: ROSTER_CONFLICT_MSG_ };
+    }
+    // 決まった見出しにない列（シートに足した「メール」など）があると、書き直したときに消えてしまう。黙って消さない
+    var extra = memberColumns_(sh.getRange(1, 1, 1, Math.max(1, sh.getLastColumn())).getValues()[0]).extra;
+    if (extra.length) {
+      return { ok: false, message: 'メンバー名簿のシートに、決まった列のほかに '
+        + extra.map(function (x) { return memberColLetter_(x.col) + '列「' + x.name + '」'; }).join('・')
+        + ' があります。名簿を保存するとその列が消えてしまうため、保存しませんでした。'
+        + 'その列を別のシートに移してから（列を削除してから）、もう一度お試しください。' };
+    }
     sh.clear();
     sh.appendRow(MEMBER_HEADERS_);
     sh.getRange(1, 1, 1, MEMBER_HEADERS_.length).setFontWeight('bold').setBackground('#f2f6ff');
@@ -210,10 +267,12 @@ function saveMemberMaster(members, cover) {
     if (rows.length) sh.getRange(2, 1, rows.length, MEMBER_HEADERS_.length).setValues(rows);
     if (cover) saveCoverInfo_(cover);
     console.log('[MEMBER] saved=' + rows.length);
-    return { ok: true, message: 'メンバー名簿を保存しました（' + rows.length + '名）。' };
+    return { ok: true, message: 'メンバー名簿を保存しました（' + rows.length + '名）。', rev: rev ? rosterRevAfterWrite_(sh) : '' };
   } catch (e) {
     console.error('[MEMBER] ' + (e && e.stack ? e.stack : e));
     return { ok: false, message: '保存に失敗しました: ' + (e && e.message ? e.message : e) };
+  } finally {
+    if (lock) { try { lock.releaseLock(); } catch (e) {} }
   }
 }
 
@@ -599,14 +658,41 @@ function importMemberBookHtml(base64) {
 
 // タブ区切りテキストから取り込む（見出し行は任意）
 // 列: No / 業種区分 / 氏名 / ふりがな / カテゴリー / 会社名 / 役職 / メモ / 写真 / 一言 / 紹介 / 協業 / 入会日 / 更新日 / 更新期限日 / 会社での役職
+// 表計算からコピーした文字（タブ区切り）を、行と列に分ける。セルの中に改行・タブ・「"」があると、
+// そのセルは「"」で囲まれて届く（中の「"」は「""」）
+function parseTsv_(text) {
+  var s = String(text == null ? '' : text).replace(/\r\n?/g, '\n'), rows = [], row = [], cell = '', i = 0, n = s.length, atStart = true;
+  while (i < n) {
+    var ch = s.charAt(i);
+    if (atStart && ch === '"') {                     // 囲まれたセル：閉じる「"」まで、改行・タブもセルの中
+      i++;
+      while (i < n) {
+        if (s.charAt(i) === '"') {
+          if (s.charAt(i + 1) === '"') { cell += '"'; i += 2; continue; }
+          i++; break;
+        }
+        cell += s.charAt(i++);
+      }
+      atStart = false;
+      continue;
+    }
+    if (ch === '\t') { row.push(cell); cell = ''; atStart = true; i++; continue; }
+    if (ch === '\n') { row.push(cell); rows.push(row); row = []; cell = ''; atStart = true; i++; continue; }
+    cell += ch; atStart = false; i++;
+  }
+  if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
+  return rows;
+}
+
 function importMemberTsv(text, replaceAll) {
   try {
     if (!text || !String(text).trim()) return { ok: false, message: '貼り付けられたデータが空です。' };
-    var lines = String(text).replace(/\r/g, '').split('\n'), members = [];
+    // セルの中の改行（一言コメントの2行目など）で行を分けない。以前は改行のたびに分けていたため、
+    // 2行目が別のメンバー（氏名は「協業したい人」の文）として名簿に入り、一言コメントも途中で切れていた
+    var lines = parseTsv_(text), members = [];
     for (var i = 0; i < lines.length; i++) {
-      var line = lines[i];
-      if (!line.trim()) continue;
-      var c = line.split('\t');
+      var c = lines[i];
+      if (!c.join('').trim()) continue;
       var name = (c[2] || '').trim();
       if (!name || name === '氏名') continue;       // 見出し行・空行を飛ばす
       members.push({
@@ -925,6 +1011,13 @@ function migrateMemberListSheet() {
   try {
     var ss = getSS_(), old = ss.getSheetByName('メンバーリスト');
     if (!old) return { ok: false, message: '「メンバーリスト」シートはありません。移行は不要です。' };
+    // 移行が済むと、旧シートは非表示になり、そのあとは直されない（古いまま）。もう一度移すと、退会した方が名簿に戻り、
+    // 番号も古いものに戻ってしまう（以前はボタンを押せば何度でも移していた）
+    if (old.isSheetHidden()) {
+      return { ok: false, message: '旧「メンバーリスト」からの移行は、もう済んでいます（旧シートは非表示で、移したときのままの古い内容です）。'
+        + 'もう一度移すと、退会した方が名簿に戻ったり番号が古いものに戻ったりするため、移しませんでした。'
+        + '\n旧シートを直してから移し直したいときは、そのシートを表示に戻してから、もう一度押してください。' };
+    }
     var data = old.getDataRange().getValues(), src = [];
     for (var i = 1; i < data.length; i++) {
       var no = String(data[i][0] == null ? '' : data[i][0]).trim();

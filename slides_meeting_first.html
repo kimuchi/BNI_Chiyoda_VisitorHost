@@ -538,7 +538,9 @@
    el.innerHTML = r.weeks.map(function(w){
      return (w.no?'第'+esc(w.no)+'回 ':'')+esc(w.md)+'：'+esc(w.people.map(function(p){ return p.name; }).join('・'))
        +(w.source==='routine'?' <span style="color:#188038;">（ルーティンチェックシート）</span>':'');
-   }).join('<br>');
+   }).join('<br>')
+     + (r.provisional ? '<br><span style="color:#c60;">スピーカーローテーションの並び順がまだ保存されていません（メンバー名簿の順の仮の並びです）。'
+       + '書記兼会計の「📝 役職ごとの入力」で、ツールから取り込むか並び順を保存してください。</span>' : '');
  }
  // --- 役職のメンバー紹介（リーダーシップチーム・コーディネーター・チームのページ）---
  // その開催日の期の「役職・チーム（半期ごと）」に登録してある方を出す（作るときにページへ入れる）

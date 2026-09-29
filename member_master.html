@@ -91,7 +91,7 @@
  <div id="msg"></div>
 
 <script>
- var members=[], cats=[], dirty=false, loaded=false;   // loaded … 名簿を読み込めたか（読めていないまま保存すると、名簿がその数行だけになるため）
+ var members=[], cats=[], dirty=false, loaded=false, rev='';   // rev … 読み込んだときの名簿の版（そのあとでほかの方が変えていたら、保存しない）   // loaded … 名簿を読み込めたか（読めていないまま保存すると、名簿がその数行だけになるため）
  window.onload=load;
  // まだ「名簿を保存」していない変更があるまま閉じようとしたら、ブラウザの確認を出す
  window.addEventListener('beforeunload', function(e){ if(dirty){ e.preventDefault(); e.returnValue=''; return ''; } });
@@ -117,7 +117,7 @@
      busy(false);
      if(!r || !r.ok){ show(((r&&r.message)||'名簿を読み込めませんでした。')+'\n画面を開き直してください（読み込めるまで、追加・保存はできません）。',false); return; }
      if(!keepMsg) show('', null);
-     members=r.members||[]; cats=r.categories||[]; dirty=false; loaded=true; render(); renderBackup(r.backup);
+     members=r.members||[]; cats=r.categories||[]; rev=r.rev||''; dirty=false; loaded=true; render(); renderBackup(r.backup);
    }).withFailureHandler(function(e){ loaded=false; fail(e); show('名簿を読み込めませんでした: '+((e&&e.message)?e.message:e)+'\n画面を開き直してください（読み込めるまで、追加・保存はできません）。',false); }).getMemberMaster(); }
  // 名簿を読み込めていないときは、追加・削除・並べ替え・保存をさせない
  function needLoaded(){ if(loaded) return true; show('名簿を読み込めていないため、追加・保存できません。画面を開き直してください。',false); return false; }
@@ -167,7 +167,7 @@
  function fail(e){ show('エラー: '+((e&&e.message)?e.message:e),false); busy(false); }
  function done(r){ show(r.message, !!r.ok); busy(false); if(r.ok) load(true); }
 
- function save(){ if(!needLoaded()) return; busy(true,'保存中...'); google.script.run.withSuccessHandler(function(r){ if(r.ok) dirty=false; show(r.message,!!r.ok); busy(false); }).withFailureHandler(fail).saveMemberMaster(members,null); }
+ function save(){ if(!needLoaded()) return; busy(true,'保存中...'); google.script.run.withSuccessHandler(function(r){ if(r.ok){ dirty=false; if(r.rev) rev=r.rev; } show(r.message,!!r.ok); busy(false); }).withFailureHandler(fail).saveMemberMaster(members,null,rev); }
  function migrate(){ if(!confirm('旧「メンバーリスト」シートの内容をこの名簿へ移し、旧シートを非表示にします。よろしいですか？')) return; busy(true,'移行中...'); google.script.run.withSuccessHandler(done).withFailureHandler(fail).migrateMemberListSheet(); }
  function hosts(){ if(!confirm('メモ欄に「ビジターホスト」と書かれているメンバーを、ビジターホスト設定に反映します。よろしいですか？')) return; busy(true,'反映中...'); google.script.run.withSuccessHandler(done).withFailureHandler(fail).applyVisitorHostsFromMemo(); }
  function autoPhoto(){ busy(true,'照合中...'); google.script.run.withSuccessHandler(done).withFailureHandler(fail).autoFillMemberPhotos(); }

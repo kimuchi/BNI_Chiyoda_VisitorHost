@@ -144,8 +144,13 @@ function saveChapterSettings(s) {
       seconds[k] = sec;
     }
 
-    var passed = roleTermOf_(new Date()) - old.termBase;         // 2026年4月〜9月から、いまの期まで何期進んだか
-    var termBase = term - passed, delta = termBase - old.termBase;
+    // 画面を開いたときの期（loadedTerm）があれば、そこからの変更の分だけずらす。
+    // 以前は保存した日の期と比べていたため、9/30 に開いた画面（23期）を 10/1 に保存すると、期の欄を触らなくても
+    // すべての期の番号が1つずれていた（24期の役職・チームが23期に、など）
+    var loaded = parseInt(chapterDigits_(s.loadedTerm), 10), termBase;
+    if (loaded > 0) termBase = old.termBase + (term - loaded);
+    else termBase = term - (roleTermOf_(new Date()) - old.termBase);   // 2026年4月〜9月から、いまの期まで何期進んだか
+    var delta = termBase - old.termBase;
     if (delta) {
       // メンバーブックの期ごとのプレジデント設定も（member_master_srv.js）。担当者より先にずらす
       // （期ごとにする前の1件を引き継ぐとき、ずらす前の担当者と比べて既定かどうかを決めるため）
@@ -157,7 +162,7 @@ function saveChapterSettings(s) {
       meetingBaseDate: chapterFmt_(d), meetingBaseCount: count, seconds: seconds
     }));
     CHAPTER_CACHE_ = null;
-    var msg = 'チャプターの設定を保存しました（' + chapterLabel_() + '・いまの期 ' + term + '期・毎週' + chapterWeekdayLabel_() + '曜日）。'
+    var msg = 'チャプターの設定を保存しました（' + chapterLabel_() + '・いまの期 ' + roleTermOf_(new Date()) + '期・毎週' + chapterWeekdayLabel_() + '曜日）。'
       + '\nプレゼンの秒数: ' + Object.keys(CHAPTER_SECONDS_DEFAULTS_).map(function (k) {
         return CHAPTER_SECONDS_LABELS_[k] + ' ' + chapterSecondsLabel_(seconds[k]);
       }).join('・');

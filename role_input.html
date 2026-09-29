@@ -852,7 +852,9 @@
            +'<td>'+(w.source==='routine'?'<span class="badge saved">確定</span>':'<span class="badge">予定</span>')+'</td></tr>';
        }).join('') + '</table>';
    var ad=dOf(rAnchor.date), first=rPairs(rAnchor.pointer,1).pairs[0]||[];
-   el('rotAnchorNote').innerHTML = (ad.getMonth()+1)+'/'+ad.getDate()+' の回から、この並び順どおりに割り当てます（その回は '
+   el('rotAnchorNote').innerHTML = (rot.provisional ? '<div class="warn" style="margin:0 0 6px;">まだ並び順を保存していません。いまは'
+       + '<b>メンバー名簿の順の仮の並び</b>です。「ツールから取り込む」か、並び順を直して保存してください。</div>' : '')
+     + (ad.getMonth()+1)+'/'+ad.getDate()+' の回から、この並び順どおりに割り当てます（その回は '
      + esc(first.join('さん・'))+(first.length?'さん':'')+'）。これより前の回と「確定」の回は、並び順を直しても変わりません。'
      + (rot.rebased ? '<br><span style="color:#0047d6;">ルーティンチェックシートで確定した回のあとへ、起点を進めました（保存すると記録されます）。</span>' : '');
    el('rotMissing').innerHTML = ((rot.holidayHints||[]).length

@@ -162,11 +162,15 @@
  // 「反映」… その方の行だけをすぐ保存（saveMemberBookMember）。
  // 並べ替え・削除 … 少し待ってから一覧をまとめて保存（saveMemberBookData）。
  // 保存は1つずつ順番に送る。保存が済んでいないうちにページを閉じようとしたら、ブラウザの確認を出す。
- var saveQ=[], saving=false, orderTimer=null, orderDirty=false, lastError='';
+ var saveQ=[], saving=false, orderTimer=null, orderDirty=false, lastError='', lastConflict=false;
+ // rosterRev … 読み込んだときの名簿の版。まとめての保存に付けて送り、そのあとでほかの方が名簿を変えていたら保存しない
+ // （画面を開いたときの古い一覧で、取り込んだメンバーや期の替わり目の役職を消さないように）。保存するたびに新しい版を受け取る
+ var rosterRev='';
  function pendingSave(){ return saving || saveQ.length>0 || orderDirty; }
  function renderSaveState(){
    var el=document.getElementById('saveState');
-   if(lastError){ el.innerHTML='<span style="color:#d00;">⚠ 保存できませんでした：'+esc(lastError)+'<br>「名簿に保存」をもう一度押してください。</span>'; return; }
+   if(lastError){ el.innerHTML='<span style="color:#d00;">⚠ 保存できませんでした：'+esc(lastError)
+     +(lastConflict ? '' : '<br>「名簿に保存」をもう一度押してください。')+'</span>'; return; }
    el.innerHTML = pendingSave() ? '<span style="color:#0055ff;">名簿に保存しています…</span>'
                                 : '<span style="color:#188038;">✓ 名簿に保存済み</span>';
  }
@@ -176,10 +180,11 @@
    var job=saveQ.shift(); saving=true; renderSaveState();
    var r=google.script.run.withSuccessHandler(function(res){
      saving=false;
-     if(!res || !res.ok){ lastError=(res&&res.message)||'不明なエラー'; show(lastError,false); }
+     if(!res || !res.ok){ lastError=(res&&res.message)||'不明なエラー'; lastConflict=!!(res&&res.conflict); show(lastError,false); }
      else {
+       if(res.rev) rosterRev=res.rev;
        // 前に失敗した保存は、1人ぶんの保存が通っても残ったまま。一覧をまとめて保存できたときだけ、失敗の表示を消す
-       if(job.fn==='saveMemberBookData') lastError='';
+       if(job.fn==='saveMemberBookData'){ lastError=''; lastConflict=false; }
        if(job.onOk) job.onOk(res);
      }
      renderSaveState(); pump();
@@ -203,7 +208,7 @@
    var sent=null, names=null;
    enqueue('saveMemberBookData', function(){
      sent=members.slice(); names=sent.map(function(x){ return x.name; });
-     return [members, null];
+     return [members, null, rosterRev];
    }, function(r){
      sent.forEach(function(x,i){ x._saved=names[i]; });
      show(doneMsg || (auto ? '並び順を名簿に保存しました。' : r.message), true);
@@ -225,6 +230,7 @@
      busy(false);
      if(!r.ok){ show(r.message+'\n画面を開き直してください。',false); return; }
      members=r.members||[]; cats=r.categories||[]; cover=r.cover||{}; presidents=r.presidents||[]; drive=r.drive||{}; loaded=true;
+     rosterRev=r.rev||'';
      members.forEach(function(x){ x._saved=x.name; });
      render(); renderSaveState(); renderCoverNote(); renderDriveNote(); show(members.length+'名を読み込みました。',true);
      var names=members.map(function(m){return m.name;});
@@ -347,7 +353,7 @@
    hideM(); render();
    // 追加した方は、並び（途中に移した場合も）ごと保存する。それ以外は、その方の行だけ
    if(isNew) saveAll(false, '「'+name+'」を名簿に追加しました。');
-   else enqueue('saveMemberBookMember', [orig, sent], function(r){ m._saved=sent.name; show(r.message, true); });
+   else enqueue('saveMemberBookMember', function(){ return [orig, sent, rosterRev]; }, function(r){ m._saved=sent.name; show(r.message, r.stale ? null : true); });
  }
  // 掲載順を番号で動かす（先に抜いてから挿入する）。並びもすぐ保存する
  function moveTo(){

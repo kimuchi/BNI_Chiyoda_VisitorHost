@@ -19,8 +19,14 @@ function getSS_() {
   if (ss) {
     // メニューから使われたときにIDを控えておく（ウェブアプリはこれを頼りにする）
     try {
-      var props = PropertiesService.getScriptProperties();
-      if (props.getProperty(SS_ID_KEY_) !== ss.getId()) props.setProperty(SS_ID_KEY_, ss.getId());
+      var props = PropertiesService.getScriptProperties(), prev = props.getProperty(SS_ID_KEY_);
+      if (prev !== ss.getId()) {
+        // 控えのIDが別のスプレッドシート＝このスプレッドシートは「コピーを作成」で作ったもの。
+        // コピー元のファイル（共有したビジターリスト・割り振り表のPDF、メンバーブック）を指す控えを外す
+        // （残っていると、コピーで作ったときに、コピー元のチャプターが共有したPDFをコピーの中身で上書きしてしまう）
+        if (prev) forgetCopiedFiles_(props, prev);
+        props.setProperty(SS_ID_KEY_, ss.getId());
+      }
     } catch (e) {}
     return ss;
   }
@@ -30,6 +36,15 @@ function getSS_() {
       + '一度スプレッドシートを開いて「名簿システム」メニューを表示してから、もう一度お試しください。');
   }
   return SpreadsheetApp.openById(id);
+}
+
+// コピー元のスプレッドシートで作ったファイルを指す控え（開催日ごとのPDF・メンバーブック・送った記録）
+var COPIED_FILE_KEYS_ = /^(VISITOR_PDF_(ID|URL)_|ALLOC_PDF_(ID|URL)_|MAIL_SENT_|LATEST_VISITOR_LIST_URL$|LATEST_ALLOCATION_URL$|LATEST_MEETING_DATE$|MEMBER_BOOK_(ID|URL|UPDATED)$)/;
+function forgetCopiedFiles_(props, prevId) {
+  var gone = (props.getKeys() || []).filter(function (k) { return COPIED_FILE_KEYS_.test(k); });
+  gone.forEach(function (k) { props.deleteProperty(k); });
+  console.warn('[SS] コピー元（' + prevId + '）のファイルの控えを外しました: ' + gone.length + '件');
+  return gone;
 }
 
 // 設定（GeminiのAPIキー・メールのCC/BCC・送信の設定・チャプターの設定・素材フォルダなど）を読む・書く前に、

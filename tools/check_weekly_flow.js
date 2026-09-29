@@ -456,6 +456,59 @@ step('トークスクリプトの参加者（移行前の4桁の名前）', () =
   env.ss.deleteSheet(env.sheet('0916参加者'));
 });
 
+// ---- 11) 移行前の4桁の名前のシート：半年前の回を来年の回にしない。同じ開催日に両方あれば、年の付いた方を既定に ----
+step('移行前の4桁の名前のシート', () => {
+  const HEADROW = ['No.', '参加者氏名', 'ふりがな', 'カテゴリー', '会社名', '招待者', '備考', '種別', 'メール'];
+  env.ss.insertSheet('0325参加者').getRange(1, 1, 2, 9).setValues([HEADROW, ['V01', '三月 来人', '', '', '', '', '', 'Visitor', 'march@example.com']]);
+  env.ss.insertSheet('0930参加者').getRange(1, 1, 2, 9).setValues([HEADROW, ['V01', '旧九月 来人', '', '', '', '', '', 'Visitor', 'old0930@example.com']]);
+  const d = srv.meetingDateFromKey_('0325');
+  ck(d && d.getFullYear() === 2026 && d.getMonth() === 2 && d.getDate() === 25, '11) 4桁の「0325」を来年の回にした: ' + d);
+  const ctx = srv.getEmailContext();
+  const m = ctx.sheets.find((x) => x.sheet === '0325参加者');
+  ck(m && m.past === true && /2026年3月25日/.test(m.label), '11) 半年前の4桁のシートが、これからの回として出る: ' + JSON.stringify(m));
+  ck(ctx.defaultSheet === '20260930参加者', '11) 同じ開催日に4桁のシートもあると、そちらが既定になる: ' + ctx.defaultSheet);
+  const ld = srv.loadSheetData('0325参加者');
+  ck(ld.meeting && ld.meeting.dateValue === '2026/03/25', '11) 4桁のシートの再編集で、来年の日付に書き戻す: ' + JSON.stringify(ld.meeting));
+  env.ss.deleteSheet(env.sheet('0325参加者'));
+  env.ss.deleteSheet(env.sheet('0930参加者'));
+});
+
+// ---- 12) 番号（No）がまだ無いメンバー（Spreadingから足したばかりの新メンバー）：招待者が名簿に合い、その方の代理は「代理??」にしない ----
+step('番号の無いメンバー', () => {
+  const roster = env.sheet('メンバー名簿'), last = roster.getLastRow();
+  roster.getRange(last + 1, 1, 1, MEMBER_HEAD.length).setValues([MEMBER_HEAD.map((h, i) => (i === 2 ? '新規 十子' : ''))]);
+  const a = srv.analyzeCsvData([
+    '参加者氏名,ふりがな,会社名,カテゴリー,招待者,メール,種別',
+    '十子 招待,とおこ しょうたい,招待社,保険,新規 十子さん,t1@example.com,Visitor',
+    '十子 代理,とおこ だいり,代理社,保険,新規 十子,t2@example.com,Substitute'].join('\n'));
+  const v = a.rows.find((r) => r['種別'] === 'Visitor'), sub = a.rows.find((r) => r['種別'] === 'Substitute');
+  ck(v && v['招待者'] === '新規 十子' && !v._needsInviterReview, '12) 番号の無いメンバーを、招待者として名簿に合わせない: ' + JSON.stringify(v && [v['招待者'], v._needsInviterReview]));
+  ck(sub && sub._No === '代理', '12) 番号の無いメンバーの代理が「代理??」になる: ' + (sub && sub._No));
+  env.ss.insertSheet('20261104参加者').getRange(1, 1, 2, 9).setValues([
+    ['No.', '参加者氏名', 'ふりがな', 'カテゴリー', '会社名', '招待者', '備考', '種別', 'メール'],
+    ['代理??', '十子 代理', '', '', '', '新規 十子', '', 'Substitute', '']]);
+  const ld = srv.loadSheetData('20261104参加者');
+  ck(ld.rows[0] && ld.rows[0]._No === '代理', '12) 再編集で、番号の無いメンバーの代理が「代理??」のまま: ' + (ld.rows[0] && ld.rows[0]._No));
+  ck(!srv.getMembersList().some((m) => m.name === '新規 十子'), '12) 番号で引く一覧（割り振り表・ビジターホスト）に、番号の無い方が入った');
+  env.ss.deleteSheet(env.sheet('20261104参加者'));
+  roster.getRange(last + 1, 1, 1, MEMBER_HEAD.length).clearContent();
+});
+
+// ---- 13) スプレッドシートを「コピーを作成」した：コピー元のチャプターが共有したPDF・メンバーブックを、コピーの中身で上書きしない ----
+step('スプレッドシートのコピー', () => {
+  const orig = env.fileText(id0930);
+  env.props.BNI_SPREADSHEET_ID = 'ORIGINAL_SS';          // 控えのIDはコピー元のもの（プロパティごとコピーされた）
+  env.props.MEMBER_BOOK_ID = 'ORIGINAL_BOOK';
+  srv.getSS_();
+  ck(!env.props['VISITOR_PDF_ID_20260930参加者'] && !env.props.MEMBER_BOOK_ID && !env.props.LATEST_VISITOR_LIST_URL && env.props.BNI_SPREADSHEET_ID === 'SSID',
+     '13) コピーで、コピー元のファイルの控えが残った: ' + JSON.stringify(Object.keys(env.props).filter((k) => /PDF|BOOK|LATEST/.test(k))));
+  const a = srv.analyzeCsvData(CSV_0930);
+  srv.createFinalSheet('2026/09/30', '2026/9/30(水) 第535回', a.rows, a.header);
+  ck(env.fileText(id0930) === orig && env.props['VISITOR_PDF_ID_20260930参加者'] && env.props['VISITOR_PDF_ID_20260930参加者'] !== id0930,
+     '13) コピーで作った名簿のPDFで、コピー元の共有したPDFを上書きした');
+  ck(env.props.GEMINI_API_KEY === 'secret-key' && env.props.MAIL_TPL_BCC === 'host@example.com', '13) コピーで、ファイル以外の設定（APIキー・メールのBCC）まで消した');
+});
+
 ck(env.errors.length === 0, '途中でエラーの記録が出た: ' + env.errors.slice(0, 3).join(' / '));
 
 if (fails.length) {
