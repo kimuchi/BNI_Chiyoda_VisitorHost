@@ -26,13 +26,14 @@ let checks = 0;
 function ck(ok, msg) { checks++; if (!ok) fails.push(msg); }
 
 let opened = null;
+let authUrl = '';
 const sandbox = {
   console,
   HtmlService: {
     createTemplateFromFile: (name) => {
       const t = { _name: name };
       t.evaluate = () => {
-        opened = { name, params: t.params, groups: t.groups };
+        opened = { name, params: t.params, groups: t.groups, authNotice: t.authNotice, status: t.status };
         const out = { getContent: () => '<html><body>' + name + '</body></html>' };
         out.setTitle = () => out; out.addMetaTag = () => out;
         return out;
@@ -42,7 +43,12 @@ const sandbox = {
     createHtmlOutput: (c) => { const o = { _content: c }; o.setTitle = () => o; o.addMetaTag = () => o; return o; },
     createHtmlOutputFromFile: (n) => ({ getContent: () => fs.readFileSync(path.join(ROOT, n + '.html'), 'utf8') }),
   },
-  ScriptApp: { getService: () => ({ getUrl: () => 'https://script.google.com/macros/s/TEST/exec' }) },
+  ScriptApp: {
+    getService: () => ({ getUrl: () => 'https://script.google.com/macros/s/TEST/exec' }),
+    AuthMode: { FULL: 'FULL' }, AuthorizationStatus: { REQUIRED: 'REQUIRED', NOT_REQUIRED: 'NOT_REQUIRED' },
+    // 許可がそろっていない方（許可の画面でGoogleドライブのチェックを外した、など）を真似るときは authUrl を入れる
+    getAuthorizationInfo: () => ({ getAuthorizationStatus: () => (authUrl ? 'REQUIRED' : 'NOT_REQUIRED'), getAuthorizationUrl: () => authUrl || null }),
+  },
   Session: { getEffectiveUser: () => ({ getEmail: () => '' }) },
   SpreadsheetApp: { getActiveSpreadsheet: () => null },
   PropertiesService: { getScriptProperties: () => ({ getProperty: () => null, setProperty() {} }) },
@@ -103,6 +109,28 @@ ck(opened && opened.name === 'role_input' && opened.params.view === 'premtg', '?
   ck(!items.some((x) => x.key === 'official_templates') && ALIASES.some((x) => x.key === 'official_templates'),
      '公式ファイルから雛形を作る：トップページに出ている／URLで開けない');
 }
+// 許可がそろっていない方：トップページと各画面の上に「Googleの許可をやり直す」を出す（URLの & がそのまま使える形で）
+authUrl = 'https://accounts.google.com/o/oauth2/auth?client_id=TEST&scope=a%20b&state=x';
+{
+  opened = null;
+  F.doGet({ parameter: {} });
+  ck(opened && opened.name === 'webapp_home' && /Googleの許可をやり直す/.test(opened.authNotice || '')
+     && (opened.authNotice || '').includes('href="https://accounts.google.com/o/oauth2/auth?client_id=TEST&amp;scope=a%20b&amp;state=x"'),
+     '許可が足りない方のトップページに、許可し直すボタンが出ない: ' + String(opened && opened.authNotice).slice(0, 300));
+  const out = F.doGet({ parameter: { p: 'template_files' } });
+  ck(/Googleの許可をやり直す/.test(out._content || '') && /すべて選択/.test(out._content || ''), '許可が足りない方の画面（テンプレートの登録など）に、許可し直すボタンが出ない');
+}
+authUrl = '';
+{
+  opened = null;
+  F.doGet({ parameter: {} });
+  ck(opened && !opened.authNotice, '許可がそろっているのに、許可し直すボタンが出た');
+  const out = F.doGet({ parameter: { p: 'template_files' } });
+  ck(!/Googleの許可をやり直す/.test(out._content || ''), '許可がそろっているのに、画面に許可し直すボタンが出た');
+}
+const homeHtml = fs.readFileSync(path.join(ROOT, 'webapp_home.html'), 'utf8');
+ck(/<\?!=\s*authNotice\s*\?>/.test(homeHtml), 'トップページに許可の知らせ（authNotice）を出す所が無い');
+
 // 知らないキーはトップページ
 opened = null;
 F.doGet({ parameter: { p: 'role_input&view=premtg' } });
