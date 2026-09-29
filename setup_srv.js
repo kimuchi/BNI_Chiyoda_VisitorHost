@@ -145,7 +145,11 @@ function menuCreateMissingSheets() {
 // 足りないシートを作る → { ok, made: [シートの名前], message }
 function createMissingSheets() {
   try {
-    var ss = getSS_(), made = setupBaseSheets_(ss), lines = [], waiting = chapterFresh_() && !chapterInfo_().saved;
+    // ルーティンチェックシートの期と回数は、チャプターの設定で決まる。設定を保存する前に作ると、Activeチャプターの期・回数で
+    // 作ってしまい、あとで設定を保存しても直らない（空でないスプレッドシートから始めたチャプターも、シートが1枚も無ければ待つ）
+    var ss = getSS_(), made = setupBaseSheets_(ss), lines = [];
+    var noRoutine = !ss.getSheets().some(function (sh) { return ROUTINE_SHEET_RE_.test(sh.getName()); });
+    var waiting = !chapterInfo_().saved && (chapterFresh_() || noRoutine);
     var routine = waiting ? [] : setupEnsureRoutineSheets_();
     for (var i = 0; i < routine.length; i++) {
       if (routine[i].made) {
@@ -160,6 +164,19 @@ function createMissingSheets() {
     if (waiting) {
       msg += '\n\nルーティンチェックシートは、チャプターの設定（いまの期・定例会の回数）を保存したときに作ります。'
         + '先に ⚙️ 設定 > チャプター を保存してください。';
+    }
+    // 期のシートはあるのに、次の定例会の列が無い（チャプターの設定で開催日・曜日を直した、など）。黙って「足りない」と言わない
+    if (!waiting) {
+      var gaps = [];
+      getMeetingCandidates().forEach(function (c) {
+        var d = parseDate_(c.dateValue);
+        if (d && !findRoutineColumn_(d) && ss.getSheetByName(setupRoutineName_(roleTermOf_(d)))) gaps.push(c.dateValue);
+      });
+      if (gaps.length) {
+        msg += '\n\nルーティンチェックシートはありますが、' + gaps.join('・') + ' の列が見つかりません'
+          + '（シートの1行目の日付が、チャプターの設定の定例会の曜日・日付と合っていません）。'
+          + 'チャプターの設定で開催日・曜日・回数を直したときは、シートの1行目（日付）と2行目（回数）も直してください。';
+      }
     }
     return { ok: true, made: made, message: msg };
   } catch (e) {

@@ -509,6 +509,13 @@ step('スプレッドシートのコピー', () => {
   ck(env.props.GEMINI_API_KEY === 'secret-key' && env.props.MAIL_TPL_BCC === 'host@example.com', '13) コピーで、ファイル以外の設定（APIキー・メールのBCC）まで消した');
 });
 
+// ---- 14) チャプターの設定を保存する前（ルーティンチェックシートがまだ1枚も無い）：Activeチャプターの期・回数でシートを作らない ----
+step('足りないシートを作る（設定の前）', () => {
+  const r = srv.createMissingSheets();
+  ck(r.ok && !r.made.some((n) => /ルーティンチェックシート/.test(n)) && /チャプターの設定/.test(r.message),
+     '14) チャプターの設定の前に、ルーティンチェックシートを作った: ' + JSON.stringify(r.made));
+});
+
 ck(env.errors.length === 0, '途中でエラーの記録が出た: ' + env.errors.slice(0, 3).join(' / '));
 
 if (fails.length) {
