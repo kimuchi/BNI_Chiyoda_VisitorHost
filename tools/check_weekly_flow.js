@@ -121,6 +121,16 @@ step('再編集して作り直す', () => {
   ck(env.values('20260930参加者').length === 6, '4) 作り直したら参加者シートの行数が変わった: ' + env.values('20260930参加者').length);
 });
 
+// ---- 4b) 前のPDFをゴミ箱に入れてしまっていても、作り直せば戻して差し替える（ゴミ箱のままだとリンクが開けない） ----
+step('ゴミ箱のPDFを作り直す', () => {
+  env.drive.files[id0930].trashed = true;
+  ck(srv.generateEmailDrafts('20260930参加者').visitorList === '', '4b) ゴミ箱のPDFのリンクを、メールに入れようとした');
+  const loaded = srv.loadSheetData('20260930参加者');
+  srv.createFinalSheet(loaded.meeting.dateValue, loaded.meeting.display, loaded.rows, loaded.header);
+  ck(env.drive.files[id0930].trashed === false && env.props['VISITOR_PDF_ID_20260930参加者'] === id0930, '4b) ゴミ箱のPDFを戻して差し替えていない（URLが変わる・開けないまま）');
+  ck(srv.generateEmailDrafts('20260930参加者').visitorList === url0930, '4b) 作り直したあと、メールにリンクが入らない');
+});
+
 // ---- 5) 次の週の名簿：前の週（今週）はアーカイブされる ----
 step('次の週の名簿', () => {
   const a2 = srv.analyzeCsvData(CSV_1007);
