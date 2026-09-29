@@ -130,7 +130,10 @@ BNI_Chiyoda_VisitorHost/
     │                         #     割り振り表の作成と読み戻し→作成済みPDFの確認）。機能のつなぎ目（シート名・開催日・PDFのURL）の誤りを見つける
     ├── lib_sheet_fake.js     #   その検査で使う、書き込める見せかけのスプレッドシート・ドライブ・Gmail（隠れたシートは真っ白のPDFになる、など本物に合わせてある）
     ├── check_csv_dialog.js   #   「CSVから名簿・PDF作成」の画面を Chromium で（過ぎた回の再編集はその回に書き戻す・Shift_JIS のCSV・
-    │                         #     PDFのみ再作成・PDFを作れなかったとき）
+    │                         #     キャンセルの方の知らせ・PDFのみ再作成・PDFを作れなかったとき）
+    ├── check_email_dialog.js #   「メールの確認・一括送信」の画面を Chromium で（次回のPDFのリンク・キャンセル・件名の記号・全角のアドレス・
+    │                         #     送信済みで二重に送らない・過ぎた回の知らせ）
+    ├── lib_gas_page.js       #   画面を Chromium で開き、google.script.run を Node で動かす本番のコードにつなぐ
     ├── check_gas_names.py    #   名前の衝突・参照先HTMLの検査
     ├── check_html.py         #   divの対応・スクリプトの構文・共通部品の読み込み漏れ
     ├── check_manual_links.py #   マニュアルの導線 ↔ 実際のメニュー
