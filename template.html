@@ -39,7 +39,11 @@
   <div class="hint">
     上記Web Appとこのスプレッドシートの両方に同じ文字列を設定してください（推測されにくい任意の文字列で構いません）。
   </div>
-  <input type="text" class="input-subj" id="tplWebAppToken" placeholder="例: ChapterSecret2026" style="margin-bottom:25px; font-weight:normal;">
+  <input type="text" class="input-subj" id="tplWebAppToken" placeholder="例: ChapterSecret2026" style="margin-bottom:8px; font-weight:normal;">
+  <div style="margin-bottom:25px;">
+    <button type="button" onclick="testRelay()" style="background:#fff; color:#0044cc; border:1px solid #0044cc; padding:6px 12px; border-radius:4px; cursor:pointer; font-size:13px;">代理送信を確かめる（メールは送りません）</button>
+    <div id="relayNote" style="font-size:13px; margin-top:6px; white-space:pre-wrap; line-height:1.6;"></div>
+  </div>
 
   <div class="label">Visitor用</div>
   <input type="text" class="input-subj" id="tplVisitorSubj" placeholder="件名を入力">
@@ -101,6 +105,17 @@
           saveNote(res + '\n' + res2, 'green');
         }).withFailureHandler(fail).saveMailWebAppSettings(webApp);
       }).withFailureHandler(fail).saveTemplates(data);
+    }
+    // 入っているURL・合言葉で、代理送信の Web App から返事が来るか確かめる（保存しなくても確かめられる。メールは送らない）
+    function testRelay() {
+      var n = document.getElementById('relayNote');
+      n.style.color = '#0055ff'; n.innerText = '確かめています...';
+      google.script.run.withSuccessHandler(function (r) {
+        n.style.color = r && r.ok ? 'green' : '#c00';
+        n.innerText = (r && r.ok ? '✓ ' : '⚠ ') + ((r && r.message) || '');
+      }).withFailureHandler(function (e) {
+        n.style.color = '#c00'; n.innerText = '⚠ 確かめられませんでした: ' + (e && e.message ? e.message : e);
+      }).testMailWebApp({ webAppUrl: document.getElementById('tplWebAppUrl').value, webAppToken: document.getElementById('tplWebAppToken').value });
     }
     // 保存の結果は画面の下に出す（画面は消さない。ウェブアプリでは上の帯と同じ「← メニューに戻る」も出す）
     function saveNote(text, color) {

@@ -8,6 +8,9 @@
 //   ・件名・本文の記号（" < > &）が、画面でも送ったメールでも崩れない
 //   ・送ったあと開き直すと、送った方はチェックが外れ「送信済み」と出る。わざと送り直すときは確認で知らせる
 //   ・次回のシートが無く、過ぎた回が選ばれたときは赤字で知らせる
+//   ・代理送信の Web App が動いていない（ログインの画面などが返る）ときは、1人目で止めて理由を出し、
+//     「自分のGmailから送る」で送れる。送れなかった方がいるのに「完了🎉」と出さない
+//   ・設定の「代理送信を確かめる」・/dev のURLの知らせ
 // 名前・メールアドレスはすべて架空。
 
 process.env.TZ = 'Asia/Tokyo';
@@ -58,9 +61,60 @@ async function open(browser) {
   await r.page.waitForFunction(() => /読み込みました/.test(document.getElementById('meetNote').textContent) || /見つかりません|ありません/.test(document.getElementById('emailContainer').textContent), null, { timeout: 10000 });
   return r;
 }
+const LOGIN_PAGE = '<!DOCTYPE html><html><head><title>Google アカウントへのログイン</title></head>'
+  + '<body><form action="https://accounts.google.com/ServiceLogin">ログイン</form></body></html>';
+const RELAY = 'https://script.google.com/macros/s/RELAYID/exec';
+const html = (code, body) => ({ code, body: Buffer.from(body), type: 'text/html' });
+const json = (o) => ({ code: 200, body: Buffer.from(JSON.stringify(o)), type: 'application/json' });
+const relayFetches = () => env.fetchLog.filter((f) => f.url === RELAY).length;
+
 async function sendAll(page) {
   await page.click('#sendBtn');
   await page.waitForFunction(() => /すべての処理が完了しました/.test(document.body.textContent), null, { timeout: 10000 });
+}
+
+// ---- 0) サーバー：代理送信の Web App の返事が、送った結果（JSON）でないとき ----
+try {
+  start(true);
+  env.props.MAIL_WEB_APP_URL = RELAY;
+  const draft = { name: '見本 太郎', email: 'taro@example.com', subject: '件名', body: '本文', sheet: '20260930参加者' };
+  env.onFetch = () => html(200, LOGIN_PAGE);
+  let r = srv.sendSingleEmail(draft, '', '');
+  ck(r.success === false && r.relayBroken === true && /送られていません/.test(r.error) && /ログイン/.test(r.error) && /自分のGmailから送る/.test(r.error)
+     && !/SyntaxError/.test(r.error), '0) ログインの画面が返ったときの知らせ: ' + JSON.stringify(r));
+  ck(env.mail.length === 0 && !env.props['MAIL_SENT_20260930参加者'], '0) 送れていないのに送信済みにした');
+  env.onFetch = () => html(404, '<html><title>エラー</title>申し訳ございません。現在ファイルを開くことができません。</html>');
+  r = srv.sendSingleEmail(draft, '', '');
+  ck(r.relayBroken && /URLが見つかりません/.test(r.error), '0) 見つからないページのときの知らせ: ' + r.error);
+  env.onFetch = () => json({ success: false, error: 'Error: アクセス権限がありません' });
+  r = srv.sendSingleEmail(draft, '', '');
+  ck(r.relayBroken && /合言葉/.test(r.error), '0) 合言葉が違うときの知らせ: ' + r.error);
+  // 自分のGmailから送る：代理送信を通らない。送信済みの印も付く
+  const n = relayFetches();
+  r = srv.sendSingleEmail(draft, '', '', { direct: true });
+  ck(r.success && r.direct && env.mail.length === 1 && env.mail[0].to === 'taro@example.com' && relayFetches() === n
+     && JSON.parse(env.props['MAIL_SENT_20260930参加者'] || '{}')['taro@example.com'], '0) 自分のGmailから送れない: ' + JSON.stringify(r));
+  // 設定の「代理送信を確かめる」
+  env.onFetch = () => html(200, LOGIN_PAGE);
+  let t = srv.testMailWebApp({ webAppUrl: RELAY, webAppToken: 'x' });
+  ck(t.ok === false && /ログイン/.test(t.message), '0) 確かめる（ログインの画面）: ' + JSON.stringify(t));
+  env.onFetch = (url, o) => (JSON.parse(o.payload).ping ? json({ success: true, ping: true, sender: 'chapter@example.com' }) : json({ success: false, error: '送った' }));
+  t = srv.testMailWebApp({ webAppUrl: RELAY, webAppToken: 'x' });
+  ck(t.ok === true && /chapter@example\.com/.test(t.message) && env.mail.length === 1, '0) 確かめる（動いている）: ' + JSON.stringify(t));
+  t = srv.testMailWebApp({ webAppUrl: '', webAppToken: '' });
+  ck(t.ok === true && /Gmailから送ります/.test(t.message), '0) 確かめる（代理送信なし）: ' + JSON.stringify(t));
+  const sv = srv.saveMailWebAppSettings({ webAppUrl: 'https://script.google.com/macros/s/RELAYID/dev', webAppToken: 'x' });
+  ck(/\/dev/.test(sv) && /⚠/.test(sv), '0) /dev のURLを保存しても知らせない: ' + sv);
+  // doPost：確かめるときは送らずに返事だけ
+  env.props.MAIL_WEB_APP_TOKEN = 'tok';
+  const out = { text: '' };
+  srv.ContentService = { MimeType: { JSON: 'json' }, createTextOutput: (x) => { out.text = x; return { setMimeType: () => out }; } };
+  srv.doPost({ postData: { contents: JSON.stringify({ token: 'tok', ping: true }) } });
+  ck(/"ping":true/.test(out.text) && env.mail.length === 1, '0) doPost の確かめで、メールを送った・返事が違う: ' + out.text);
+} catch (e) {
+  fails.push('0) 止まった: ' + (e && e.message ? e.message : e));
+} finally {
+  env.onFetch = null;
 }
 
 (async () => {
@@ -105,6 +159,43 @@ async function sendAll(page) {
       await page.close();
     }
 
+    // ---- 2b) 代理送信の Web App が動いていない：1人目で止めて理由を出す。「自分のGmailから送る」で送れる ----
+    start(true);
+    env.props.MAIL_WEB_APP_URL = RELAY;
+    env.onFetch = () => html(200, LOGIN_PAGE);
+    {
+      const { page, dialogs } = await open(browser);
+      await page.click('#sendBtn');
+      await page.waitForFunction(() => document.getElementById('relayBox').style.display === 'block' || /すべての処理が完了しました/.test(document.body.textContent), null, { timeout: 10000 });
+      ck(relayFetches() === 1, '2b) 代理送信が動かないのに、2人目以降も送ろうとした: ' + relayFetches());
+      ck(env.mail.length === 0, '2b) 送れていないはずのメールが送られた');
+      ck(!/🎉|すべての処理が完了しました/.test(await page.textContent('#progressArea')), '2b) 送れていないのに「完了🎉」と出た');
+      ck(await page.textContent('#relayCount') === '2' && /ログイン/.test(await page.textContent('#relayWhy')) && /tester@example\.com/.test(await page.textContent('#directBtn')),
+         '2b) 止めた知らせ: ' + [await page.textContent('#relayCount'), await page.textContent('#directBtn')].join(' / '));
+      await page.click('#directBtn');
+      await page.waitForFunction(() => /すべての処理が完了しました/.test(document.body.textContent), null, { timeout: 10000 });
+      ck(dialogs.some((d) => /自分のGmail|Gmail（tester@example\.com）/.test(d)), '2b) 自分のGmailから送る前に確かめない: ' + dialogs.join(' / '));
+      ck(env.mail.map((m) => m.to).join(',') === 'taro@example.com,hana@example.com' && relayFetches() === 1,
+         '2b) 自分のGmailから送った宛先が違う・代理送信を通った: ' + env.mail.map((m) => m.to).join(','));
+      await page.close();
+    }
+    env.onFetch = null;
+    delete env.props.MAIL_WEB_APP_URL;
+
+    // ---- 2c) 1人だけ送れなかった：「完了🎉」ではなく、送れなかった人数を出す ----
+    start(true);
+    {
+      const real = srv.GmailApp.sendEmail;
+      srv.GmailApp.sendEmail = (to, ...a) => { if (to === 'hana@example.com') throw new Error('見本の送信エラー'); return real(to, ...a); };
+      const { page } = await open(browser);
+      await page.click('#sendBtn');
+      await page.waitForFunction(() => /送れなかった方がいます|すべての処理が完了しました/.test(document.getElementById('doneMsg').textContent), null, { timeout: 10000 });
+      const done = await page.textContent('#doneMsg');
+      ck(/送れなかった方がいます（1名）/.test(done) && !/🎉/.test(done), '2c) 送れなかった方がいるのに「完了🎉」と出た: ' + done);
+      srv.GmailApp.sendEmail = real;
+      await page.close();
+    }
+
     // ---- 3) 次回のシートが無い：過ぎた回が選ばれたら赤字で知らせ、送る前の確認にも出す ----
     start(false);
     {
@@ -126,7 +217,8 @@ async function sendAll(page) {
     fails.forEach((f) => console.log('  - ' + f));
     process.exit(1);
   }
-  console.log('メールの確認・一括送信の画面（ブラウザ）: 検査 ' + checks + ' 件 OK: 次回のリンク・キャンセル・記号・全角アドレス・送信済みで二重に送らない・過ぎた回の知らせ');
+  console.log('メールの確認・一括送信の画面（ブラウザ）: 検査 ' + checks + ' 件 OK: 次回のリンク・キャンセル・記号・全角アドレス・送信済みで二重に送らない・過ぎた回の知らせ・'
+    + '代理送信が動かないときは止めて理由と「自分のGmailから送る」・送れなかった方がいるのに完了と出さない・代理送信を確かめる');
 })().catch((e) => {
   console.log('NG 検査が止まった: ' + (e && e.stack ? e.stack.split('\n').slice(0, 2).join(' / ') : e));
   fails.forEach((f) => console.log('  - ' + f));   // 止まる前に見つかったもの

@@ -370,7 +370,14 @@ clasp deploy -i &lt;デプロイID&gt; -V 34   （-V には、いま出た番号
 <ol>
 <li><strong>「上記の内容で順番に送信する」</strong> をクリックすると、プログレスバーが進みながら1件ずつ送信されます。</li>
 </ol>
-<blockquote><strong>安心ポイント</strong>: 途中で1件エラーが出ても、残りのメールは止まらず送信されます。エラーは画面に赤字で表示されるので後から確認できます。</blockquote>
+<blockquote><strong>安心ポイント</strong>: 途中で1件エラーが出ても、残りのメールは止まらず送信されます。エラーは画面に赤字で表示されるので後から確認できます。 送れなかった方がいるときは、最後に「送れなかった方がいます（○名）」と出ます（「完了🎉」とは出ません）。 送れた方には「送信済み」の印が付くので、開き直すと、送れなかった方にだけチェックが入ります。</blockquote>
+<h4>「メールは送られていません…代理送信の Web App が動いていない」と出たとき</h4>
+<p><code>⚙️ 設定</code> &gt; <code>メールテンプレート</code> に <strong>「代理送信 Web App URL」</strong> が入っていると、メールはその Web App（管理者のGmail）から送ります。 その Web App が動いていない（Googleのログインの画面・「見つかりません」のページが返ってくる、合言葉が違う、など）ときは、 <strong>1人目で送信を止めて、理由を出します</strong>（ほかの方にも同じく送れないため。以前は全員に <code>SyntaxError: Unexpected token &#x27;&lt;&#x27;…</code> と出て、最後に「完了🎉」と出ていました）。<strong>メールは1通も送られていません。</strong></p>
+<ul>
+<li><strong>今すぐ送るには</strong>、その画面の <strong>「自分のGmail（…）から、○名に送る」</strong> を押します。 この画面を開いている方のGmailから送ります（送り主の名前は、これまでどおりチャプター名です）</li>
+<li><strong>代理送信を直すには</strong>、代理送信用の Apps Script で <code>デプロイ</code> &gt; <code>デプロイを管理</code> を開き、 「次のユーザーとして実行：<strong>自分</strong>」「アクセスできるユーザー：<strong>全員</strong>」にしてデプロイし直します。 URLは「/exec」で終わるものを使います（「/dev」で終わるURL、名簿システムのウェブアプリ＝メンバーが開く画面のURLは使えません）。 代理送信を使わないなら、「代理送信 Web App URL」を空欄にして保存します</li>
+<li>直したら、メールテンプレート設定の <strong>「代理送信を確かめる」</strong> で確かめられます（メールは送りません）</li>
+</ul>
 <hr>
 <h2 id="sec10">作成済みPDFをもう一度見たいとき</h2>
 <p><strong>メニュー</strong>: <code>名簿システム</code> &gt; <code>4. 作成済みPDFの確認</code></p>
@@ -1393,6 +1400,7 @@ clasp deploy -i &lt;デプロイID&gt; -V 34   （-V には、いま出た番号
 <h3>メールテンプレート設定</h3>
 <p><code>名簿システム</code> &gt; <code>⚙️ 設定</code> &gt; <code>メールテンプレート</code></p>
 <p>Visitor・Guest・Substituteの3種別ごとに、メールの件名と本文のひな形を設定します。CC/BCCも設定できます。</p>
+<p><strong>代理送信 Web App URL</strong> に、管理者のアカウントでデプロイした Web App のURLを入れると、メールをその Web App（管理者のGmail）から送ります。 空欄なら、送る画面を開いている方のGmailから送ります。入れたら <strong>「代理送信を確かめる」</strong> を押してください。 送れる状態なら「返事がありました（送信元：…）」、送れない状態ならその理由が出ます（メールは送りません）。 「/dev」で終わるURLなど、使えない形のURLを保存したときも知らせます。</p>
 <p>本文の中で以下の変数を使うと、送信時に自動で置き換わります。</p>
 <table><thead><tr><th>書き方</th><th>置き換わる内容</th></tr></thead><tbody>
 <tr><td><code>{{name}}</code></td><td>参加者の氏名</td></tr>
