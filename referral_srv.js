@@ -257,7 +257,8 @@ function rfLayoutBoxes_(parts, title) {
   var co = readShapeGeomEmu_(xml, SH.company);
   var ca = SH.category ? readShapeGeomEmu_(xml, SH.category) : null;
   if (!co) return null;
-  // 公式ファイルから作ったひな形（会社名の図形の名前が Referral Company）は、枠と文字の大きさをそのまま使う
+  // 公式ファイルから作ったひな形（会社名の図形の名前が Referral Company）は、枠をそのまま使う
+  // （文字の大きさは、画面でメンバーのページと同じ会社名44pt・カテゴリー32ptにそろえる）
   var r = findShapeRange_(xml, SH.company);
   if (r && SH.category && /<p:cNvPr\b[^>]*\sname="Referral Company"/.test(xml.substring(r.start, r.end))) {
     var own = presenterBoxesOf_(xml, SH.company, SH.category);

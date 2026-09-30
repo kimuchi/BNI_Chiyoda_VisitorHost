@@ -12,19 +12,23 @@ var COMPANY_TALL    = { x: 5087424, y: 2776058, cx: 6893161, cy: 1446550 };  // 
 var CATEGORY_TOP = 3456634, CATEGORY_TOP_LOW = 4071101;                      // 【カテゴリー】の上端
 var CATEGORY_W_PT = 7311519 / 12700;                                         // カテゴリーの枠の幅
 
-// 文字の大きさの基準（pt）。元ツールは会社名・カテゴリーとも44ptで組む。
-// 公式ファイルから作った雛形では、テンプレートの文字の大きさ（companyPt・categoryPt）で組む
-var COMPANY_PT = 44, CATEGORY_PT = 44;
+// 文字の大きさ（pt）。会社名44pt・カテゴリー32ptにそろえる（チャプターの決まり）。
+// 以前は1行に収まるまで1人ずつ小さくしていたため、人によって大きさがバラバラだった。
+// 入りきらないときは、同じ大きさのまま2行にし、2行にも入らないほど長いときだけ小さくする。
+// テンプレートの文字の大きさ（公式ファイルから作った雛形の companyPt・categoryPt）には合わせない
+var UNIFIED_COMPANY_PT = 44, UNIFIED_CATEGORY_PT = 32;
+var COMPANY_PT = UNIFIED_COMPANY_PT, CATEGORY_PT = UNIFIED_CATEGORY_PT;
 
 // テンプレートの実測値で置き換える。
 //   { companyTall, categoryLow, categoryWidth } … リファーラル発表（元ツールの寸法のひな形）。
 //       会社名が1行のときの枠は、2行の枠の上端をそのままに高さだけ縮めて作る
 //   { companyDefault, categoryTop, categoryWidth, companyPt, categoryPt } … 公式ファイルから作った雛形。
 //       会社名が2行のときの枠は、1行の枠の上端をそのままに高さだけ伸ばし、カテゴリーもそのぶん下げる
+//       （companyPt・categoryPt は使わない。大きさは会社名44pt・カテゴリー32ptにそろえる）
 function setLayoutBoxes(box) {
   if (!box || !(box.companyTall || box.companyDefault)) return;
-  if (box.companyPt) COMPANY_PT = box.companyPt;
-  if (box.categoryPt) CATEGORY_PT = box.categoryPt;
+  COMPANY_PT = UNIFIED_COMPANY_PT; CATEGORY_PT = UNIFIED_CATEGORY_PT;   // 大きさはそろえる（枠の位置だけテンプレートから）
+  var catTop = box.categoryTop || 0;
   if (box.companyTall) {
     COMPANY_TALL = box.companyTall;
     COMPANY_DEFAULT = box.companyDefault || {
@@ -32,13 +36,16 @@ function setLayoutBoxes(box) {
       cy: Math.round(PAD_EMU + 1 * COMPANY_PT * LINE_EMU)
     };
   } else {
-    COMPANY_DEFAULT = box.companyDefault;
+    // 雛形の枠が、そろえた大きさ（44pt）の1行より低いときは、1行ぶんの高さまで伸ばし、カテゴリーもそのぶん下げる
+    var d0 = box.companyDefault, grow = Math.max(0, Math.round(PAD_EMU + 1 * COMPANY_PT * LINE_EMU) - d0.cy);
+    COMPANY_DEFAULT = { x: d0.x, y: d0.y, cx: d0.cx, cy: d0.cy + grow };
     COMPANY_TALL = { x: COMPANY_DEFAULT.x, y: COMPANY_DEFAULT.y, cx: COMPANY_DEFAULT.cx,
-                     cy: Math.round(PAD_EMU + 2 * COMPANY_PT * LINE_EMU) };
+                     cy: Math.max(COMPANY_DEFAULT.cy, Math.round(PAD_EMU + 2 * COMPANY_PT * LINE_EMU)) };
+    if (catTop) catTop += grow;
   }
-  CATEGORY_TOP = box.categoryTop || (COMPANY_DEFAULT.y + COMPANY_DEFAULT.cy - GAP_EMU);
+  CATEGORY_TOP = catTop || (COMPANY_DEFAULT.y + COMPANY_DEFAULT.cy - GAP_EMU);
   CATEGORY_TOP_LOW = box.categoryLow
-    || (box.categoryTop ? box.categoryTop + (COMPANY_TALL.cy - COMPANY_DEFAULT.cy) : (COMPANY_TALL.y + COMPANY_TALL.cy - GAP_EMU));
+    || (catTop ? catTop + (COMPANY_TALL.cy - COMPANY_DEFAULT.cy) : (COMPANY_TALL.y + COMPANY_TALL.cy - GAP_EMU));
   if (box.categoryWidth) CATEGORY_W_PT = box.categoryWidth / 12700;
 }
 // 小さくしていく下限（元ツールの 44pt → 28pt・20pt と同じ割合）
@@ -57,7 +64,10 @@ function measurePt(text, sizePt, bold){
   measurePt._c.font = (bold?'bold ':'') + sizePt + 'px "Meiryo UI","Hiragino Kaku Gothic ProN",sans-serif';
   return measurePt._c.measureText(text).width;
 }
-function isProtectedChar(ch){ return /[゠-ヿ一-鿿]/.test(ch); }
+// カタカナ・漢字の続き（語の途中）。「・」は語の区切りなので含めない（「建設業許可・外国人ビザ」を「・」のあとで折れるように）
+function isProtectedChar(ch){ return /[゠-ヺー-ヿ一-鿿]/.test(ch); }
+// 行の頭に来てはいけない字
+var NO_LINE_START = /[・ー、。，．）)」』】〕ッャュョァィゥェォっゃゅょぁぃぅぇぉ々！？!?:：;；,.]/;
 
 // カタカナ語や熟語の途中で改行されないように、折り返し位置を自前で決める
 function wrapKinsoku(text, sizePt, bold, maxWidthPt){
@@ -65,11 +75,15 @@ function wrapKinsoku(text, sizePt, bold, maxWidthPt){
   for(var i=0;i<text.length;i++){
     var ch=text[i], test=cur+ch;
     if(cur.length>0 && measurePt(test,sizePt,bold)*1.15 > maxWidthPt){
-      var br=cur.length;
-      if(isProtectedChar(ch) && isProtectedChar(cur[cur.length-1])){
+      var br=cur.length, noStart=NO_LINE_START.test(ch);
+      // 語の途中で折らない。「・」「）」などを行の頭にしないときも、前の語ごと次の行へ
+      if((isProtectedChar(ch) || noStart) && isProtectedChar(cur[cur.length-1])){
         var j=cur.length-1;
         while(j>0 && isProtectedChar(cur[j-1])) j--;
         if(j>0) br=j;
+        else if(noStart && cur.length>1) br=cur.length-1;
+      } else if(noStart && cur.length>1){
+        br=cur.length-1;
       }
       lines.push(cur.slice(0,br));
       cur=cur.slice(br)+ch;
@@ -96,8 +110,27 @@ function splitCorp(text){
   return null;
 }
 
+// 文字の大きさは、いつも書いて渡す（テンプレートの大きさのままにすると、そろわないため）
 function companyFit(lines, pt, geom, catTop){
-  return { lines:lines, fontPt:(pt===COMPANY_PT?0:pt), geom:geom, categoryTop:catTop };
+  return { lines:lines, fontPt:pt, geom:geom, categoryTop:catTop };
+}
+function fitsOneLine(text, pt, wPt){ return wrapKinsoku(text, pt, true, wPt).length <= 1; }
+// 「社名／株式会社」「株式会社／社名」の2行。どちらの行も1行に入るときだけ（無ければ null）
+function corpLines(text, pt, wPt){
+  var sp=splitCorp(text);
+  if(sp && fitsOneLine(sp.main, pt, wPt)) return [sp.main, sp.suffix];
+  for(var i=0;i<CORP_SUFFIXES.length;i++){
+    var s=CORP_SUFFIXES[i], rest=text.slice(s.length).replace(/^[\s　]+/,'');
+    if(text.slice(0,s.length)===s && rest && fitsOneLine(rest, pt, wPt)) return [s, rest];
+  }
+  return null;
+}
+// 2行に折ったとき、2行目が1〜2文字だけにならないよう、切れ目を少し前へ（語の途中では切らない）
+function rebalance2(lines){
+  if(lines.length!==2 || lines[1].length>2) return lines;
+  var s=lines[0]+lines[1], c=Math.max(1, s.length-3);
+  for(var k=c;k>Math.max(1,c-6);k--){ if(!(isProtectedChar(s[k-1])&&isProtectedChar(s[k]))){ c=k; break; } }
+  return [s.slice(0,c), s.slice(c)];
 }
 // 行数と文字の大きさから、枠の高さと【カテゴリー】の位置を出す
 function companyCalc(lines, pt){
@@ -106,43 +139,41 @@ function companyCalc(lines, pt){
   return companyFit(lines, pt, g, Math.round(g.y + g.cy - GAP_EMU));
 }
 
-// 会社名の収め方。上から順に試し、収まったところで決める。
-//  ① 1行に収まるまで小さくする（44→28pt）… ほとんどの方はここ
-//  ② ㈱などの略記があれば展開して「社名／株式会社」で折る（2行）
-//  ③ 2行に収まるまで小さくする（44→28pt）
-//  ④ それでも入らなければ3行まで許し、さらに小さくする（20ptまで）
-// ③④では枠の高さと【カテゴリー】の位置を実際の行数から出し直す。
+// 会社名の収め方（44pt）。上から順に試し、収まったところで決める。
+//  ① ㈱などの略記があれば、元ツールと同じく展開して「社名／株式会社」で折る（2行・44pt）
+//  ② 1行に入れば、そのまま（44pt）… ほとんどの方はここ
+//  ③ 同じ大きさのまま2行：「社名／株式会社」「株式会社／社名」で折れればそこで、無理なら語の切れ目で（44pt）
+//  ④ 2行にも入らないほど長いときだけ、小さくする（2行で28ptまで → 3行で20ptまで）
+// ④では枠の高さと【カテゴリー】の位置を実際の行数から出し直す。
 // 2行決め打ちのままだと、3行になったときに【カテゴリー】と文字が重なる。
 function layoutCompany(raw){
   var wasAbbrev=/[㈱㈲㈾]/.test(raw||''), text=expandCorp(raw);
   var base=COMPANY_PT, min=minPtOf(base), hard=hardMinPtOf(base);
   if(!text) return companyFit([''], base, COMPANY_DEFAULT, CATEGORY_TOP);
-  if(wasAbbrev){
-    var sp=splitCorp(text);
-    if(sp) return companyFit([sp.main,sp.suffix], base, COMPANY_TALL, CATEGORY_TOP_LOW);
-  }
-  var pt=base, w1=widthPt(COMPANY_DEFAULT), w2=widthPt(COMPANY_TALL);
-  var lines=wrapKinsoku(text,pt,true,w1);
-  while(lines.length>1 && pt>min){ pt-=2; lines=wrapKinsoku(text,pt,true,w1); }
-  if(lines.length<=1) return companyFit(lines, pt, COMPANY_DEFAULT, CATEGORY_TOP);
+  var w1=widthPt(COMPANY_DEFAULT), w2=widthPt(COMPANY_TALL), sp=splitCorp(text);
+  if(wasAbbrev && sp && fitsOneLine(sp.main, base, w2)) return companyFit([sp.main,sp.suffix], base, COMPANY_TALL, CATEGORY_TOP_LOW);
+  var lines=wrapKinsoku(text,base,true,w1);
+  if(lines.length<=1) return companyFit(lines, base, COMPANY_DEFAULT, CATEGORY_TOP);
+  var two=corpLines(text, base, w2);
+  if(two) return companyFit(two, base, COMPANY_TALL, CATEGORY_TOP_LOW);
+  lines=rebalance2(wrapKinsoku(text,base,true,w2));
+  if(lines.length<=2) return companyFit(lines, base, COMPANY_TALL, CATEGORY_TOP_LOW);
 
-  var sp2=splitCorp(text);
-  if(sp2) return companyFit([sp2.main,sp2.suffix], base, COMPANY_TALL, CATEGORY_TOP_LOW);
-
-  pt=base; lines=wrapKinsoku(text,pt,true,w2);
+  var pt=base;
   while(lines.length>2 && pt>min){ pt-=2; lines=wrapKinsoku(text,pt,true,w2); }
   while(lines.length>3 && pt>hard){ pt-=2; lines=wrapKinsoku(text,pt,true,w2); }
   lines=mergeOrphan(lines);
-  if(lines.length<=2 && pt===base) return companyFit(lines, pt, COMPANY_TALL, CATEGORY_TOP_LOW);
   return companyCalc(lines, pt);
 }
 
-// カテゴリー：【】で囲み、1行に収まるまで小さくする。それでも無理なら2行＋行間を詰める。
+// カテゴリー（32pt）：【】で囲む。1行に入らなければ、同じ大きさのまま2行（行間を少し詰める）。
+// 2行にも入らないほど長いときだけ小さくする（20ptまで）
 function layoutCategory(rawTitle){
   var text='【'+normParens(rawTitle||'')+'】', base=CATEGORY_PT, min=minPtOf(base), pt=base;
   var lines=wrapKinsoku(text,pt,true,CATEGORY_W_PT);
-  while(lines.length>1 && pt>min){ pt-=2; lines=wrapKinsoku(text,pt,true,CATEGORY_W_PT); }
-  if(lines.length<=1) return { lines:lines, fontPt:(pt!==base?pt:0), tight:false };
+  if(lines.length<=1) return { lines:lines, fontPt:pt, tight:false };
+  if(lines.length===2) return { lines:rebalance2(lines), fontPt:pt, tight:true };
+  while(lines.length>2 && pt>min){ pt-=2; lines=wrapKinsoku(text,pt,true,CATEGORY_W_PT); }
   return { lines:mergeOrphan(lines), fontPt:pt, tight:true };
 }
 

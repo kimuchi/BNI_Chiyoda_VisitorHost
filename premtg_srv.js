@@ -704,7 +704,7 @@ function generatePreMeetingSlides(dateStr) {
     var tpl = premtgTemplateInfo_();
     var parts = premtgTemplateParts_(tpl);
     var info = buildPreMeetingDeck_(parts, data, { by: {}, seq: 0 });
-    var outName = Utilities.formatDate(target, 'Asia/Tokyo', 'yyyyMMdd') + '_BNI事前MTG.pptx';
+    var outName = slideFileName_(target, '事前MTG');
     var saved = saveOutputFile_(zipFromMap_(parts, outName), outName);
 
     var msg = data.display + ' の事前MTG（朝イチMTG）のパワポを作りました（'

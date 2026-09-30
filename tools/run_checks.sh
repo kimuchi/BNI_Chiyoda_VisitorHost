@@ -43,9 +43,11 @@ run "PowerPointテンプレートの登録（開けない登録を未登録と�
 
 echo "── スライド"
 run "定例会スライド（指示どおりか）" node tools/check_meeting_slides.js
-run "ビジター・代理スライド（「$」の入った名前・テンプレートの2ページ目・消した枠・キャンセルの方）" node tools/check_visitor_slides.js
+run "ビジター・代理スライド（「$」の入った名前・テンプレートの2ページ目・消した枠・キャンセルの方・会社名44pt／カテゴリー32pt・自動で次へ進めない・ファイル名）" node tools/check_visitor_slides.js
+run "会社名・カテゴリーの組版（メンバー・リファーラル：44pt／32ptにそろえる・入らなければ同じ大きさで2行・語の途中で折らない）" node tools/check_layout_sizes.js
 run "新メンバー・更新メンバーのページ" node tools/check_member_pages.js
-run "役職のメンバー紹介" node tools/check_role_intro.js
+run "ネットワーキングリーダーのページ（見出しをお名前の枠と取り違えない・お2人の部門）" node tools/check_networking_leaders.js
+run "役職のメンバー紹介（学習コーナーのお名前の大きさも）" node tools/check_role_intro.js
 run "カウントダウンと音" node tools/check_countdown.js
 run "公式ファイルから雛形の画面" node tools/check_official_dialog.js
 run "定例会スライドの画面（架空の名簿：読み込み中・推薦のことば・「更新した」で手直しが戻らない）" node tools/check_meeting_dialog.js
