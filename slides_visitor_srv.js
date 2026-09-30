@@ -81,30 +81,30 @@ function previewVisitorSlideData(sheetName) {
 }
 
 // 長い文字を枠に収めるときの下限（pt）。これ以上は小さくせず、折り返す。
-// 会社名の下限を低めにしてあるのは、折り返すと下の【カテゴリー】に重なるため。
-// プレゼンのレイアウトでは、会社名とカテゴリーの間隔が約47ptしかなく、
-// 2行にするとどのみち20pt以下にしか出来ない。それなら1行のまま少し小さくした方が大きく出る。
 var FIT_MIN_ = { presenName: 40, presenCompany: 16, presenCategory: 14,
                  groupName: 16, groupValue: 10 };
+// ビジタープレゼンの会社名・【カテゴリー】の大きさ。メンバーのページ（slides_layout.html）と同じ、会社名44pt・カテゴリー32pt
+var PRESEN_PT_ = { company: 44, category: 32 };
 
 // プレゼンスライド1枚分（ID25=氏名+様 / ID27=会社名 / ID29=【カテゴリー】）
-// 会社名は長い会社があり、そのままだと枠からあふれて下の【カテゴリー】に重なるため、
-// 文字数に応じて自動で小さくする。枠の幅と元の大きさはテンプレートから読む。
+// 会社名・【カテゴリー】は、1人ずつ小さくすると大きさがバラバラになるので、決まった大きさ（PRESEN_PT_）で入れる。
+// 1行に入らなければ同じ大きさで2行にし、増えた高さのぶん【カテゴリー】を下げる。
+// 下の図形（カウントダウンなど）まで余地が足りないときだけ、足りる大きさまで小さくする。枠の幅はテンプレートから読む。
 // sec … カウントダウンの秒数（チャプターの設定のビジタープレゼン）。テンプレートと違うときだけ作り直す
 //       （始め方はテンプレートのまま。最後に鳴るベルの音も残る）
+// カウントダウンが終わっても、次の方のページへは自動で進めない（クリックで次へ）。
+// テンプレートに「○秒後に次へ」が入っていても外す
 function buildPresenXml_(xml, v, sec) {
   var nm = v.name + ' 様', cat = '【' + v.category + '】';
   xml = setTextInShape_(xml, 25, nm);
   xml = setTextInShape_(xml, 27, v.company);
   xml = setCategoryInShape_(xml, 29, v.category);
   xml = fitFontToShape_(xml, 25, nm, FIT_MIN_.presenName);
-  // 会社名が長いときは、1行に縮めるより2行にした方が大きく出せる。
-  // 2行になったぶんは【カテゴリー】を下にずらして重なりを避ける。
-  xml = fitTextAndPush_(xml, 27, 29, v.company, FIT_MIN_.presenCompany);
-  xml = fitFontToShape_(xml, 29, cat, FIT_MIN_.presenCategory);
+  xml = fitStackFixed_(xml, { id: 27, text: v.company, pt: PRESEN_PT_.company, minPt: FIT_MIN_.presenCompany, split: true },
+                            { id: 29, text: cat, pt: PRESEN_PT_.category, minPt: FIT_MIN_.presenCategory });
   var now = sec ? mpCountdownSeconds_(xml) : 0;
   if (now && sec !== now) xml = mpSetCountdown_(xml, sec);
-  return xml;
+  return mpNoAutoAdvance_(xml);
 }
 
 // 紹介／代理紹介スライド1枚分（3人）。空き枠は空文字で上書きしてダミー文字を消す
@@ -139,6 +139,12 @@ function groupLabelOf_(xml, shapeId) {
   var t = slideText_(xml.substring(r.start, r.end)).replace(/^[\s　]+/, '');
   var m = t.match(/^([^：:\s　]{1,8}[：:])/);
   return m ? m[1] : '';
+}
+
+// 「定例会20260930_（ビジタープレゼン）09301412.pptx」。開催日は参加者シートの名前（20260930参加者）から
+function visitorSlideFileName_(sheetName, part) {
+  var key = (String(sheetName || '').match(/^\d{8}|^\d{4}/) || [''])[0];
+  return slideFileName_(key ? meetingDateFromKey_(key) : null, part);
 }
 
 function makeGroups_(list) {
@@ -179,8 +185,7 @@ function generateAllIntroSlides(sheetName) {
     }
     if (!slides.length) return { ok: false, message: 'このシートにビジター・ゲスト・代理のいずれもいません。' };
 
-    var mmdd = (sheetName.match(/^\d{8}|^\d{4}/) || [''])[0];
-    var outName = mmdd + '_BNI_紹介スライド_一括.pptx';
+    var outName = visitorSlideFileName_(sheetName, '紹介スライド・まとめて');
     var noTitle = false;
     var blob = buildPptxFromTemplate_(baseBlob, slides, function (xml, item) {
       if (!findShapeRange_(xml, INTRO_TITLE_SHAPE_ID_)) noTitle = true;
@@ -217,31 +222,30 @@ function generateVisitorSlides(sheetName, type) {
     if (!parsed) return { ok: false, message: 'シート「' + sheetName + '」が見つかりません。' };
 
     var dataList, builder, outName, countLabel;
-    var mmdd = (sheetName.match(/^\d{8}|^\d{4}/) || [''])[0];
     if (type === 'presen') {
       if (!parsed.visitors.length) return { ok: false, message: 'このシートにビジターがいません。' };
       dataList = parsed.visitors;
       var vsec = chapterPresenSeconds_().visitor;
       builder = function (xml, v) { return buildPresenXml_(xml, v, vsec); };
-      outName = mmdd + '_BNI_プレゼンスライド.pptx';
+      outName = visitorSlideFileName_(sheetName, 'ビジタープレゼン');
       countLabel = parsed.visitors.length + '名・' + dataList.length + '枚・カウントダウン' + chapterSecondsLabel_(vsec);
     } else if (type === 'intro') {
       if (!parsed.visitors.length) return { ok: false, message: 'このシートにビジターがいません。' };
       dataList = makeGroups_(parsed.visitors);
       builder = buildGroupXml_;
-      outName = mmdd + '_BNI_紹介スライド.pptx';
+      outName = visitorSlideFileName_(sheetName, 'ビジター紹介');
       countLabel = parsed.visitors.length + '名・' + dataList.length + '枚';
     } else if (type === 'guest') {
       if (!parsed.guests.length) return { ok: false, message: 'このシートにゲストがいません。' };
       dataList = makeGroups_(parsed.guests);
       builder = buildGroupXml_;
-      outName = mmdd + '_BNI_ゲスト紹介スライド.pptx';
+      outName = visitorSlideFileName_(sheetName, 'ゲスト紹介');
       countLabel = parsed.guests.length + '名・' + dataList.length + '枚';
     } else {
       if (!parsed.dairi.length) return { ok: false, message: 'このシートに代理の方がいません。' };
       dataList = makeGroups_(parsed.dairi);
       builder = buildGroupXml_;
-      outName = mmdd + '_BNI_代理紹介スライド.pptx';
+      outName = visitorSlideFileName_(sheetName, '代理紹介');
       countLabel = parsed.dairi.length + '名・' + dataList.length + '枚';
     }
 

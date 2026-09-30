@@ -108,6 +108,17 @@ function driveHelpHint_(e) {
   return msg;
 }
 
+// 作ったスライドのファイル名。「定例会20260930_（前半）09301412.pptx」のように、
+// 頭に「定例会」と開催日、（ ）の中に種類、うしろに作った日時（月日時分）を付ける。
+// 作るたびに別のファイルになるので、前に作ったものを上書きしない。同じ開催日のファイルがドライブで並ぶ
+//   date … 開催日（Date）。分からなければ付けない
+//   part … 「前半」「ビジタープレゼン」など
+function slideFileName_(date, part, now) {
+  var ymd = date ? Utilities.formatDate(date, 'Asia/Tokyo', 'yyyyMMdd') : '';
+  return '定例会' + ymd + '_' + (part ? '（' + part + '）' : '')
+       + Utilities.formatDate(now || new Date(), 'Asia/Tokyo', 'MMddHHmm') + '.pptx';
+}
+
 // 生成物を 03_生成物 に保存し、リンク共有を付けてURLを返す
 function saveOutputFile_(blob, fileName) {
   var folder;

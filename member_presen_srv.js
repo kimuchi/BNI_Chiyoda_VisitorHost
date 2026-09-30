@@ -419,7 +419,8 @@ function mpLayoutBoxes_(map) {
   return presenterBoxesOf_(iv.xml, MP_INDIVIDUAL_.company, MP_INDIVIDUAL_.category);
 }
 
-// 会社名・カテゴリーの枠（EMU）と文字の大きさ（pt）→ 画面の setLayoutBoxes() に渡す形
+// 会社名・カテゴリーの枠（EMU）と文字の大きさ（pt）→ 画面の setLayoutBoxes() に渡す形。
+// 画面は枠の位置だけを使う（文字の大きさは、会社名44pt・カテゴリー32ptにそろえる。slides_layout.html）
 function presenterBoxesOf_(xml, companyId, categoryId) {
   var co = readShapeGeomEmu_(xml, companyId), ca = readShapeGeomEmu_(xml, categoryId);
   if (!co || !ca) return null;
@@ -477,8 +478,9 @@ function mpUseTimings_(map) {
 
 // 自動送りを外す（クリックで次へ進む）。
 // 「保存済みのタイミングを使用」がファイル全体で有効になっていても、このページは止まる。
+// 「クリック時」を外してある（advClick="0"）ページは、それも戻す（時間で進むのを外すと、クリックでも進めなくなるため）
 function mpNoAutoAdvance_(xml) {
-  return xml.replace(/\sadvTm="\d+"/g, '');
+  return xml.replace(/\sadvTm="\d+"/g, '').replace(/(<p:transition\b[^>]*?)\sadvClick="(?:0|false)"/g, '$1');
 }
 
 function mpAutoAdvance_(xml, ms) {

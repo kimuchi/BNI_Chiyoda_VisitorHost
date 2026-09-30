@@ -13,6 +13,7 @@
 //     チームの枠より人数が多いときは知らせる
 //   ・差し込み口の雛形：入れる／画面で外したとき（data が null）は差し込み口を空にするだけで写真の枠は残す
 //   ・役職もチームも未登録なら、差し込み口の無いページには触らない
+//   ・ネットワーキング学習コーナー：「担当：」は20pt・お名前は40ptの太字（狭い枠ではお名前だけ小さく）、自動縮小をやめ、枠の高さを2行ぶんに
 
 const fs = require('fs');
 const path = require('path');
@@ -323,6 +324,38 @@ const r5 = F.applyRoleIntro_(parts5, data, { by: {}, seq: 0 });
 const S5 = F.slideText_(F.xmlOf_(parts5, sPath('support')));
 ck(S5.includes('見本　七子') && S5.includes(vhMembers.join('、')) && F.slideText_(F.xmlOf_(parts5, sPath('leader'))).includes('見本　一郎')
    && r5.filled.some((f) => f.base === 'プレジデント' && f.name === '見本　一郎'), '差し込み口の雛形に入れる: ' + S5.slice(0, 120));
+
+// ===== 6. ネットワーキング学習コーナー：「担当：」は小さく、お名前は大きく（40pt・太字）。自動縮小はやめる =====
+{
+  // 雛形の「担当：」の枠（斜体・自動縮小つき・1行ぶんの高さ）
+  const learnBox = (id, w) => `<p:sp><p:nvSpPr><p:cNvPr id="${id}" name="Text ${id}"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>`
+    + `<p:spPr>${xf(560, 400, w, 50)}<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr>`
+    + '<p:txBody><a:bodyPr wrap="square"><a:normAutofit fontScale="62500" lnSpcReduction="20000"/></a:bodyPr><a:lstStyle/>'
+    + '<a:p><a:r><a:rPr lang="ja-JP" sz="2400" i="1"><a:solidFill><a:srgbClr val="1F3864"/></a:solidFill></a:rPr><a:t>旧カテゴリー</a:t></a:r></a:p>'
+    + '<a:p><a:r><a:rPr lang="ja-JP" sz="2400" i="1"><a:solidFill><a:srgbClr val="1F3864"/></a:solidFill></a:rPr><a:t>担当：前任　一郎</a:t></a:r></a:p></p:txBody></p:sp>';
+  const learnSlide = (w) => slideXml(sp(2, 0, 20, 960, 60, ['ネットワーキング学習コーナー'], 4000, true)
+    + sp(5, 560, 100, 300, 280, ['スピーカーの写真を挿入', '※枠にサイズを合わせてトリミング'], 1400) + pic(3, 560, 100, 300, 280, 'rId3') + learnBox(8, w));
+  const runsOf = (xml) => {
+    const r = F.findShapeRange_(xml, 8), seg = xml.substring(r.start, r.end);
+    return F.findTagRanges_(seg, 'a:p').map((p) => (seg.substring(p.start, p.end).match(/<a:r>[\s\S]*?<\/a:r>/g) || []).map((x) => ({
+      t: F.slideText_(x), sz: +(x.match(/\ssz="(\d+)"/) || [])[1], b: (x.match(/\sb="(\d)"/) || [])[1], i: (x.match(/\si="(\d)"/) || [])[1],
+      color: /1F3864/.test(x) })));
+  };
+  const lc = F.riLearningCorner_(learnSlide(300), data, W, H);
+  const got = runsOf(lc.xml);
+  ck(lc.done && lc.name === '見本　四郎', '学習コーナー：担当（エデュケーションコーディネーター）を入れない: ' + J({ done: lc.done, name: lc.name }));
+  ck(J(got) === J([[{ t: 'イベント企画', sz: 2000, b: '0', i: '0', color: true }],
+                   [{ t: '担当：', sz: 2000, b: '1', i: '0', color: true }, { t: '見本　四郎', sz: 4000, b: '1', i: '0', color: true }]]),
+     '学習コーナー：カテゴリー20pt／「担当：」20pt・お名前40ptの太字（斜体なし・色は雛形のまま）: ' + J(got));
+  const seg8 = ((x) => { const r = F.findShapeRange_(x, 8); return x.substring(r.start, r.end); })(lc.xml);
+  ck(/<a:noAutofit\/>/.test(seg8) && !/normAutofit|spAutoFit/.test(seg8), '学習コーナー：自動縮小が残っている（Googleスライドなどで字が小さくなる）: ' + (seg8.match(/<a:bodyPr[\s\S]*?(?:\/>|<\/a:bodyPr>)/) || [''])[0]);
+  const geo = F.readShapeGeomEmu_(lc.xml, 8);
+  ck(geo.cy >= Math.round((20 + 40) * 1.2 * 12700 + 2 * 45720) && geo.y === 400 * 12700, '学習コーナー：枠の高さが2行ぶんに足りない: ' + J(geo));
+  // 枠が狭く、お名前が長いときは、お名前だけ小さくする（「担当：」は20ptのまま）
+  const lc2 = F.riLearningCorner_(learnSlide(220), Object.assign({}, data, { roles: Object.assign({}, data.roles, { ec: { name: '見本　長い名前の方', category: '行政書士' } }) }), W, H);
+  const got2 = runsOf(lc2.xml)[1] || [];
+  ck(got2.length === 2 && got2[0].sz === 2000 && got2[1].sz < 4000 && got2[1].sz >= 2000, '学習コーナー：長いお名前を枠の幅に収める: ' + J(got2));
+}
 
 // ===== 写真の索引が古い（ファイルを開けない）方は、その方だけ写真なし。スライド全体を止めない =====
 {

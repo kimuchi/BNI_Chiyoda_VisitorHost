@@ -363,7 +363,7 @@ ck(/役職のページ（1枚）/.test(pm) && /🎯 バイスプレジデント/
 ck(/空欄の項目/.test(pm) && /ひな形：既定のもの/.test(pm), '空欄の項目・ひな形の表示');
 step('パワポを作る', () => run('premtgMake()'));
 ck(calls.some((c) => c[0] === 'premtgMake' && c[1] === '2026/09/30'), '作る呼び出しが無い');
-ck(/✅/.test(els.premtgOut.innerHTML) && /20260930_BNI事前MTG\.pptx/.test(els.premtgOut.innerHTML)
+ck(/✅/.test(els.premtgOut.innerHTML) && /定例会20260930_（事前MTG）\d{8}\.pptx/.test(els.premtgOut.innerHTML)
    && /PowerPointをダウンロード/.test(els.premtgOut.innerHTML), '作ったあとの表示: ' + els.premtgOut.innerHTML.replace(/<[^>]+>/g, ' ').slice(0, 300));
 ck(els.premtgBtn.disabled === false, '作ったあとも「パワポを作る」が押せない');
 step('開催日を変える', () => { els.meeting.value = '2026/10/07'; run('changeMeeting()'); });

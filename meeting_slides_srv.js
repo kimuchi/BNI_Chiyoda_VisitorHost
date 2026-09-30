@@ -1172,6 +1172,9 @@ function editMeetingSlides_(parts, map, rules, o) {
            members: members, vp: vp, leaders: leaders };
 }
 
+// ファイル名の（ ）の中
+var MEETING_FILE_PARTS_ = { meetingFirst: '前半', meetingSecond: '後半' };
+
 // 定例会スライドを生成する。テンプレート内の {{キー}} を置換する方式。
 // pptxのままサーバー側で加工し、Driveへ保存してURLを返す。
 // opts: { patterns: true/false（差し込み口が無いページの第○回・日付も直す）,
@@ -1187,11 +1190,10 @@ function generateMeetingSlides(kind, values, meetingDateVal, opts) {
   try {
     if (!BIG_TEMPLATE_KINDS_[kind]) return { ok: false, message: 'スライドの種類が不正です。' };
     var map = values || {}, o = opts || {};
-    var mmdd = '';
     var d = parseDate_(meetingDateVal);
-    if (d) mmdd = Utilities.formatDate(d, 'Asia/Tokyo', 'yyyyMMdd');
     var label = BIG_TEMPLATE_KINDS_[kind].label;
-    var outName = (mmdd ? mmdd + '_' : '') + label + '.pptx';
+    // 「定例会20260930_（前半）09301412.pptx」（開催日と、作った日時）
+    var outName = slideFileName_(d, MEETING_FILE_PARTS_[kind] || label);
 
     var rules = (o.patterns === false) ? []
               : meetingPatternRules_(String(map['開催回'] || '').replace(/[^\d]/g, ''), d);

@@ -571,17 +571,24 @@ function riFillPhotos_(parts, path, xml, persons, cache, res) {
 // === ネットワーキング学習コーナー ===
 // 担当は、その期のエデュケーションコーディネーター（役職・チーム（半期ごと））。
 //   ・「担当：」の文字のある枠（Activeチャプターの雛形）… 1行目にカテゴリー、2行目に「担当：お名前」。
-//     雛形の斜体・自動縮小（文字がとても小さくなる）をやめ、カテゴリー20pt・お名前32ptの太字にそろえる
-//     （枠の幅に収まらないときだけ小さくする）
+//     雛形の斜体・自動縮小（文字がとても小さくなる）をやめ、カテゴリー20pt、「担当：」20pt・お名前40ptの太字にする
+//     （お名前は枠の幅に収まらないときだけ小さくする）。枠の高さが足りなければ下へ伸ばす
+//     （以前はお名前も「担当：」と同じ32ptで、自動縮小も残っていたため、Googleスライドなどでは小さく出た）
 //   ・公式ファイルの作り（「氏名／学習トピック」の枠）… 「氏名」をお名前にする（学習トピックはそのまま）
 //   ・写真 … その枠の上の写真（無ければいちばん大きな写真）を、エデュケーションコーディネーターの写真にする。
 //     写真が無い方のときは枠を外し、「スピーカーの写真を挿入」のような見本の文字も消す
-var RI_LEARN_CAT_PT_ = 20, RI_LEARN_NAME_PT_ = 32;
+var RI_LEARN_CAT_PT_ = 20, RI_LEARN_LABEL_PT_ = 20, RI_LEARN_NAME_PT_ = 40;
 function riLearnPt_(text, want, wEmu) {
   var avail = Math.max(1, (wEmu || 0) - 2 * 91440) / 12700 * 0.95, em = riTextEm_(text);
   return em * want <= avail ? want : Math.max(Math.floor(want / 2), Math.floor(avail / em));
 }
-function riRewriteLearnBox_(xml, box, p) {
+// 「担当：」のうしろのお名前の大きさ。「担当：」と合わせて枠の幅に収まる大きさ（お名前だけ小さくする）
+function riLearnNamePt_(label, name, wEmu) {
+  var avail = Math.max(1, (wEmu || 0) - 2 * 91440) / 12700 * 0.95 - riTextEm_(label) * RI_LEARN_LABEL_PT_, em = riTextEm_(name);
+  if (!em || em * RI_LEARN_NAME_PT_ <= avail) return RI_LEARN_NAME_PT_;
+  return Math.max(Math.floor(RI_LEARN_NAME_PT_ / 2), Math.floor(avail / em));
+}
+function riRewriteLearnBox_(xml, box, p, H) {
   var r = findShapeRange_(xml, box.id);
   if (!r) return xml;
   var seg = xml.substring(r.start, r.end), tb = findTagRanges_(seg, 'p:txBody')[0];
@@ -594,17 +601,31 @@ function riRewriteLearnBox_(xml, box, p) {
     return '<a:r>' + rPr.replace(/^<a:rPr\b/, '<a:rPr sz="' + pt * 100 + '" b="' + (bold ? 1 : 0) + '" i="0"')
          + '<a:t>' + escapeXml_(text) + '</a:t></a:r>';
   };
-  var para = function (text, pt, bold) {
-    return '<a:p><a:pPr algn="ctr"/>' + run(text, pt, bold) + '<a:endParaRPr lang="ja-JP" sz="' + pt * 100 + '"/></a:p>';
+  var para = function (runs, endPt) {
+    return '<a:p><a:pPr algn="ctr"/>' + runs + '<a:endParaRPr lang="ja-JP" sz="' + endPt * 100 + '"/></a:p>';
   };
+  // 自動縮小はやめる（normAutofit が残っていると、Googleスライドなどが枠に合わせて字を小さくする）
   var bodyPr = (body.match(/<a:bodyPr\b[^>]*\/>|<a:bodyPr\b[^>]*>[\s\S]*?<\/a:bodyPr>/) || ['<a:bodyPr/>'])[0]
-    .replace(/<a:normAutofit\b[^>]*\/>/, '<a:normAutofit/>');                        // 縮小の割合を外す
+    .replace(/<a:(?:normAutofit|spAutoFit|noAutofit)\b[^>]*\/>/g, '');
+  bodyPr = /\/>$/.test(bodyPr) ? bodyPr.replace(/\/>$/, '><a:noAutofit/></a:bodyPr>')
+         : /<\/a:prstTxWarp>/.test(bodyPr) ? bodyPr.replace('</a:prstTxWarp>', '</a:prstTxWarp><a:noAutofit/>')
+         : bodyPr.replace(/^(<a:bodyPr\b[^>]*>)/, '$1<a:noAutofit/>');
   var lst = (body.match(/<a:lstStyle\b[^>]*\/>|<a:lstStyle\b[^>]*>[\s\S]*?<\/a:lstStyle>/) || ['<a:lstStyle/>'])[0];
-  var name = '担当：' + p.name;
-  var paras = (p.category ? para(p.category, riLearnPt_(p.category, RI_LEARN_CAT_PT_, box.acx), false) : '')
-            + para(name, riLearnPt_(name, RI_LEARN_NAME_PT_, box.acx), true);
+  var label = '担当：', catPt = p.category ? riLearnPt_(p.category, RI_LEARN_CAT_PT_, box.acx) : 0;
+  var namePt = riLearnNamePt_(label, p.name, box.acx);
+  var paras = (p.category ? para(run(p.category, catPt, false), catPt) : '')
+            + para(run(label, RI_LEARN_LABEL_PT_, true) + run(p.name, namePt, true), namePt);
   seg = seg.substring(0, tb.start) + '<p:txBody>' + bodyPr + lst + paras + '</p:txBody>' + seg.substring(tb.end);
-  return xml.substring(0, r.start) + seg + xml.substring(r.end);
+  xml = xml.substring(0, r.start) + seg + xml.substring(r.end);
+  // 枠の高さが2行ぶんに足りなければ、下へ伸ばす（スライドの下にはみ出すなら、そのぶん上へ）。グループの中の枠はそのまま
+  var g = box.parent ? null : readShapeGeomEmu_(xml, box.id);
+  var need = Math.round((catPt + namePt) * 1.2 * 12700 + 2 * 45720);
+  if (g && g.cy < need) {
+    var y = g.y;
+    if (H && y + need > H) y = Math.max(0, H - need);
+    xml = setShapeGeomEmu_(xml, box.id, { y: y, cy: need });
+  }
+  return xml;
 }
 function riLearningCorner_(xml, data, W, H) {
   var ec = data && data.holdersOk ? data.roles.ec : null;
@@ -612,7 +633,7 @@ function riLearningCorner_(xml, data, W, H) {
   var shapes = riShapes_(xml), pics = riPhotos_(shapes, W, H), pic = null;
   var box = shapes.filter(function (s) { return s.tag === 'p:sp' && /担当\s*[：:]/.test(s.text); })[0];
   if (box) {
-    xml = riRewriteLearnBox_(xml, box, ec);
+    xml = riRewriteLearnBox_(xml, box, ec, H);
     pic = riPicNear_(pics, box, false, null);
   } else {
     box = shapes.filter(function (s) {

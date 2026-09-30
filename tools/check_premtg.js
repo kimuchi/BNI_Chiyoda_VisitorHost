@@ -159,7 +159,8 @@ ck(pv.template && !pv.template.registered, 'ひな形は既定のもの: ' + JSO
 
 // ===================== 作る（既定のひな形）=====================
 const r = F.generatePreMeetingSlides(DATE);
-ck(r.ok && SAVED && SAVED.name === '20260930_BNI事前MTG.pptx', '作成: ' + r.message);
+// ファイル名は「定例会20260930_（事前MTG）MMddHHmm.pptx」（開催日と、作った日時）
+ck(r.ok && SAVED && /^定例会20260930_（事前MTG）\d{8}\.pptx$/.test(SAVED.name), '作成: ' + r.message + ' ' + (SAVED && SAVED.name));
 console.log(r.message);
 ck(/写真が見つからない方（仮の画像のまま）: 金井 美里/.test(r.message), '写真が無い方のお知らせ: ' + r.message);
 const files = readZip(SAVED.blob._buf);

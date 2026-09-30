@@ -547,7 +547,15 @@ function fpNlPage_(xml, W, H) {
   if (labels.length >= 3) return { type: 'summary', labels: labels, shapes: shapes };
   if (labels.length === 1) {
     var value = shapes.filter(function (s) { return s.tag === 'p:sp' && FP_NL_VALUE_RE_.test(riNorm_(s.text)); })[0] || null;
-    var u = fpUnits_(xml, W, H, function (s) { return s === labels[0] || s === value; });
+    // 部門の見出しと数は、お名前・会社名の枠として見ない。fpUnits_ は図形の一覧を作り直すので、図形の番号と字で見分ける。
+    // 以前は一覧の中身どうしを比べていていつも外れず、カタカナだけの見出し（「サンキュー」）をお名前の枠と取り違えていた
+    // （受賞者がお2人だと、見出しに1人目のお名前・数に1人目の会社名が入り、写真の枠には2人目だけが入った）
+    var skip = {};
+    skip[labels[0].id] = true;
+    if (value) skip[value.id] = true;
+    var u = fpUnits_(xml, W, H, function (s) {
+      return !!skip[s.id] || !!fpNlKindOf_(s.text) || FP_NL_VALUE_RE_.test(riNorm_(s.text));
+    });
     if (u.units.length) return { type: 'kind', kind: fpNlKindOf_(labels[0].text), label: labels[0], value: value, units: u.units };
   }
   var t = riNorm_(slideText_(xml));
