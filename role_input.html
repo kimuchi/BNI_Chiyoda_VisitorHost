@@ -172,7 +172,19 @@
        <span class="muted" id="rotFbWeekNote"></span></div>
      <textarea id="rotFb" rows="12" style="width:100%;font-family:inherit;font-size:12.5px;margin-top:5px;"></textarea>
      <button onclick="copyFb()">📋 コピーする</button> <span class="muted" id="rotFbMsg"></span>
-     <div style="font-weight:bold;font-size:12px;margin-top:12px;">添付する画像（ご案内する回から5回分のメインプレゼンター）</div>
+     <div style="font-weight:bold;font-size:12px;margin-top:12px;">添付する画像①　メインプレゼンターの画像（ご案内する回のお2人）</div>
+     <div class="muted" style="line-height:1.6;">写真（⚙️ 設定 &gt; メンバー写真）・お名前・ご紹介して欲しいカテゴリー（メンバー名簿の「協業したい人」）で作ります。
+       下の欄で直すと、すぐ描き直します（名簿は変わりません）。</div>
+     <div id="mpEdit" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px;"></div>
+     <div style="font-size:12px;margin-top:6px;">見出し：<input type="text" id="mpTitle" value="今週のメインプレゼンテーション" style="width:55%;" oninput="mpRedraw()"></div>
+     <div style="margin-top:6px;"><img id="mpImg" alt="メインプレゼンターの画像" style="max-width:100%;border:1px solid #e2e6ec;display:none;"></div>
+     <div style="margin-top:6px;">
+       <button onclick="mpImgDownload()">⬇ 画像を保存</button>
+       <button onclick="mpImgCopy()">📋 画像をコピー</button>
+       <button onclick="mpImgDrive()">Driveに保存</button>
+       <div class="muted" id="mpImgMsg" style="margin-top:4px;line-height:1.6;"></div>
+     </div>
+     <div style="font-weight:bold;font-size:12px;margin-top:12px;">添付する画像②　スピーカーローテーションの表（ご案内する回から5回分のメインプレゼンター）</div>
      <div class="muted">前半スライドの「スピーカーローテーション」の表と同じ中身です。並び順・見出し・注意書きを直すと、すぐ描き直します。</div>
      <div id="rotImgBox" style="margin-top:6px;"><img id="rotImg" alt="スピーカーローテーションの表" style="max-width:100%;border:1px solid #e2e6ec;display:none;"></div>
      <div style="margin-top:6px;">
@@ -976,6 +988,7 @@
      return { date:w.date, no:w.no, label:w.label, md:w.md, secretary:w.secretary, people:weekPeople(w) };
    });
    el('rotFb').value = fbTextOf(ws[0], ws[0].people);
+   mpUpdate(ws[0], ws[0].people);
    rotImgName = String(ws[0].date).replace(/\//g,'')+'_スピーカーローテーション.png';
    rotImgData = drawRotImage(ws);
    var img=el('rotImg');
@@ -1074,6 +1087,218 @@
    var t=el('rotFb');
    try { t.select(); document.execCommand('copy'); el('rotFbMsg').innerText='コピーしました'; }
    catch(e){ el('rotFbMsg').innerText='Ctrl+C（Macは ⌘+C）でコピーしてください'; }
+ }
+
+ // --- メインプレゼンターの画像（「今週のメインプレゼンテーション」。書記兼会計のデザインと同じ並び・色）---
+ // 1920×1080。左右にお1人ずつ：写真・お名前・ご紹介して欲しいカテゴリー（3つまで）。下に赤い帯と標語
+ var MP_FONT='"Noto Sans JP","Hiragino Kaku Gothic ProN","Hiragino Sans","Yu Gothic","Meiryo",sans-serif';
+ var MP_PANEL=['#FFEFF9','#F2F2F2'], MP_DX=950;
+ var mpData='', mpName='', mpKey='', mpWeek=null, mpPhotos={}, mpPending={}, mpPics={}, mpOwn=[null,null], mpTimer=null, mpFontAsked=false;
+ // 「協業したい人」→ ご紹介して欲しいカテゴリー（「・」「、」などで分ける。4つ以上は3つ目にまとめる）
+ function mpCats(collab){
+   var a=String(collab||'').split(/[・、,，\/／\n]+/).map(function(s){ return s.trim(); }).filter(function(s){ return s; });
+   return a.length>3 ? [a[0], a[1], a.slice(2).join('・')] : a;
+ }
+ // ご案内する回が替わったら、お2人の欄を作り直す（同じ回のままなら、直した中身を残す）
+ function mpUpdate(w, people){
+   var key=(w?w.date:'')+'|'+people.map(function(p){ return p.name; }).join('|');
+   if(key===mpKey) return;
+   mpKey=key; mpWeek=w; mpOwn=[null,null];
+   el('mpEdit').innerHTML=[0,1].map(function(i){
+     var p=people[i]||{}, cats=mpCats(p.collab);
+     return '<div class="box" style="flex:1;min-width:250px;margin:0;font-size:12px;line-height:1.9;">'
+       +'<b>PRESENTER'+(i?'②':'①')+'</b><br>'
+       +'お名前：<input type="text" id="mpName'+i+'" value="'+esc(p.name||'')+'" style="width:65%;" oninput="mpRedraw()"><br>'
+       +[0,1,2].map(function(k){ return 'カテゴリー'+(k+1)+'：<input type="text" id="mpCat'+i+'_'+k+'" value="'+esc(cats[k]||'')+'" style="width:58%;" oninput="mpRedraw()">'; }).join('<br>')
+       +'<br><span class="muted" id="mpPhotoNote'+i+'"></span><br>'
+       +'<label style="font-size:11.5px;">写真を選ぶ（パソコンの写真を使う）：<input type="file" accept="image/*" id="mpFile'+i+'" onchange="mpPickPhoto('+i+', this)"></label>'
+       +'</div>';
+   }).join('');
+   mpName=(w?String(w.date).replace(/\//g,''):'')+'_メインプレゼンター.png';
+   mpLoadFonts();
+   mpLoadPhotos(people.map(function(p){ return p.name; }).filter(function(n){ return n; }));
+   mpDraw();
+ }
+ // 書体（Noto Sans JP）を読んでから描き直す。読めないときは、パソコンの書体のまま
+ function mpLoadFonts(){
+   if(mpFontAsked) return;
+   mpFontAsked=true;
+   try {
+     var l=document.createElement('link'); l.rel='stylesheet';
+     l.href='https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700;900&display=swap';
+     document.head.appendChild(l);
+     if(document.fonts && document.fonts.load){
+       Promise.all(['400 30px "Noto Sans JP"','700 40px "Noto Sans JP"','900 52px "Noto Sans JP"'].map(function(f){ return document.fonts.load(f, 'あ漢A'); }))
+         .then(function(){ mpDraw(); }, function(){});
+     }
+   } catch(e){}
+ }
+ // メンバー写真（⚙️ 設定 > メンバー写真）。氏名ごとに1回だけ取りに行く
+ function mpLoadPhotos(names){
+   var need=names.filter(function(n){ return !(n in mpPhotos) && !mpPending[n]; });
+   mpPhotoNotes();
+   if(!need.length) return;
+   need.forEach(function(n){ mpPending[n]=1; });
+   var done=function(map){
+     need.forEach(function(n){ delete mpPending[n]; mpPhotos[n]=(map&&map[n])||''; if(mpPhotos[n]) mpPic(n, mpPhotos[n]); });
+     mpPhotoNotes(); mpDraw();
+   };
+   google.script.run.withSuccessHandler(function(r){ done(r&&r.map); })
+     .withFailureHandler(function(){ done(null); }).getMemberPhotosBase64(need);
+ }
+ function mpPic(key, src){
+   var im=new Image();
+   im.onload=function(){ mpPics[key]=im; mpDraw(); };
+   im.src=src;
+ }
+ function mpPickPhoto(i, input){
+   var f=input.files && input.files[0]; if(!f) return;
+   var r=new FileReader();
+   r.onload=function(){ mpOwn[i]=String(r.result); mpPic('own'+i+':'+mpKey, mpOwn[i]); mpPhotoNotes(); };
+   r.readAsDataURL(f);
+ }
+ function mpPhotoNotes(){
+   [0,1].forEach(function(i){
+     var n=(el('mpName'+i)||{}).value||'', note=el('mpPhotoNote'+i); if(!note) return;
+     note.innerText = mpOwn[i] ? '写真：選んだ写真を使います'
+       : mpPending[n] ? '写真：読み込み中…'
+       : mpPhotos[n] ? '写真：メンバー写真から'
+       : (n in mpPhotos) ? '写真が見つかりません（⚙️ 設定 > メンバー写真 で登録するか、下で選んでください）' : '';
+   });
+ }
+ function mpRedraw(){ clearTimeout(mpTimer); mpTimer=setTimeout(function(){ mpPhotoNotes(); mpDraw(); }, 150); }
+ function mpDraw(){
+   if(!el('mpName0')) return;
+   mpData=mpDrawImage();
+   var img=el('mpImg');
+   if(mpData){ img.src=mpData; img.style.display=''; }
+   else { img.style.display='none'; el('mpImgMsg').innerText='この画面では画像を作れません（ブラウザが画像の描画に対応していません）。'; }
+ }
+ function mpDrawImage(){
+   var cv=document.createElement('canvas');
+   if(!cv || !cv.getContext) return '';
+   var g=cv.getContext('2d');
+   if(!g) return '';
+   var W=1920, H=1080;
+   cv.width=W; cv.height=H;
+   var font=function(w, s){ g.font=w+' '+s+'px '+MP_FONT; };
+   // 幅 maxW に入るまで小さくする（下限 min）
+   var fit=function(text, w, size, maxW, min){
+     var s=size; for(;;){ font(w, s); if(s<=min || g.measureText(text).width<=maxW) return s; s-=1; }
+   };
+   var line=function(x1, y1, x2, y2, color, lw){ g.beginPath(); g.moveTo(x1,y1); g.lineTo(x2,y2); g.strokeStyle=color; g.lineWidth=lw; g.stroke(); };
+   var rr=function(x, y, w, h, r){
+     g.beginPath(); g.moveTo(x+r,y); g.lineTo(x+w-r,y); g.arcTo(x+w,y,x+w,y+r,r); g.lineTo(x+w,y+h-r); g.arcTo(x+w,y+h,x+w-r,y+h,r);
+     g.lineTo(x+r,y+h); g.arcTo(x,y+h,x,y+h-r,r); g.lineTo(x,y+r); g.arcTo(x,y,x+r,y,r); g.closePath();
+   };
+   g.fillStyle='#FFFFFF'; g.fillRect(0,0,W,H);
+   g.textBaseline='middle';
+   // 見出しと左右の赤い線
+   var title=String(el('mpTitle').value||'').trim();
+   if(title){
+     fit(title, 900, 52, 1000, 30);
+     var tw=g.measureText(title).width;
+     g.fillStyle='#111111'; g.textAlign='center'; g.fillText(title, W/2, 80);
+     line(200, 80, Math.max(220, W/2-tw/2-34), 80, '#FF3131', 4);
+     line(Math.min(W-220, W/2+tw/2+34), 80, 1720, 80, '#FF3131', 4);
+   }
+   // 真ん中の仕切り
+   line(960, 170, 960, 948, '#737373', 4);
+   [0,1].forEach(function(i){
+     var dx=i*MP_DX, panel=MP_PANEL[i];
+     var name=String((el('mpName'+i)||{}).value||'').trim();
+     var cats=[0,1,2].map(function(k){ return String((el('mpCat'+i+'_'+k)||{}).value||'').trim(); }).filter(function(s){ return s; });
+     g.fillStyle=panel; g.fillRect(52+dx, 170, 865, 744);
+     // PRESENTER①②
+     g.fillStyle='#FB3431';
+     g.beginPath(); g.moveTo(52+dx,170); g.lineTo(452+dx,170); g.lineTo(416+dx,228); g.lineTo(52+dx,228); g.closePath(); g.fill();
+     font(400, 40); g.fillStyle='#FFFFFF'; g.textAlign='left'; g.fillText('PRESENTER'+(i?'②':'①'), 106+dx, 201);
+     // 写真（角の丸い枠いっぱいに。顔が切れないよう上寄せで切り抜く）
+     var pic=mpOwn[i] ? mpPics['own'+i+':'+mpKey] : mpPics[name];
+     g.save(); rr(82+dx, 306, 367, 552, 30); g.clip();
+     if(pic && pic.width && pic.height){
+       var s=Math.max(367/pic.width, 552/pic.height), sw=367/s, sh=552/s;
+       g.drawImage(pic, (pic.width-sw)/2, (pic.height-sh)*0.25, sw, sh, 82+dx, 306, 367, 552);
+     } else {
+       g.fillStyle='#DDE3EA'; g.fillRect(82+dx, 306, 367, 552);
+       font(700, 30); g.fillStyle='#8A94A3'; g.textAlign='center'; g.fillText('写真なし', 265+dx, 582);
+     }
+     g.restore();
+     // お名前と赤い下線
+     if(name){
+       fit(name, 900, 52, 380, 28);
+       g.fillStyle='#111111'; g.textAlign='center'; g.fillText(name, 681+dx, 314);
+     }
+     line(485+dx, 356.5, 878+dx, 356.5, '#EF3538', 4);
+     if(!cats.length) return;
+     // 📣 ご紹介して欲しいカテゴリー（拡声器の絵は線で描く）
+     g.fillStyle='#FF3131';
+     g.beginPath(); g.moveTo(491+dx,423); g.lineTo(508+dx,414); g.lineTo(508+dx,442); g.lineTo(491+dx,433); g.closePath(); g.fill();
+     g.fillRect(485+dx, 423, 6, 10);
+     g.beginPath(); g.moveTo(493+dx,433); g.lineTo(497+dx,443); g.lineTo(501+dx,441); g.lineTo(498+dx,435); g.closePath(); g.fill();
+     line(512+dx,418,518+dx,414,'#FF3131',2.5); line(513+dx,428,520+dx,428,'#FF3131',2.5); line(512+dx,438,518+dx,442,'#FF3131',2.5);
+     font(700, 27); g.textAlign='left'; g.fillText('ご紹介して欲しいカテゴリー', 535+dx, 428);
+     // カテゴリーの枠（右上を斜めに切った枠と、左のチェックの丸）
+     cats.forEach(function(text, k){
+       var top=491+k*132;
+       g.beginPath(); g.moveTo(519+dx,top); g.lineTo(851+dx,top); g.lineTo(878+dx,top+30); g.lineTo(878+dx,top+101); g.lineTo(519+dx,top+101);
+       g.strokeStyle='#AB555E'; g.lineWidth=1.5; g.stroke();
+       g.beginPath(); g.arc(519+dx, top+51, 33, 0, Math.PI*2); g.fillStyle=panel; g.fill(); g.strokeStyle='#FE3434'; g.lineWidth=4; g.stroke();
+       g.beginPath(); g.moveTo(503+dx,top+52); g.lineTo(514+dx,top+63); g.lineTo(535+dx,top+40);
+       g.lineCap='round'; g.lineJoin='round'; g.lineWidth=4.5; g.stroke(); g.lineCap='butt'; g.lineJoin='miter';
+       // 文字：1行に入るまで小さくし（28pxまで）、それでも長ければ2行
+       g.fillStyle='#111111'; g.textAlign='left';
+       var maxW=290, s=fit(text, 700, 40, maxW, 28);
+       if(g.measureText(text).width<=maxW){ g.fillText(text, 574+dx, top+51); return; }
+       var cut=text.lastIndexOf('・', Math.ceil(text.length/2)+2);
+       if(cut<=0) cut=Math.ceil(text.length/2); else cut++;
+       var l1=text.slice(0,cut), l2=text.slice(cut);
+       s=Math.min(fit(l1, 700, 32, maxW, 18), fit(l2, 700, 32, maxW, 18));
+       font(700, s); g.fillText(l1, 574+dx, top+51-s*0.62); g.fillText(l2, 574+dx, top+51+s*0.62);
+     });
+   });
+   // 下の赤い帯：的と矢の絵・標語・チャプター名
+   g.fillStyle='#CD1925'; g.fillRect(0, 949, W, H-949);
+   g.strokeStyle='#FFFFFF'; g.fillStyle='#FFFFFF';
+   g.lineWidth=5; g.beginPath(); g.arc(119, 1013, 30, 0, Math.PI*2); g.stroke();
+   g.beginPath(); g.arc(119, 1013, 17, 0, Math.PI*2); g.stroke();
+   g.beginPath(); g.arc(119, 1013, 6, 0, Math.PI*2); g.fill();
+   line(121, 1011, 150, 982, '#FFFFFF', 5);
+   g.beginPath(); g.moveTo(152,980); g.lineTo(140,982); g.lineTo(150,992); g.closePath(); g.fill();
+   font(400, 27); g.textAlign='left';
+   g.fillText('メンバー同士でつながり、', 187, 993);
+   g.fillText('ビジネスの可能性を広げよう！', 187, 1032);
+   var ch=String(rot && rot.chapter || '').trim();
+   if(ch){ fit('BNI '+ch, 900, 44, 600, 26); g.textAlign='center'; g.fillText('BNI '+ch, 960, 1014); }
+   try { return cv.toDataURL('image/png'); } catch(e){ return ''; }
+ }
+ function mpImgDownload(){
+   if(!mpData) return;
+   var a=document.createElement('a');
+   a.href=mpData; a.download=mpName;
+   document.body.appendChild(a); a.click(); document.body.removeChild(a);
+   el('mpImgMsg').innerText='「'+mpName+'」を保存しました。保存されないときは、画像を右クリック（スマホは長押し）して保存するか、「Driveに保存」を使ってください。';
+ }
+ function mpImgCopy(){
+   var msg=function(t){ el('mpImgMsg').innerText=t; };
+   var ng='この画面からはコピーできませんでした。画像を右クリック（スマホは長押し）して「画像をコピー」を選んでください。';
+   if(!mpData) return;
+   try {
+     if(!navigator.clipboard || !window.ClipboardItem) { msg(ng); return; }
+     fetch(mpData).then(function(r){ return r.blob(); })
+       .then(function(b){ return navigator.clipboard.write([new ClipboardItem({ 'image/png': b })]); })
+       .then(function(){ msg('画像をコピーしました。Facebookの投稿に貼り付けられます。'); }, function(){ msg(ng); });
+   } catch(e){ msg(ng); }
+ }
+ function mpImgDrive(){
+   if(!mpData) return;
+   el('mpImgMsg').innerText='Driveに保存しています…';
+   google.script.run.withSuccessHandler(function(r){
+     if(!r || !r.ok){ el('mpImgMsg').innerText=(r&&r.message)||'保存できませんでした。'; return; }
+     el('mpImgMsg').innerHTML=esc(r.message)+' <a href="'+esc(r.downloadUrl||r.url)+'" target="_blank">⬇ '+esc(r.fileName)+'</a>'
+       +' <a href="'+esc(r.url)+'" target="_blank">ドライブで見る</a>';
+   }).withFailureHandler(function(e){ el('mpImgMsg').innerText='保存できませんでした: '+((e&&e.message)?e.message:e); })
+     .saveSpeakerRotationImage(mpData.split(',')[1], mpName);
  }
  // ツールのHTMLから、ROTATION_STORE（並び順などのJSON）の部分だけを取り出して送る
  function rotImport(input){

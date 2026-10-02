@@ -37,6 +37,7 @@ run "割り振り表のAI（待機リストに居ないビジターホスト・�
 run "割り振り表の画面（ブラウザ：読み込んだ回に書き込む・Spreadingの文字を動かさない）" node tools/check_allocation_dialog.js
 run "期の替わり目の担当者と名簿の役職（未登録の期で役職を消さない・取り込みを前の期に戻さない・設定の保存で期をずらさない）" node tools/check_role_terms.js
 run "スピーカーローテーション（保存していないとき：見た日で発表者が変わらない）" node tools/check_rotation_unsaved.js
+run "メインプレゼンターの画像（ブラウザ：写真・お名前・ご紹介して欲しいカテゴリー・回を替える・保存）" node tools/check_mp_image.js
 run "ルーティンチェックシートの名前の照合（同じ名字・似た氏名・名簿に無い新メンバー）" node tools/check_routine_names.js
 run "メンバー名簿の画面（ブラウザ：読み込めていないときは保存させない・ほかの方の変更を消さない・列を足したシート・貼り付けの改行）" node tools/check_member_master_dialog.js
 run "PowerPointテンプレートの登録（開けない登録を未登録と出さない・素材フォルダを開けない方は止める）" node tools/check_template_files.js
