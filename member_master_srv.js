@@ -739,7 +739,9 @@ function importMemberTsv(text, replaceAll) {
 //   2. 1文字だけ違う氏名（読み取りの誤り・異体字）で、ふりがなが同じ方（3文字以上。名簿でもPDFでも1対1に決まるときだけ）
 //      … 氏名は名簿のまま。ふりがなが無い・違うときは別の方とみなす（「山川 健」と「山川 誠」を同じ方にしない）
 //   3. どちらも無ければ、新しい方として足す
-// PDFに載っていない方は消さない（知らせるだけ）。
+// PDFに載っていない方は、確認の一覧でチェックした方（退会された方）だけを名簿から消す。
+// PDFの番号に抜けが無く、新しく足す方もいないときは、はじめからチェックを入れておく
+// （抜けがあると、読み取れなかった方かもしれない。足す方がいると、氏名の書き方が違うだけの同じ方かもしれない）。
 
 // 突き合わせに使う氏名（normName_ から、異体字セレクタ（葛󠄀 などの見えない印）を外す）
 function ocrKey_(s) {
@@ -837,12 +839,29 @@ function ocrApplyPlan_(plan, cur) {
     .map(function (k) { return { no: k, names: byNo[k] }; });
 }
 
+// PDFの番号の抜け（1 から いちばん大きい番号まで）。番号が読めないときは null
+function ocrNumberGaps_(extracted) {
+  var seen = {}, max = 0, n = 0;
+  (extracted || []).forEach(function (e) {
+    var v = parseInt(String(e.no || '').normalize('NFKC'), 10);
+    if (v > 0 && v < 1000) { seen[v] = true; if (v > max) max = v; n++; }
+  });
+  if (!n) return null;
+  var gaps = [];
+  for (var k = 1; k <= max; k++) if (!seen[k]) gaps.push(String(k));
+  return gaps;
+}
+
 // 画面・確認用に、当てはめた結果をまとめる（名簿は変えない）
 function ocrPlanSummary_(extracted, cur) {
   var plan = ocrMergePlan_(extracted, cur);
   var copy = cur.map(function (m) { var o = {}; for (var k in m) o[k] = m[k]; return o; });
   var dup = ocrApplyPlan_(ocrMergePlan_(extracted, copy), copy);
+  var gaps = ocrNumberGaps_(extracted);
   return {
+    gaps: gaps || [],
+    // PDFに無い方を、はじめから「名簿から消す」にしておくか（番号に抜けが無く、足す方・読めない行も無いとき）
+    removeSuggested: !!gaps && !gaps.length && !plan.adds.length && !plan.noName.length,
     total: (extracted || []).length,
     updates: plan.matches.filter(function (x) { return x.changes.length; }).map(function (x) {
       return { name: cur[x.idx].name, pdfName: x.e.name, near: x.near,
@@ -859,13 +878,19 @@ function ocrPlanSummary_(extracted, cur) {
 }
 
 // 確認用の文（ダイアログを使わない取り込みの確認・反映したあとの知らせ）
-function ocrSummaryText_(sm, done) {
+//   removed … 名簿から消した方の氏名（反映したあと）
+function ocrSummaryText_(sm, done, removed) {
   var list = function (a, f) { return a.slice(0, 12).map(f).join('、') + (a.length > 12 ? ' ほか' + (a.length - 12) + '名' : ''); };
+  var rmKey = {};
+  (removed || []).forEach(function (n) { rmKey[ocrKey_(n)] = true; });
+  var kept = sm.missing.filter(function (x) { return !rmKey[ocrKey_(x.name)]; });
   var t = '読み取り ' + sm.total + '名：変わる方 ' + sm.updates.length + '名 / 変わらない方 ' + sm.unchanged + '名 / 新しく足す方 ' + sm.adds.length + '名';
   if (sm.adds.length) t += '\n・新しく足す方（名簿に同じ氏名が無い）: ' + list(sm.adds, function (x) { return 'No' + (x.no || '?') + ' ' + x.name; });
   if (sm.near.length) t += '\n・氏名が1文字違う方（名簿の氏名のまま' + (done ? '更新しました' : '更新します') + '）: '
     + list(sm.near, function (x) { return 'PDF「' + x.pdf + '」→ 名簿「' + x.roster + '」'; });
-  if (sm.missing.length) t += '\n・PDFに無い方（消しません）: ' + list(sm.missing, function (x) { return (x.no ? 'No' + x.no + ' ' : '') + x.name; });
+  if ((removed || []).length) t += '\n・名簿から消した方（PDFに無い方）: ' + list(removed, function (x) { return x; });
+  if (kept.length) t += '\n・PDFに無い方（' + (done ? '名簿に残しています' : '退会された方は、名簿から消せます') + '）: '
+    + list(kept, function (x) { return (x.no ? 'No' + x.no + ' ' : '') + x.name; });
   if (sm.dupNos.length) t += '\n・番号が重なる方: ' + list(sm.dupNos, function (x) { return 'No' + x.no + '（' + x.names.join('・') + '）'; });
   if (sm.noName.length) t += '\n・氏名を読み取れなかった行（飛ばします）: ' + list(sm.noName, function (x) { return 'No' + (x.no || '?'); });
   if (sm.repeated.length) t += '\n・PDFに同じ氏名が2回ある方（2回目は飛ばします）: ' + list(sm.repeated, function (x) { return 'No' + (x.no || '?') + ' ' + x.name; });
@@ -873,30 +898,39 @@ function ocrSummaryText_(sm, done) {
 }
 
 // 読み取った方を名簿に反映する（確認のあと、画面から呼ぶ）。いまの名簿は、書き換える前に控えておく
-function mergeMembersFromOcr_(extracted, label) {
+//   removeNames … 名簿から消す方（確認の一覧の「PDFに無い方」でチェックした方）。PDFに載っている方は消さない
+function mergeMembersFromOcr_(extracted, label, removeNames) {
   try {
     var mm = getMemberMaster();
     if (!mm.ok) return mm;                              // 名簿を読めないまま反映すると、名簿が読み取った方だけになる
     var cur = mm.members || [];
     var sm = ocrPlanSummary_(extracted, cur);
-    if (!sm.updates.length && !sm.adds.length) {
+    var plan = ocrMergePlan_(extracted, cur), rmKey = {};
+    (removeNames || []).forEach(function (n) { var k = ocrKey_(n); if (k) rmKey[k] = true; });
+    var drop = plan.missing.map(function (i) { return cur[i]; }).filter(function (m) { return rmKey[ocrKey_(m.name)]; });
+    var removed = drop.map(function (m) { return m.name; });
+    if (!sm.updates.length && !sm.adds.length && !drop.length) {
       return { ok: true, message: '名簿に変わるところはありませんでした（名簿はそのままです）。\n' + ocrSummaryText_(sm, true),
-               updated: 0, added: 0, total: cur.length, summary: sm };
+               updated: 0, added: 0, removed: [], total: cur.length, summary: sm };
     }
-    var plan = ocrMergePlan_(extracted, cur);
     memberBackup_(label || 'メンバーリスト(OCR)の取り込み');
     ocrApplyPlan_(plan, cur);
+    if (drop.length) cur = cur.filter(function (m) { return drop.indexOf(m) < 0; });
+    // 番号の重なりは、消した方を除いて数え直す
+    var byNo = {};
+    cur.forEach(function (m) { if (m.no) (byNo[m.no] = byNo[m.no] || []).push(m.name); });
+    sm.dupNos = Object.keys(byNo).filter(function (k) { return byNo[k].length > 1; }).map(function (k) { return { no: k, names: byNo[k] }; });
     var res = saveMemberMaster(cur, null);
     if (!res.ok) {
       res.message += '\n名簿が途中までしか書けていないときは、メンバー名簿の画面の「取り込む前に戻す」で、反映する前の名簿に戻せます。';
       return res;
     }
-    var msg = '「メンバー名簿」に反映しました（名簿は計 ' + cur.length + '名）。\n' + ocrSummaryText_(sm, true)
+    var msg = '「メンバー名簿」に反映しました（名簿は計 ' + cur.length + '名）。\n' + ocrSummaryText_(sm, true, removed)
             + '\n写真・一言コメント・日付など、PDFに無い項目は残しています。'
             + '\n取り込む前の名簿は控えてあります（メンバー名簿の画面の「取り込む前に戻す」で戻せます）。';
     if (typeof roleRosterAfterImport_ === 'function') msg += roleRosterAfterImport_();
     console.log('[OCR] merged updated=' + sm.updates.length + ' added=' + sm.adds.length);
-    return { ok: true, message: msg, updated: sm.updates.length, added: sm.adds.length, total: cur.length, summary: sm };
+    return { ok: true, message: msg, updated: sm.updates.length, added: sm.adds.length, removed: removed, total: cur.length, summary: sm };
   } catch (e) {
     console.error('[OCR] merge ' + (e && e.stack ? e.stack : e));
     return { ok: false, message: '名簿への反映に失敗しました: ' + (e && e.message ? e.message : e) };
@@ -904,12 +938,13 @@ function mergeMembersFromOcr_(extracted, label) {
 }
 
 // 画面の「名簿に反映」。読み取った内容（確認した一覧のもと）を受け取って反映する
-function applyMemberListOcr(extracted) {
+//   removeNames … 「PDFに無い方」のうち、名簿から消す方（チェックした方）
+function applyMemberListOcr(extracted, removeNames) {
   var lock = LockService.getScriptLock();
   try {
     if (!extracted || !extracted.length) return { ok: false, message: '反映する内容がありません。もう一度読み取ってください。' };
     if (!lock.tryLock(20000)) return { ok: false, message: 'ほかの方が名簿を保存中です。少し待ってから、もう一度押してください。' };
-    return mergeMembersFromOcr_(extracted);
+    return mergeMembersFromOcr_(extracted, null, removeNames);
   } finally {
     try { lock.releaseLock(); } catch (e) {}
   }

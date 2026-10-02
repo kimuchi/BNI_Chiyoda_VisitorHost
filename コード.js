@@ -2,7 +2,7 @@
 
 // 反映されたか確かめるための版。変更したら日付を更新する。
 // clasp push / デプロイが効いているかは、これを画面で見れば分かる。
-var SYSTEM_VERSION_ = '2026-10-02a';
+var SYSTEM_VERSION_ = '2026-10-02b';
 
 function getSystemVersion() { return SYSTEM_VERSION_; }
 
@@ -130,7 +130,21 @@ function importMemberListSimple() {
     head + ocrSummaryText_(r.summary, false) + '\n\nこの内容で「メンバー名簿」に反映しますか？（名簿の行は氏名で探します）',
     ui.ButtonSet.OK_CANCEL);
   if (ans !== ui.Button.OK) { ui.alert('メンバーリスト(OCR)の取り込み', '名簿は変えていません。', ui.ButtonSet.OK); return; }
-  var done = applyMemberListOcr(r.extracted);
+  // PDFに無い方（退会された方）を名簿から消すか
+  var sm = r.summary, rm = [];
+  if (sm.missing.length) {
+    var why = sm.gaps.length ? '\n\n※ PDFの番号に抜けがあります（No ' + sm.gaps.slice(0, 8).join('・') + (sm.gaps.length > 8 ? ' ほか' : '')
+                              + '）。読み取れなかった方かもしれません。'
+            : sm.adds.length ? '\n\n※ 新しく足す方がいます。氏名の書き方が違うだけの同じ方なら、消さないでください。' : '';
+    var a2 = ui.alert('メンバーリスト(OCR)の取り込み（PDFに無い方）',
+      'PDFに無い方が ' + sm.missing.length + '名います：\n'
+      + sm.missing.map(function (x) { return (x.no ? 'No' + x.no + ' ' : '') + x.name; }).join('\n')
+      + '\n\n退会された方なら、名簿から消しますか？\n「はい」… 名簿から消します（「取り込む前に戻す」で戻せます）\n「いいえ」… 名簿に残します' + why,
+      ui.ButtonSet.YES_NO_CANCEL);
+    if (a2 !== ui.Button.YES && a2 !== ui.Button.NO) { ui.alert('メンバーリスト(OCR)の取り込み', '名簿は変えていません。', ui.ButtonSet.OK); return; }
+    if (a2 === ui.Button.YES) rm = sm.missing.map(function (x) { return x.name; });
+  }
+  var done = applyMemberListOcr(r.extracted, rm);
   ui.alert('メンバーリスト(OCR)の取り込み', (done && done.ok ? '✅ ' : '❌ ') + ((done && done.message) || '結果を取得できませんでした。'), ui.ButtonSet.OK);
 }
 

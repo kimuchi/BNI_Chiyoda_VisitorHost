@@ -6,6 +6,7 @@
 //     （以前は見るたびに起点が「次の開催日の先頭から」になり、毎週ずれていた：前半スライドの表・書記兼会計の初期値・告知の文）
 //   ・並び順は、保存するまでメンバー名簿の順のまま（名簿に足した方も入る）。「まだ保存していない」ことを画面に知らせる
 //   ・並び順を保存したあとは、知らせない
+//   ・並び順の名前に姓と名の間の空白が無くても（ツールから取り込んだ並び）、名簿の書き方で出す（表・Facebookの文・画像・書記兼会計の初期値）
 // 本番の *.js を全部、見せかけのスプレッドシート（lib_sheet_fake.js）の上で動かす。名前はすべて架空。
 
 process.env.TZ = 'Asia/Tokyo';
@@ -68,9 +69,23 @@ ck(seen.every((x) => x.provisional === true), '保存していないことを、
   ck(pairOn(srv2, '2026/10/14').provisional === false, '保存したあと、前半スライドの画面に「まだ保存していない」と出る');
 }
 
+// 並び順の名前に姓と名の間の空白が無くても（ツールから取り込んだ並び）、名簿の書き方（空白あり）で出す
+// （以前は予定の回の表・Facebookの文・メインプレゼンターの画像に「見本一郎」のまま出ていた）
+{
+  const { srv, keep } = onDay(new Date(2026, 9, 12, 10, 0));
+  const cur = srv.getSpeakerRotation();
+  const flat = (n) => n.replace(/[\s　]/g, '');
+  const r = srv.saveSpeakerRotation({ order: cur.order.map(flat), excluded: [flat(NAMES[7])], anchor: cur.anchor, base: cur.updated });
+  ck(r.ok && r.order.every((n) => NAMES.includes(n)) && J(r.excluded) === J([NAMES[7]]),
+     '空白の無い並び順を、名簿の書き方で出さない: ' + J({ ok: r.ok, order: r.order, excluded: r.excluded, msg: r.message }));
+  ck(r.ok && r.weeks.every((w) => w.people.every((p) => NAMES.includes(p.name))), '予定の回のお名前が名簿の書き方でない: ' + J(r.weeks && r.weeks.slice(0, 3).map((w) => w.people.map((p) => p.name))));
+  ck(srv.rotPairFor_(new Date(2026, 9, 14)).every((n) => NAMES.includes(n)), '書記兼会計の初期値のお名前が名簿の書き方でない: ' + J(srv.rotPairFor_(new Date(2026, 9, 14))));
+  keep();
+}
+
 if (fails.length) {
   console.log('NG ' + fails.length + '件 / ' + checks + '件の検査');
   fails.forEach((f) => console.log('  - ' + f));
   process.exit(1);
 }
-console.log('スピーカーローテーション（保存していないとき）: 検査 ' + checks + ' 件 OK: 同じ回の発表者が見た日で変わらない・名簿の順・まだ保存していないことを知らせる');
+console.log('スピーカーローテーション（保存していないとき）: 検査 ' + checks + ' 件 OK: 同じ回の発表者が見た日で変わらない・名簿の順・まだ保存していないことを知らせる・名簿の書き方のお名前');
