@@ -962,7 +962,8 @@
    var byName={};
    (rot.members||[]).forEach(function(m){ byName[nm(m.name)]=m; });
    var names = w.source==='routine' ? w.people.map(function(p){ return p.name; }) : (rPairs(rPointerAt(w.date),1).pairs[0]||[]);
-   return names.map(function(n){ var m=byName[nm(n)]||{}; return { name:n||'', title:m.title||'', collab:m.collab||'' }; });
+   // お名前は名簿の書き方で（並び順の名前は、姓と名の間の空白が無いことがある）
+   return names.map(function(n){ var m=byName[nm(n)]||{}; return { name:m.name||n||'', title:m.title||'', collab:m.collab||'' }; });
  }
  // 投稿文（サーバーの rotFbText_ と同じ文面）
  function fbTextOf(w, people){

@@ -81,6 +81,18 @@ function rotSave_(st) {
 // 飛ばす方：対象外の方。
 // メンバー名簿にいない方（退会・名簿の登録漏れ）は自動では飛ばさない（登録漏れで順番がずれないように）。
 // 管理画面で「名簿にいない」と知らせるので、退会された方は並びから外してもらう
+// 並び順・対象外の名前を、メンバー名簿の書き方（姓と名の間の空白など）にそろえる。
+// 並び順は「MP選出・ローテーション管理ツール」から取り込んだときの書き方（「見本一郎」のように空白なし）のことがあり、
+// そのまま出すと、スピーカーローテーションの表・Facebookの文・メインプレゼンターの画像で、名簿と書き方が違って見えた
+function rotUseRosterNames_(st, members) {
+  var by = {};
+  (members || []).forEach(function (m) { if (m && m.name) by[rotNorm_(m.name)] = m.name; });
+  var fix = function (n) { return by[rotNorm_(n)] || n; };
+  st.order = (st.order || []).map(fix);
+  st.excluded = (st.excluded || []).map(fix);
+  return st;
+}
+
 function rotSkip_(st) {
   var skip = {};
   for (var i = 0; i < (st.excluded || []).length; i++) skip[rotNorm_(st.excluded[i])] = 'excluded';
@@ -268,6 +280,7 @@ function getSpeakerRotation() {
   try {
     routineResetCache_();
     var st = rotLoad_(), env = rotEnv_();
+    rotUseRosterNames_(st, env.members);
     env.skip = rotSkip_(st);
     var next = env.start;
     var rb = rotRebase_(st, env.skip, env.holidays, env.mains, next);
@@ -388,7 +401,9 @@ function getSpeakerRotationWeeks(dateStr) {
 // 役職ごとの入力（書記兼会計のメインプレゼンの初期値）：その開催日のローテーションの2名
 // （ルーティンチェックシートは読まない。役職の画面を開く時間を延ばさないように）
 function rotPairFor_(d) {
-  var st = rotLoad_(), skip = rotSkip_(st), holidays = [];
+  var st = rotLoad_(), holidays = [];
+  try { rotUseRosterNames_(st, getMemberMaster({ membersOnly: true }).members); } catch (e) {}
+  var skip = rotSkip_(st);
   try { holidays = getHolidays(); } catch (e) {}
   if (holidays.indexOf(fmtDate_(d)) >= 0) return [];
   var p = rotPairsFrom_(st, skip, rotPointerAt_(st, skip, d, holidays), 1).pairs[0];

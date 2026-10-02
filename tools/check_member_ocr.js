@@ -7,7 +7,9 @@
 //     写真・一言・紹介・協業・日付・会社での役職は、その方の行に残る（別の方の名前に書き換わらない）。番号はPDFの番号になる
 //   ・氏名が1文字違う方（読み取りの誤り・異体字。3文字以上で、名簿に当てはまる方が1人だけ）は、その方として扱う（氏名は名簿のまま）。
 //     2文字の氏名・当てはまる方が2人以上のときは、新しい方として足す
-//   ・PDFに無い方は消さない。番号が重なる方・氏名を読み取れなかった行は知らせる
+//   ・PDFに無い方は、確認の一覧でチェックした方（退会された方）だけ名簿から消す。PDFに載っている方は、名前を渡されても消さない。
+//     PDFの番号に抜けが無く、足す方もいないときは、はじめからチェック。抜け・足す方があるときは外しておく。
+//     消す方を除いて番号の重なりを数え直す。消したあとも「取り込む前に戻す」で戻る。番号が重なる方・氏名を読み取れなかった行は知らせる
 //   ・読み取っただけでは名簿を変えない（確認の一覧を返す）。「名簿に反映」で変える。ダイアログを使わない取り込みも、確かめてから
 //   ・取り込みの前に名簿を控え、「取り込む前に戻す」で入れ替えられる（もう一度押すと戻す前に戻る）。Spreadingの取り込みも控える
 const fs = require('fs');
@@ -168,6 +170,36 @@ const byName = (sh, HEAD) => {
   ck(r.ok && J(roster()._grid()) === after, 'もう一度押すと、戻す前の名簿に戻る: ' + J(r));
 }
 
+// ---------- 2b. PDFに無い方（退会された方）を名簿から消す ----------
+{
+  const { box, roster } = makeServer(ROSTER);
+  box.PropertiesService.getScriptProperties().setProperty('GEMINI_API_KEY', 'test');
+  box.UrlFetchApp = { fetch: () => ({ getResponseCode: () => 200,
+    getContentText: () => J({ candidates: [{ content: { parts: [{ text: J({ members: PDF.map((p) => Object.assign({ block: p.cat }, p)) }) }] } }] }) }) };
+  const pre = box.extractMembersFromPdfBlob_({ getBytes: () => [1], getContentType: () => 'application/pdf' });
+  ck(pre.summary.removeSuggested === true && J(pre.summary.gaps) === J([]), '2b) 番号に抜けが無く足す方もいないのに、はじめからチェックにしない: ' + J([pre.summary.removeSuggested, pre.summary.gaps]));
+  const before = J(roster()._grid());
+  // PDFに載っている方（青木 一郎）の名前を渡しても消さない。PDFに無い方（見本 退会）だけ消す
+  const res = box.applyMemberListOcr(pre.extracted, ['見本 退会', '青木 一郎']);
+  const names = roster()._grid().slice(1).map((r) => r[2]);
+  ck(res.ok && J(names) === J(['青木 一郎', '上田 花子', '新井 誠', '高橋 健太', '野村 大輔', '小林 翔太', '加藤 真理']),
+     '2b) PDFに無い方だけ名簿から消す: ' + J(names));
+  ck(J(res.removed) === J(['見本 退会']) && /名簿から消した方（PDFに無い方）: 見本 退会/.test(res.message) && !/番号が重なる方/.test(res.message)
+     && !/PDFに無い方（名簿に残しています）/.test(res.message), '2b) 消したときの知らせ（番号の重なりは消した方を除いて数え直す）: ' + res.message);
+  ck(box.restoreMemberBackup().ok && J(roster()._grid()) === before, '2b) 「取り込む前に戻す」で、消した方が戻らない');
+  // 消さなかったときは「名簿に残しています」
+  const keep = box.applyMemberListOcr(pre.extracted, []);
+  ck(/PDFに無い方（名簿に残しています）: No7 見本 退会/.test(keep.message) && roster()._grid().slice(1).some((r) => r[2] === '見本 退会'),
+     '2b) チェックしなかった方を残さない・知らせない: ' + keep.message);
+  // 番号に抜けがある（No4 を読み取れなかった）・足す方がいるときは、はじめからチェックにしない
+  const gap = PDF.filter((p) => p.no !== '4');
+  const sm1 = box.ocrPlanSummary_(gap, box.getMemberMaster().members);
+  ck(sm1.removeSuggested === false && J(sm1.gaps) === J(['4']), '2b) 番号に抜けがあるのに、はじめからチェックにする: ' + J([sm1.removeSuggested, sm1.gaps]));
+  const sm2 = box.ocrPlanSummary_(PDF.concat([{ no: '8', name: '見本 新顔', kana: 'みほん しんがお', cat: '企業サポート', title: '弁理士', company: '', role: '', memo: '' }]),
+    box.getMemberMaster().members);
+  ck(sm2.removeSuggested === false && sm2.adds.length === 1, '2b) 足す方がいるのに、はじめからチェックにする: ' + J([sm2.removeSuggested, sm2.adds]));
+}
+
 // ---------- 4. 1文字違いの扱い：2文字の氏名・当てはまる方が2人のときは、新しい方として足す ----------
 {
   const { box, HEAD, roster } = makeServer([
@@ -275,11 +307,11 @@ const byName = (sh, HEAD) => {
 {
   const { box, roster } = makeServer(ROSTER);
   const alerts = [];
-  let answer = 'CANCEL';
+  let answer = 'CANCEL', answer2 = 'NO';
   box.SpreadsheetApp = { getUi: () => ({
-    ButtonSet: { OK: 'OK', OK_CANCEL: 'OK_CANCEL' }, Button: { OK: 'OK', CANCEL: 'CANCEL' },
+    ButtonSet: { OK: 'OK', OK_CANCEL: 'OK_CANCEL', YES_NO_CANCEL: 'YES_NO_CANCEL' }, Button: { OK: 'OK', CANCEL: 'CANCEL', YES: 'YES', NO: 'NO' },
     prompt: () => ({ getSelectedButton: () => 'OK', getResponseText: () => 'https://drive.google.com/file/d/ABCDEFGHIJKLMNOPQRSTUVWXYZ012345/view' }),
-    alert: (title, msg, btns) => { alerts.push(msg); return btns === 'OK_CANCEL' ? answer : 'OK'; },
+    alert: (title, msg, btns) => { alerts.push(msg); return btns === 'OK_CANCEL' ? answer : btns === 'YES_NO_CANCEL' ? answer2 : 'OK'; },
   }) };
   box.processMemberListFromDrive = () => box.extractMembersFromPdfBlob_({ getBytes: () => [1], getContentType: () => 'application/pdf' });
   box.PropertiesService.getScriptProperties().setProperty('GEMINI_API_KEY', 'test');
@@ -292,6 +324,12 @@ const byName = (sh, HEAD) => {
   answer = 'OK';
   box.importMemberListSimple();
   ck(J(roster()._grid()) !== before && /反映しました/.test(alerts[alerts.length - 1]), 'ダイアログを使わない取り込みで、OKしても反映しない: ' + alerts[alerts.length - 1]);
+  ck(alerts.some((a) => /PDFに無い方が 1名います/.test(a) && /見本 退会/.test(a) && /名簿から消しますか/.test(a))
+     && roster()._grid().slice(1).some((r) => r[2] === '見本 退会'), 'ダイアログを使わない取り込み：PDFに無い方を聞かない・「いいえ」で消した');
+  answer2 = 'YES';
+  box.importMemberListSimple();
+  ck(!roster()._grid().slice(1).some((r) => r[2] === '見本 退会') && /名簿から消した方/.test(alerts[alerts.length - 1]),
+     'ダイアログを使わない取り込み：「はい」で消さない: ' + alerts[alerts.length - 1]);
 }
 
 // ---------- 6. Spreadingの取り込みも、前の名簿を控える ----------
@@ -337,13 +375,22 @@ const STUB = (answers) => `<script>window.__calls=[];window.__ans=${J(answers).r
   await page.click('#btn2');
   await page.waitForSelector('#plan', { state: 'visible' });
   const planText = await page.textContent('#planBody');
-  ck(/氏名が1文字違う方/.test(planText) && /髙橋 健太/.test(planText) && /PDFに無い方/.test(planText) && /見本 退会/.test(planText)
-     && /番号が重なる方/.test(planText) && /No:? ?3 → 4|No 3 → 4/.test(planText), '確認の一覧の中身: ' + planText.slice(0, 300));
+  ck(/氏名が1文字違う方/.test(planText) && /髙橋 健太/.test(planText) && /PDFに無い方/.test(planText) && /名簿から消す：No7 見本 退会/.test(planText)
+     && /No:? ?3 → 4|No 3 → 4/.test(planText), '確認の一覧の中身: ' + planText.slice(0, 300));
+  // PDFに無い方：番号に抜けが無く足す方もいないので、はじめからチェック。消す方を除くと、番号は重ならない
+  const rmBox = await page.$('.ocrRm');
+  ck(!!rmBox && await rmBox.isChecked() && !/番号が重なる方/.test(await page.textContent('#planBody')), 'PDFに無い方に「名簿から消す」のチェックが無い・はじめからチェックでない・番号の重なりを数え直さない');
+  if (rmBox) {
+    await rmBox.uncheck();
+    ck(/番号が重なる方.*No7：加藤 真理・見本 退会/.test(await page.textContent('#planBody')), 'チェックを外しても、番号が重なる方が出ない: ' + (await page.textContent('#planBody')).slice(-120));
+    await rmBox.check();
+  }
   ck(!(await page.evaluate(() => window.__calls.some((c) => c.fn === 'applyMemberListOcr'))), '読み取っただけで反映した');
   await page.click('#btnApply');
   await page.waitForFunction(() => /反映しました/.test(document.getElementById('msg').textContent));
   const call = await page.evaluate(() => window.__calls.find((c) => c.fn === 'applyMemberListOcr'));
   ck(call && call.args[0].length === 7 && call.args[0][2].name === '新井 誠', '「名簿に反映」で送った内容: ' + J(call && call.args[0].length));
+  ck(call && J(call.args[1]) === J(['見本 退会']), '「名簿に反映」で、名簿から消す方を送らない: ' + J(call && call.args[1]));
   ck(!(await page.isVisible('#plan')), '反映したあとも一覧が出ている');
   // 反映している間は「やめる」も押せない。反映に失敗したときは、反映できたか分からないと知らせる
   await serve('pdf.html', { processMemberListFromDrive: pre });

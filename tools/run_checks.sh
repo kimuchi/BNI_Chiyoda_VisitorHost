@@ -54,7 +54,7 @@ run "公式ファイルから雛形の画面" node tools/check_official_dialog.j
 run "定例会スライドの画面（架空の名簿：読み込み中・推薦のことば・「更新した」で手直しが戻らない）" node tools/check_meeting_dialog.js
 
 echo "── 名簿・メンバーブック"
-run "メンバーリスト(OCR)の取り込み" node tools/check_member_ocr.js
+run "メンバーリスト(OCR)の取り込み（PDFに無い方はチェックした方だけ消す）" node tools/check_member_ocr.js
 # shellcheck disable=SC2086
 run "メンバーブック（組版・編集画面）" node tools/check_memberbook.js $FONTS_DIR
 # shellcheck disable=SC2086

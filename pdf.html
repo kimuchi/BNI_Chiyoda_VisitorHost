@@ -12,7 +12,8 @@
   </style>
   <p>PDFから番号・氏名・ふりがな・カテゴリー・会社名・役職・メモを読み取り（Geminiで解析）、<b>確かめてから「メンバー名簿」に反映</b>します。<br>
     <span style="font-size:12px;color:#555;">名簿の行は<b>氏名</b>で探します（番号では探しません）。番号はPDFの番号に直します。
-    写真・一言コメント・日付など、PDFに無い項目は消えません。反映する前の名簿は控えておき、メンバー名簿の画面の「取り込む前に戻す」で戻せます。</span></p>
+    写真・一言コメント・日付など、PDFに無い項目は消えません。PDFに載っていない方（退会された方）は、確認の一覧でチェックした方だけ名簿から消します。
+    反映する前の名簿は控えておき、メンバー名簿の画面の「取り込む前に戻す」で戻せます。</span></p>
 
   <div style="border:1px solid #ddd; border-radius:6px; padding:12px; margin-bottom:14px;">
     <b>方式A：ファイルを選んで解析</b>
@@ -58,6 +59,7 @@
     }
     function esc(x){ var d=document.createElement('span'); d.textContent = x==null ? '' : x; return d.innerHTML; }
     var extracted = null;       // 読み取った内容（「名簿に反映」でサーバーに渡す）
+    var planSm = null;          // 当てはめた結果（PDFに無い方・番号が重なる方）
     function onOk(res) {
       var ok = res && res.ok;
       busy(false);
@@ -73,24 +75,55 @@
         return '<h4' + (warn ? ' class="warn"' : '') + '>' + esc(title) + '（' + rows.length + '）</h4><div class="box">' + rows.join('<br>') + '</div>';
       };
       h += '<div style="font-size:12px;margin-top:6px;">読み取り ' + sm.total + '名：変わる方 ' + sm.updates.length + '名・変わらない方 ' + sm.unchanged
-        + '名・新しく足す方 ' + sm.adds.length + '名</div>';
+        + '名・新しく足す方 ' + sm.adds.length + '名' + (sm.missing.length ? '・PDFに無い方 ' + sm.missing.length + '名' : '') + '</div>';
       h += sec('変わる方（名簿の氏名で突き合わせ）', sm.updates.map(function (u) {
         return '<b>' + esc(u.name) + '</b>' + (u.near ? '（PDFでは「' + esc(u.pdfName) + '」）' : '') + '：'
           + u.changes.map(function (c) { return esc(c.field) + ' ' + esc(c.from || '（空）') + ' → ' + esc(c.to); }).join('、');
       }));
       h += sec('新しく足す方（名簿に同じ氏名が無い）', sm.adds.map(function (a) { return 'No' + esc(a.no || '?') + ' ' + esc(a.name) + (a.cat ? '（' + esc(a.cat) + '）' : ''); }), true);
       h += sec('氏名が1文字違う方（ふりがなが同じなので同じ方として、名簿の氏名のまま更新します。別の方なら「やめる」）', sm.near.map(function (x) { return 'PDF「' + esc(x.pdf) + '」→ 名簿「' + esc(x.roster) + '」'; }), true);
-      h += sec('PDFに無い方（消しません）', sm.missing.map(function (x) { return (x.no ? 'No' + esc(x.no) + ' ' : '') + esc(x.name); }));
-      h += sec('番号が重なる方（反映したあと、メンバー名簿で直してください）', sm.dupNos.map(function (x) { return 'No' + esc(x.no) + '：' + x.names.map(esc).join('・'); }), true);
+      // PDFに無い方：退会された方は、チェックを入れると名簿から消す。
+      // 番号に抜けが無く、新しく足す方もいないときは、はじめからチェックを入れておく
+      planSm = sm;
+      if (sm.missing.length) {
+        var why = sm.removeSuggested ? 'チェックした方を名簿から消します。退会されていない方は、チェックを外してください。'
+          : sm.gaps && sm.gaps.length ? 'PDFの番号に抜けがあります（No ' + esc(sm.gaps.slice(0, 8).join('・')) + (sm.gaps.length > 8 ? ' ほか' : '')
+              + '）。読み取れなかった方かもしれないので、チェックは外してあります。退会された方だけチェックしてください。'
+          : sm.adds.length ? '新しく足す方がいます。氏名の書き方が違うだけの同じ方かもしれないので、チェックは外してあります。退会された方だけチェックしてください。'
+          : '退会された方だけチェックしてください。';
+        h += '<h4 class="warn">PDFに無い方（' + sm.missing.length + '）</h4><div class="box">'
+          + sm.missing.map(function (x, i) {
+              return '<label><input type="checkbox" class="ocrRm" data-i="' + i + '"' + (sm.removeSuggested ? ' checked' : '')
+                + ' onchange="renderDup()"> 名簿から消す：' + (x.no ? 'No' + esc(x.no) + ' ' : '') + esc(x.name) + '</label>';
+            }).join('<br>') + '</div><div style="font-size:11.5px;color:#555;margin-top:3px;">' + why
+          + '消したあとも「取り込む前に戻す」で戻せます。</div>';
+      }
+      h += '<div id="dupBox"></div>';
       h += sec('氏名を読み取れなかった行（飛ばします）', sm.noName.map(function (x) { return 'No' + esc(x.no || '?'); }), true);
       h += sec('PDFに同じ氏名が2回ある方（2回目は飛ばします）', (sm.repeated || []).map(function (x) { return 'No' + esc(x.no || '?') + ' ' + esc(x.name); }), true);
       document.getElementById('planBody').innerHTML = h;
+      renderDup();
       document.getElementById('plan').style.display = 'block';
       document.getElementById('msg').innerText = '';
     }
+    // 名簿から消す方（チェックした「PDFに無い方」）
+    function removeNames() {
+      if (!planSm) return [];
+      return [].slice.call(document.querySelectorAll('.ocrRm')).filter(function (c) { return c.checked; })
+        .map(function (c) { return planSm.missing[+c.getAttribute('data-i')].name; });
+    }
+    // 番号が重なる方（消す方を除いて数え直す）
+    function renderDup() {
+      var box = document.getElementById('dupBox'); if (!box || !planSm) return;
+      var rm = {}; removeNames().forEach(function (n) { rm[n] = true; });
+      var rows = (planSm.dupNos || []).map(function (x) { return { no: x.no, names: x.names.filter(function (n) { return !rm[n]; }) }; })
+        .filter(function (x) { return x.names.length > 1; });
+      box.innerHTML = rows.length ? '<h4 class="warn">番号が重なる方（反映したあと、メンバー名簿で直してください）（' + rows.length + '）</h4><div class="box">'
+        + rows.map(function (x) { return 'No' + esc(x.no) + '：' + x.names.map(esc).join('・'); }).join('<br>') + '</div>' : '';
+    }
     // 前に読み取った一覧を消す（読み直しに失敗したとき、前の一覧を反映してしまわないように）
     function clearPlan() {
-      extracted = null;
+      extracted = null; planSm = null;
       document.getElementById('plan').style.display = 'none';
     }
     function cancelPlan() {
@@ -100,10 +133,11 @@
     }
     function applyPlan() {
       if (!extracted) return;
+      var rm = removeNames();
       busy(true, '「メンバー名簿」に反映しています...');
       google.script.run.withSuccessHandler(function (r) {
         busy(false);
-        if (r && r.ok) { extracted = null; document.getElementById('plan').style.display = 'none'; }
+        if (r && r.ok) { extracted = null; planSm = null; document.getElementById('plan').style.display = 'none'; }
         document.getElementById('msg').innerText = (r && r.message) ? r.message : String(r);
         document.getElementById('msg').style.color = (r && r.ok) ? 'green' : '#d00';
       }).withFailureHandler(function (err) {
@@ -113,7 +147,7 @@
         m.style.color = '#d00';
         m.innerText = '名簿に反映できたか分かりません: ' + ((err && err.message) ? err.message : String(err))
           + '\nメンバー名簿の画面で反映されたか確かめてから、必要ならもう一度押してください。';
-      }).applyMemberListOcr(extracted);
+      }).applyMemberListOcr(extracted, rm);
     }
     function onFail(err) {
       var detail = (err && err.message) ? err.message : String(err);
