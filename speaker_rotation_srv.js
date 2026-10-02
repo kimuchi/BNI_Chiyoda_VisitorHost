@@ -293,6 +293,7 @@ function getSpeakerRotation() {
       updated: st.updated, provisional: !st.updated, rebased: rb.rebased, openDate: fmtDate_(rb.open),
       missing: missing, holidayHints: hints, weeks: weeks, fbText: rotFbText_(weeks[0], (weeks[0] || {}).secretary || ''),
       secretary: (weeks[0] || {}).secretary || '',
+      chapter: (function () { try { return chapterLabel_(); } catch (e) { return ''; } })(),   // メインプレゼンターの画像の下の帯
       members: env.members.map(function (m) {
         return { name: m.name, title: m.title || '', collab: m.collab || '', inOrder: !!inOrder[rotNorm_(m.name)] };
       }),
