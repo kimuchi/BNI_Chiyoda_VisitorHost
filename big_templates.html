@@ -55,7 +55,7 @@
         '<button class="sub" onclick="bench(\''+t.kind+'\')">動作確認（所要時間を実測）</button> '
         +'<button class="sub" onclick="ana(\''+t.kind+'\')">中身の内訳を見る</button> ')
       +'<button class="sub" onclick="tok(\''+t.kind+'\')">差し込み口を調べる</button>'
-      +(t.builtin?' <button class="sub" onclick="exportBuiltin()">既定のひな形をダウンロード</button>':'')
+      +(t.builtin?' <button class="sub" onclick="exportBuiltin(\''+t.kind+'\')">既定のひな形をダウンロード</button>':'')
       +'<div class="state" id="s_'+t.kind+'">'
       +(t.registered
         ? '<span class="ok">✓ 登録済み</span> <a href="'+t.url+'" target="_blank">'+esc(t.fileName)+'</a>'
@@ -87,14 +87,14 @@
        +'<br><a href="'+(r.downloadUrl||r.url)+'" target="_blank">⬇ 出力されたPowerPointをダウンロードして、崩れていないか確認する</a>';
    }).withFailureHandler(fail).benchmarkPptxRoundTrip(kind);
  }
- function exportBuiltin(){
+ function exportBuiltin(kind){
    setBusy(true,'既定のひな形を書き出しています...');
    google.script.run.withSuccessHandler(function(r){
      setBusy(false);
      if(!r.ok){ document.getElementById('msg').innerText=r.message; document.getElementById('msg').style.color='#d00'; return; }
      document.getElementById('msg').innerHTML='<span style="color:green;">'+esc(r.message)+'</span>'
        +'<br><a href="'+(r.downloadUrl||r.url)+'" target="_blank">⬇ '+esc(r.fileName)+' をダウンロード</a>';
-   }).withFailureHandler(fail).exportPreMeetingTemplate();
+   }).withFailureHandler(fail).exportBuiltinTemplate(kind);
  }
  function tok(kind){
    setBusy(true,'テンプレート内の差し込み口を探しています...');

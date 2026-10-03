@@ -9,8 +9,21 @@ var BIG_TEMPLATE_KINDS_ = {
   meetingSecond: { prop: 'BNI_TPL_MEETING_SECOND_ID', label: '定例会スライド（後半）' },
   memberPresen:  { prop: 'BNI_TPL_MEMBER_PRESEN_ID',  label: 'メンバープレゼン' },
   // 事前MTGは小さなファイル。登録しなければ同梱の既定のひな形で作る（premtg_srv.js）
-  preMeeting:    { prop: 'BNI_TPL_PREMTG_ID',         label: '事前MTG（朝イチMTG）', builtin: true }
+  preMeeting:    { prop: 'BNI_TPL_PREMTG_ID',         label: '事前MTG（朝イチMTG）', builtin: true },
+  // 事前MTGに入れる、新入会メンバーごとの熱烈歓迎のページ。登録しなければ同梱の既定のひな形（welcome_srv.js）
+  welcome:       { prop: 'BNI_TPL_WELCOME_ID',        label: '熱烈歓迎（事前MTG・新入会メンバー）', builtin: true }
 };
+// 同梱の既定のひな形（登録しなくても使えるもの）
+function bigBuiltinBlob_(kind) {
+  if (kind === 'preMeeting') return premtgBuiltinBlob_();
+  if (kind === 'welcome') return welcomeBuiltinBlob_();
+  throw new Error('「' + ((BIG_TEMPLATE_KINDS_[kind] || {}).label || kind) + '」に既定のひな形はありません。');
+}
+// 既定のひな形を 03_生成物 に書き出す（画面の「既定のひな形をダウンロード」）
+function exportBuiltinTemplate(kind) {
+  if (kind === 'welcome') return exportWelcomeTemplate();
+  return exportPreMeetingTemplate();
+}
 var SLIDES_MIME_ = 'application/vnd.google-apps.presentation';
 var PPTX_MIME_ = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
 
@@ -208,7 +221,7 @@ function analyzePptxContents(kind) {
 function openBigTemplateDialog() {
   SpreadsheetApp.getUi().showModalDialog(
     HtmlService.createHtmlOutputFromFile('big_templates').setWidth(700).setHeight(700),
-    '大きなスライド（定例会・メンバープレゼン・事前MTG）の登録');
+    '大きなスライド（定例会・メンバープレゼン・事前MTG・熱烈歓迎）の登録');
 }
 
 // 初回の権限取得用。モーダル内では認可画面を出せないため、メニューから1回実行する。
@@ -243,9 +256,9 @@ function inspectPptxTokens(kind) {
   try {
     var def = BIG_TEMPLATE_KINDS_[kind];
     if (!def) return { ok: false, message: 'テンプレートの種類が不正です。' };
-    // 登録していない事前MTGは、同梱の既定のひな形を調べる
+    // 登録していない事前MTG・熱烈歓迎は、同梱の既定のひな形を調べる
     var id = PropertiesService.getScriptProperties().getProperty(def.prop);
-    var blob = (!id && def.builtin) ? premtgBuiltinBlob_() : getBigTemplateFile_(kind).getBlob();
+    var blob = (!id && def.builtin) ? bigBuiltinBlob_(kind) : getBigTemplateFile_(kind).getBlob();
     var parts = Utilities.unzip(blob.setContentType('application/zip'));
     var found = {}, slideCount = 0;
     for (var i = 0; i < parts.length; i++) {
