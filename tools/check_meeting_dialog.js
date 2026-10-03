@@ -88,6 +88,7 @@ const SERVER = {
   }),
   computeRenewalLists: () => LISTS,
   getMeetingMusicFiles: () => ({ ok: true, files: [{ id: 'f1', name: '曲A.mp3', sizeMB: 3.2 }] }),
+  getRecommendationSlides: () => ({ ok: true, slides: [] }),          // 受け取った推薦のことばのスライド（無し）
   setRenewalMark: () => ({ ok: true }),
   getSystemVersion: () => 'test',
   // 役職のメンバー紹介（その開催日の期の役職・チーム。メンターコーディネーターは未登録）

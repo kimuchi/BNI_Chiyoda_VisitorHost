@@ -296,7 +296,15 @@ function talkValue_(key, env) {
                          : { value: 'なし', state: 'none' };
     }
   }
-  if ((m = key.match(/^ルーティン[:：]\s*(.+)$/))) return talkRoutineItem_(env, m[1]);
+  if ((m = key.match(/^ルーティン[:：]\s*(.+)$/))) {
+    var rv = talkRoutineItem_(env, m[1]);
+    // 「本日の招待者」がチェックシートで空なら、参加者シートのビジター・ゲストを招待したメンバー（代理の方は入れない）
+    if (rv.state === 'missing' && roleMatchText_(m[1]) === '本日の招待者' && env.people()) {
+      var inv = roleInvitersText_(env.people(), env.members());
+      return inv ? { value: inv, state: 'ok' } : { value: 'なし', state: 'none' };
+    }
+    return rv;
+  }
   if ((m = key.match(/^チーム(のメンバー)?[:：]\s*(.+)$/))) return talkTeam_(env, m[2], !!m[1]);
   var cat = key.match(/^(.+)のカテゴリー$/), role = talkRoleOf_(cat ? cat[1] : key);
   if (role) {
@@ -536,7 +544,10 @@ function talkCatalog_() {
     { key: '推薦のことばを書いた方', desc: '「〇〇さん・〇〇さん」' }, { key: '推薦のことばを受けた方', desc: '「〇〇さん・〇〇さん」' },
     { key: '真正度確認の紹介者', desc: '「真正度確認」の欄の最初の方' }, { key: '真正度確認の受け手', desc: '矢印の先の方' },
     { key: '真正度確認の紹介先', desc: 'そのあとの「〇〇様」' }, { key: '前々回の開催日', desc: '「9月9日」' }]
-    .concat(talkRoutineLabels_().map(function (l) { return { key: 'ルーティン:' + l, desc: 'チェックシートの「' + l + '」に書いてあるとおり' }; })) });
+    .concat(talkRoutineLabels_().map(function (l) {
+      return { key: 'ルーティン:' + l, desc: 'チェックシートの「' + l + '」に書いてあるとおり'
+        + (roleMatchText_(l) === '本日の招待者' ? '（空なら参加者シートの、ビジター・ゲストを招待したメンバー）' : '') };
+    })) });
   g.push({ group: 'その他', items: [
     { key: 'スピーカーローテーション', desc: '今後4回のメインプレゼン（1回1行）' },
     { key: '更新対象者（30日以内）', desc: 'メンバー名簿の更新期限日から' }, { key: '更新対象者（60日以内）', desc: 'メンバー名簿の更新期限日から' },
