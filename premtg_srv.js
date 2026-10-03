@@ -51,10 +51,33 @@ var PREMTG_BLOCKS_ = ['直近のイベント', 'お願い事項', '定例会関�
 function openPreMeetingDialog() { openRoleInputDialog_('', 'premtg'); }
 
 // --- 材料を集める ---
-// 書き込みを整える（改行をそろえ、行末の空白と前後の空行を落とす）
+// 書き込みを整える（改行をそろえ、行末の空白と前後の空行を落とす）。
+// PowerPoint・Wordから写した文の改行（垂直タブなど）も改行にする（そのままではpptxに書けない）
 function premtgText_(v) {
-  var s = String(v == null ? '' : v).replace(/\r\n?/g, '\n').replace(/[ \t　]+$/gm, '');
+  var s = String(v == null ? '' : v).replace(/\r\n?|[\u000B\u000C\u2028\u2029]/g, '\n').replace(/[ \t　]+$/gm, '');
   return s.replace(/^\n+|\n+$/g, '');
+}
+// 2つの書き込みを1つにする（同じ中身のときや、片方がもう片方に含まれるときは1つだけ）
+function premtgJoin_(a, b) {
+  if (!a) return b || '';
+  if (!b) return a;
+  var key = function (s) { return String(s).normalize('NFKC').replace(/[\s。、．，.,・]/g, ''); };
+  var ka = key(a), kb = key(b);
+  if (ka.indexOf(kb) >= 0) return a;
+  if (kb.indexOf(ka) >= 0) return b;
+  return a + '\n' + b;
+}
+// 足した行（事前MTG 共有事項）の項目。シートで行のまとまりが動いて id が変わっていても、項目名で探す
+// （同じ項目名の行がいくつもあれば、書いてある方）
+function premtgExtraItem_(ctx, title) {
+  var it = ctx.items[roleExtraId_(title)] || null;
+  if (it && premtgText_(it.value)) return it;
+  var key = roleNorm_(title);
+  for (var i = 0; i < ctx.order.length; i++) {
+    var x = ctx.items[ctx.order[i]];
+    if (x !== it && roleNorm_(x.title) === key && premtgText_(x.value)) return x;
+  }
+  return it;
 }
 // 「なし」「特になし」「ー」などの、中身の無い書き込み
 function premtgNone_(s) {
@@ -128,7 +151,7 @@ function premtgData_(target) {
     if (!v && label) out.blank.push({ label: label, role: roleLabel(it) });
     return v;
   };
-  var extra = function (title, label) { return read(ctx.items[roleExtraId_(title)], label); };
+  var extra = function (title, label) { return read(premtgExtraItem_(ctx, title), label); };
   var sheet = function (re, parentRe, label) { return read(find(re, parentRe), label); };
   var oneLine = function (v) { return v ? v.replace(/\n+/g, '　') : '—'; };
   var people = function (v) { return v ? premtgCountNames_(v) + '名' : '—'; };
@@ -183,15 +206,24 @@ function premtgData_(target) {
     '・卒業コメント：' + oneLine(extra('卒業コメント', ''))
   ];
 
-  // 役職ごとの共有事項
+  // 役職ごとの共有事項：「今週の共有事項（役職）」と、ルーティンチェックシートの「（役職）より」の行
+  // （「書記兼会計より」「プレジデントより」など。朝一MTGでその役職が話すこと）の両方から。
+  // どちらか片方だけでもページを作る。両方に同じことが書いてあれば1回だけ
   var holders = roleHolders_(target);               // その開催日の期（半期）の担当者
   for (var k = 0; k < PREMTG_ROLES_.length; k++) {
     var def = roleDefOf_(PREMTG_ROLES_[k].key);
     if (!def) continue;
-    var text = extra('今週の共有事項（' + def.label + '）', '');
+    var share = extra('今週の共有事項（' + def.label + '）', '');
+    var fromId = roleFromItemId_(ctx, def), fromIt = fromId ? ctx.items[fromId] : null;
+    var said = fromIt ? premtgText_(fromIt.value) : '';
+    if (premtgNone_(share)) share = '';
+    if (premtgNone_(said)) said = '';
+    var from = [];
+    if (share) from.push('今週の共有事項');
+    if (said) from.push(fromIt.title);
     out.roles.push({ key: def.key, label: def.label, icon: PREMTG_ROLES_[k].icon, cat: PREMTG_ROLES_[k].cat,
                      color: PREMTG_COLORS_[PREMTG_ROLES_[k].cat], holder: holders[def.key] || '',
-                     text: premtgNone_(text) ? '' : text });
+                     text: premtgJoin_(share, said), from: from });
   }
   return out;
 }
@@ -681,7 +713,7 @@ function getPreMeetingPreview(dateStr) {
     if (models && !models.summary) warn.push('ひな形にまとめのページ（{{定例会関連}} などのあるページ）がありません。');
     if (models && !models.two && !models.one) warn.push('ひな形に役職のページ（{{共有事項1}} のあるページ）がありません。');
     var pages = premtgPages_(data.roles, models ? !!models.two : true).map(function (pg) {
-      return pg.map(function (r) { return { label: r.label, icon: r.icon, holder: r.holder, chars: r.text.length, color: r.color }; });
+      return pg.map(function (r) { return { label: r.label, icon: r.icon, holder: r.holder, chars: r.text.length, color: r.color, from: r.from }; });
     });
     return { ok: true, date: data.date, display: data.display, meetingNo: data.meetingNo, summary: data.summary,
              pages: pages, blank: data.blank,

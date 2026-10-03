@@ -95,6 +95,48 @@
    var d=get('meeting'), m=((ctx&&ctx.meetings)||[]).filter(function(x){return x.dateValue===d;})[0];
    if(m){ var mm=(m.display||'').match(/第(\d+)回/); val('no', mm?mm[1]:''); }
  }
+ // --- 欠席の方（ウィークリープレゼン・リファーラル発表のページを作らない）---
+ // ルーティンチェックシートの「代理・欠席」の「欠席」「医療欠席」の欄から（getRoutineInfo の absentees）。
+ // 代理を立てた方は、代理の方が発表するので入れない。画面でチェックを外す・方を足すことができる。
+ // 各画面は、変わったときに呼ぶ absentChanged() と、出す場所 <div id="abBox"> を用意する
+ var absent={ list:[], on:{}, raw:'', unknown:[], found:false };
+ function absentFromRoutine(R){
+   var found=!!(R && R.ok && R.found), a=found ? (R.absentees||null) : null;
+   absent={ list:[], on:{}, raw:a?(a.raw||''):'', unknown:a?(a.unknown||[]):[], found:found };
+   ((a&&a.names)||[]).forEach(function(n){ if(absent.list.indexOf(n)<0){ absent.list.push(n); absent.on[n]=true; } });
+   renderAbsent();
+ }
+ // ページを作らない方 { 氏名: true }
+ function absentSkip(){ var s={}; absent.list.forEach(function(n){ if(absent.on[n]) s[n]=true; }); return s; }
+ function renderAbsent(){
+   var box=document.getElementById('abBox'); if(!box) return;
+   var h=absent.list.length ? absent.list.map(function(n,i){
+       return '<label style="margin-right:12px;white-space:nowrap;"><input type="checkbox" id="ab_'+i+'"'+(absent.on[n]?' checked':'')
+         +' onchange="absentToggle('+i+')"> '+esc(n)+'</label>'; }).join('')
+     : '<span style="color:#888;margin-right:12px;">いません</span>';
+   var opts='<option value="">（欠席の方を足す）</option>';
+   ((ctx&&ctx.members)||[]).forEach(function(m){
+     if(m.name && absent.list.indexOf(m.name)<0) opts+='<option value="'+esc(m.name)+'">'+esc(m.name)+'</option>'; });
+   h+='<select id="abAdd" onchange="absentAdd()">'+opts+'</select>';
+   var notes=[];
+   if(absent.raw) notes.push('ルーティンチェックシートの記載：'+esc(absent.raw));
+   else if(absent.found) notes.push('ルーティンチェックシートの「欠席」「医療欠席」の欄は空です。');
+   if(absent.unknown.length) notes.push('<span style="color:#c60;">名簿の方と結びつかなかった書き方：'+esc(absent.unknown.join('、'))
+     +'（メンバーの方なら「欠席の方を足す」で選んでください）</span>');
+   notes.push('チェックの入った方のページは作りません。代理を立てた方は、代理の方が発表するので入れていません。');
+   box.innerHTML=h+'<div style="font-size:11px;color:#888;margin-top:4px;line-height:1.7;">'+notes.join('<br>')+'</div>';
+ }
+ function absentToggle(i){
+   var n=absent.list[i], e=document.getElementById('ab_'+i);
+   if(n==null || !e) return;
+   absent.on[n]=!!e.checked; absentChanged();
+ }
+ function absentAdd(){
+   var n=get('abAdd'); if(!n) return;
+   if(absent.list.indexOf(n)<0) absent.list.push(n);
+   absent.on[n]=true; renderAbsent(); absentChanged();
+ }
+
  function memberOf(name){ return ((ctx&&ctx.members)||[]).filter(function(x){return x.name===name;})[0]||{}; }
  function memberOptions(){
    var mh='<option value="">（なし）</option>';

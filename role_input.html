@@ -612,17 +612,24 @@
    updateProgress();
  }
 
+ // 「今週の共有事項（役職）」に結びつく「○○より」の行（事前MTGのパワポでは、どちらもその役職のページに入る）。
+ // そちらに書いてあれば（この画面で入れたものも）、今週の共有事項は空でも入力済み
+ function altOf(it){ return (it && it.alt && ctx.items[it.alt.id]) || null; }
+ function altSaved(it){ var a=altOf(it); return !!a && !!norm(a.value); }
+ function altFilled(it){ var a=altOf(it); return !!a && (!!norm(a.value) || !!norm(fields[a.id])); }
  function renderItem(i){
    var id=ids[i], it=ctx.items[id], v=fields[id], box=el('it_'+i);
    if(!box) return;
    var saved = !!norm(it.value), changed = !it.readOnly && norm(v)!==norm(it.orig);
-   var late = it.required && !saved && it.dueDate && it.dueDate < ctx.today;
-   box.className = 'item' + (it.required ? (saved && !changed ? ' ok' : ' need'+(late?' late':'')) : '');
+   var covered = !saved && !norm(v) && altFilled(it);
+   var late = it.required && !saved && !covered && it.dueDate && it.dueDate < ctx.today;
+   box.className = 'item' + (it.required ? ((saved && !changed) || covered ? ' ok' : ' need'+(late?' late':'')) : '');
    var h = '<div class="ihead"><span class="ititle">'+(it.parent?'<span class="ipar">'+esc(it.parent)+' › </span>':'')+esc(it.title)+'</span>';
    if(it.required) h += '<span class="badge req'+(late?' late':'')+'">必須'+(it.dueLabel?'・'+esc(it.dueLabel)+'まで':'')+(it.weekday?'（'+esc(it.weekday)+'）':'')+'</span>';
    if(it.readOnly) h += '<span class="badge">自動</span>';
    else if(changed) h += '<span class="badge unsaved">未保存</span>';
    else if(saved) h += '<span class="badge saved">入力済み</span>';
+   else if(covered) h += '<span class="badge saved">「'+esc(it.alt.title)+'」に記載</span>';
    else h += '<span class="badge">未入力</span>';
    h += '</div>';
    if(it.readOnly){
@@ -652,6 +659,8 @@
      if(it.kind==='check' || !it.history || !it.history.length) chips += '<button class="chip" onclick="setVal('+i+',\'済\')">済</button>';
      if(changed) chips += '<button class="chip" onclick="setVal('+i+',null)">元に戻す</button>';
      hints.push(chips);
+     if(altOf(it)) hints.push('<span class="muted">事前MTG（朝イチMTG）のパワポの役職のページには、「'+esc(it.alt.title)
+       +'」の欄の内容も入ります。どちらかに書けば大丈夫です（両方に書くと両方入ります。同じ内容なら1回だけ）。</span>');
      h += '<div class="hint">'+hints.join('<br>')+'</div>';
    }
    if(it.note) h += '<div class="note">備考：'+esc(it.note)+'</div>';
@@ -664,13 +673,18 @@
    fields[ids[i]] = f.value;
    var it=ctx.items[ids[i]], changed = norm(f.value)!==norm(it.orig);
    f.className = changed ? 'changed' : '';
+   renderAltOf(ids[i]);
    updateProgress();
+ }
+ // 「○○より」を書き換えたら、結びつく「今週の共有事項」の欄の印（入力済みかどうか）も描き直す
+ function renderAltOf(id){
+   ids.forEach(function(x, j){ var o=ctx.items[x]; if(o && o.alt && o.alt.id===id) renderItem(j); });
  }
  // 値を入れて描き直す（null は元の値に戻す）
  function setVal(i, v){
    var it=ctx.items[ids[i]];
    fields[ids[i]] = (v===null) ? (it.value||'') : v;
-   renderItem(i); updateProgress();
+   renderItem(i); renderAltOf(ids[i]); updateProgress();
  }
  function useEst(i){ var e=ctx.items[ids[i]].estimate; if(e) setVal(i, e.value); }
  function usePrev(i){ var p=ctx.items[ids[i]].prev; if(p) setVal(i, p.value); }
@@ -682,8 +696,8 @@
      if(!it.readOnly && norm(fields[id])!==norm(it.orig)) changed++;
      if(!it.required) return;
      req++;
-     if(norm(it.value)) filled++;
-     else if(norm(fields[id])) pend++;
+     if(norm(it.value) || (!norm(fields[id]) && altSaved(it))) filled++;
+     else if(norm(fields[id]) || altFilled(it)) pend++;
    });
    el('progress').innerHTML = req
      ? '必須 <b>'+req+'</b> 項目のうち、シートに入っているもの <b>'+filled+'</b>'
@@ -749,8 +763,10 @@
    h+='<div class="pmpages"><b>役職のページ（'+p.pages.length+'枚）</b>'
      +(p.pages.length?'<ol start="2">'+p.pages.map(function(pg){
         return '<li>'+pg.map(function(r){
+          // 出どころ（「今週の共有事項」「書記兼会計より」など）。今週の共有事項だけのときは出さない
+          var src=(r.from||[]).filter(function(f){ return f!=='今週の共有事項'; }).length ? '・'+(r.from||[]).join('＋') : '';
           return '<span class="pmrole" style="border-left-color:#'+esc(r.color)+';">'+esc(r.icon+' '+r.label)
-            +' <span class="muted">'+esc(r.holder||'担当者 未設定')+'・'+r.chars+'文字</span></span>';
+            +' <span class="muted">'+esc(r.holder||'担当者 未設定')+'・'+r.chars+'文字'+esc(src)+'</span></span>';
         }).join(' ＋ ')+'</li>';
       }).join('')+'</ol>':'<div class="muted">今週の共有事項がまだ1つもありません（まとめのページだけになります）。</div>')+'</div>';
    if(p.skipped.length) h+='<div class="hint">今週の共有事項が無い役職（ページを作りません）：'+esc(p.skipped.join('、'))+'</div>';

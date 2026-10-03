@@ -205,6 +205,7 @@ function withLayoutBoxes(box, fn){
 //   startKey … 始まりの業種区分
 //   longName … スタートアッププレゼンの方（いなければ空）
 //   auto     … カウントダウンが終わったら自動で次へ進むか
+//   skip     … ページを作らない方 { 氏名: true }（欠席の方）。扉ページの表・NEXT にも出さない
 // カウントダウンの秒数は、チャプターの設定（mctx.seconds）。無ければ Activeチャプターの値
 var MP_SECONDS_DEFAULT = { weekly: 30, startup: 150 };
 function memberPresenSeconds(mctx){
@@ -230,13 +231,13 @@ function memberPresenOrder(mctx, startKey){
   for (var i=0;i<live.length;i++) if (live[i].gkey===startKey) { at=i; break; }
   return live.slice(at).concat(live.slice(0,at));
 }
-function memberPresenItems(mctx, startKey, longName, auto){
-  var S=memberPresenSeconds(mctx);
+function memberPresenItems(mctx, startKey, longName, auto, skip){
+  var S=memberPresenSeconds(mctx), out=skip||{};
   // 枠の寸法：テンプレートから採ったもの（公式ファイルから作った雛形）。無ければ元ツールの寸法
   return withLayoutBoxes(mctx.layoutBoxes || null, function(){
     var items=[], rows=mctx.rowsPerPage||7;
     memberPresenOrder(mctx, startKey).forEach(function(b){
-      var list=(mctx.members||[]).filter(function(m){ return m.blockKey===b.gkey; });
+      var list=(mctx.members||[]).filter(function(m){ return m.blockKey===b.gkey && !out[m.name]; });
       if(!list.length) return;
       var pages=Math.ceil(list.length/rows);
       for(var p=0;p<pages;p++){
