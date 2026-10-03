@@ -92,6 +92,7 @@ var ROLE_INIT_RULES_ = [
   { re: /^更新式/, est: 'renewed' },
   { re: /^退会者$/, est: 'leaving' },
   { re: /^代理$/, parent: /代理・?欠席/, est: 'subs' },
+  { re: /^本日の招待者$/, est: 'inviters' },
   { re: /^人数:ビジター$/, est: 'visitors' },
   { re: /^人数:ゲスト$/, est: 'guests' },
   { re: /^人数:見学$/, est: 'zero' },
@@ -977,6 +978,20 @@ function roleNamesText_(names, members, sep) {
   if (!names.length) return 'なし';
   return names.map(function (n) { return roleShortName_(n, members); }).join(sep || '、');
 }
+// 参加者シートの、ビジター・ゲストを招待したメンバー →「見本さん、試験さん」（同じ方は1回。いなければ ''）。
+// 代理の方は入れない（参加者シートの代理の「招待者」は、代わりを頼んだメンバーのため）。
+// キャンセルの方は、people に入れる前に落としてある。
+// 役職ごとの入力の「本日の招待者」の初期値と、トークスクリプトの {ルーティン:本日の招待者}（チェックシートが空のとき）で使う
+function roleInvitersText_(people, members) {
+  var names = [];
+  for (var i = 0; i < (people || []).length; i++) {
+    var p = people[i];
+    if (p.type === 'sub' || !p.inviter) continue;
+    var who = routineMemberName_(p.inviter), nm = who.name || String(p.inviter).replace(/(さん|様|さま)$/, '');
+    if (nm && names.indexOf(nm) < 0) names.push(nm);
+  }
+  return names.length ? roleNamesText_(names, members) : '';
+}
 
 // 1つの項目の初期値。戻り値 { value, source, mode: 'prefill'|'suggest' } または null
 //   prefill … 入力欄に入れておく（保存すればシートに入る）
@@ -1079,6 +1094,12 @@ function roleEstimate_(it, env) {
         if (nm && names.indexOf(nm) < 0) names.push(nm);
       }
       return { value: roleNamesText_(names, members), source: src + '（代理を立てる方）', mode: 'prefill' };
+    }
+    case 'inviters': {                                      // 参加者シートの、ビジター・ゲストの招待者（代理の方は入れない）
+      P = env.participants();
+      if (!P) return null;
+      return { value: roleInvitersText_(P.people, env.members() || []) || 'なし',
+               source: '参加者シート（' + P.sheet + '）のビジター・ゲストの招待者', mode: 'prefill' };
     }
     case 'zero':
       return carry() || { value: '0', source: 'これまでの記載が無いので0', mode: 'prefill', basis: 'carry' };

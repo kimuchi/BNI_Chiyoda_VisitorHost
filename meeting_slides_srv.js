@@ -587,7 +587,9 @@ function mapTableCell_(xml, frameId, rowIdx, colIdx, fn) {
 //   アフター・定例会後の組 … 抽選コーナーのページのうしろに並べる
 // どのページも、左が推薦する人・右が推薦される人（氏名・会社名・カテゴリー・写真）。
 // 定例会中の組が無い日は、ひな形のページを非表示にする（元のお名前と写真は消しておく）。
-//   pairs … [{ giver: {name, company, category}, receiver: {…}, after: true/false }]
+// 組に受け取ったスライド（slideImage。reco_slide_srv.js の recoLoadSlides_ で開いたもの）があれば、
+// その組のページのすぐ後ろに1枚のページとして入れる（recoImageSlide_）。
+//   pairs … [{ giver: {name, company, category}, receiver: {…}, after: true/false, slideImage }]
 var RECO_PREFIX_ = '推薦のことば';
 function expandRecommendations_(parts, pairs, cache) {
   var model = findSlideWithText_(parts, RECO_PREFIX_ + '1氏名');
@@ -618,9 +620,17 @@ function expandRecommendations_(parts, pairs, cache) {
     fill(add.path, pair);
     return add;
   };
-  var moreDuring = [], afterPages = [];
-  for (i = 1; i < during.length; i++) moreDuring.push(clone(during[i]));
-  for (i = 0; i < after.length; i++) afterPages.push(clone(after[i]));
+  // 受け取ったスライドのページ（その組のページのすぐ後ろに並べる）
+  var slides = [], seq = 0;
+  var slideOf = function (pair) {
+    if (!pair.slideImage) return [];
+    var s = recoImageSlide_(parts, modelRels, pair.slideImage, ++seq);
+    slides.push(s.path);
+    return [s];
+  };
+  var moreDuring = [], afterPages = [], firstSlide = during.length ? slideOf(during[0]) : [];
+  for (i = 1; i < during.length; i++) moreDuring = moreDuring.concat([clone(during[i])], slideOf(during[i]));
+  for (i = 0; i < after.length; i++) afterPages = afterPages.concat([clone(after[i])], slideOf(after[i]));
   if (during.length) {
     putXml_(parts, model, modelXml);
     fill(model, during[0]);
@@ -632,7 +642,7 @@ function expandRecommendations_(parts, pairs, cache) {
   var out = [], placedAfter = false;
   for (i = 0; i < entries.length; i++) {
     out.push(entries[i]);
-    if (entries[i].path === model) out = out.concat(moreDuring);
+    if (entries[i].path === model) out = out.concat(firstSlide, moreDuring);
     if (lottery && entries[i].path === lottery) { out = out.concat(afterPages); placedAfter = true; }
   }
   if (!placedAfter) out = out.concat(afterPages);        // 抽選コーナーが無ければ最後に
@@ -644,9 +654,11 @@ function expandRecommendations_(parts, pairs, cache) {
   if (after.length) msg += '。アフター・定例会後の ' + after.length + '枚は、'
     + (lottery ? '抽選コーナーのあと' : '最後') + 'に入れました';
   msg += '。';
+  if (slides.length) msg += '\n受け取ったスライド ' + slides.length + '枚を、その組の推薦のことばのページのあとに入れました。';
   if (missing.length) msg += '\n推薦のことばで写真が見つからない方（写真なし）: ' + missing.join('、');
-  return { message: msg, during: during.length, after: after.length,
-           paths: [model].concat(moreDuring.map(function (x) { return x.path; }), afterPages.map(function (x) { return x.path; })) };
+  var pagePaths = function (list) { return list.filter(function (x) { return slides.indexOf(x.path) < 0; }).map(function (x) { return x.path; }); };
+  return { message: msg, during: during.length, after: after.length, slides: slides,
+           paths: [model].concat(pagePaths(moreDuring), pagePaths(afterPages)) };
 }
 
 // 氏名の差し込み口（{{○○1氏名}}）の文字箱の位置
@@ -1203,6 +1215,8 @@ function generateMeetingSlides(kind, values, meetingDateVal, opts) {
       try { o.roleIntroData = riDataOfDate_(d || new Date()); }
       catch (e) { console.warn('[MEETING] 役職・チームを読めませんでした: ' + (e && e.message ? e.message : e)); }
     }
+    // 後半の推薦のことば：組に付いた受け取ったスライド（画像）を開いておく（reco_slide_srv.js）
+    var recoGone = (kind === 'meetingSecond' && o.recommendPairs && o.recommendPairs.length) ? recoLoadSlides_(o.recommendPairs) : '';
 
     var r = editPptxOnServer_(kind, outName, function (parts) {
       return editMeetingSlides_(parts, map, rules, o);
@@ -1229,6 +1243,7 @@ function generateMeetingSlides(kind, values, meetingDateVal, opts) {
     if (info.weekly && info.weekly.message) msg += '\n' + info.weekly.message;
     if (info.guests && info.guests.message) msg += '\n' + info.guests.message;
     if (info.reco && info.reco.message) msg += '\n' + info.reco.message;
+    if (recoGone) msg += '\n⚠ ' + recoGone;
     if (info.renewal && info.renewal.message) msg += '\n' + info.renewal.message;
     if (info.rotation && info.rotation.message) msg += '\n' + info.rotation.message;
     if (info.roles && info.roles.message) msg += '\n' + info.roles.message;

@@ -54,6 +54,9 @@
      <button class="mkbtn" onclick="addPair('after')">＋ 組を足す</button>
    </div>
    <div id="rcNote" style="font-size:11px;color:#888;margin-top:6px;line-height:1.7;"></div>
+   <div style="font-size:11px;color:#888;margin-top:4px;line-height:1.7;">
+     推薦する方から<b>スライドを1枚</b>受け取ったときは、その組の <b>「📎 受け取ったスライド」</b> で選んでください（pptx・pdf・画像）。
+     その組の推薦のことばのページの<b>すぐあと</b>に、1枚のページとして入れます（PDF・pptx は1ページ目）。</div>
    <div class="mk">
      <h5>抽選コーナー</h5>
      <select id="lt1"></select>　<select id="lt2"></select>
@@ -194,6 +197,7 @@
    pairs={ during:pick('during'), after:pick('after') };
    if(!pairs.during.length) pairs.during.push({ g:'', r:'' });
    renderPairs();
+   recoLoadSaved();                                  // 置いてある受け取ったスライドを、同じ組に付ける
    // 抽選コーナー（通常はメインプレゼンと同じ）
    document.getElementById('lt1').value = (mp[0] && mp[0].name) || '';
    document.getElementById('lt2').value = (mp[1] && mp[1].name) || '';
@@ -241,10 +245,18 @@
    ['during','after'].forEach(function(w){
      document.getElementById(w==='during'?'recoDuring':'recoAfter').innerHTML = pairs[w].length
        ? pairs[w].map(function(p,i){
+           var a='\''+w+'\','+i;
            return '<div class="mkrow"><span style="width:16px;color:#888;">'+(i+1)+'</span>'
              +'<select id="rp_'+w+'_g_'+i+'">'+opts+'</select> →'
              +' <select id="rp_'+w+'_r_'+i+'">'+opts+'</select>'
-             +' <button class="mkbtn" onclick="delPair(\''+w+'\','+i+')">外す</button></div>';
+             +' <button class="mkbtn" onclick="delPair('+a+')">外す</button>'
+             +' <button class="mkbtn" onclick="recoChoose('+a+')"'+(p.busy?' disabled':'')+'>📎 受け取ったスライド</button>'
+             +'<input type="file" id="rf_'+w+'_'+i+'" accept=".pptx,.pdf,image/png,image/jpeg,image/gif,image/webp,image/bmp"'
+             +' style="display:none;" onchange="recoPick('+a+',this)"></div>'
+             +(p.busy ? '<div class="mkrow" style="padding-left:22px;color:#0055ff;">⏳ '+esc(p.busy)+'</div>'
+               : p.slide ? '<div class="mkrow" style="padding-left:22px;"><span class="nm">📄 '+esc(p.slide.name)
+                 +' <span class="dt">… この組のページのあとに入れます</span></span>'
+                 +' <button class="mkbtn" onclick="recoUnset('+a+')">スライドを外す</button></div>' : '');
          }).join('')
        : '<div style="font-size:11px;color:#888;padding:3px 0;">（なし）</div>';
      pairs[w].forEach(function(p,i){ val('rp_'+w+'_g_'+i, p.g); val('rp_'+w+'_r_'+i, p.r); });
@@ -256,17 +268,158 @@
    var who=memberOf(name);
    return { name:name||'', company:who.company||'', category:who.title?('【'+who.title+'】'):'' };
  }
- // 作成に渡す組（2人とも空の組は入れない）
+ // 作成に渡す組（2人とも空の組は入れない）。受け取ったスライドはドライブのファイルのIDで渡す
  function collectPairs(){
    syncPairs();
    var out=[];
    ['during','after'].forEach(function(w){
      pairs[w].forEach(function(p){
        if(!p.g && !p.r) return;
-       out.push({ giver:personValue(p.g), receiver:personValue(p.r), after:(w==='after') });
+       out.push({ giver:personValue(p.g), receiver:personValue(p.r), after:(w==='after'),
+                  slide:p.slide ? { id:p.slide.id, name:p.slide.name } : null });
      });
    });
    return out;
+ }
+
+ // --- 推薦のことば：受け取ったスライド（pptx・pdf・画像の1枚）---
+ // 組ごとにファイルを選ぶと、画像にしてドライブに置き（saveRecommendationSlide）、
+ // 作成するときに、その組の推薦のことばのページのすぐ後ろに1枚のページとして入れる。
+ //   画像 … 長い辺を RECO_MAX_PX 以内に縮めて、PNG（JPEGの写真はJPEG）にする
+ //   PDF  … 1ページ目を画像にする（pdf.js。初めて使うときに読み込む）
+ //   pptx … サーバーでPDFにしてもらい（Googleスライドに変換。convertRecommendationPptx）、PDFと同じく1ページ目を画像にする
+ // 置いたスライドは開催日・組ごとに覚えてあり、画面を開き直しても同じ組に付く（recoLoadSaved）
+ // pdf.js は jsDelivr から（日本語の書体を埋め込んでいないPDFに要る文字の対応表 cmaps・標準の書体 standard_fonts も同じ場所にある）
+ var RECO_MAX_PX=2400, RECO_MAX_MB=15, RECO_PDFJS='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/';
+ function recoKind(f){
+   var n=String(f.name||'').toLowerCase(), t=String(f.type||'').toLowerCase();
+   if(/\.pptx$/.test(n) || /presentationml/.test(t)) return 'pptx';
+   if(/\.pdf$/.test(n) || t==='application/pdf') return 'pdf';
+   if(/^image\/(png|jpeg|gif|webp|bmp)$/.test(t) || /\.(png|jpe?g|gif|webp|bmp)$/.test(n)) return 'image';
+   return '';
+ }
+ function recoChoose(w,i){
+   syncPairs();
+   var p=pairs[w][i]; if(!p) return;
+   if(!p.g && !p.r){ show('先に、推薦する方・推薦される方を選んでから、受け取ったスライドを選んでください。',false); return; }
+   var f=document.getElementById('rf_'+w+'_'+i); if(f) f.click();
+ }
+ function recoPick(w,i,input){
+   var f=input && input.files && input.files[0];
+   if(!f) return;
+   syncPairs();
+   var p=pairs[w][i]; if(!p) return;
+   var kind=recoKind(f);
+   if(!kind){ show('「'+f.name+'」は使えません。pptx・pdf・画像（png・jpg など）を選んでください。',false); return; }
+   if(f.size>RECO_MAX_MB*1024*1024){ show('「'+f.name+'」は大きすぎます（'+RECO_MAX_MB+'MBまで）。PDFか画像にして選んでください。',false); return; }
+   var fail2=function(e){ p.busy=''; renderPairs(); show('「'+f.name+'」を入れられませんでした: '+((e&&e.message)?e.message:e),false); };
+   p.busy='「'+f.name+'」を画像にしています…'; renderPairs(); show('',null);
+   var upload=function(dataUrl, note){
+     p.busy='「'+f.name+'」をドライブに置いています…'; renderPairs();
+     google.script.run.withSuccessHandler(function(r){
+       p.busy='';
+       if(!r || !r.ok){ renderPairs(); show((r&&r.message)||'置けませんでした。',false); return; }
+       p.slide=r.slide; renderPairs(); show(r.message+(note?'\n'+note:''),true);
+     }).withFailureHandler(fail2).saveRecommendationSlide({ date:get('meeting'), giver:p.g, receiver:p.r, name:f.name, data:dataUrl });
+   };
+   var fromPdf=function(buf){
+     recoPdfPage(buf, function(e, cv, pages){
+       if(e) return fail2(e);
+       upload(recoEncode(cv, 'image/png'), pages>1 ? '（'+pages+'ページあるうちの、1ページ目を入れます）' : '');
+     });
+   };
+   var rd=new FileReader();
+   rd.onerror=function(){ fail2(new Error('ファイルを読めませんでした')); };
+   if(kind==='image'){
+     rd.onload=function(){
+       var img=new Image();
+       img.onload=function(){
+         var s=Math.min(1, RECO_MAX_PX/Math.max(img.naturalWidth, img.naturalHeight)), cv=document.createElement('canvas');
+         cv.width=Math.max(1, Math.round(img.naturalWidth*s)); cv.height=Math.max(1, Math.round(img.naturalHeight*s));
+         var g=cv.getContext('2d'); g.fillStyle='#fff'; g.fillRect(0,0,cv.width,cv.height); g.drawImage(img,0,0,cv.width,cv.height);
+         upload(recoEncode(cv, /jpe?g/i.test(f.type||f.name) ? 'image/jpeg' : 'image/png'), '');
+       };
+       img.onerror=function(){ fail2(new Error('画像として読めませんでした')); };
+       img.src=rd.result;
+     };
+     rd.readAsDataURL(f);
+   } else if(kind==='pdf'){
+     rd.onload=function(){ fromPdf(rd.result); };
+     rd.readAsArrayBuffer(f);
+   } else {
+     rd.onload=function(){
+       p.busy='「'+f.name+'」をPDFにしています（Googleスライドに変換。少しかかります）…'; renderPairs();
+       google.script.run.withSuccessHandler(function(r){
+         if(!r || !r.ok) return fail2(new Error((r&&r.message)||'PDFにできませんでした'));
+         var bin=atob(r.pdf), bytes=new Uint8Array(bin.length);
+         for(var k=0;k<bin.length;k++) bytes[k]=bin.charCodeAt(k);
+         p.busy='「'+f.name+'」を画像にしています…'; renderPairs();
+         fromPdf(bytes.buffer);
+       }).withFailureHandler(fail2).convertRecommendationPptx({ name:f.name, data:String(rd.result).replace(/^data:[^,]*,/,'') });
+     };
+     rd.readAsDataURL(f);
+   }
+ }
+ // canvas → data URL。PNGが大きすぎるとき（送れる大きさを超えそうなとき）はJPEGにする
+ function recoEncode(cv, type){
+   var url=cv.toDataURL(type, 0.92);
+   if(type==='image/png' && url.length>6*1024*1024) url=cv.toDataURL('image/jpeg', 0.9);
+   return url;
+ }
+ // PDFの1ページ目を、長い辺が RECO_MAX_PX の画像（canvas）にする。cb(err, canvas, ページ数)
+ function recoPdfPage(buf, cb){
+   recoPdfJs(function(e, lib){
+     if(e) return cb(e);
+     lib.getDocument({ data:new Uint8Array(buf), cMapUrl:RECO_PDFJS+'cmaps/', cMapPacked:true,
+                       standardFontDataUrl:RECO_PDFJS+'standard_fonts/' }).promise.then(function(doc){
+       return doc.getPage(1).then(function(page){
+         var v1=page.getViewport({ scale:1 }), s=RECO_MAX_PX/Math.max(v1.width, v1.height);
+         var vp=page.getViewport({ scale:s }), cv=document.createElement('canvas');
+         cv.width=Math.round(vp.width); cv.height=Math.round(vp.height);
+         var g=cv.getContext('2d'); g.fillStyle='#fff'; g.fillRect(0,0,cv.width,cv.height);
+         return page.render({ canvasContext:g, viewport:vp }).promise.then(function(){ cb(null, cv, doc.numPages); });
+       });
+     }).catch(function(err){ cb(new Error('PDFを読めませんでした（'+((err&&err.message)?err.message:err)+'）')); });
+   });
+ }
+ // pdf.js を読み込む（初めてPDF・pptxを選んだときだけ）。作業用のスクリプト（worker）もこの画面で読み込み、画面の中で動かす
+ function recoPdfJs(cb){
+   if(window.pdfjsLib && window.pdfjsWorker) return cb(null, window.pdfjsLib);
+   var load=function(src, next){
+     var s=document.createElement('script'); s.src=src;
+     s.onload=function(){ next(null); };
+     s.onerror=function(){ next(new Error('PDFを画像にする部品（pdf.js）を読み込めませんでした。インターネットにつながっているか確かめてください')); };
+     document.head.appendChild(s);
+   };
+   load(RECO_PDFJS+'build/pdf.min.js', function(e){
+     if(e) return cb(e);
+     load(RECO_PDFJS+'build/pdf.worker.min.js', function(e2){
+       if(e2 || !window.pdfjsLib) return cb(e2 || new Error('pdf.js を読み込めませんでした'));
+       try{ window.pdfjsLib.GlobalWorkerOptions.workerSrc=RECO_PDFJS+'build/pdf.worker.min.js'; }catch(x){}
+       cb(null, window.pdfjsLib);
+     });
+   });
+ }
+ function recoUnset(w,i){
+   syncPairs();
+   var p=pairs[w][i]; if(!p || !p.slide) return;
+   var id=p.slide.id; p.slide=null; renderPairs();
+   google.script.run.withSuccessHandler(function(r){ show((r&&r.message)||'', !!(r&&r.ok)); })
+     .withFailureHandler(fail).removeRecommendationSlide(get('meeting'), id);
+ }
+ // その開催日に置いてある受け取ったスライドを、同じ組（推薦する方・推薦される方が同じ）に付ける
+ function recoLoadSaved(){
+   var d=get('meeting'); if(!d) return;
+   loadFrom('recoSlides','受け取った推薦のことばのスライド','getRecommendationSlides',[d],function(r){
+     if(!r || !r.ok || get('meeting')!==d) return;
+     syncPairs();
+     (r.slides||[]).forEach(function(s){
+       ['during','after'].forEach(function(w){
+         pairs[w].forEach(function(p){ if(!p.slide && p.g===s.giver && p.r===s.receiver) p.slide={ id:s.id, name:s.name, w:s.w, h:s.h }; });
+       });
+     });
+     renderPairs();
+   });
  }
 
  // --- リファーラル発表 ---

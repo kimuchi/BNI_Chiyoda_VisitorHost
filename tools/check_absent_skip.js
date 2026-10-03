@@ -120,6 +120,7 @@ const SERVER = {
     referralBoxes: { companyTall: { x: 5087424, y: 2849608, cx: 6893161, cy: 1446550 }, categoryLow: 4071101, categoryWidth: 6893161, hasNext: true, slides: 1 } }),
   computeRenewalLists: () => SERVER.getMeetingSlideContext().lists,
   getMeetingMusicFiles: () => ({ ok: true, files: [] }),
+  getRecommendationSlides: () => ({ ok: true, slides: [] }),          // 受け取った推薦のことばのスライド（無し）
   generateMeetingSlides: (...args) => { sent.push(args); return { ok: true, message: '作成しました', url: 'u' }; },
 };
 const lastOpts = () => (sent.length ? sent[sent.length - 1][3] || {} : {});
