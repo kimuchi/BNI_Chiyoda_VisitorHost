@@ -64,11 +64,15 @@
  <div class="sec">
    <h4>4. リファーラル発表 <span class="auto">名簿のNo.順</span></h4>
    <label><input type="checkbox" id="rfOn" checked onchange="renderReferral()">
-     リファーラル発表のページを<b>名簿のNo.順で全員ぶん</b>作る</label>
+     リファーラル発表のページを<b>名簿のNo.順で全員ぶん</b>（欠席の方を除いて）作る</label>
    　<label>カウントダウン <input type="text" id="rfSec" size="2" value="7">秒</label>
    <div id="rfNote" style="font-size:11px;color:#888;margin-top:4px;"></div>
    <div style="font-size:11px;color:#888;">カウントダウンはクリックで始まり、次のページへもクリックで進みます。
      秒数のはじめの値は ⚙️ 設定 ＞ チャプター の「リファーラル発表」です（ここで変えるのは、この回だけ）。</div>
+   <div class="mk">
+     <h5>欠席の方（リファーラル発表のページを作りません） <span class="auto">ルーティンチェックシート</span></h5>
+     <div id="abBox" style="font-size:12px;"></div>
+   </div>
  </div>
 
  <div class="sec">
@@ -172,6 +176,7 @@
  // ルーティンチェックシートに書いてある内容を反映する
  function applyRoutine(R){
    var note=document.getElementById('routineNote');
+   absentFromRoutine(R); renderReferral();          // 欠席の方（見つからない日は、いない）
    if(!R || !R.ok || !R.found){
      // その日の列が無い：前に選んでいた開催日の推薦のことば・抽選を残さない
      pairs={ during:[{ g:'', r:'' }], after:[] }; renderPairs();
@@ -265,11 +270,15 @@
  }
 
  // --- リファーラル発表 ---
- // 発表の順番は名簿のNo.順（1番から）。会社名の収め方は slides_layout.html の処理を使う。
+ // 発表の順番は名簿のNo.順（1番から）。欠席の方のページは作らない（「次の発表者」も、出席の方から）。
+ // 会社名の収め方は slides_layout.html の処理を使う。
  function referralMembers(){
-   return ((ctx&&ctx.members)||[]).filter(function(m){ return m.name; })
+   var skip=absentSkip();
+   return ((ctx&&ctx.members)||[]).filter(function(m){ return m.name && !skip[m.name]; })
      .slice().sort(function(a,b){ return (parseFloat(a.no)||9999)-(parseFloat(b.no)||9999); });
  }
+ // 欠席の方を選び直したとき（slides_meeting_common.html の欠席の方の欄から呼ばれる）
+ function absentChanged(){ renderReferral(); }
  function buildReferral(){
    var on=document.getElementById('rfOn');
    if(!on || !on.checked || !rfBoxes) return [];
@@ -294,8 +303,10 @@
    if(!rfBoxes){ n.innerHTML='<span style="color:#c60;">後半テンプレートに「REFERRAL PRESENTATION」のページが見つかりませんでした。</span>'; return; }
    if(!on.checked){ n.innerHTML='チェックを入れると、テンプレートのひな形ページを人数ぶんに増やします。'; return; }
    var list=referralMembers(), noPhoto=list.filter(function(m){ return !m.hasPhoto; });
+   var away=Object.keys(absentSkip()).length;
    n.innerHTML='<b>'+list.length+'名ぶん</b>作ります（'+esc(list[0]?list[0].name:'')+' → … → '
      +esc(list[list.length-1]?list[list.length-1].name:'')+'）。'
+     +(away?'欠席の方 '+away+'名のページは作りません。':'')
      +(noPhoto.length?'<br><span style="color:#c60;">写真が見つからない方 '+noPhoto.length+'名は写真なしになります。</span>':'');
  }
 

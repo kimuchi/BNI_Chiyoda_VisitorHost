@@ -718,6 +718,20 @@ function roleSheetItems_(grid) {
 // 足す行（ROLE_EXTRA_ITEMS_）の id。シートに行ができたあとと同じ形にしておく
 function roleExtraId_(title) { return roleNorm_(ROLE_EXTRA_GROUP_) + '>>' + roleNorm_(title); }
 
+// その役職が朝一MTG（事前MTG）で話すことを書く、ルーティンチェックシートの行（「書記兼会計より」「プレジデントより」など）の id。
+// 項目名が「（役職の呼び名）より」の行（前に「（朝一MTG）」のようなかっこ書きがあってもよい）。無ければ ''。
+// 事前MTGのパワポでは、「今週の共有事項（役職）」と一緒に、その役職のページに入れる（premtg_srv.js）
+function roleFromItemId_(ctx, def) {
+  var names = [def.label, def.sheet].concat(def.alias || []).map(roleNorm_);
+  for (var i = 0; i < ctx.order.length; i++) {
+    var it = ctx.items[ctx.order[i]];
+    if (!it || it.virtual) continue;
+    var t = roleNorm_(it.title).replace(/^[(【\[][^)】\]]*[)】\]]/, '');
+    if (t.length > 2 && t.slice(-2) === 'より' && names.indexOf(t.slice(0, -2)) >= 0) return it.id;
+  }
+  return '';
+}
+
 // --- 読み込み（一覧・役職ごとの入力で使う）---
 // シートは1回の実行の中で使い回す
 function roleSheetCache_() {
@@ -864,6 +878,13 @@ function roleBuildContext_(target, roleKey) {
   }
   ctx.unknown = cur.parsed.unknown;
 
+  // 「今週の共有事項（役職）」と、シートの「（役職）より」の行は、どちらも事前MTGのパワポのその役職のページに入る。
+  // 「○○より」に書いてあれば、今週の共有事項が空でも入力済みに数える（逆は数えない。「○○より」はトークスクリプトでも読むため）
+  for (var a = 0; a < ROLE_DEFS_.length; a++) {
+    var shareId = roleExtraId_('今週の共有事項（' + ROLE_DEFS_[a].label + '）'), fromId = roleFromItemId_(ctx, ROLE_DEFS_[a]);
+    if (fromId && fromId !== shareId && ctx.items[shareId]) ctx.items[shareId].alt = { id: fromId, title: ctx.items[fromId].title };
+  }
+
   // 初期値の推定（ほかの項目の値を使うものがあるので、全部そろってから。開いている役職の項目だけ）
   if (roleKey) {
     var env = roleEstimateEnv_(target, prevDates, ctx);
@@ -894,6 +915,7 @@ function roleStatus_(ids, items, today) {
     if (!it.required) continue;
     st.required++;
     if (String(it.value || '').trim()) { st.filled++; continue; }
+    if (it.alt && items[it.alt.id] && String(items[it.alt.id].value || '').trim()) { st.filled++; continue; }   // 「○○より」に書いてある
     var over = !!it.dueDate && parseDate_(it.dueDate).getTime() < today.getTime();
     if (over) late = true;
     st.missing.push({ id: it.id, title: it.title, parent: it.parent, dueLabel: it.dueLabel, late: over });

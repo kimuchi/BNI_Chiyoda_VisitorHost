@@ -91,6 +91,10 @@
      </table>
      <div id="mpWarn" style="font-size:12px;color:#b26b00;margin-top:6px;line-height:1.7;"></div>
      <div class="mk">
+       <h5>欠席の方（メンバーのページを作りません） <span class="auto">ルーティンチェックシート</span></h5>
+       <div id="abBox" style="font-size:12px;"></div>
+     </div>
+     <div class="mk">
        <h5>この日の順番</h5>
        <table class="ord" id="mpOrder"></table>
        <div id="mpNote2" style="font-size:12px;color:#444;margin-top:6px;"></div>
@@ -192,6 +196,7 @@
    var note=document.getElementById('coreNote');
    guestRaw = (R && R.ok && R.found) ? (R.regionGuestsRaw||'') : '';
    renderGuests();
+   absentFromRoutine(R); renderMP();                 // 欠席の方（見つからない日は、いない）
    // 新メンバー・更新メンバー／バイスプレジデントによる報告／ネットワーキングリーダー（見つからない日は空に）
    var F=(R && R.ok && R.found) ? (R.firstHalf||{}) : {};
    nmFromRoutine(F); vpFromRoutine(F); nlFromRoutine(F);
@@ -306,9 +311,12 @@
      : 'いない日は「（なし）」のまま。';
    renderMP();
  }
+ // 欠席の方を選び直したとき（slides_meeting_common.html の欠席の方の欄から呼ばれる）
+ function absentChanged(){ renderMP(); }
  function buildMP(){
    if(!mpCtx || !document.getElementById('mpOn').checked) return [];
-   var items=memberPresenItems(mpCtx, get('mpStart'), get('mpLong'), document.getElementById('mpAuto').checked);
+   // 欠席の方のページは作らない（扉ページの表・NEXT にも出さない）
+   var items=memberPresenItems(mpCtx, get('mpStart'), get('mpLong'), document.getElementById('mpAuto').checked, absentSkip());
    // 後ろにアンバサダー・ディレクターが続くときは、最後の方のページの「NEXT」にその方を出す
    var gs=pickedGuests(), last=items[items.length-1];
    if(gs.length && last && last.kind==='individual' && !last.nextName) last.nextName=gs[0].name;
@@ -318,16 +326,21 @@
    var box=document.getElementById('mpOrder'), note=document.getElementById('mpNote2');
    if(!mpCtx){ box.innerHTML=''; note.innerHTML=''; refreshGen(); return; }
    var seq=memberPresenOrder(mpCtx, get('mpStart')), h='<tr><th></th><th>業種区分</th><th>人数</th><th>先頭</th></tr>';
+   var skip=absentSkip(), away=0;
    seq.forEach(function(b,i){
-     var first=(mpCtx.members||[]).filter(function(m){ return m.blockKey===b.gkey; })[0];
+     var all=(mpCtx.members||[]).filter(function(m){ return m.blockKey===b.gkey; });
+     var here=all.filter(function(m){ return !skip[m.name]; }), first=here[0];
+     away+=all.length-here.length;
      h+='<tr class="'+(i===0?'first':'')+'"><td class="num">'+(i+1)+'</td><td>'+esc(b.block)+'</td>'
-       +'<td class="num">'+b.count+'名</td><td>'+esc(first?first.name:'―')+'</td></tr>';
+       +'<td class="num">'+here.length+'名'+(here.length<all.length?'（欠席 '+(all.length-here.length)+'名）':'')+'</td>'
+       +'<td>'+esc(first?first.name:'―')+'</td></tr>';
    });
    box.innerHTML=h;
    var items=buildMP(), ov=items.filter(function(x){ return x.kind==='overview'; }).length, gs=pickedGuests();
    var S=memberPresenSeconds(mpCtx);
    note.innerHTML = items.length
      ? ('扉ページ '+ov+'枚＋個人ページ '+(items.length-ov)+'枚＝<b>'+items.length+'枚</b>を差し込みます。'
+        +(away ? '（欠席の方 '+away+'名のページは作りません）' : '')
         +'<br>カウントダウンは '+secondsLabel(S.weekly)+(get('mpLong') ? '（'+esc(get('mpLong'))+'さんは '+secondsLabel(S.startup)+'）' : '')
         +'。秒数は ⚙️ 設定 ＞ チャプター で変えられます。'
         +(gs.length ? '<br>最後の方のページの「NEXT」には '+esc(gs[0].name)+'さんを出します。' : ''))

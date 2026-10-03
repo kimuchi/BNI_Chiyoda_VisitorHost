@@ -38,6 +38,7 @@ run "割り振り表の画面（ブラウザ：読み込んだ回に書き込む
 run "期の替わり目の担当者と名簿の役職（未登録の期で役職を消さない・取り込みを前の期に戻さない・設定の保存で期をずらさない）" node tools/check_role_terms.js
 run "スピーカーローテーション（保存していないとき：見た日で発表者が変わらない）" node tools/check_rotation_unsaved.js
 run "メインプレゼンターの画像（ブラウザ：写真・お名前・ご紹介して欲しいカテゴリー・回を替える・保存）" node tools/check_mp_image.js
+run "事前MTGのパワポの役職のページ（「書記兼会計より」などの行からも作る・入力済みの数え方・XMLに書けない文字）" node tools/check_premtg_roles.js
 run "ルーティンチェックシートの名前の照合（同じ名字・似た氏名・名簿に無い新メンバー）" node tools/check_routine_names.js
 run "メンバー名簿の画面（ブラウザ：読み込めていないときは保存させない・ほかの方の変更を消さない・列を足したシート・貼り付けの改行）" node tools/check_member_master_dialog.js
 run "PowerPointテンプレートの登録（開けない登録を未登録と出さない・素材フォルダを開けない方は止める）" node tools/check_template_files.js
@@ -46,6 +47,7 @@ echo "── スライド"
 run "定例会スライド（指示どおりか）" node tools/check_meeting_slides.js
 run "ビジター・代理スライド（「$」の入った名前・テンプレートの2ページ目・消した枠・キャンセルの方・会社名44pt／カテゴリー32pt・自動で次へ進めない・ファイル名）" node tools/check_visitor_slides.js
 run "会社名・カテゴリーの組版（メンバー・リファーラル：44pt／32ptにそろえる・入らなければ同じ大きさで2行・語の途中で折らない）" node tools/check_layout_sizes.js
+run "欠席の方のページを作らない（ウィークリープレゼン・リファーラル発表：欄の読み方・名簿の方に合わせる・NEXT／次の発表者・外す・足す）" node tools/check_absent_skip.js
 run "新メンバー・更新メンバーのページ" node tools/check_member_pages.js
 run "ネットワーキングリーダーのページ（見出しをお名前の枠と取り違えない・お2人の部門）" node tools/check_networking_leaders.js
 run "役職のメンバー紹介（学習コーナーのお名前の大きさも）" node tools/check_role_intro.js

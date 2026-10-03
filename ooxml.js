@@ -348,8 +348,12 @@ function addRunToShape_(sp) {
   return sp.substring(0, tb[0].start) + body + sp.substring(tb[0].end);
 }
 
+// XMLに書けない文字（制御文字・片割れのサロゲート）は落とす。残るとPowerPointがファイルの修復を求め、
+// そのページや文字が消えることがある。PowerPoint・Wordから写した文の改行（垂直タブ）は空白にする
 function escapeXml_(s) {
   return String(s == null ? '' : s)
+    .replace(/[\u000B\u000C]/g, ' ')
+    .replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDFFF]|[\u0000-\u0008\u000E-\u001F\uFFFE\uFFFF]/g, function (c) { return c.length === 2 ? c : ''; })
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
 }

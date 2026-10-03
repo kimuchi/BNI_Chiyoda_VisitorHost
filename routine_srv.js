@@ -676,6 +676,69 @@ function routineFirstOfMonth_(d) {
   return true;
 }
 
+// --- 欠席の方（ウィークリープレゼン・リファーラル発表のページを作らない方）---
+// 「代理・欠席」の「欠席」「医療欠席」の欄に書かれた方。代理を立てた方（「代理」の欄）は、代理の方が発表するので入れない。
+//   ・かっこの中（「（当欠）」「（4/1〜5/27 休会）」など）は読まない
+//   ・「遅刻：○○さん」「○○さん遅刻」は欠席ではない。「○○さん復帰」は戻ってきた方なので入れない
+//   ・「○○さん代理：△△さん」「○○さん→△△さん」は○○さんだけ
+//   ・敬称（さん・様など）があれば敬称ごとに1人（「見本さん　試験さん」）。うしろの書き足し（「休会中」など）は読まない
+//   ・「なし」「○日○時時点でなし」は誰もいない
+// 読み方は、事前MTGのパワポの人数（premtg_srv.js の premtgCountNames_）とそろえてある
+var ROUTINE_ABSENT_LABELS_ = ['欠席'];
+var ROUTINE_MEDICAL_LABELS_ = ['医療欠席'];
+function routineAbsentTokens_(text) {
+  var s = String(text == null ? '' : text).normalize('NFKC'), out = '', depth = 0, i;
+  for (i = 0; i < s.length; i++) {                         // かっこの中を落とす（入れ子・閉じ忘れも）
+    var c = s.charAt(i);
+    if (c === '(' || c === '「') { depth++; continue; }
+    if (c === ')' || c === '」') { if (depth > 0) depth--; continue; }
+    if (!depth) out += c;
+  }
+  var HON = /(さん|様|さま|氏|くん|君|ちゃん)/, items = [], names = [];
+  var segs = out.split(/[\/\n]+/);
+  for (var g = 0; g < segs.length; g++) {
+    var seg = segs[g], late = seg.search(/遅刻\s*:/);       // 「遅刻：○○さん、△△さん」より後ろは遅刻
+    if (late >= 0) seg = seg.substring(0, late);
+    var parts = seg.split(/[、,※・]+/);
+    for (var p = 0; p < parts.length; p++) {
+      var it = parts[p].split(/代理|→/)[0].trim();          // 「○○さん代理：…」「○○さん→…」
+      var colon = it.lastIndexOf(':');                       // 「当欠：○○さん」
+      if (colon >= 0 && !HON.test(it.substring(0, colon))) it = it.substring(colon + 1).trim();
+      if (!it) continue;
+      if (!HON.test(it) && (routineIsBlank_(it.replace(/[\s　]/g, '')) || /(なし|無し|休会)/.test(it))) continue;
+      items.push(it);
+    }
+  }
+  // 敬称が1つでもあれば、敬称の付いたお名前だけを読む（「○○さん復帰につきプレゼン・リファーラルスライド変更」の
+  // うしろの書き足しを名前にしない）。敬称が1つも無ければ、区切りで分けたそれぞれをお名前とみなす（「見本ED」）
+  var honor = items.some(function (x) { return HON.test(x); });
+  for (var k = 0; k < items.length; k++) {
+    if (/遅刻|復帰|出席/.test(items[k])) continue;           // 「○○さん遅刻」「○○さん復帰」
+    if (!honor) { names.push(items[k]); continue; }
+    var re = /(.+?)(さん|様|さま|氏|くん|君|ちゃん)/g, m;
+    while ((m = re.exec(items[k])) !== null) {
+      var nm = m[1].replace(/^[\s　]+|[\s　]+$/g, '');
+      if (nm) names.push(nm);
+    }
+  }
+  return names;
+}
+// 欠席・医療欠席の欄 → { names: 名簿の氏名, unknown: 名簿の方に合わせられなかった書き方, raw: 欄の文字 }
+function routineAbsentees_(absText, medText) {
+  var out = { names: [], unknown: [], raw: '' }, raws = [];
+  [[absText, '欠席'], [medText, '医療欠席']].forEach(function (x) {
+    var t = routineText_(x[0]);
+    if (t) raws.push(x[1] + '：' + t);
+    routineAbsentTokens_(x[0]).forEach(function (tok) {
+      var r = routineMemberName_(tok);
+      if (r.matched && r.name) { if (out.names.indexOf(r.name) < 0) out.names.push(r.name); }
+      else if (out.unknown.indexOf(tok) < 0) out.unknown.push(tok);
+    });
+  });
+  out.raw = raws.join('　／　');
+  return out;
+}
+
 // 開催日の欄を読む。画面から直接呼べる。
 // opts.firstHalf … 前半スライドの画面から。新メンバー・更新メンバー・バイスプレジデントによる報告・
 //                  ネットワーキングリーダーの欄も読む（バイスプレジデントによる報告が空欄なら、前の回の記載を使う）
@@ -709,6 +772,8 @@ function getRoutineInfo(dateStr, opts) {
     var region = pick(['リージョン参加者']);
     // ウィークリープレゼンの始まり（「建築　住まい　22番　熊田さん」など）
     var weekly = pick(ROUTINE_WEEKLY_LABELS_);
+    // 欠席の方（ウィークリープレゼン・リファーラル発表のページを作らない）
+    var absent = pick(ROUTINE_ABSENT_LABELS_), medical = pick(ROUTINE_MEDICAL_LABELS_);
     var cv = coreValueOf_(core.value);
     var pres = routineMemberName_(long.value);
     var mains = routineMainPresenters_(main.value);
@@ -727,6 +792,7 @@ function getRoutineInfo(dateStr, opts) {
              recommendations: routineRecommendations_(reco.value), recommendationsRaw: reco.value,
              regionGuestsRaw: routineText_(region.value),
              weeklyStartRaw: routineText_(weekly.value),
+             absentees: routineAbsentees_(absent.value, medical.value),
              firstHalf: (opts && opts.firstHalf) ? routineFirstHalf_(t, pick) : null };
   } catch (e) {
     console.error('[ROUTINE] ' + (e && e.stack ? e.stack : e));
