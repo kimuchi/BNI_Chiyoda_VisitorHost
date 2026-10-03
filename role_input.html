@@ -760,6 +760,19 @@
    };
    var h='<div class="pmgrid">'+blk('📅 直近のイベント', p.summary['直近のイベント'])
      +blk('✏️ お願い事項', p.summary['お願い事項'])+blk('💻 定例会関連', p.summary['定例会関連'])+'</div>';
+   // 熱烈歓迎のページ（新入会の方ごとに1枚。まとめのページのあと）
+   if((p.welcome||[]).length){
+     var wt=p.welcomeTemplate||{};
+     h+='<div class="pmpages"><b>🎉 熱烈歓迎のページ（'+p.welcome.length+'枚・まとめのページのあと）</b><div style="margin-top:4px;">'
+       +p.welcome.map(function(w){
+         return '<span class="pmrole" style="border-left-color:#C8102E;">'+esc(w.name+'さん')
+           +' <span class="muted">'+esc([w.category, w.company].filter(function(x){ return x; }).join('・')||'カテゴリー・会社名なし')
+           +(w.matched?'':'・名簿にありません')+(w.photo?'':'・写真なし')+'</span></span>';
+       }).join(' ')+'</div>'
+       +'<div class="hint">熱烈歓迎のひな形：'+(wt.registered?'登録したもの（'+esc(wt.name)+'）':'既定のもの')
+       +'。⚙️ 設定 ＞ 大きなスライド の「熱烈歓迎（事前MTG・新入会メンバー）」で差し替えられます。'
+       +(wt.error?'<br><b style="color:#b3261e;">'+esc(wt.error)+'</b>':'')+'</div></div>';
+   }
    h+='<div class="pmpages"><b>役職のページ（'+p.pages.length+'枚）</b>'
      +(p.pages.length?'<ol start="2">'+p.pages.map(function(pg){
         return '<li>'+pg.map(function(r){

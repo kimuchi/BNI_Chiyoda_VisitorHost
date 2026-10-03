@@ -125,11 +125,12 @@ function premtgCountNames_(text) {
 //   summary … まとめのページの3つのまとまり（行の配列）
 //   roles   … 役職ごとの共有事項（PREMTG_ROLES_ の順）
 //   blank   … 空欄の項目（パワポでは「—」になるもの）。{ label, role }
+//   newMembers … 新入会の方（熱烈歓迎のページを作る。welcome_srv.js の welcomeMembers_）
 function premtgData_(target) {
   var ctx = roleBuildContext_(target, '');
   var out = { ok: true, date: fmtDate_(target), md: (target.getMonth() + 1) + '/' + target.getDate(),
               display: roleMd_(target), meetingNo: ctx.meetingNo || '', sheetName: ctx.sheetName || '',
-              summary: {}, roles: [], blank: [] };
+              summary: {}, roles: [], blank: [], newMembers: [] };
   if (!ctx.found) {
     out.ok = false;
     out.message = ctx.message || ('ルーティンチェックシートに ' + out.date + ' の列が見つかりません。');
@@ -205,6 +206,9 @@ function premtgData_(target) {
       + '　／　退会：' + oneLine(sheet(/^退会者$/, null, '退会者')),
     '・卒業コメント：' + oneLine(extra('卒業コメント', ''))
   ];
+
+  // 新入会の方（熱烈歓迎のページを作る。welcome_srv.js）
+  out.newMembers = welcomeMembers_(sheet(/^新入会$/, null, ''));
 
   // 役職ごとの共有事項：「今週の共有事項（役職）」と、ルーティンチェックシートの「（役職）より」の行
   // （「書記兼会計より」「プレジデントより」など。朝一MTGでその役職が話すこと）の両方から。
@@ -557,8 +561,9 @@ function premtgLayoutBlocks_(xml, ids, info) {
 //   parts … ひな形のpptxを展開したもの（書き換える）
 //   data  … premtgData_ の結果
 //   cache … 写真の控え（mpAddPhoto_ と同じもの { by: {}, seq: 0 }）
-function buildPreMeetingDeck_(parts, data, cache) {
-  var models = premtgModels_(parts), info = { summary: false, pages: [], noPhoto: [], overflow: [], messages: [] };
+//   welcomeSrc … 熱烈歓迎のひな形を展開したもの（新入会の方がいるときだけ。welcome_srv.js）
+function buildPreMeetingDeck_(parts, data, cache, welcomeSrc) {
+  var models = premtgModels_(parts), info = { summary: false, pages: [], welcome: [], noPhoto: [], overflow: [], messages: [] };
   var w = ['日', '月', '火', '水', '木', '金', '土'], d = parseDate_(data.date);
   var common = { '月日': data.md, '開催回': data.meetingNo || '',
                  '開催日': d ? d.getFullYear() + '年' + (d.getMonth() + 1) + '月' + d.getDate() + '日（' + w[d.getDay()] + '）' : '' };
@@ -615,6 +620,21 @@ function buildPreMeetingDeck_(parts, data, cache) {
     if (models.one) premtgDropSlide_(parts, models.one);
   }
 
+  // 熱烈歓迎のページ（新入会の方ごとに1枚。まとめのページのすぐあと）
+  if (data.newMembers && data.newMembers.length) {
+    if (!welcomeSrc) {
+      info.messages.push('熱烈歓迎のひな形を開けなかったので、熱烈歓迎のページは作りませんでした。');
+    } else {
+      var wc = {};
+      for (var ck in common) wc[ck] = common[ck];
+      wc['チャプター'] = (typeof chapterLabel_ === 'function') ? chapterLabel_() : '';
+      var wel = premtgWelcomePages_(parts, welcomeSrc, data.newMembers, wc, cache, models.summary || '');
+      info.welcome = wel.pages;
+      info.noPhoto = info.noPhoto.concat(wel.noPhoto);
+      info.messages = info.messages.concat(wel.messages);
+    }
+  }
+
   // ほかのページ（ひな形に足したページ）の {{月日}} なども
   var order = slideOrder_(parts);
   for (var o = 0; o < order.length; o++) {
@@ -622,6 +642,7 @@ function buildPreMeetingDeck_(parts, data, cache) {
     if (x && x.indexOf('{{') >= 0) putXml_(parts, order[o], replaceTokensInXml_(x, common));
   }
   mpPruneMedia_(parts);
+  syncSections_(parts);                        // PowerPoint のセクションがあるひな形は、並びに合わせる
   return info;
 }
 
@@ -715,8 +736,14 @@ function getPreMeetingPreview(dateStr) {
     var pages = premtgPages_(data.roles, models ? !!models.two : true).map(function (pg) {
       return pg.map(function (r) { return { label: r.label, icon: r.icon, holder: r.holder, chars: r.text.length, color: r.color, from: r.from }; });
     });
+    // 熱烈歓迎のページ（新入会の方ごと）と、そのひな形
+    var welcome = data.newMembers.map(function (m) {
+      return { name: m.name, company: m.company, category: m.category, matched: m.matched, photo: !!findPhotoIdForName_(m.name) };
+    });
+    var wtpl = data.newMembers.length ? welcomeTemplateInfo_() : null;
     return { ok: true, date: data.date, display: data.display, meetingNo: data.meetingNo, summary: data.summary,
-             pages: pages, blank: data.blank,
+             pages: pages, blank: data.blank, welcome: welcome,
+             welcomeTemplate: wtpl ? { registered: wtpl.registered, name: wtpl.name, error: wtpl.error || '' } : null,
              skipped: data.roles.filter(function (r) { return !r.text; }).map(function (r) { return r.label; }),
              template: { registered: tpl.registered, name: tpl.name, error: warn.join('\n') } };
   } catch (e) {
@@ -735,12 +762,23 @@ function generatePreMeetingSlides(dateStr) {
     if (!data.ok) return data;
     var tpl = premtgTemplateInfo_();
     var parts = premtgTemplateParts_(tpl);
-    var info = buildPreMeetingDeck_(parts, data, { by: {}, seq: 0 });
+    // 新入会の方がいれば、熱烈歓迎のひな形も開く（welcome_srv.js）
+    var wtpl = null, welcomeSrc = null, welcomeErr = '';
+    if (data.newMembers.length) {
+      wtpl = welcomeTemplateInfo_();
+      try { welcomeSrc = welcomeTemplateParts_(wtpl); }
+      catch (e) { welcomeErr = (e && e.message ? e.message : String(e)); }
+    }
+    var info = buildPreMeetingDeck_(parts, data, { by: {}, seq: 0 }, welcomeSrc);
     var outName = slideFileName_(target, '事前MTG');
     var saved = saveOutputFile_(zipFromMap_(parts, outName), outName);
 
     var msg = data.display + ' の事前MTG（朝イチMTG）のパワポを作りました（'
-      + (info.summary ? 'まとめ1枚＋' : '') + '役職のページ ' + info.pages.length + '枚）。';
+      + (info.summary ? 'まとめ1枚＋' : '') + (info.welcome.length ? '熱烈歓迎 ' + info.welcome.length + '枚＋' : '')
+      + '役職のページ ' + info.pages.length + '枚）。';
+    if (info.welcome.length) msg += '\n熱烈歓迎のページ: ' + info.welcome.map(function (n) { return n + 'さん'; }).join('、')
+      + '（ひな形: ' + (wtpl && wtpl.registered ? '登録したもの（' + wtpl.name + '）' : '既定のもの') + '）';
+    if (welcomeErr) msg += '\n熱烈歓迎のひな形を開けませんでした: ' + welcomeErr;
     var skipped = data.roles.filter(function (r) { return !r.text; }).map(function (r) { return r.label; });
     if (skipped.length) msg += '\n今週の共有事項が無いので、ページを作らなかった役職: ' + skipped.join('、');
     if (data.blank.length) msg += '\n空欄の項目（「—」と出ています）: ' + data.blank.map(function (b) { return b.label; }).join('、');
@@ -749,7 +787,7 @@ function generatePreMeetingSlides(dateStr) {
     if (info.messages.length) msg += '\n' + info.messages.join('\n');
     msg += '\nひな形: ' + (tpl.registered ? '登録したもの（' + tpl.name + '）' : '既定のもの');
     return { ok: true, message: msg, url: saved.url, downloadUrl: saved.downloadUrl, fileName: outName,
-             pages: info.pages.length + (info.summary ? 1 : 0) };
+             pages: info.pages.length + info.welcome.length + (info.summary ? 1 : 0) };
   } catch (e) {
     console.error('[PREMTG] ' + (e && e.stack ? e.stack : e));
     return { ok: false, message: '事前MTGのパワポを作れませんでした: ' + (e && e.message ? e.message : e) };

@@ -264,3 +264,147 @@ function findSlideWithText_(parts, text) {
   }
   return null;
 }
+
+// --- 別のpptxのページを、見た目（レイアウト・マスター・テーマ）ごと写す ---
+// 熱烈歓迎のページ（別に登録したひな形。welcome_srv.js）を事前MTGのパワポに入れるときに使う。
+// source のページのレイアウトと、その元のマスター・テーマが、target に同じ中身で無ければ、
+// マスター（そのレイアウト・テーマ・画像も）ごと写す（PowerPoint の「元の書式を保持」で貼り付けるのと同じ）。
+// 同じ中身があれば、それを使う（写さない。同じ土台から作ったひな形なら、何も足さずに済む）。
+// ページは count 枚写す（同じ画像などは1回だけ写して使い回す）。ノートは写さない。並びには入れない（setSlideEntries_ で入れる）。
+//   戻り値 { slides: [{ id: 0, rid, path }], importedMaster: 写したか, sizeDiffers: ページの大きさが違うか }
+function importSlideCopies_(target, source, slidePath, count) {
+  var ctx = { target: target, source: source, map: {} };
+  var srels = xmlOf_(source, partRelsPath_(slidePath)) || '';
+  var layoutAbs = relTargetOfType_(source, slidePath, 'slideLayout');
+  var useLayout = layoutAbs ? sameLayoutIn_(target, source, layoutAbs) : '';
+  var imported = false;
+  if (layoutAbs && !useLayout) {
+    var masterAbs = relTargetOfType_(source, layoutAbs, 'slideMaster');
+    if (masterAbs) {
+      var newMaster = copyPartDeep_(ctx, masterAbs);           // テーマ・レイアウト・画像も写る
+      registerSlideMaster_(target, newMaster);
+      useLayout = ctx.map[layoutAbs] || '';
+      imported = true;
+    }
+  }
+  var xml = setSlideShow_(xmlOf_(source, slidePath) || '', true), made = [];
+  for (var i = 0; i < count; i++) {
+    var rels = rewritePartRels_(ctx, slidePath, 'ppt/slides', srels, function (type, abs) {
+      if (/\/notesSlide$/.test(type)) return null;              // ノートは写さない
+      if (/\/slideLayout$/.test(type)) return useLayout || firstLayout_(target);
+      return copyPartDeep_(ctx, abs);
+    });
+    made.push(addSlidePart_(target, xml, rels));
+  }
+  var size = function (parts) { var m = (xmlOf_(parts, 'ppt/presentation.xml') || '').match(/<p:sldSz\b[^>]*\bcx="(\d+)"[^>]*\bcy="(\d+)"/); return m ? m[1] + 'x' + m[2] : ''; };
+  return { slides: made, importedMaster: imported, sizeDiffers: !!size(source) && size(source) !== size(target) };
+}
+
+// 部品の関係ファイルのパス（ppt/slides/slide1.xml → ppt/slides/_rels/slide1.xml.rels）
+function partRelsPath_(p) { return posixDir_(p) + '/_rels/' + p.replace(/^.*\//, '') + '.rels'; }
+// dir から見た abs の相対パス
+function relPathFrom_(dir, abs) {
+  var a = dir.split('/'), b = abs.split('/'), k = 0;
+  while (k < a.length && k < b.length - 1 && a[k] === b[k]) k++;
+  var up = [];
+  for (var i = k; i < a.length; i++) up.push('..');
+  return up.concat(b.slice(k)).join('/');
+}
+// 部品の関係のうち、種類（slideLayout・slideMaster・theme など）の行き先（パス）
+function relTargetOfType_(parts, partPath, type) {
+  var rels = xmlOf_(parts, partRelsPath_(partPath)) || '', m = null;
+  var re = /<Relationship\b[^>]*\/>/g, r;
+  while ((r = re.exec(rels)) !== null) {
+    if (new RegExp('Type="[^"]*/' + type + '"').test(r[0]) && !/TargetMode="External"/.test(r[0])) { m = r[0]; break; }
+  }
+  var t = m ? (m.match(/Target="([^"]+)"/) || [])[1] : '';
+  return t ? normPartPath_(posixDir_(partPath), t) : '';
+}
+// source のレイアウトと同じ中身のレイアウトが target にあれば、そのパス（元のマスター・テーマも同じ中身のときだけ）
+function sameLayoutIn_(target, source, layoutAbs) {
+  var lx = xmlOf_(source, layoutAbs), sm = relTargetOfType_(source, layoutAbs, 'slideMaster');
+  var mx = sm ? xmlOf_(source, sm) : null, st = sm ? relTargetOfType_(source, sm, 'theme') : '';
+  var tx = st ? xmlOf_(source, st) : null;
+  for (var p in target) {
+    if (!/^ppt\/slideLayouts\/[^\/]+\.xml$/.test(p) || xmlOf_(target, p) !== lx) continue;
+    var tm = relTargetOfType_(target, p, 'slideMaster');
+    if (!tm || xmlOf_(target, tm) !== mx) continue;
+    var tt = relTargetOfType_(target, tm, 'theme');
+    if ((tt ? xmlOf_(target, tt) : null) !== tx) continue;
+    return p;
+  }
+  return '';
+}
+// 関係ファイルを書き直す（行き先は decide(種類, 元のパス) が返す target 側のパス。null ならその関係を落とす）
+function rewritePartRels_(ctx, srcPath, dstDir, rels, decide) {
+  var body = String(rels || '').replace(/<Relationship\b[^>]*\/>/g, function (rel) {
+    if (/TargetMode="External"/.test(rel)) return rel;
+    var tgt = (rel.match(/Target="([^"]+)"/) || [])[1] || '', type = (rel.match(/Type="([^"]+)"/) || [])[1] || '';
+    var dst = decide(type, normPartPath_(posixDir_(srcPath), tgt));
+    if (dst === null) return '';
+    if (!dst) return rel;
+    return rel.replace(/Target="[^"]+"/, 'Target="' + relPathFrom_(dstDir, dst) + '"');
+  });
+  return body || ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>');
+}
+// source の部品を target に写す（その部品の関係の行き先も、たどって写す。同じ部品は1回だけ）。写した先のパスを返す
+function copyPartDeep_(ctx, abs) {
+  if (ctx.map[abs]) return ctx.map[abs];
+  var blob = ctx.source[abs];
+  if (!blob) return '';                                           // 無い部品（壊れた関係）は写さない
+  var dir = posixDir_(abs), file = abs.replace(/^.*\//, '');
+  var ext = (file.match(/\.[^.\/]+$/) || [''])[0], base = file.slice(0, file.length - ext.length).replace(/\d+$/, '');
+  var dst, n = 1;
+  if (/^(slideMaster|slideLayout|theme)$/.test(base)) {           // ならわしの名前（番号はいまある最大の次）
+    for (var p in ctx.target) { var m = p.match(new RegExp('^' + dir + '/' + base + '(\\d+)' + ext.replace('.', '\\.') + '$')); if (m) n = Math.max(n, parseInt(m[1], 10) + 1); }
+    dst = dir + '/' + base + n + ext;
+  } else {
+    do { dst = dir + '/' + base + 'imp' + (n++) + ext; } while (ctx.target[dst]);
+  }
+  ctx.map[abs] = dst;
+  var isXml = /\.(xml|rels)$/i.test(ext);
+  ctx.target[dst] = isXml ? Utilities.newBlob(xmlOf_(ctx.source, abs), 'application/xml', dst) : blob.copyBlob ? blob.copyBlob().setName(dst) : blob.setName(dst);
+  ctPartType_(ctx.target, ctx.source, abs, dst);
+  var rels = xmlOf_(ctx.source, partRelsPath_(abs));
+  if (rels) putXml_(ctx.target, partRelsPath_(dst), rewritePartRels_(ctx, abs, dir, rels, function (type, a) { return copyPartDeep_(ctx, a); }));
+  return dst;
+}
+// 写した部品の種類を [Content_Types].xml に登録する（source の登録と同じ種類で）
+function ctPartType_(target, source, abs, dst) {
+  var sct = xmlOf_(source, '[Content_Types].xml') || '', ct = xmlOf_(target, '[Content_Types].xml') || '';
+  var ov = sct.match(new RegExp('<Override PartName="/' + abs.replace(/[.*+?^${}()|[\]\\\/]/g, '\\$&') + '" ContentType="([^"]+)"\\s*/>'));
+  if (ov) {
+    ct = ct.replace('</Types>', '<Override PartName="/' + dst + '" ContentType="' + ov[1] + '"/></Types>');
+  } else {
+    var ext = (dst.match(/\.([^.\/]+)$/) || [])[1] || '';
+    if (ext && !new RegExp('<Default Extension="' + ext + '"', 'i').test(ct)) {
+      var df = sct.match(new RegExp('<Default Extension="' + ext + '" ContentType="([^"]+)"', 'i'));
+      ct = df ? ct.replace('</Types>', '<Default Extension="' + ext + '" ContentType="' + df[1] + '"/></Types>') : ensureDefaultType_(ct, ext);
+    }
+  }
+  putXml_(target, '[Content_Types].xml', ct);
+}
+// 写したマスターを presentation.xml に登録する。マスター・レイアウトの番号（id）は、ほかと重ならないように振り直す
+function registerSlideMaster_(target, masterPath) {
+  var prs = xmlOf_(target, 'ppt/presentation.xml') || '', maxId = 2147483647, m, p;
+  var re = /<p:sldMasterId\b[^>]*\bid="(\d+)"/g;
+  while ((m = re.exec(prs)) !== null) maxId = Math.max(maxId, parseInt(m[1], 10));
+  for (p in target) {
+    if (p === masterPath || !/^ppt\/slideMasters\/[^\/]+\.xml$/.test(p)) continue;
+    var re2 = /<p:sldLayoutId\b[^>]*\bid="(\d+)"/g, mx = xmlOf_(target, p) || '';
+    while ((m = re2.exec(mx)) !== null) maxId = Math.max(maxId, parseInt(m[1], 10));
+  }
+  var masterId = ++maxId;
+  putXml_(target, masterPath, (xmlOf_(target, masterPath) || '').replace(/(<p:sldLayoutId\b[^>]*\bid=")(\d+)(")/g, function (all, a, id, b) { return a + (++maxId) + b; }));
+  var prsRels = xmlOf_(target, 'ppt/_rels/presentation.xml.rels') || '', maxRid = 0;
+  var re3 = /Id="rId(\d+)"/g;
+  while ((m = re3.exec(prsRels)) !== null) maxRid = Math.max(maxRid, parseInt(m[1], 10));
+  var rid = 'rId' + (maxRid + 1);
+  putXml_(target, 'ppt/_rels/presentation.xml.rels', prsRels.replace('</Relationships>',
+    '<Relationship Id="' + rid + '" Type="' + SPLICE_REL_ + 'slideMaster" Target="' + masterPath.replace(/^ppt\//, '') + '"/></Relationships>'));
+  var entry = '<p:sldMasterId id="' + masterId + '" r:id="' + rid + '"/>';
+  prs = /<\/p:sldMasterIdLst>/.test(prs) ? prs.replace('</p:sldMasterIdLst>', entry + '</p:sldMasterIdLst>')
+                                          : prs.replace(/(<p:presentation\b[^>]*>)/, '$1<p:sldMasterIdLst>' + entry + '</p:sldMasterIdLst>');
+  putXml_(target, 'ppt/presentation.xml', prs);
+}

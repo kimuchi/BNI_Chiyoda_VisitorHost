@@ -63,6 +63,8 @@ BNI_Chiyoda_VisitorHost/
 ├── speaker_rotation_srv.js   # スピーカーローテーション（メインプレゼンの順番。前半スライドの表もここで作る）
 ├── premtg_srv.js             # 事前MTG（朝イチMTG）のパワポ（画面は role_input.html の一覧。入口は役職ごとの入力と同じ）
 │   └ premtg_template.html    #   既定のひな形（docs/templates/BNI_テンプレート_事前MTG.pptx をbase64にしたもの）
+├── welcome_srv.js            # 事前MTGの熱烈歓迎のページ（新入会メンバーごとに1枚。ひな形は ⚙️ 設定 ＞ 大きなスライド で登録できる）
+│   └ welcome_template.html   #   既定のひな形（docs/templates/BNI_テンプレート_熱烈歓迎.pptx をbase64にしたもの）
 ├── archive.html              # シートの整理（アーカイブ）
 │
 │  ── スライド・冊子 ──
@@ -72,11 +74,12 @@ BNI_Chiyoda_VisitorHost/
 ├── meeting_slides_srv.js     # 定例会スライド（前半・後半）
 │   ├ slides_meeting_first.html   #   前半の画面（メンバーのページ・アンバサダー・ディレクターも）
 │   ├ slides_meeting_second.html  #   後半の画面（開くと後半テンプレートを読み込む）
-│   └ slides_meeting_common.html  #   前半・後半で共通の部品（読み込み中の表示など。include で読む）
+│   └ slides_meeting_common.html  #   前半・後半で共通の部品（読み込み中の表示・欠席の方など。include で読む）
+├── reco_slide_srv.js         # 推薦のことば：受け取ったスライド（pptx・pdf・画像）を画像にして置き、後半のその組のページのあとに入れる
 ├── referral_srv.js           # リファーラル発表のページを人数ぶんに増やす
 ├── role_intro_srv.js         # 前半の役職のメンバー紹介（その期の役職・チームの方を入れる。差し込み口・ページの作りで見分ける）
 ├── meeting_pages_srv.js      # 前半の新メンバー・更新メンバー（1人1枚）・バイスプレジデントによる報告・ネットワーキングリーダー
-├── splice_srv.js             # 別のpptxのページを差し込む（メンバープレゼン → 前半スライド）
+├── splice_srv.js             # 別のpptxのページを差し込む（メンバープレゼン → 前半スライド）・見た目ごと写す（熱烈歓迎 → 事前MTG）
 ├── routine_srv.js            # ルーティンチェックシートから、その日の決めごとを読む
 ├── slides_layout.html        # 会社名・カテゴリーの組版とメンバーのページの並び（前半・後半で共通。include で読む）
 ├── memberbook_srv.js         # メンバーブック（配布PDFの登録・編集画面から1人ずつ名簿に保存・PDFでドライブのメンバーブックを差し替え）
@@ -149,6 +152,8 @@ BNI_Chiyoda_VisitorHost/
     │                         #     トークスクリプトはチェックシートが空なら参加者シートから）
     ├── check_reco_slides.js  #   推薦のことばの受け取ったスライド（ドライブに置く・組ごとに覚える・pptx→PDF・その組のページのすぐあとに入れる・
     │                         #     ブラウザ：画像を縮める・PDFの1ページ目・pptx・作成に渡る）。PDFJS_DIR に pdf.js を置けば本物で確かめる
+    ├── check_welcome.js      #   事前MTGの熱烈歓迎のページ（新入会の方ごとに1枚・まとめのあと・名簿に無い方・写真・
+    │                         #     土台の違うひな形はマスター・テーマごと写す（番号が重ならない・pptxとして壊れていない）・作る前の確かめ）
     ├── check_routine_names.js #  ルーティンチェックシートの名前の照合（同じ名字・似た氏名の方を取り違えない・名字だけで2人なら決めない・名簿に無い新メンバー）
     ├── check_member_master_dialog.js # 「メンバー名簿」の画面を Chromium で（読み込めていないまま追加・保存して名簿を上書きしない・
     │                         #     開いたあとでほかの方が変えた名簿を古い一覧で消さない・列を足したシート・貼り付けのセルの中の改行・移行は1回だけ）
@@ -202,6 +207,7 @@ BNI_Chiyoda_VisitorHost/
     ├── check_role_intro.js   #   役職のメンバー紹介（作り物のページで：ローマ字・枠の見分け方・替わった方だけ入れる・非表示・写真・
     │                         #     学習コーナーのお名前の大きさ）
     ├── build_premtg_template.py # 事前MTGの見本pptxから既定のひな形（と premtg_template.html）を作る
+    ├── build_welcome_template.py # 事前MTGの既定のひな形の土台から、熱烈歓迎の既定のひな形（と welcome_template.html）を作る
     │  ── メンバープレゼン ──
     ├── check_member_presen.py#   テンプレートに対する通し検査（巡回の検査と↓の4つを順に呼ぶ）
     ├── mp_harness_prepare.py #     テンプレートを展開し、写真の見本を用意
@@ -449,7 +455,7 @@ clasp deployments
 
 ### 更新が反映されたかの確かめ方
 
-`コード.js` の `SYSTEM_VERSION_`（例: `2026-10-03b`）が、ウェブアプリのトップページの下と
+`コード.js` の `SYSTEM_VERSION_`（例: `2026-10-03c`）が、ウェブアプリのトップページの下と
 「定例会スライド（前半）」「定例会スライド（後半）」の画面の右上に **「版 …」** として出ます。
 機能を変えたらこの値を変え、`clasp push`・`clasp version`・`clasp deploy` のあとに画面で確かめてください。
 
