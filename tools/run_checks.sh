@@ -45,6 +45,7 @@ run "事前MTGの熱烈歓迎のページ（新入会の方ごと・まとめの
 run "ルーティンチェックシートの名前の照合（同じ名字・似た氏名・名簿に無い新メンバー）" node tools/check_routine_names.js
 run "メンバー名簿の画面（ブラウザ：読み込めていないときは保存させない・ほかの方の変更を消さない・列を足したシート・貼り付けの改行）" node tools/check_member_master_dialog.js
 run "PowerPointテンプレートの登録（開けない登録を未登録と出さない・素材フォルダを開けない方は止める）" node tools/check_template_files.js
+run "メンバー写真（アップロードで写真索引を作り直す＝新しい方の写真がすぐ見つかる・同じ方の新しい写真・HEIC・ブラウザの画面の知らせ）" node tools/check_member_photos.js
 
 echo "── スライド"
 run "定例会スライド（指示どおりか）" node tools/check_meeting_slides.js
