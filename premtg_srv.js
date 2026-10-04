@@ -19,6 +19,7 @@
 var PREMTG_KIND_ = 'preMeeting';
 var PREMTG_PAIR_MAX_ = 180;                  // この文字数以下同士なら2人で1枚（ツールと同じ）
 var PREMTG_MIN_PT_ = 9;                      // 文字が多いときに小さくする下限
+var PREMTG_FONT_ = 'メイリオ';                 // 書体（テーマの書体をこれにする。熱烈歓迎のページも）
 var PREMTG_COLORS_ = { top: 'C8102E', coord: '2E5C9A', comm: '3B8763' };   // 三役・コーディネーター・委員会
 
 // ツールと同じ並び・区分・アイコン
@@ -446,10 +447,10 @@ function premtgLineCount_(lines, pt, widthPt) {
   for (var i = 0; i < lines.length; i++) n += Math.max(1, Math.ceil(textBoxEm_(lines[i]) * pt / w));
   return n;
 }
-// 1行の高さ[pt]（行間の設定込み）。これまでのツールの見積もり（行間115%で文字の大きさの1.2倍）より、
-// 少しだけ大きめに見る（游ゴシックなど、1行の高さが少し大きい書体でも下のまとまりに重ならないように）。
-// PowerPointは開いただけでは「はみ出したら縮小」をやり直さないので、見積もりが小さすぎると下に重なる。
-function premtgPitch_(pt, lnSpc) { return pt * 1.15 * lnSpc; }
+// 1行の高さ[pt]（行間の設定込み）。文字はメイリオ（PREMTG_FONT_）で、メイリオの1行の高さは文字の大きさの1.5倍
+// （游ゴシックなどより大きい）。PowerPointは開いただけでは「はみ出したら縮小」をやり直さないので、
+// 見積もりが小さすぎると下に重なる。既定のひな形は、その分の行間を詰めてある（100%・110%）
+function premtgPitch_(pt, lnSpc) { return pt * 1.5 * lnSpc; }
 
 // いまの文字の大きさで、枠の高さに収まるか
 function premtgFits_(xml, id) {
@@ -641,6 +642,7 @@ function buildPreMeetingDeck_(parts, data, cache, welcomeSrc) {
     var x = xmlOf_(parts, order[o]);
     if (x && x.indexOf('{{') >= 0) putXml_(parts, order[o], replaceTokensInXml_(x, common));
   }
+  setThemeFonts_(parts, PREMTG_FONT_);         // 書体はメイリオ（ひな形で書体を指定した文字はそのまま）
   mpPruneMedia_(parts);
   syncSections_(parts);                        // PowerPoint のセクションがあるひな形は、並びに合わせる
   return info;
