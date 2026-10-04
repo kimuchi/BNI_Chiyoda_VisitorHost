@@ -168,7 +168,7 @@
    </div>
    <div class="box">
      <div style="font-weight:bold;font-size:12.5px;">次回のメインプレゼンターのご案内（Facebookに投稿する文）</div>
-     <div style="font-size:12px;margin-top:5px;">ご案内する回：<select id="rotFbWeek" onchange="renderFb()"></select>
+     <div style="font-size:12px;margin-top:5px;">ご案内する回：<select id="rotFbWeek" onchange="rotFbWeekChanged()"></select>
        <span class="muted" id="rotFbWeekNote"></span></div>
      <textarea id="rotFb" rows="12" style="width:100%;font-family:inherit;font-size:12.5px;margin-top:5px;"></textarea>
      <button onclick="copyFb()">📋 コピーする</button> <span class="muted" id="rotFbMsg"></span>
@@ -253,28 +253,35 @@
    }
    load('');
  };
- // 定例会の選択肢とシートの表示だけを読む（画面は切り替えない。ローテーションを先に開いたとき用）
- var rotFirst=false;
- function loadQuiet(){
+ // 定例会の選択肢とシートの表示だけを読む（画面は切り替えない。ローテーションの画面のとき用）。
+ // rotFirst … 書記兼会計の入力画面をまだ読んでいない（ローテーションを先に開いた・ローテーションの画面で定例会を変えた）。
+ //            「← 書記兼会計の入力」を押したときに、上で選んでいる日の分を読む
+ var rotFirst=false, quietSeq=0;
+ function loadQuiet(date){
+   var seq=++quietSeq;
    google.script.run.withSuccessHandler(function(c){
-     if(!rotFirst || !c || !c.ok) return;              // もう書記兼会計の画面に移っていたら使わない
+     if(!rotFirst || seq!==quietSeq || !c || !c.ok) return;   // もう書記兼会計の画面に移っていたら・別の日を選び直していたら使わない
      ctx=c; fillMeetingBar(c);
-   }).withFailureHandler(function(){}).getRoleInputContext('', '');
+   }).withFailureHandler(function(){}).getRoleInputContext(date||'', '');
  }
 
  // 開催日の内容を読み込む（読み込み中は保存できない）。
- // 役職の画面を開くときは、その役職の初期値の推定もいっしょに受け取る
+ // 役職の画面を開くときは、その役職の初期値の推定もいっしょに受け取る。
+ // 読み込み中に別の日を選んだら、あとの分だけを使う（先の分が遅れて届いても使わない）
+ var loadSeq=0;
  function load(date){
+   var seq=++loadSeq;
    busy=true; el('saveBtn').disabled=true;
    el('loading').innerHTML = view
      ? '⏳ 読み込み中…（ルーティンチェックシート・名簿・参加者シートから初期値を推定しています）'
      : '⏳ 読み込み中…（ルーティンチェックシートを読んでいます）';
    show('loading', true);
    google.script.run.withSuccessHandler(function(c){
+     if(seq!==loadSeq) return;
      busy=false; show('loading', false);
      if(!c || !c.ok){ fail({message:(c&&c.message)||'読み込めませんでした。'}); return; }
      setContext(c);
-   }).withFailureHandler(fail).getRoleInputContext(date, view || '');
+   }).withFailureHandler(function(e){ if(seq===loadSeq) fail(e); }).getRoleInputContext(date, view || '');
  }
 
  function setContext(c){
@@ -312,7 +319,12 @@
    var d = el('meeting').value;
    if(!leaveOk()){ el('meeting').value = ctx.date; return; }
    fields={}; ids=[];
-   if(rotFirst){ rotFirst=false; view='secretary'; }      // ローテーションを先に開いていたとき：その日の書記兼会計の入力へ
+   if(rotShown()){                                       // スピーカーローテーションの画面のまま、ご案内する回をその日の回に
+     rotFirst=true; view='';                             // 書記兼会計の入力は、「← 書記兼会計の入力」を押したときにその日の分を読む
+     rotPickDate(d);
+     loadQuiet(d);
+     return;
+   }
    load(d);
  }
 
@@ -805,6 +817,7 @@
 
  var rot=null, rOrder=[], rExcluded=[], rAnchor=null, rDirty=false, rotOpened=false, rotBack=false;
  function nm(s){ return String(s==null?'':s).replace(/[\s　]+/g,''); }
+ function rotShown(){ var e=el('rotView'); return !!e && e.style.display!=='none'; }
  function openRotation(){
    if(busy) return;
    show('roleView', false); show('overview', false); show('rotView', true);
@@ -816,17 +829,19 @@
      rotAfter();
    }).withFailureHandler(function(e){ fail(e); rotAfter(); }).getSpeakerRotation();
  }
- // ローテーションの読み込み中に「← 書記兼会計の入力」を押していたら、読み終わってから書記兼会計の画面へ
+ // ローテーションの読み込み中・保存中に「← 書記兼会計の入力」を押していたら、終わってから書記兼会計の画面へ
  function rotAfter(){ if(rotBack){ rotBack=false; backToSecretary(); } }
+ // 書記兼会計の入力画面へ。上の「定例会」で選んでいる日の分（ローテーションの画面で日を変えていたら、その日の分を読む）
  function backToSecretary(){
    view='secretary';
-   if(ctx && roleOf('secretary')) openRole('secretary'); else load(ctx ? ctx.date : '');
+   var d = el('meeting').value || (ctx ? ctx.date : '');
+   if(ctx && ctx.date===d && roleOf('secretary')) openRole('secretary'); else load(d);
  }
  function closeRotation(){
    if(rDirty && !confirm('保存していない並び順の変更があります。戻ると消えます。よろしいですか？')) return;
    rDirty=false;
    show('rotView', false);
-   if(rotFirst){                                         // ローテーションを先に開いていたときは、ここで書記兼会計の画面を読む
+   if(rotFirst){                                         // ローテーションを先に開いた・ローテーションの画面で定例会を変えたときは、ここで書記兼会計の画面を読む
      rotFirst=false; view='secretary';
      if(busy) rotBack=true; else backToSecretary();
      return;
@@ -834,17 +849,44 @@
    if(ctx && roleOf('secretary')){ view='secretary'; show('roleView', true); }
    else showOverview(true);
  }
+ // ご案内する回（その回の日付と、そう選んだわけ）。並び順を保存して読み直しても、同じ回のまま
+ var rotWeek={ date:'', why:'' };
+ var ROT_WEEK_NOTE={ today:'（きょうは定例会の日なので、次の回を選んであります）', meeting:'（上の「定例会」で選んだ回です）' };
+ function rotWeekIndex(weeks, d){
+   for(var i=0;i<(weeks||[]).length;i++) if(d && weeks[i].date===d) return i;
+   return -1;
+ }
+ // 上の「定例会」で選んだ日を、ご案内する回にする（ローテーションを読み込み中なら、読み終わったときに選ぶ）
+ function rotPickDate(d){
+   if(!rot){ rotWeek={ date:d, why:'meeting' }; return; }
+   var i=rotWeekIndex(rot.weeks, d);
+   if(i<0){ el('rotFbWeekNote').innerText='（その回は、これからの予定にありません）'; return; }
+   rotWeek={ date:d, why:'meeting' };
+   el('rotFbWeek').value=String(i);
+   el('rotFbWeekNote').innerText=ROT_WEEK_NOTE.meeting;
+   renderFb();
+ }
+ // ご案内する回を選び直したとき
+ function rotFbWeekChanged(){
+   var i=parseInt(el('rotFbWeek').value,10);
+   rotWeek={ date:(((rot&&rot.weeks)||[])[i]||{}).date||'', why:'' };
+   el('rotFbWeekNote').innerText='';
+   renderFb();
+ }
  function setRot(r, msg){
    rot=r; rOrder=r.order.slice(); rExcluded=r.excluded.slice(); rAnchor={ date:r.anchor.date, pointer:r.anchor.pointer };
    rDirty=false;
    el('rotHeader').value = r.header||'';
    el('rotNotes').value = (r.notes||[]).join('\n');
    el('rotFb').value = r.fbText||'';
-   // ご案内する回：ふだんは次回。定例会の日は、終わったあとに投稿するので、その次の回
-   var today=ymd(new Date()), w0=(r.weeks||[])[0], pick=(w0 && w0.date===today && r.weeks.length>1) ? 1 : 0;
-   el('rotFbWeek').innerHTML = (r.weeks||[]).map(function(w, i){
+   // ご案内する回：ふだんは次回。定例会の日は、終わったあとに投稿するので、その次の回。
+   // 上の「定例会」で選んだ回・選び直した回があれば、その回のまま
+   var weeks=r.weeks||[], pick=rotWeekIndex(weeks, rotWeek.date), why=rotWeek.why;
+   if(pick<0){ var today=ymd(new Date()), w0=weeks[0]; pick=(w0 && w0.date===today && weeks.length>1) ? 1 : 0; why=pick ? 'today' : ''; }
+   rotWeek={ date:(weeks[pick]||{}).date||'', why:why };
+   el('rotFbWeek').innerHTML = weeks.map(function(w, i){
      return '<option value="'+i+'"'+(i===pick?' selected':'')+'>'+(w.no?'第'+esc(w.no)+'回 ':'')+esc(w.md)+'</option>'; }).join('');
-   el('rotFbWeekNote').innerText = pick ? '（きょうは定例会の日なので、次の回を選んであります）' : '';
+   el('rotFbWeekNote').innerText = ROT_WEEK_NOTE[why]||'';
    renderRot();
    el('rotMsg').innerHTML = msg ? '<span style="color:#188038;">'+esc(msg)+'</span>' : '';
  }
@@ -977,9 +1019,10 @@
    el('rotMsg').innerHTML='<span style="color:#0055ff;">保存しています…</span>';
    google.script.run.withSuccessHandler(function(r){
      busy=false; el('rotSaveBtn').disabled=false;
-     if(!r || !r.ok){ el('rotMsg').innerHTML='<span style="color:#d00;">'+esc((r&&r.message)||'保存できませんでした。')+'</span>'; return; }
-     setRot(r, r.message);
-   }).withFailureHandler(function(e){ busy=false; el('rotSaveBtn').disabled=false; el('rotMsg').innerHTML='<span style="color:#d00;">'+esc((e&&e.message)?e.message:e)+'</span>'; })
+     if(!r || !r.ok) el('rotMsg').innerHTML='<span style="color:#d00;">'+esc((r&&r.message)||'保存できませんでした。')+'</span>';
+     else setRot(r, r.message);
+     rotAfter();
+   }).withFailureHandler(function(e){ busy=false; el('rotSaveBtn').disabled=false; el('rotMsg').innerHTML='<span style="color:#d00;">'+esc((e&&e.message)?e.message:e)+'</span>'; rotAfter(); })
      .saveSpeakerRotation({ order:rOrder, excluded:rExcluded, anchor:rAnchor, base:rot.updated,
                             header:el('rotHeader').value, notes:el('rotNotes').value.split('\n') });
  }
