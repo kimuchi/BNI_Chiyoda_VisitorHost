@@ -1165,9 +1165,9 @@
 
  // --- メインプレゼンターの画像（「今週のメインプレゼンテーション」。書記兼会計のデザインと同じ並び・色）---
  // 1920×1080。左右にお1人ずつ：写真・お名前・ご紹介して欲しいカテゴリー（3つまで）。下に赤い帯と標語
- var MP_FONT='"Noto Sans JP","Hiragino Kaku Gothic ProN","Hiragino Sans","Yu Gothic","Meiryo",sans-serif';
+ var MP_FONT=ROT_IMG_FONT;                     // 書体は Meiryo UI（スピーカーローテーションの表の画像と同じ。無いパソコン・スマホでは似た書体）
  var MP_PANEL=['#FFEFF9','#F2F2F2'], MP_DX=950;
- var mpData='', mpName='', mpKey='', mpWeek=null, mpPhotos={}, mpPending={}, mpPics={}, mpOwn=[null,null], mpTimer=null, mpFontAsked=false;
+ var mpData='', mpName='', mpKey='', mpWeek=null, mpPhotos={}, mpPending={}, mpPics={}, mpOwn=[null,null], mpTimer=null;
  // 「協業したい人」→ ご紹介して欲しいカテゴリー（「・」「、」などで分ける。4つ以上は3つ目にまとめる）
  function mpCats(collab){
    var a=String(collab||'').split(/[・、,，\/／\n]+/).map(function(s){ return s.trim(); }).filter(function(s){ return s; });
@@ -1189,23 +1189,8 @@
        +'</div>';
    }).join('');
    mpName=(w?String(w.date).replace(/\//g,''):'')+'_メインプレゼンター.png';
-   mpLoadFonts();
    mpLoadPhotos(people.map(function(p){ return p.name; }).filter(function(n){ return n; }));
    mpDraw();
- }
- // 書体（Noto Sans JP）を読んでから描き直す。読めないときは、パソコンの書体のまま
- function mpLoadFonts(){
-   if(mpFontAsked) return;
-   mpFontAsked=true;
-   try {
-     var l=document.createElement('link'); l.rel='stylesheet';
-     l.href='https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700;900&display=swap';
-     document.head.appendChild(l);
-     if(document.fonts && document.fonts.load){
-       Promise.all(['400 30px "Noto Sans JP"','700 40px "Noto Sans JP"','900 52px "Noto Sans JP"'].map(function(f){ return document.fonts.load(f, 'あ漢A'); }))
-         .then(function(){ mpDraw(); }, function(){});
-     }
-   } catch(e){}
  }
  // メンバー写真（⚙️ 設定 > メンバー写真）。氏名ごとに1回だけ取りに行く
  function mpLoadPhotos(names){
