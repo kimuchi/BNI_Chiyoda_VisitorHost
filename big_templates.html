@@ -64,7 +64,13 @@
           ? '<span class="ok">登録なし（同梱の既定のひな形で作ります）</span>'
             +'<div style="font-size:11px;color:#666;margin-top:3px;">デザインを変えたいときは、既定のひな形をダウンロードしてPowerPointで直し、Driveに置いてリンクを登録してください。</div>'
           : '<span class="ng">未登録</span>'))
-      +'</div></div>';
+      +'</div>'
+      +(t.kind==='welcome'
+        ? '<div style="font-size:11px;color:#666;margin-top:3px;line-height:1.6;">お名前の場所は「お名前」と書いた文字の箱（または {{氏名}}）、'
+          +'お写真の場所は「お写真」とだけ書いた四角（または名前が「写真」の画像）にしてください。'
+          +'ページの大きさが事前MTGのひな形と違っても、事前MTGのパワポの大きさに合わせて縮めて入れます。</div>'
+        : '')
+      +'</div>';
    });
    document.getElementById('list').innerHTML=h;
  }

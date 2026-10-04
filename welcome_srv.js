@@ -5,16 +5,21 @@
 //
 // ひな形 … 「⚙️ 設定 ＞ 大きなスライド」の「熱烈歓迎（事前MTG・新入会メンバー）」に登録したpptx。
 //          登録していなければ、同梱の既定のひな形（welcome_template.html。事前MTGの既定のひな形と同じ土台）で作る。
-//          ひな形の中で {{氏名}} のあるページ（無ければ最初のページ）を、人数ぶん写して使う。
+//          ひな形の中で {{氏名}}（または「お名前」）のあるページ（無ければ最初のページ）を、人数ぶん写して使う。
 //          ひな形の土台（レイアウト・マスター・テーマ）が事前MTGのひな形と違えば、土台ごと写すので見た目は変わらない
-//          （splice_srv.js の importSlideCopies_）。
+//          （splice_srv.js の importSlideCopies_）。ページの大きさが違えば、事前MTGのパワポの大きさに合わせて縮める
+//          （図形・文字の大きさも同じ割合で。splice_srv.js の fitSourceToTargetSize_）。
 // 差し込み口 … {{氏名}} {{名字}} {{よみがな}} {{会社名}} {{カテゴリー}} {{チャプター}} {{月日}} {{開催日}} {{開催回}}
-// 写真 … 名前（または代替テキスト）が「写真」「写真1」の画像。無ければ、お名前の文字箱にいちばん近い画像。
+//          文字の「お名前」も {{氏名}} と同じに扱う（画像からひな形を作ったときなど、ふつうの言葉で置けるように）
+// 写真 … 名前（または代替テキスト）が「写真」「写真1」の画像。無ければ「お写真」（または「写真」）とだけ書いた図形
+//        （その図形の位置・大きさ・形のまま写真の画像にする）。それも無ければ、お名前の文字箱にいちばん近い画像。
 //        メンバー写真（02_メンバー写真）に差し替えて枠に合わせて切り抜く。見つからなければ仮の画像のまま
+//        （「お写真」の図形は、文字だけ消して枠はそのまま）
 // 名簿に無い方（まだ名簿に入っていない新メンバー）は、チェックシートに書いてあったお名前と、
 // かっこの中のカテゴリー（「新井 花子さん（エステサロン）」）で作る（会社名は空）。
 
 var WELCOME_KIND_ = 'welcome';
+var WELCOME_PHOTO_MARK_ = /^(お写真|写真)$/;              // 写真の場所の目印（図形に書いてある文字がこれだけ）
 
 // 同梱の既定のひな形（tools/build_welcome_template.py で作ったpptxをbase64にしたもの）
 function welcomeBuiltinBlob_() {
@@ -81,21 +86,76 @@ function welcomeMembers_(raw) {
   return out;
 }
 
-// ひな形の中の、熱烈歓迎のページ（{{氏名}} のあるページ。無ければ最初のページ）
+// ひな形の中の、熱烈歓迎のページ（{{氏名}}・「お名前」のあるページ。無ければ最初のページ）
 function welcomeModel_(src) {
   var order = slideOrder_(src);
   for (var i = 0; i < order.length; i++) {
     var t = slideText_(xmlOf_(src, order[i]) || '');
-    if (t.indexOf('{{氏名}}') >= 0 || t.indexOf('{{名字}}') >= 0) return order[i];
+    if (t.indexOf('{{氏名}}') >= 0 || t.indexOf('{{名字}}') >= 0 || t.indexOf('お名前') >= 0) return order[i];
   }
   return order[0] || '';
 }
 
-// 写真の枠：名前（または代替テキスト）が「写真」「写真1」の画像。無ければ、お名前の文字箱にいちばん近い画像
-function welcomePicFor_(xml, anchorId) {
+// 文字の「お名前」を {{氏名}} にする（PowerPointが1つの言葉をいくつかの切れ目に分けて持っていても）
+function welcomeNameMarks_(xml) {
+  return replacePatternsInXml_(xml, [{ re: /お名前/, value: function () { return '{{氏名}}'; } }]).xml;
+}
+
+// 写真の場所：名前（または代替テキスト）が「写真」「写真1」の画像 → 「お写真」とだけ書いた図形 → お名前の文字箱にいちばん近い画像。
+// 戻り値 { id, mark }（mark … 目印の図形。写真の画像に置き換える）。どれも無ければ null
+function welcomePhotoSlot_(xml, anchorId) {
   var pics = premtgShapes_(xml, 'p:pic').filter(function (p) { return !/<a:(audio|video)File\b/.test(p.seg); });
-  for (var i = 0; i < pics.length; i++) if (pics[i].name === '写真' || pics[i].descr === '写真') return pics[i].id;
-  return premtgPicFor_(xml, 1, anchorId);
+  for (var i = 0; i < pics.length; i++) {
+    if (/^写真1?$/.test(pics[i].name) || /^写真1?$/.test(pics[i].descr)) return { id: pics[i].id, mark: false };
+  }
+  var sps = premtgShapes_(xml, 'p:sp');
+  for (var j = 0; j < sps.length; j++) {
+    if (WELCOME_PHOTO_MARK_.test(slideText_(sps[j].seg).replace(/[\s　]+/g, ''))) return { id: sps[j].id, mark: true };
+  }
+  var near = premtgPicFor_(xml, 1, anchorId);
+  return near ? { id: near, mark: false } : null;
+}
+
+// 目印の図形（「お写真」）を、同じ位置・大きさ・形・枠線の写真の画像にする。target … 写真のファイル（../media/…）
+function welcomeMarkToPic_(xml, rels, spId, target) {
+  var r = findShapeRange_(xml, spId);
+  if (!r || !rels) return { xml: xml, rels: rels };
+  var seg = xml.substring(r.start, r.end);
+  var spPr = (seg.match(/<p:spPr\b[^>]*>([\s\S]*?)<\/p:spPr>/) || [])[1] || '';
+  var xfrm = (spPr.match(/<a:xfrm\b[^>]*>[\s\S]*?<\/a:xfrm>/) || [''])[0];
+  var geom = (spPr.match(/<a:prstGeom\b[^>]*\/>|<a:prstGeom\b[^>]*>[\s\S]*?<\/a:prstGeom>|<a:custGeom\b[^>]*>[\s\S]*?<\/a:custGeom>/)
+              || ['<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>'])[0];
+  var ln = (spPr.match(/<a:ln\b[^>]*\/>|<a:ln\b[^>]*>[\s\S]*?<\/a:ln>/) || [''])[0];
+  var max = 0, m, re = /Id="rId(\d+)"/g;
+  while ((m = re.exec(rels)) !== null) max = Math.max(max, parseInt(m[1], 10));
+  var rid = 'rId' + (max + 1);
+  rels = rels.replace('</Relationships>', '<Relationship Id="' + rid + '" Type="'
+    + 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="' + target + '"/></Relationships>');
+  var pic = '<p:pic><p:nvPicPr><p:cNvPr id="' + spId + '" name="写真" descr="写真"/><p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr><p:nvPr/></p:nvPicPr>'
+    + '<p:blipFill><a:blip r:embed="' + rid + '"/><a:stretch><a:fillRect/></a:stretch></p:blipFill>'
+    + '<p:spPr>' + xfrm + geom + ln + '</p:spPr></p:pic>';
+  return { xml: xml.substring(0, r.start) + pic + xml.substring(r.end), rels: rels };
+}
+
+// 図形の文字を消す（写真が無い方の「お写真」。枠はそのまま）
+function welcomeClearText_(xml, id) {
+  var r = findShapeRange_(xml, id);
+  if (!r) return xml;
+  var seg = xml.substring(r.start, r.end).replace(/(<a:t(?=[\s>])[^>]*>)[\s\S]*?(<\/a:t>)/g, '$1$2');
+  return xml.substring(0, r.start) + seg + xml.substring(r.end);
+}
+
+// ひな形を確かめる（登録したとき・作る前の確かめ）：お名前・お写真を入れる場所があるか
+//   戻り値 { name: お名前の場所があるか, photo: 'pic'（写真の画像）| 'mark'（「お写真」の図形）| ''（無い）, notes: [知らせ] }
+function welcomeTemplateCheck_(src) {
+  var model = welcomeModel_(src);
+  if (!model) return { name: false, photo: '', notes: ['ひな形にページがありません。'] };
+  var xml = welcomeNameMarks_(xmlOf_(src, model) || '');
+  var nameId = premtgShapeWith_(xml, '{{氏名}}') || premtgShapeWith_(xml, '{{名字}}');
+  var slot = welcomePhotoSlot_(xml, nameId), notes = [];
+  if (!nameId) notes.push('お名前を入れる場所がありません（「お名前」と書いた文字の箱か、{{氏名}} を置いてください）。');
+  if (!slot) notes.push('お写真を入れる場所がありません（「お写真」とだけ書いた四角か、名前が「写真」の画像を置いてください）。');
+  return { name: !!nameId, photo: slot ? (slot.mark ? 'mark' : 'pic') : '', notes: notes };
 }
 
 // 事前MTGのパワポに、新入会の方ごとの熱烈歓迎のページを入れる（まとめのページのすぐあと。無ければ最初）。
@@ -107,26 +167,34 @@ function premtgWelcomePages_(parts, src, members, common, cache, afterPath) {
   if (!members || !members.length) return res;
   var model = src ? welcomeModel_(src) : '';
   if (!model) { res.messages.push('熱烈歓迎のひな形にページがありません。'); return res; }
+  var fit = fitSourceToTargetSize_(parts, src);                   // ページの大きさが違えば、事前MTGのパワポの大きさに合わせる
   var imp = importSlideCopies_(parts, src, model, members.length);
-  if (imp.sizeDiffers) res.messages.push('熱烈歓迎のひな形のページの大きさが、事前MTGのひな形と違います（そのまま入れました。パワポで確かめてください）。');
+  if (fit.scaled) {
+    res.messages.push(fit.sameRatio
+      ? '熱烈歓迎のひな形のページの大きさを、事前MTGのパワポの大きさに合わせました（' + Math.round(fit.factor * 100) + '%）。'
+      : '熱烈歓迎のひな形のページの縦横の比が、事前MTGのパワポと違います。ページに収まる大きさ（' + Math.round(fit.factor * 100)
+        + '%）にして、真ん中に置きました（パワポで確かめてください）。');
+  } else if (imp.sizeDiffers) res.messages.push('熱烈歓迎のひな形のページの大きさが、事前MTGのひな形と違います（そのまま入れました。パワポで確かめてください）。');
   var types = {};
   for (var i = 0; i < members.length; i++) {
     var m = members[i], path = imp.slides[i].path;
-    var xml = xmlOf_(parts, path), rels = xmlOf_(parts, partRelsPath_(path)) || '';
+    var xml = welcomeNameMarks_(xmlOf_(parts, path)), rels = xmlOf_(parts, partRelsPath_(path)) || '';
     var nameId = premtgShapeWith_(xml, '{{氏名}}') || premtgShapeWith_(xml, '{{名字}}');
     var fitIds = [nameId, premtgShapeWith_(xml, '{{会社名}}'), premtgShapeWith_(xml, '{{カテゴリー}}')];
-    var picId = welcomePicFor_(xml, nameId);
-    if (picId) {
+    var slot = welcomePhotoSlot_(xml, nameId);
+    if (slot) {
       var photo = null;
       try { photo = mpAddPhoto_(parts, cache, m.name); }
       catch (e) { console.warn('[WELCOME] 写真を読めませんでした: ' + m.name + ' ' + (e && e.message ? e.message : e)); }
       if (photo) {
-        var set = setPicImage_(xml, rels, picId, '../media/' + photo.path.replace('ppt/media/', ''));
+        var target = '../media/' + photo.path.replace('ppt/media/', '');
+        var set = slot.mark ? welcomeMarkToPic_(xml, rels, slot.id, target) : setPicImage_(xml, rels, slot.id, target);
         xml = set.xml; rels = set.rels;
         types[photo.path.replace(/^.*\./, '')] = true;
-        var box = readShapeGeomEmu_(xml, picId);
-        if (box && photo.width && photo.height) xml = setSrcRectInPic_(xml, picId, coverCrop_(photo.width, photo.height, box.cx, box.cy));
+        var box = readShapeGeomEmu_(xml, slot.id);
+        if (box && photo.width && photo.height) xml = setSrcRectInPic_(xml, slot.id, coverCrop_(photo.width, photo.height, box.cx, box.cy));
       } else {
+        if (slot.mark) xml = welcomeClearText_(xml, slot.id);
         res.noPhoto.push(m.name);
       }
     }

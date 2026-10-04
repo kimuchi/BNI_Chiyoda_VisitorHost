@@ -9,8 +9,13 @@
 //   ・写真は名簿の方のメンバー写真（枠に合わせて切り抜く）。写真が無い方は仮の画像のまま（お知らせする）
 //   ・既定のひな形は事前MTGと同じ土台なので、マスターを足さない
 //   ・土台の違うひな形を登録すると、マスター・レイアウト・テーマごと写す（番号が重ならない・pptxとして壊れていない）。
-//     写真の枠の名前が「写真1」でも入る。ページの大きさが違えばお知らせする
+//     写真の枠の名前が「写真1」でも入る
 //   ・作る前の確かめ（役職ごとの入力の画面）に、熱烈歓迎のページの方とひな形が出る
+//   ・画像から作ったひな形（「お名前」「お写真」と書いた四角・ページが 20×11.25インチ）：お名前を入れ、「お写真」の四角を
+//     同じ位置・大きさの写真にする（飾りの画像はそのまま）。写真の無い方は「お写真」の文字だけ消す。
+//     ページの大きさを事前MTGのパワポに合わせて縮める（図形・文字・写したマスターも同じ割合で。はみ出さない）。
+//     縦横の比が違うひな形は、収まる大きさで真ん中に置く
+//   ・ひな形を確かめる：お名前・お写真の場所が無ければ、登録したときと作る前の確かめで知らせる
 
 process.env.TZ = 'Asia/Tokyo';
 const fs = require('fs');
@@ -122,14 +127,13 @@ const integrity = (z, label) => {
 
 // ===== 3) 土台の違うひな形を登録する（マスター・テーマごと写す）=====
 const builtin = (() => { const h = fs.readFileSync(path.join(ROOT, 'welcome_template.html'), 'utf8'); return Buffer.from(h.match(/PPTX_BASE64_BEGIN([\s\S]*?)PPTX_BASE64_END/)[1].replace(/\s/g, ''), 'base64'); })();
-function customTemplate(opts) {
+function customTemplate() {
   const z = readZip(builtin), put = (p, s) => { z[p] = Buffer.from(s, 'utf8'); }, get = (p) => z[p].toString('utf8');
   const m = get('ppt/slideMasters/slideMaster1.xml');
   const bg = '<p:bg><p:bgPr><a:solidFill><a:srgbClr val="FFF4D6"/></a:solidFill><a:effectLst/></p:bgPr></p:bg>';
   put('ppt/slideMasters/slideMaster1.xml', /<p:bg>[\s\S]*?<\/p:bg>/.test(m) ? m.replace(/<p:bg>[\s\S]*?<\/p:bg>/, bg) : m.replace(/(<p:cSld(?: [^>]*)?>)/, '$1' + bg));
   put('ppt/theme/theme1.xml', get('ppt/theme/theme1.xml').replace(/(<a:theme\b[^>]*\bname=")[^"]*/, '$1見本の歓迎テーマ'));
   put('ppt/slides/slide1.xml', get('ppt/slides/slide1.xml').replace('name="写真" descr="写真"', 'name="写真1" descr="写真1"'));
-  if (opts && opts.size) put('ppt/presentation.xml', get('ppt/presentation.xml').replace(/<p:sldSz cx="\d+" cy="\d+"/, '<p:sldSz cx="9144000" cy="6858000"'));
   return writeZip(z);
 }
 {
@@ -151,10 +155,6 @@ function customTemplate(opts) {
   ck(role && /slideLayout1\.xml/.test(S.rels(role)), '3) 役職のページのレイアウトが変わった: ' + (role ? S.rels(role) : '役職のページが無い'));
   const it = integrity(S.z, 'custom');
   ck(it.ok, '3) pptxとして壊れている（写したマスター）: ' + it.out);
-  // ページの大きさが違うひな形
-  env.addFile('WELCOME_TPL', new env.FakeBlob(customTemplate({ size: true }), 'application/zip', 'w.pptx'), '熱烈歓迎_4対3.pptx');
-  const res2 = F.generatePreMeetingSlides(DATE);
-  ck(res2.ok && /ページの大きさが、事前MTGのひな形と違います/.test(res2.message), '3) ページの大きさが違うことを知らせない: ' + J(res2.message));
   delete env.props.BNI_TPL_WELCOME_ID;
 }
 
@@ -184,10 +184,138 @@ function customTemplate(opts) {
      '5) 画面に熱烈歓迎のページが出ない: ' + h.replace(/\s+/g, ' ').slice(0, 400));
 }
 
+// ===== 6) 画像から作ったひな形（「お名前」「お写真」と書いた四角・ページが 20×11.25インチ）=====
+// 画像を背景に敷いて、枠の中に「お名前」（2つの切れ目に分けて書く）と「お写真」の四角を置いたもの。右上に飾りの画像（ロゴ）。
+// size を渡すとそのページの大きさで作る（中身もページに収まるように縮めて置く）。marks:false … 目印の四角を置かない
+const BIG = { cx: 18288000, cy: 10287000 };
+function imageTemplate(opts) {
+  const o = opts || {}, size = o.size || BIG;
+  const z = readZip(builtin), put = (p, v) => { z[p] = Buffer.isBuffer(v) ? v : Buffer.from(v, 'utf8'); }, get = (p) => z[p].toString('utf8');
+  const k = Math.min(size.cx / BIG.cx, size.cy / BIG.cy), S = (v) => Math.round(v * k);
+  put('ppt/presentation.xml', get('ppt/presentation.xml').replace(/<p:sldSz cx="\d+" cy="\d+"/, '<p:sldSz cx="' + size.cx + '" cy="' + size.cy + '"'));
+  put('ppt/media/bg.png', png(64, 36, [240, 236, 228]));
+  put('ppt/media/logo.png', png(20, 20, [200, 30, 40]));
+  const box = (id, name, x, y, cx, cy, fill, runs, sz) => '<p:sp><p:nvSpPr><p:cNvPr id="' + id + '" name="' + name + '"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>'
+    + '<p:spPr><a:xfrm><a:off x="' + S(x) + '" y="' + S(y) + '"/><a:ext cx="' + S(cx) + '" cy="' + S(cy) + '"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom>'
+    + '<a:solidFill><a:srgbClr val="' + fill + '"/></a:solidFill><a:ln><a:noFill/></a:ln></p:spPr>'
+    + '<p:txBody><a:bodyPr rtlCol="0" anchor="ctr"/><a:lstStyle/><a:p><a:pPr algn="ctr"/>'
+    + runs.map((t) => '<a:r><a:rPr lang="ja-JP" altLang="en-US" sz="' + S(sz) + '" dirty="0"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:rPr><a:t>' + t + '</a:t></a:r>').join('')
+    + '</a:p></p:txBody></p:sp>';
+  const slide = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+    + '<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
+    + 'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld><p:spTree>'
+    + '<p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>'
+    + '<p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>'
+    + '<p:sp><p:nvSpPr><p:cNvPr id="2" name="Freeform 2"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="' + size.cx + '" cy="' + size.cy + '"/></a:xfrm>'
+    + '<a:custGeom><a:avLst/><a:gdLst/><a:ahLst/><a:cxnLst/><a:rect l="l" t="t" r="r" b="b"/><a:pathLst><a:path w="' + size.cx + '" h="' + size.cy + '"><a:moveTo><a:pt x="0" y="0"/></a:moveTo>'
+    + '<a:lnTo><a:pt x="' + size.cx + '" y="0"/></a:lnTo><a:lnTo><a:pt x="' + size.cx + '" y="' + size.cy + '"/></a:lnTo><a:lnTo><a:pt x="0" y="' + size.cy + '"/></a:lnTo><a:close/></a:path></a:pathLst></a:custGeom>'
+    + '<a:blipFill><a:blip r:embed="rId2"/><a:stretch><a:fillRect/></a:stretch></a:blipFill></p:spPr></p:sp>'
+    + '<p:pic><p:nvPicPr><p:cNvPr id="5" name="ロゴ"/><p:cNvPicPr/><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed="rId3"/><a:stretch><a:fillRect/></a:stretch></p:blipFill>'
+    + '<p:spPr><a:xfrm><a:off x="' + S(16200000) + '" y="' + S(300000) + '"/><a:ext cx="' + S(1500000) + '" cy="' + S(1500000) + '"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic>'
+    + (o.marks === false ? '' : box(3, '正方形/長方形 2', 7162800, 3924300, 3962400, 5257800, 'D9D9D9', ['お写真'], 4800)
+                               + box(4, '正方形/長方形 3', 7162800, 3162300, 3962400, 762000, 'D6DCE5', ['お', '名前'], 4000))
+    + '</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>';
+  put('ppt/slides/slide1.xml', slide);
+  put('ppt/slides/_rels/slide1.xml.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+    + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+    + '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>'
+    + '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/bg.png"/>'
+    + '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/logo.png"/></Relationships>');
+  delete z['ppt/media/welcome_photo.png'];
+  return writeZip(z);
+}
+// 図形の位置と大きさ（[x, y, cx, cy]）・ページからはみ出した図形・画像の行き先
+const geoOf = (seg) => (seg.match(/<a:off x="(-?\d+)" y="(-?\d+)"\/><a:ext cx="(\d+)" cy="(\d+)"\/>/) || []).slice(1).map(Number);
+const overOf = (x, sz) => [...x.matchAll(/<a:off x="(-?\d+)" y="(-?\d+)"\/><a:ext cx="(\d+)" cy="(\d+)"\/>/g)].map((m) => m.slice(1).map(Number))
+  .filter(([X, Y, CX, CY]) => X < -2 || Y < -2 || X + CX > sz[0] + 2 || Y + CY > sz[1] + 2);
+const picNamed = (x, name) => (x.match(new RegExp('<p:pic>(?:(?!</p:pic>)[\\s\\S])*?name="' + name + '"(?:(?!</p:pic>)[\\s\\S])*</p:pic>')) || [''])[0];
+const targetOf = (rels, seg) => { const rid = (seg.match(/r:embed="([^"]+)"/) || [])[1]; return (rels.match(new RegExp('Id="' + rid + '"[^>]*Target="([^"]+)"')) || [])[1] || ''; };
+// ドライブのファイル：登録のときに種類と大きさを見るので、見せかけのファイルにも足す
+{
+  const orig = F.DriveApp.getFileById;
+  F.DriveApp.getFileById = (id) => { const f = orig(id); return Object.assign({ getMimeType: () => F.PPTX_MIME_, getSize: () => f.getBlob()._buf.length }, f); };
+}
+{
+  env.addFile('WELCOME_IMAGE_TPL_0001', new env.FakeBlob(imageTemplate(), 'application/zip', 'w.pptx'), '熱烈歓迎_画像から.pptx');
+  env.props.BNI_TPL_WELCOME_ID = 'WELCOME_IMAGE_TPL_0001';
+  const res = F.generatePreMeetingSlides(DATE);
+  ck(res.ok && /熱烈歓迎 2枚/.test(res.message), '6) 画像から作ったひな形で作らない: ' + J(res.message));
+  ck(/熱烈歓迎のひな形のページの大きさを、事前MTGのパワポの大きさに合わせました（67%）/.test(res.message), '6) 大きさを合わせたお知らせ: ' + J(res.message));
+  const S = slidesOf();
+  const sz = S.xml('ppt/presentation.xml').match(/<p:sldSz cx="(\d+)" cy="(\d+)"/).slice(1).map(Number);
+  const f = Math.min(sz[0] / BIG.cx, sz[1] / BIG.cy), dx = Math.round((sz[0] - BIG.cx * f) / 2), dy = Math.round((sz[1] - BIG.cy * f) / 2);
+  const w1 = S.order[1], w2 = S.order[2], x1 = S.xml(w1), x2 = S.xml(w2), t1 = S.text(w1), t2 = S.text(w2);
+  ck(/新入 花子/.test(t1) && /新規 太郎/.test(t2) && !/お名前|お写真|\{\{/.test(t1 + t2), '6) お名前が入らない・目印の文字が残る: ' + J([t1, t2]));
+  // 「お写真」の四角が、同じ位置・大きさ（縮めたもの）の写真の画像になる。飾りの画像（ロゴ）は写真にしない
+  const ph = picNamed(x1, '写真'), want = [Math.round(7162800 * f + dx), Math.round(3924300 * f + dy), Math.round(3962400 * f), Math.round(5257800 * f)];
+  ck(ph && geoOf(ph).every((v, i) => Math.abs(v - want[i]) <= 2) && /<a:srcRect\b/.test(ph) && /prst="rect"/.test(ph),
+     '6) 「お写真」の四角が写真にならない: ' + J({ geo: geoOf(ph), want }));
+  ck(/mpphoto\d+\.png$/.test(targetOf(S.rels(w1), ph)), '6) 写真がメンバー写真でない: ' + targetOf(S.rels(w1), ph));
+  const logo = picNamed(x1, 'ロゴ');
+  ck(logo && !/mpphoto/.test(targetOf(S.rels(w1), logo)) && /\.png$/.test(targetOf(S.rels(w1), logo)), '6) 飾りの画像（ロゴ）を写真にした: ' + targetOf(S.rels(w1), logo));
+  // 写真の無い方：「お写真」の文字だけ消して、四角はそのまま
+  ck(!picNamed(x2, '写真') && /name="正方形\/長方形 2"/.test(x2) && /D9D9D9/.test(x2), '6) 写真の無い方の「お写真」の四角が残らない');
+  ck(/写真が見つからない方[^\n]*新規 太郎/.test(res.message), '6) 写真の無い方を知らせない: ' + J(res.message));
+  // ページからはみ出さない。文字の大きさ・写したマスターも同じ割合で縮める
+  ck(!overOf(x1, sz).length && !overOf(x2, sz).length, '6) ページからはみ出す: ' + J(overOf(x1, sz)));
+  ck(/sz="2667"/.test(x1) && /sz="3200"/.test(x2), '6) 文字の大きさを同じ割合で縮めない: ' + J([...x1.matchAll(/sz="(\d+)"/g)].map((m) => m[1])));
+  const lay = (S.rels(w1).match(/Target="\.\.\/slideLayouts\/([^"]+)"/) || [])[1];
+  const mst = (S.xml('ppt/slideLayouts/_rels/' + lay + '.rels').match(/Target="\.\.\/slideMasters\/([^"]+)"/) || [])[1];
+  const bz = readZip(builtin), bsz = [...bz['ppt/slideMasters/slideMaster1.xml'].toString('utf8').matchAll(/\bsz="(\d+)"/g)].map((m) => +m[1]);
+  const msz = [...S.xml('ppt/slideMasters/' + mst).matchAll(/\bsz="(\d+)"/g)].map((m) => +m[1]);
+  ck(mst && mst !== 'slideMaster1.xml' && J(msz) === J(bsz.map((v) => Math.max(100, Math.round(v * f)))) && !overOf(S.xml('ppt/slideMasters/' + mst), sz).length,
+     '6) 写したマスターを同じ割合で縮めない: ' + J({ mst, msz: msz.slice(0, 4), bsz: bsz.slice(0, 4) }));
+  const it = integrity(S.z, 'image');
+  ck(it.ok, '6) pptxとして壊れている（画像から作ったひな形）: ' + it.out);
+
+  // 縦横の比が違うひな形（4:3）→ 収まる大きさで真ん中に置く
+  env.addFile('WELCOME_IMAGE_TPL_0001', new env.FakeBlob(imageTemplate({ size: { cx: 9144000, cy: 6858000 } }), 'application/zip', 'w.pptx'), '熱烈歓迎_4対3.pptx');
+  const res2 = F.generatePreMeetingSlides(DATE);
+  ck(res2.ok && /縦横の比が、事前MTGのパワポと違います。ページに収まる大きさ（100%）にして、真ん中に置きました/.test(res2.message), '6) 縦横の比が違うお知らせ: ' + J(res2.message));
+  const S2 = slidesOf(), x3 = S2.xml(S2.order[1]);
+  const bgGeo = geoOf((x3.match(/<p:sp>(?:(?!<\/p:sp>)[\s\S])*?name="Freeform 2"[\s\S]*?<\/p:sp>/) || [''])[0]);
+  ck(J(bgGeo) === J([Math.round((sz[0] - 9144000) / 2), 0, 9144000, 6858000]) && !overOf(x3, sz).length && /新入 花子/.test(S2.text(S2.order[1])),
+     '6) 4:3 のひな形を真ん中に置かない・はみ出す: ' + J({ bgGeo, over: overOf(x3, sz) }));
+  ck(integrity(S2.z, 'ratio').ok, '6) pptxとして壊れている（4:3 のひな形）');
+}
+
+// ===== 7) ひな形を確かめる（登録したとき・作る前の確かめ）=====
+if (typeof F.welcomeTemplateCheck_ !== 'function') fails.push('7) ひな形を確かめる道具（welcomeTemplateCheck_）が無い');
+else {
+  const unz = (buf) => F.unzipToMap_(new env.FakeBlob(buf, 'application/zip', 't.pptx'));
+  const good = F.welcomeTemplateCheck_(unz(imageTemplate()));
+  ck(good.name && good.photo === 'mark' && good.notes.length === 0, '7) 「お名前」「お写真」のひな形を確かめる: ' + J(good));
+  const std = F.welcomeTemplateCheck_(unz(builtin));
+  ck(std.name && std.photo === 'pic' && std.notes.length === 0, '7) 既定のひな形を確かめる: ' + J(std));
+  const none = F.welcomeTemplateCheck_(unz(imageTemplate({ marks: false })));
+  ck(!none.name && none.photo === '' && none.notes.length === 2 && /お名前を入れる場所がありません/.test(none.notes[0]) && /お写真を入れる場所がありません/.test(none.notes[1]),
+     '7) 目印の無いひな形を知らせない: ' + J(none));
+  env.addFile('WELCOME_IMAGE_TPL_0001', new env.FakeBlob(imageTemplate(), 'application/zip', 'w.pptx'), '熱烈歓迎_画像から.pptx');
+  const reg = F.registerBigTemplate('welcome', 'https://drive.google.com/file/d/WELCOME_IMAGE_TPL_0001/view?usp=sharing');
+  ck(reg.ok && /お名前と、お写真（「お写真」の図形）を入れる場所が見つかりました/.test(reg.message), '7) 登録のお知らせ: ' + J(reg.message));
+  env.addFile('WELCOME_NO_MARKS_0001', new env.FakeBlob(imageTemplate({ marks: false }), 'application/zip', 'w.pptx'), '熱烈歓迎_目印なし.pptx');
+  const reg2 = F.registerBigTemplate('welcome', 'WELCOME_NO_MARKS_0001');
+  ck(reg2.ok && /⚠ お名前を入れる場所がありません/.test(reg2.message) && /⚠ お写真を入れる場所がありません/.test(reg2.message), '7) 目印の無いひな形を登録したときのお知らせ: ' + J(reg2.message));
+  // 作る前の確かめ：画面に知らせが出る
+  const pv = F.getPreMeetingPreview(DATE);
+  ck(pv.ok && pv.welcomeTemplate && pv.welcomeTemplate.notes.length === 2, '7) 作る前の確かめにひな形の知らせが無い: ' + J(pv.welcomeTemplate));
+  const page = loadPage('role_input.html', {
+    server: { getSystemVersion: () => 'test', getRoleInputContext: (d, r) => F.getRoleInputContext(d, r), getPreMeetingPreview: (d) => F.getPreMeetingPreview(d) },
+    fails, now: '2026-10-05T10:00:00',
+    preprocess: (p) => p.replace(/<\?\s*var roleParam[\s\S]*?\?>/, '').replace('<?= roleParam ?>', '').replace('<?= viewParam ?>', 'premtg'),
+  });
+  page.flush();
+  page.step('一覧を開く（事前MTGの確かめ・目印の無いひな形）', () => page.window.onload());
+  const h = String(page.els.premtgOut && page.els.premtgOut.innerHTML).replace(/<[^>]+>/g, ' ');
+  ck(/⚠ お名前を入れる場所がありません/.test(h) && /⚠ お写真を入れる場所がありません/.test(h), '7) 画面にひな形の知らせが出ない: ' + h.replace(/\s+/g, ' ').slice(0, 300));
+  delete env.props.BNI_TPL_WELCOME_ID;
+}
+
 if (fails.length) {
   console.log('NG ' + fails.length + '件 / ' + checks + '件の検査');
   fails.forEach((f) => console.log('  - ' + f));
   process.exit(1);
 }
 console.log('熱烈歓迎のページ: 検査 ' + checks + ' 件 OK: 新入会の方ごとに1枚・まとめのページのあと・名簿に無い方・写真・'
-  + '土台の違うひな形はマスターごと写す（番号が重ならない・壊れていない）・いない日は作らない・作る前の確かめ');
+  + '土台の違うひな形はマスターごと写す（番号が重ならない・壊れていない）・いない日は作らない・作る前の確かめ・'
+  + '画像から作ったひな形（「お名前」「お写真」・大きさを合わせる・縦横の比が違う）・ひな形を確かめる');

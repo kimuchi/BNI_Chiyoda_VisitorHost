@@ -783,7 +783,8 @@
        }).join(' ')+'</div>'
        +'<div class="hint">熱烈歓迎のひな形：'+(wt.registered?'登録したもの（'+esc(wt.name)+'）':'既定のもの')
        +'。⚙️ 設定 ＞ 大きなスライド の「熱烈歓迎（事前MTG・新入会メンバー）」で差し替えられます。'
-       +(wt.error?'<br><b style="color:#b3261e;">'+esc(wt.error)+'</b>':'')+'</div></div>';
+       +(wt.error?'<br><b style="color:#b3261e;">'+esc(wt.error)+'</b>':'')
+       +(wt.notes||[]).map(function(n){ return '<br><b style="color:#b3261e;">⚠ '+esc(n)+'</b>'; }).join('')+'</div></div>';
    }
    h+='<div class="pmpages"><b>役職のページ（'+p.pages.length+'枚）</b>'
      +(p.pages.length?'<ol start="2">'+p.pages.map(function(pg){

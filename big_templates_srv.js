@@ -48,7 +48,16 @@ function registerBigTemplate(kind, linkOrId) {
     }
     PropertiesService.getScriptProperties().setProperty(def.prop, id);
     console.log('[BIGTPL] ' + kind + ' -> ' + id + ' (' + mime + ')');
-    return { ok: true, message: '「' + def.label + '」に「' + file.getName() + '」を登録しました。', status: getBigTemplateStatus() };
+    var msg = '「' + def.label + '」に「' + file.getName() + '」を登録しました。';
+    // 熱烈歓迎は、お名前・お写真を入れる場所があるかをすぐ知らせる（welcome_srv.js）
+    if (kind === 'welcome') {
+      try {
+        var chk = welcomeTemplateCheck_(unzipToMap_(file.getBlob()));
+        msg += chk.notes.length ? '\n⚠ ' + chk.notes.join('\n⚠ ')
+                                : '\nお名前と、お写真（' + (chk.photo === 'mark' ? '「お写真」の図形' : '写真の画像') + '）を入れる場所が見つかりました。';
+      } catch (e) { msg += '\n⚠ ひな形の中を確かめられませんでした（' + (e && e.message ? e.message : e) + '）。'; }
+    }
+    return { ok: true, message: msg, status: getBigTemplateStatus() };
   } catch (e) {
     console.error('[BIGTPL] ' + (e && e.stack ? e.stack : e));
     return { ok: false, message: '登録に失敗しました: ' + (e && e.message ? e.message : e) };
