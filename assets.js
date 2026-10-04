@@ -276,7 +276,13 @@ function uploadMemberPhotosBase64(items) {
     console.log('[PHOTO] saved=' + saved + ' rejected=' + rejected.length);
     var m = saved + '枚の写真を保存しました。';
     if (rejected.length) m += '\n⚠ 表示できない形式のため保存しませんでした（' + rejected.length + '件: ' + rejected.slice(0, 5).join('、') + '）。JPEG・PNG・GIF・WebP のいずれかに変換してください。';
-    return { ok: true, message: m, saved: saved, names: names, rejected: rejected };
+    // 保存した写真をすぐ使えるように、写真索引も作り直す（写真は索引から探すので、作り直すまでは「写真が見つからない方」のままだった）
+    var index = null;
+    if (saved) {
+      index = rebuildPhotoIndex();
+      m += '\n' + (index.ok ? index.message : '⚠ 写真索引を作り直せませんでした（' + index.message + '）。「索引を作り直す」を押してください。');
+    }
+    return { ok: true, message: m, saved: saved, names: names, rejected: rejected, index: index };
   } catch (e) {
     console.error('[PHOTO] ' + (e && e.stack ? e.stack : e));
     return { ok: false, message: '写真の保存中にエラーが発生しました: ' + (e && e.message ? e.message : e) };

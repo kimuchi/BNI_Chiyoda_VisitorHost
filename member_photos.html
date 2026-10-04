@@ -15,8 +15,8 @@
 <body>
  <h3>メンバー写真の管理</h3>
  <div class="hint">
-   写真は共有フォルダの <b>02_メンバー写真</b> に保存され、<b>氏名で自動照合</b>されます。<br>
-   ファイル名は「氏名.jpg」または「氏名__識別子.png」の形式にしてください。<br>
+   写真は共有フォルダの <b>02_メンバー写真</b> に保存され、<b>氏名で自動照合</b>されます（アップロードすると、写真索引も作り直します）。<br>
+   ファイル名は「氏名.jpg」または「氏名__識別子.png」の形式にしてください（氏名はメンバー名簿と同じ字で。空白の有無・全角半角は問いません）。<br>
    形式は <b>JPEG・PNG・GIF・WebP</b> に対応（拡張子の大文字小文字は問いません）。
    同じ人の写真が複数あるときは<b>更新日時が新しいもの</b>が使われます。<br>
    iPhoneの <b>HEIC</b> は表示できないため、JPEGかPNGに変換してください。
@@ -39,7 +39,7 @@
  <div id="msg"></div>
 
 <script>
- var queue=[], done=0;
+ var queue=[], done=0, rejected=[], indexMsg='';
  window.onload=load;
  function load(){ google.script.run.withSuccessHandler(render).withFailureHandler(fail).getPhotoOverview(); }
  function esc(x){var d=document.createElement('span');d.textContent=x==null?'':x;return d.innerHTML;}
@@ -58,7 +58,7 @@
  function up(){
    var fs=document.getElementById('files').files;
    if(!fs.length){ alert('写真を選択してください。'); return; }
-   queue=[]; done=0;
+   queue=[]; done=0; rejected=[]; indexMsg='';
    busy(true,'読み込み中...');
    var pend=fs.length;
    for(var i=0;i<fs.length;i++){ (function(f){
@@ -69,14 +69,21 @@
      r.readAsDataURL(f);
    })(fs[i]); }
  }
- // 20枚ずつ再帰送信（1回のリクエストを軽く保つ）
+ // 20枚ずつ再帰送信（1回のリクエストを軽く保つ）。保存するたびにサーバーで写真索引を作り直す（最後の結果を出す）
  function sendNext(){
-   if(!queue.length){ finish({ok:true,message:done+'枚の写真を保存しました。'}); return; }
+   if(!queue.length){
+     var m=done+'枚の写真を保存しました。';
+     if(rejected.length) m+='\n⚠ 表示できない形式のため保存しませんでした（'+rejected.length+'件: '+rejected.slice(0,5).join('、')+'）。JPEG・PNG・GIF・WebP のいずれかに変換してください。';
+     if(indexMsg) m+='\n'+indexMsg;
+     finish({ok:done>0 || !rejected.length, message:m}); return;
+   }
    var batch=queue.splice(0,20);
    busy(true,'アップロード中... ('+done+'枚完了 / 残り'+(queue.length+batch.length)+'枚)');
    google.script.run.withSuccessHandler(function(r){
      if(!r.ok){ finish(r); return; }
-     done+=r.saved; sendNext();
+     done+=r.saved; rejected=rejected.concat(r.rejected||[]);
+     if(r.index) indexMsg = r.index.ok ? r.index.message : '⚠ 写真索引を作り直せませんでした（'+(r.index.message||'')+'）。「索引を作り直す」を押してください。';
+     sendNext();
    }).withFailureHandler(fail).uploadMemberPhotosBase64(batch);
  }
  function rebuild(){ busy(true,'索引を作成中...'); google.script.run.withSuccessHandler(finish).withFailureHandler(fail).rebuildPhotoIndex(); }
