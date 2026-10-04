@@ -16,6 +16,8 @@
 //     ページの大きさを事前MTGのパワポに合わせて縮める（図形・文字・写したマスターも同じ割合で。はみ出さない）。
 //     縦横の比が違うひな形は、収まる大きさで真ん中に置く
 //   ・ひな形を確かめる：お名前・お写真の場所が無ければ、登録したときと作る前の確かめで知らせる
+//   ・書体はメイリオ：既定のひな形（事前MTG・熱烈歓迎）のテーマの書体・行間（100%・110%）。作ったパワポのテーマの書体は
+//     どれもメイリオ（テーマがＭＳ Ｐゴシックのひな形でも）。ひな形で書体を指定した文字はそのまま
 
 process.env.TZ = 'Asia/Tokyo';
 const fs = require('fs');
@@ -191,6 +193,9 @@ const BIG = { cx: 18288000, cy: 10287000 };
 function imageTemplate(opts) {
   const o = opts || {}, size = o.size || BIG;
   const z = readZip(builtin), put = (p, v) => { z[p] = Buffer.isBuffer(v) ? v : Buffer.from(v, 'utf8'); }, get = (p) => z[p].toString('utf8');
+  // theme … テーマの書体をその書体にする（いただいたひな形はＭＳ Ｐゴシック）
+  if (o.theme) put('ppt/theme/theme1.xml', get('ppt/theme/theme1.xml').replace(/(<a:(?:latin|ea) typeface=")[^"]*(")/g, '$1' + o.theme + '$2')
+    .replace(/(<a:font script="Jpan" typeface=")[^"]*(")/g, '$1' + o.theme + '$2'));
   const k = Math.min(size.cx / BIG.cx, size.cy / BIG.cy), S = (v) => Math.round(v * k);
   put('ppt/presentation.xml', get('ppt/presentation.xml').replace(/<p:sldSz cx="\d+" cy="\d+"/, '<p:sldSz cx="' + size.cx + '" cy="' + size.cy + '"'));
   put('ppt/media/bg.png', png(64, 36, [240, 236, 228]));
@@ -214,6 +219,9 @@ function imageTemplate(opts) {
     + '<p:spPr><a:xfrm><a:off x="' + S(16200000) + '" y="' + S(300000) + '"/><a:ext cx="' + S(1500000) + '" cy="' + S(1500000) + '"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic>'
     + (o.marks === false ? '' : box(3, '正方形/長方形 2', 7162800, 3924300, 3962400, 5257800, 'D9D9D9', ['お写真'], 4800)
                                + box(4, '正方形/長方形 3', 7162800, 3162300, 3962400, 762000, 'D6DCE5', ['お', '名前'], 4000))
+    // explicit … 書体を指定した文字（游明朝）を1つ置く
+    + (o.explicit ? box(6, '書体を指定した文字', 1000000, 9000000, 5000000, 600000, 'FFFFFF', ['見本の書体指定'], 2400)
+      .replace('<a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:rPr>', '<a:solidFill><a:srgbClr val="000000"/></a:solidFill><a:latin typeface="游明朝"/><a:ea typeface="游明朝"/></a:rPr>') : '')
     + '</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>';
   put('ppt/slides/slide1.xml', slide);
   put('ppt/slides/_rels/slide1.xml.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
@@ -311,6 +319,38 @@ else {
   delete env.props.BNI_TPL_WELCOME_ID;
 }
 
+// ===== 8) 書体はメイリオ =====
+{
+  const fontsOf = (themeXml) => ['majorFont', 'minorFont'].map((t) => {
+    const seg = (themeXml.match(new RegExp('<a:' + t + '>([\\s\\S]*?)</a:' + t + '>')) || [])[1] || '';
+    return [(seg.match(/<a:latin typeface="([^"]*)"/) || [])[1], (seg.match(/<a:ea typeface="([^"]*)"/) || [])[1], (seg.match(/<a:font script="Jpan" typeface="([^"]*)"/) || [])[1]];
+  });
+  const allMeiryo = (themeXml) => fontsOf(themeXml).every((f) => f.every((v) => v === 'メイリオ'));
+  // 既定のひな形（同梱の埋め込み用と docs/templates の pptx が同じ・テーマの書体・行間）
+  const emb = (name) => Buffer.from(fs.readFileSync(path.join(ROOT, name), 'utf8').match(/PPTX_BASE64_BEGIN([\s\S]*?)PPTX_BASE64_END/)[1].replace(/\s/g, ''), 'base64');
+  const pm = emb('premtg_template.html'), wl = emb('welcome_template.html');
+  ck(pm.equals(fs.readFileSync(path.join(ROOT, 'docs/templates/BNI_テンプレート_事前MTG.pptx'))) && wl.equals(fs.readFileSync(path.join(ROOT, 'docs/templates/BNI_テンプレート_熱烈歓迎.pptx'))),
+     '8) 埋め込み用のひな形と docs/templates の pptx が違う');
+  const pz = readZip(pm), wz = readZip(wl);
+  ck(allMeiryo(pz['ppt/theme/theme1.xml'].toString('utf8')) && allMeiryo(wz['ppt/theme/theme1.xml'].toString('utf8')),
+     '8) 既定のひな形の書体がメイリオでない: ' + J([fontsOf(pz['ppt/theme/theme1.xml'].toString('utf8')), fontsOf(wz['ppt/theme/theme1.xml'].toString('utf8'))]));
+  const ln = Object.keys(pz).filter((p) => /^ppt\/slides\/slide\d+\.xml$/.test(p)).sort()
+    .map((p) => [...pz[p].toString('utf8').matchAll(/<a:spcPct val="(\d+)"/g)].map((m) => m[1]));
+  ck(J(ln) === J([['100000', '100000', '100000'], ['110000', '110000'], ['110000']]), '8) 既定のひな形の行間（メイリオに合わせて詰める）: ' + J(ln));
+  // 作ったパワポ：テーマがＭＳ Ｐゴシックのひな形でも、テーマの書体はどれもメイリオ。書体を指定した文字はそのまま
+  env.addFile('WELCOME_IMAGE_TPL_0001', new env.FakeBlob(imageTemplate({ theme: 'ＭＳ Ｐゴシック', explicit: true }), 'application/zip', 'w.pptx'), '熱烈歓迎_ＭＳＰゴシック.pptx');
+  env.props.BNI_TPL_WELCOME_ID = 'WELCOME_IMAGE_TPL_0001';
+  const res = F.generatePreMeetingSlides(DATE);
+  const S = slidesOf(), themes = Object.keys(S.z).filter((p) => /^ppt\/theme\/[^/]+\.xml$/.test(p)).sort();
+  ck(res.ok && themes.length === 2 && themes.every((p) => allMeiryo(S.xml(p))), '8) 作ったパワポのテーマの書体がメイリオでない: ' + J(themes.map((p) => [p, fontsOf(S.xml(p))])));
+  const w1 = S.order[1], x1 = S.xml(w1);
+  ck(/新入 花子/.test(S.text(w1)) && /<a:latin typeface="游明朝"\/><a:ea typeface="游明朝"\/>/.test(x1), '8) 書体を指定した文字が変わった');
+  ck(!/typeface="ＭＳ Ｐゴシック"/.test(Object.keys(S.z).filter((p) => /^ppt\/(slides|slideLayouts|slideMasters|theme)\//.test(p)).map((p) => S.xml(p)).join('')),
+     '8) ＭＳ Ｐゴシックが残る');
+  ck(integrity(S.z, 'font').ok, '8) pptxとして壊れている（書体）');
+  delete env.props.BNI_TPL_WELCOME_ID;
+}
+
 if (fails.length) {
   console.log('NG ' + fails.length + '件 / ' + checks + '件の検査');
   fails.forEach((f) => console.log('  - ' + f));
@@ -318,4 +358,4 @@ if (fails.length) {
 }
 console.log('熱烈歓迎のページ: 検査 ' + checks + ' 件 OK: 新入会の方ごとに1枚・まとめのページのあと・名簿に無い方・写真・'
   + '土台の違うひな形はマスターごと写す（番号が重ならない・壊れていない）・いない日は作らない・作る前の確かめ・'
-  + '画像から作ったひな形（「お名前」「お写真」・大きさを合わせる・縦横の比が違う）・ひな形を確かめる');
+  + '画像から作ったひな形（「お名前」「お写真」・大きさを合わせる・縦横の比が違う）・ひな形を確かめる・書体はメイリオ');

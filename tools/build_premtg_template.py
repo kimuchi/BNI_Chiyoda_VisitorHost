@@ -4,7 +4,8 @@
 見本は「BNI週次役職情報共有 パワポ自動生成ツール」で作った事前MTGのpptx
 （まとめ1枚＋役職のページ。役職のページは1人のページと2人のページがある）。
 そこから次の3枚だけを残し、文字を {{ }} の差し込み口に、写真を仮の画像に置き換える。
-デザイン・座標・フォント・配色は見本のまま。
+デザイン・座標・配色は見本のまま。書体はメイリオにする（テーマの見出し・本文の書体。
+メイリオは1行の高さが大きいので、本文の行間を 130% → 110%・115% → 100% に詰める）。
 
   1枚目 まとめ     … {{月日}}・{{直近のイベント}}・{{お願い事項}}・{{定例会関連}}
   2枚目 2人のページ … {{アイコン1}} {{役職1}}・{{氏名1}}・{{共有事項1}}（右側は2）
@@ -15,6 +16,10 @@
 実在の方の氏名・写真・書き込みは残さない。
 
     python3 tools/build_premtg_template.py <見本.pptx> <出力.pptx> [<埋め込み用.html>]
+
+作ってあるひな形に、書体（メイリオ）と行間だけを当て直すときは（見本が手元に無くてもよい）:
+
+    python3 tools/build_premtg_template.py --meiryo docs/templates/BNI_テンプレート_事前MTG.pptx premtg_template.html
 
 埋め込み用.html を渡すと、出力をbase64にしたものも書く（リポジトリ直下の premtg_template.html。
 ひな形を登録していなくても事前MTGのパワポを作れるように、Apps Script に同梱する）。
@@ -44,6 +49,53 @@ CT = {
 }
 REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/'
 PHOTO = 'ppt/media/premtg_photo.png'
+FONT = 'メイリオ'
+
+
+def meiryo_theme(theme):
+    """テーマの見出し・本文の書体を、ラテン文字も日本語もメイリオにする（サーバーの setThemeFonts_ と同じ）"""
+    def one(m):
+        body = re.sub(r'<a:latin\b[^>]*/>', '<a:latin typeface="%s"/>' % FONT, m.group(2), count=1)
+        body = re.sub(r'<a:ea\b[^>]*/>', '<a:ea typeface="%s"/>' % FONT, body, count=1)
+        if re.search(r'<a:font\s+script="Jpan"[^>]*/>', body):
+            body = re.sub(r'<a:font\s+script="Jpan"[^>]*/>', '<a:font script="Jpan" typeface="%s"/>' % FONT, body, count=1)
+        else:
+            body = re.sub(r'(<a:cs\b[^>]*/>)', r'\1<a:font script="Jpan" typeface="%s"/>' % FONT, body, count=1)
+        return '<a:%s>%s</a:%s>' % (m.group(1), body, m.group(1))
+    return re.sub(r'<a:(majorFont|minorFont)>(.*?)</a:\1>', one, theme, flags=re.S)
+
+
+def meiryo_spacing(xml):
+    """メイリオは1行の高さが大きいので、本文の行間を詰める（130% → 110%・115% → 100%。2回当てても同じ）"""
+    table = {'130000': '110000', '115000': '100000'}
+    return re.sub(r'(<a:lnSpc>\s*<a:spcPct val=")(\d+)(")', lambda m: m.group(1) + table.get(m.group(2), m.group(2)) + m.group(3), xml)
+
+
+def write_html(data, html):
+    b64 = base64.b64encode(data).decode('ascii')
+    lines = [b64[i:i + 100] for i in range(0, len(b64), 100)]
+    with open(html, 'w', encoding='utf-8') as f:
+        f.write('PPTX_BASE64_BEGIN\n' + '\n'.join(lines) + '\nPPTX_BASE64_END\n')
+    print('埋め込み用: %s（%d 文字）' % (html, len(b64)))
+
+
+def apply_meiryo(path, html):
+    """作ってあるひな形に、書体と行間だけを当て直す（部品の並び・日付はそのまま）"""
+    z = zipfile.ZipFile(path)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as out:
+        for info in z.infolist():
+            data = z.read(info.filename)
+            if re.match(r'ppt/theme/theme\d+\.xml$', info.filename):
+                data = meiryo_theme(data.decode('utf-8')).encode('utf-8')
+            elif re.match(r'ppt/slides/slide\d+\.xml$', info.filename):
+                data = meiryo_spacing(data.decode('utf-8')).encode('utf-8')
+            out.writestr(zipfile.ZipInfo(info.filename, info.date_time), data, compress_type=zipfile.ZIP_DEFLATED)
+    with open(path, 'wb') as f:
+        f.write(buf.getvalue())
+    print('書体と行間を当て直しました: %s（%d バイト）' % (path, len(buf.getvalue())))
+    if html:
+        write_html(buf.getvalue(), html)
 
 
 def text_of(x):
@@ -183,6 +235,9 @@ def slide_rels(xml):
 
 
 def main():
+    if len(sys.argv) >= 3 and sys.argv[1] == '--meiryo':
+        apply_meiryo(sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else '')
+        return
     if len(sys.argv) < 3:
         raise SystemExit(__doc__)
     src, dst = sys.argv[1], sys.argv[2]
@@ -194,7 +249,7 @@ def main():
     summary = next(n for n in slides if '朝イチMTG' in text_of(xmls[n]))
     two = next(n for n in slides if xmls[n].count('<p:pic>') == 2)
     one = next(n for n in slides if xmls[n].count('<p:pic>') == 1)
-    out_slides = [build_summary(xmls[summary]), build_role(xmls[two], 2), build_role(xmls[one], 1)]
+    out_slides = [meiryo_spacing(x) for x in (build_summary(xmls[summary]), build_role(xmls[two], 2), build_role(xmls[one], 1))]
     for i, x in enumerate(out_slides, start=1):
         x = re.sub(r'<p:cSld name="[^"]*">', '<p:cSld name="%s">' % ['まとめ', '2人のページ', '1人のページ'][i - 1], x)
         out_slides[i - 1] = x
@@ -256,7 +311,7 @@ def main():
     for p in ['ppt/slideMasters/slideMaster1.xml', 'ppt/slideMasters/_rels/slideMaster1.xml.rels',
               'ppt/slideLayouts/slideLayout1.xml', 'ppt/slideLayouts/_rels/slideLayout1.xml.rels',
               'ppt/theme/theme1.xml', 'ppt/presProps.xml', 'ppt/viewProps.xml', 'ppt/tableStyles.xml']:
-        files.append((p, z.read(p)))
+        files.append((p, meiryo_theme(z.read(p).decode('utf-8')) if p == 'ppt/theme/theme1.xml' else z.read(p)))
     for i, x in enumerate(out_slides, start=1):
         files.append(('ppt/slides/slide%d.xml' % i, x))
         files.append(('ppt/slides/_rels/slide%d.xml.rels' % i, slide_rels(x)))
@@ -273,11 +328,7 @@ def main():
     print('ひな形: %s（%d バイト・3枚）' % (dst, len(buf.getvalue())))
 
     if len(sys.argv) > 3:
-        b64 = base64.b64encode(buf.getvalue()).decode('ascii')
-        lines = [b64[i:i + 100] for i in range(0, len(b64), 100)]
-        with open(sys.argv[3], 'w', encoding='utf-8') as f:
-            f.write('PPTX_BASE64_BEGIN\n' + '\n'.join(lines) + '\nPPTX_BASE64_END\n')
-        print('埋め込み用: %s（%d 文字）' % (sys.argv[3], len(b64)))
+        write_html(buf.getvalue(), sys.argv[3])
 
 
 if __name__ == '__main__':

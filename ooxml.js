@@ -481,6 +481,26 @@ function keepOnlyFirstSlide_(map) {
   return drop.length;
 }
 
+// --- テーマの書体 -----------------------------------------------------------
+// パワポの中のテーマ（ppt/theme/*.xml）の見出し・本文の書体を、ラテン文字も日本語も face にする。
+// 文字に書体を指定していないところ（テーマの書体のまま）が、この書体になる。書体を指定してある文字はそのまま
+function setThemeFonts_(parts, face) {
+  var f = escapeXml_(face);
+  for (var p in parts) {
+    if (!/^ppt\/theme\/[^\/]+\.xml$/.test(p)) continue;
+    var x = xmlOf_(parts, p) || '';
+    var nx = x.replace(/<a:(majorFont|minorFont)>([\s\S]*?)<\/a:\1>/g, function (all, tag, body) {
+      body = body.replace(/<a:latin\b[^>]*\/>/, '<a:latin typeface="' + f + '"/>')
+                 .replace(/<a:ea\b[^>]*\/>/, '<a:ea typeface="' + f + '"/>');
+      body = /<a:font\s+script="Jpan"[^>]*\/>/.test(body)
+        ? body.replace(/<a:font\s+script="Jpan"[^>]*\/>/, '<a:font script="Jpan" typeface="' + f + '"/>')
+        : body.replace(/(<a:cs\b[^>]*\/>)/, '$1<a:font script="Jpan" typeface="' + f + '"/>');
+      return '<a:' + tag + '>' + body + '</a:' + tag + '>';
+    });
+    if (nx !== x) putXml_(parts, p, nx);
+  }
+}
+
 // --- {{トークン}} の置換 -------------------------------------------------
 // PowerPointは1つの文字列を複数の <a:t> に分割して保持することがあるため
 // （例: 「{{開催」「回}}」）、段落 <a:p> 単位で全 <a:t> を連結してから探す。
