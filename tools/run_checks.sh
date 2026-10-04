@@ -37,7 +37,7 @@ run "割り振り表のAI（待機リストに居ないビジターホスト・�
 run "割り振り表の画面（ブラウザ：読み込んだ回に書き込む・Spreadingの文字を動かさない）" node tools/check_allocation_dialog.js
 run "期の替わり目の担当者と名簿の役職（未登録の期で役職を消さない・取り込みを前の期に戻さない・設定の保存で期をずらさない）" node tools/check_role_terms.js
 run "スピーカーローテーション（保存していないとき：見た日で発表者が変わらない）" node tools/check_rotation_unsaved.js
-run "メインプレゼンターの画像（ブラウザ：写真・お名前・ご紹介して欲しいカテゴリー・回を替える・保存）" node tools/check_mp_image.js
+run "メインプレゼンターの画像（ブラウザ：写真・お名前・ご紹介して欲しいカテゴリー・回を替える・保存・書体は Meiryo UI）" node tools/check_mp_image.js
 run "スピーカーローテーションの画面で定例会を変える（ブラウザ：画面はそのまま・ご案内する回と画像がその日の回に・戻ると選んだ日の書記兼会計の入力・続けて変えたとき）" node tools/check_rotation_meeting.js
 run "事前MTGのパワポの役職のページ（「書記兼会計より」などの行からも作る・入力済みの数え方・XMLに書けない文字）" node tools/check_premtg_roles.js
 run "本日の招待者を参加者シートから（ビジター・ゲストの招待者・代理とキャンセルの方は入れない・トークスクリプト）" node tools/check_inviters.js

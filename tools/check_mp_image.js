@@ -1,6 +1,6 @@
 // 書記兼会計のスピーカーローテーションの画面（role_input.html）で作る「メインプレゼンターの画像」
 // （今週のメインプレゼンテーション：写真・お名前・ご紹介して欲しいカテゴリー）を、本物のブラウザ（Chromium）で確かめる。
-// サーバーの返事は作り物（名前はすべて架空）。Googleフォントは読まない（パソコンの書体で描く）。
+// サーバーの返事は作り物（名前はすべて架空）。書体は Meiryo UI（検査の環境に無いときは似た書体で描く）。
 //
 //   node tools/check_mp_image.js
 //
@@ -11,6 +11,7 @@
 //   ・欄を直すと描き直す。長いカテゴリーも描ける。ご案内する回を替えると、その回のお2人になる
 //   ・保存（ダウンロード）・Driveに保存のファイル名は「開催日_メインプレゼンター.png」
 //   ・スピーカーローテーションの表の画像も、これまでどおり作る
+//   ・書体は2枚とも Meiryo UI（Googleフォントは読みに行かない）
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
@@ -89,14 +90,20 @@ function evalTemplate(file, vars) {
   return new Function('__v', '__e', code)(Object.assign({ include }, vars), esc);
 }
 
+// 画像に使った書体（canvas の font に入れた文字）を window.__fonts に残す
+const FONT_SPY = '<script>window.__fonts=[];(function(){var d=Object.getOwnPropertyDescriptor(CanvasRenderingContext2D.prototype,"font");'
+  + 'Object.defineProperty(CanvasRenderingContext2D.prototype,"font",{configurable:true,get:function(){return d.get.call(this);},'
+  + 'set:function(v){window.__fonts.push(String(v));d.set.call(this,v);}});})();</script>';
+
 (async () => {
   const html = evalTemplate('role_input.html', { params: { role: 'secretary', view: 'rotation' } })
-    .replace(/<head>/i, '<head><meta charset="utf-8">' + STUB);
+    .replace(/<head>/i, '<head><meta charset="utf-8">' + STUB + FONT_SPY);
   // 日本語のファイル名で保存できるよう、UTF-8 の言語設定で開く（言語設定の無い環境では「download」になる）
   const browser = await pw.chromium.launch({ env: Object.assign({}, process.env, { LANG: 'C.UTF-8', LC_ALL: 'C.UTF-8' }) });
   const page = await browser.newPage({ viewport: { width: 1000, height: 900 }, acceptDownloads: true });
   page.on('pageerror', (e) => fails.push('画面のエラー: ' + e.message));
-  await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+  let fontRequests = 0;
+  await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => { fontRequests++; r.abort(); });
   // 本物と同じく https の画面として開く（file:// だと、保存のファイル名の指定が効かない）
   const URL = 'https://role-input.test/';
   await page.route(URL, (rt) => rt.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: html }));
@@ -136,6 +143,11 @@ function evalTemplate(file, vars) {
   const photoCalls = (await calls()).filter((c) => c[0] === 'getMemberPhotosBase64');
   ck(photoCalls.length === 1 && J(photoCalls[0][1][0]) === J(['見本 一郎', '試験 二郎']), '1) メンバー写真を取りに行かない: ' + J(photoCalls));
   ck(/^data:image\/png/.test(await page.evaluate(() => document.getElementById('rotImg').src || '')), '1) スピーカーローテーションの表の画像ができない');
+  // 書体：2枚とも Meiryo UI（太さ 400・700・900 も）。Googleフォントは読みに行かない
+  const fonts = [...new Set(await page.evaluate(() => window.__fonts))];
+  ck(fonts.length && fonts.every((f) => /^(?:bold |\d{3} )?[\d.]+px "Meiryo UI",/.test(f)) && fonts.some((f) => /^900 /.test(f)),
+     '1) 画像の書体が Meiryo UI でない: ' + J(fonts.filter((f) => !/px "Meiryo UI",/.test(f)).slice(0, 3)));
+  ck(fontRequests === 0, '1) Googleフォントを読みに行った: ' + fontRequests + '回');
 
   // ---- 2) 描いた画像 ----
   const DX = 950;
