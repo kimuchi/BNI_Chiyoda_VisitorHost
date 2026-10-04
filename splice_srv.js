@@ -300,6 +300,58 @@ function importSlideCopies_(target, source, slidePath, count) {
   return { slides: made, importedMaster: imported, sizeDiffers: !!size(source) && size(source) !== size(target) };
 }
 
+// ひな形（source）のページの大きさを、入れる先のパワポ（target）の大きさに合わせる。
+// 縦横の比が同じなら同じ割合で縮める（広げる）。比が違えば、ページに収まる割合にして真ん中に置く。
+// source のページ・レイアウト・マスターの図形の位置と大きさ・文字の大きさ・線の太さ・文字の余白などを、同じ割合で変える
+// （source の中身を書き換える。importSlideCopies_ の前に呼ぶ）。
+// 戻り値 { scaled: 合わせたか, factor: 割合, sameRatio: 縦横の比が同じか }
+function fitSourceToTargetSize_(target, source) {
+  var size = function (parts) {
+    var m = (xmlOf_(parts, 'ppt/presentation.xml') || '').match(/<p:sldSz\b[^>]*\bcx="(\d+)"[^>]*\bcy="(\d+)"/);
+    return m ? { cx: parseInt(m[1], 10), cy: parseInt(m[2], 10) } : null;
+  };
+  var t = size(target), s = size(source);
+  if (!t || !s || (t.cx === s.cx && t.cy === s.cy)) return { scaled: false, factor: 1, sameRatio: true };
+  var f = Math.min(t.cx / s.cx, t.cy / s.cy);
+  var dx = Math.round((t.cx - s.cx * f) / 2), dy = Math.round((t.cy - s.cy * f) / 2);
+  for (var p in source) {
+    if (/^ppt\/(slides|slideLayouts|slideMasters)\/[^\/]+\.xml$/.test(p)) putXml_(source, p, scaleDrawingXml_(xmlOf_(source, p), f, dx, dy));
+  }
+  var prs = xmlOf_(source, 'ppt/presentation.xml')
+    .replace(/(<p:sldSz\b[^>]*\bcx=")\d+("[^>]*\bcy=")\d+(")/, '$1' + t.cx + '$2' + t.cy + '$3');
+  putXml_(source, 'ppt/presentation.xml', prs);
+  return { scaled: true, factor: f, sameRatio: Math.abs(t.cx / t.cy - s.cx / s.cy) < 0.01 };
+}
+
+// 図形の位置・大きさを f 倍し（位置はさらに dx・dy ずらす）、文字の大きさ・線の太さなども f 倍する。
+// グループの中の図形は、グループの子の座標（chOff・chExt）も同じ式で変えるので、グループに対する位置は変わらない
+function scaleDrawingXml_(xml, f, dx, dy) {
+  var n = function (v) { return Math.round(parseInt(v, 10) * f); };
+  var attrs = function (tag, names, min) {
+    return tag.replace(new RegExp('\\b(' + names + ')="(-?\\d+)"', 'g'), function (all, k, v) {
+      return k + '="' + (min ? Math.max(min, n(v)) : n(v)) + '"';
+    });
+  };
+  return String(xml)
+    .replace(/<a:(off|chOff)\b[^>]*\/>/g, function (tag) {
+      return tag.replace(/\bx="(-?\d+)"/, function (a, v) { return 'x="' + Math.round(parseInt(v, 10) * f + dx) + '"'; })
+                .replace(/\by="(-?\d+)"/, function (a, v) { return 'y="' + Math.round(parseInt(v, 10) * f + dy) + '"'; });
+    })
+    .replace(/<a:(ext|chExt)\b[^>]*\bc[xy]="[^>]*\/>/g, function (tag) { return attrs(tag, 'cx|cy'); })
+    // 文字の大きさ（1/100pt。100 より小さくはしない）・文字の間隔・行や段落の間隔（1/100pt）
+    .replace(/<a:(rPr|defRPr|endParaRPr)\b[^>]*>/g, function (tag) { return attrs(attrs(tag, 'sz', 100), 'kern|spc'); })
+    .replace(/<a:spcPts\b[^>]*>/g, function (tag) { return attrs(tag, 'val'); })
+    // 線の太さ・文字の余白・字下げ・タブ位置・表の列の幅と行の高さとセルの余白・影やぼかし（EMU）
+    .replace(/<a:(ln|lnL|lnR|lnT|lnB|lnTlToBr|lnBlToTr)\b[^>]*>/g, function (tag) { return attrs(tag, 'w'); })
+    .replace(/<a:bodyPr\b[^>]*>/g, function (tag) { return attrs(tag, 'lIns|tIns|rIns|bIns'); })
+    .replace(/<a:(pPr|lvl\dpPr)\b[^>]*>/g, function (tag) { return attrs(tag, 'marL|marR|indent'); })
+    .replace(/<a:tab\b[^>]*>/g, function (tag) { return attrs(tag, 'pos'); })
+    .replace(/<a:gridCol\b[^>]*>/g, function (tag) { return attrs(tag, 'w'); })
+    .replace(/<a:tr\b[^>]*>/g, function (tag) { return attrs(tag, 'h'); })
+    .replace(/<a:tcPr\b[^>]*>/g, function (tag) { return attrs(tag, 'marL|marR|marT|marB'); })
+    .replace(/<a:(outerShdw|innerShdw|prstShdw|glow|softEdge|reflection)\b[^>]*>/g, function (tag) { return attrs(tag, 'dist|blurRad|rad'); });
+}
+
 // 部品の関係ファイルのパス（ppt/slides/slide1.xml → ppt/slides/_rels/slide1.xml.rels）
 function partRelsPath_(p) { return posixDir_(p) + '/_rels/' + p.replace(/^.*\//, '') + '.rels'; }
 // dir から見た abs の相対パス

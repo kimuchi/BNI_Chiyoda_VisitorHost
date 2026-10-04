@@ -740,10 +740,15 @@ function getPreMeetingPreview(dateStr) {
     var welcome = data.newMembers.map(function (m) {
       return { name: m.name, company: m.company, category: m.category, matched: m.matched, photo: !!findPhotoIdForName_(m.name) };
     });
-    var wtpl = data.newMembers.length ? welcomeTemplateInfo_() : null;
+    var wtpl = data.newMembers.length ? welcomeTemplateInfo_() : null, wchk = null;
+    if (wtpl && !wtpl.error) {                                      // お名前・お写真を入れる場所があるか（welcome_srv.js）
+      try { wchk = welcomeTemplateCheck_(welcomeTemplateParts_(wtpl)); }
+      catch (e) { wchk = { notes: ['熱烈歓迎のひな形を開けませんでした: ' + (e && e.message ? e.message : e)] }; }
+    }
     return { ok: true, date: data.date, display: data.display, meetingNo: data.meetingNo, summary: data.summary,
              pages: pages, blank: data.blank, welcome: welcome,
-             welcomeTemplate: wtpl ? { registered: wtpl.registered, name: wtpl.name, error: wtpl.error || '' } : null,
+             welcomeTemplate: wtpl ? { registered: wtpl.registered, name: wtpl.name, error: wtpl.error || '',
+                                       notes: wchk ? wchk.notes : [] } : null,
              skipped: data.roles.filter(function (r) { return !r.text; }).map(function (r) { return r.label; }),
              template: { registered: tpl.registered, name: tpl.name, error: warn.join('\n') } };
   } catch (e) {
