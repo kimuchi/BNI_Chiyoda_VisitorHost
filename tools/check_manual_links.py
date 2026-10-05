@@ -57,6 +57,18 @@ def main():
         for no, l in anchors[:5]:
             print('  MANUAL.md:%d  %s' % (no, l[:80]))
         sys.exit(1)
+    # 記号の残り：表・太字・コードの欄の書き方が、manual.html でそのまま出ていないか
+    # （引用の中の表、行をまたいだ太字、箇条書きの中で字下げしたコードの欄は、以前は記号のまま出ていた）
+    text = re.sub(r'<pre>[\s\S]*?</pre>|<script[\s\S]*?</script>|<style[\s\S]*?</style>|<img [^>]*>', '', page)
+    text = re.sub(r'<[^>]+>', '\n', text)
+    marks = []
+    for kind, pat in (('表の区切り', r'\|\s*-{3,}'), ('太字の **', r'\*\*'), ('コードの欄の ```', r'```')):
+        marks += [(kind, m.strip()[:60]) for m in re.findall(r'[^\n]*' + pat + r'[^\n]*', text)]
+    if marks:
+        print('NG: manual.html に、MANUAL.md の書き方の記号がそのまま出ています（tools/build_manual.py が変換できない書き方）')
+        for kind, m in marks[:8]:
+            print('  %s: %s' % (kind, m))
+        sys.exit(1)
     # 画像：MANUAL.md の画像がそろっていて、manual.html に同じ数だけ（幅・高さつきで）埋め込まれているか
     shots = re.findall(r'^!\[[^\]]*\]\(([^)\s]+)\)\s*$', man, re.M)
     missing = [s for s in shots if not os.path.isfile(os.path.join(ROOT, s))]

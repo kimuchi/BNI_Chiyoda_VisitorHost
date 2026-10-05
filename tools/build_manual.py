@@ -60,10 +60,15 @@ def inline(text):
     リンクは [文字](https://…) だけ（別のタブで開く）。ページ内のリンク [文字](#…) は使えない
     （見出しの id は sec1, sec2 … なので。tools/check_manual_links.py で止める）。"""
     out = html.escape(text)
-    out = re.sub(r"`([^`]+)`", r"<code>\1</code>", out)
-    out = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", out)
+    codes = []                    # コードの中の「*」で太字が切れないように、コードは最後に戻す
+
+    def keep(m):
+        codes.append(m.group(1))
+        return "\x00%d\x00" % (len(codes) - 1)
+    out = re.sub(r"`([^`]+)`", keep, out)
+    out = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", out)
     out = re.sub(r"\[([^\]]+)\]\((https?://[^)\s]+)\)", r'<a href="\2" target="_blank" rel="noopener">\1</a>', out)
-    return out
+    return re.sub(r"\x00(\d+)\x00", lambda m: "<code>%s</code>" % codes[int(m.group(1))], out)
 
 
 def slug(n):
@@ -75,9 +80,11 @@ def convert(md):
     body, toc = [], []
     i, sec = 0, 0
     in_code = False
+    code_indent = 0    # 箇条書きの中で字下げしたコードは、その字下げを外す
     list_type = None   # 'ul' / 'ol' / None
     in_table = False
     para = []
+    item = []          # いまの箇条書きの項目の文字（続きの行もつないでから変換する。行をまたいだ太字が「**」のまま残らないように）
 
     def flush_para():
         if para:
@@ -102,15 +109,17 @@ def convert(md):
     while i < len(lines):
         line = lines[i].rstrip()
 
-        # コードブロック
-        if line.startswith("```"):
+        # コードブロック（箇条書きの中で字下げしたものも）
+        if line.lstrip().startswith("```"):
             if in_code:
                 body.append("</pre>"); in_code = False
             else:
                 close_all(); body.append("<pre>"); in_code = True
+                code_indent = len(line) - len(line.lstrip())
             i += 1; continue
         if in_code:
-            body.append(html.escape(lines[i]))
+            raw = lines[i]
+            body.append(html.escape(raw[code_indent:] if not raw[:code_indent].strip() else raw))
             i += 1; continue
 
         # 空行
@@ -157,12 +166,12 @@ def convert(md):
             i += 1; continue
         close_table()
 
-        # 引用
-        if line.startswith(">"):
+        # 引用（箇条書きの中で字下げしたものも）
+        if line.lstrip().startswith(">"):
             close_all()
             quote = []
-            while i < len(lines) and lines[i].startswith(">"):
-                quote.append(lines[i].lstrip(">").strip())
+            while i < len(lines) and lines[i].lstrip().startswith(">"):
+                quote.append(lines[i].lstrip().lstrip(">").strip())
                 i += 1
             body.append("<blockquote>%s</blockquote>" % inline(" ".join(q for q in quote if q)))
             continue
@@ -173,19 +182,23 @@ def convert(md):
             flush_para()
             if list_type != "ul":
                 close_list(); body.append("<ul>"); list_type = "ul"
+            item[:] = [m.group(1)]
             body.append("<li>%s</li>" % inline(m.group(1)))
             i += 1; continue
-        m = re.match(r"^\s*\d+\.\s+(.*)$", line)
+        m = re.match(r"^\s*(\d+)\.\s+(.*)$", line)
         if m:
             flush_para()
-            if list_type != "ol":
-                close_list(); body.append("<ol>"); list_type = "ol"
+            if list_type != "ol":            # 途中の番号から始まる手順（前の手順と空行などではさまれたとき）は、その番号から
+                close_list(); body.append("<ol>" if m.group(1) == "1" else '<ol start="%s">' % m.group(1)); list_type = "ol"
+            m = re.match(r"^\s*\d+\.\s+(.*)$", line)
+            item[:] = [m.group(1)]
             body.append("<li>%s</li>" % inline(m.group(1)))
             i += 1; continue
         # 箇条書きの続きの行（字下げされた行）は、直前の項目につなげる。
         # 別の段落にすると番号付きリストがそこで切れ、次の項目がまた「1.」から始まってしまう。
         if list_type and re.match(r"^\s{2,}\S", line) and body and body[-1].endswith("</li>"):
-            body[-1] = body[-1][:-len("</li>")] + " " + inline(line.strip()) + "</li>"
+            item.append(line.strip())
+            body[-1] = "<li>%s</li>" % inline(" ".join(item))
             i += 1; continue
         close_list()
 
