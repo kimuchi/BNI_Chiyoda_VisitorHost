@@ -166,8 +166,10 @@ BNI_Chiyoda_VisitorHost/
     │                         #     ブラウザの画面の知らせ）
     ├── check_gas_names.py    #   名前の衝突・参照先HTMLの検査
     ├── check_html.py         #   divの対応・スクリプトの構文・共通部品の読み込み漏れ
-    ├── check_manual_links.py #   マニュアルの導線 ↔ 実際のメニュー
+    ├── check_manual_links.py #   マニュアルの導線 ↔ 実際のメニュー・manual.html に崩れた書き方（表の区切り・**・```）が残っていない
     ├── build_manual.py       #   MANUAL.md → manual.html（docs/images の画像を埋め込む）
+    ├── build_manual_pdf.js   #   manual.html → 1つのPDF（表紙・目次から各章へ飛べる・しおり・ページ番号。Chromium を使う。PDFはリポジトリに入れない）
+    ├── instance_webfont.py   #   Googleフォントを写したもの（可変フォント）を太さごとの書体に切り出す（↑のPDFで文字を普通の書体として入れるため）
     ├── make_manual_shots.js  #   マニュアルのスクリーンショットを架空のデータで撮り直す（Chromium・Pillow を使う）
     ├── clean_pptx_meta.py    #   pptxのファイルの情報（作成者・コメントの作成者・変更の記録・縮小画像）を消す／--check で確かめる
     ├── check_memberbook.js   #   メンバーブック（Chromium で組版を測る：長い文字を枠に収める・会社での役職とBNIの役職／
