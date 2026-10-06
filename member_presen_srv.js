@@ -444,11 +444,18 @@ function slideOneLine_(s) {
 // === カテゴリーの枠を、行数に合わせて見えるところに収める（メンバーのページ・リファーラル発表）===
 // 1行のカテゴリーは雛形どおり（32pt。下のカウントダウンの数字の箱に枠が少しかかっても、数字には重ならず見えていた）。
 // 2行のときだけ、2行目が見えるようにする：
-//   ・カテゴリーを前面に出す（カウントダウンの白い箱が上に重なると、2行目が隠れて見えなかった）
-//   ・2行目のぶん、カウントダウンを下げる（その下の「次の発表者」の帯・ページの下端まで）
+//   ・カテゴリーを前面に出す（カウントダウンの白い箱が上に重なると、2行目が隠れて見えなかった）。
+//     前面に出すので、白い箱の上の余白にはかかってよい。かかってはいけないのは数字の字そのもの（pcDigitTop_）
+//   ・数字にかかるなら、そのぶんカウントダウンを下げる（その下の「次の発表者」の帯・ページの下端まで）
+//   ・まだかかるなら、数字の箱の上側を縮めて、数字をもう少し下げる（箱の下端はそのまま。箱は数字の字が隠れる高さより低くしない）
 //   ・それでも足りないとき・色の帯の下端や下の文字に届くときだけ、少し小さくする（24ptまで。それより小さくなるなら1行に）
-// 以前（2026-10-06c）は、カウントダウンの箱を「下の図形」と見て、1行のカテゴリーまで小さくしていた
+// 以前（2026-10-06c）は、カウントダウンの箱を「下の図形」と見て、1行のカテゴリーまで小さくしていた。
+// 2026-10-06d〜e は、白い箱の上端より下へ出さないようにしていたため、会社名も2行の方（カテゴリーが下がる）は 24pt 前後まで小さくなっていた
 var PC_LINE_EMU_ = 12700 * 1.213, PC_PAD_EMU_ = 91440, PC_GAP_EMU_ = 25400, PC_MIN_TWO_PT_ = 24;
+// 数字の字の上端・下端は、文字の大きさ（1em）に対する割合で多めに見積もる（真ん中寄せの1行の箱の、行の真ん中から）。
+// 書体によって違う（Arial 上 0.37・下 0.35／メイリオ系 上 0.31・下 0.42／Impact 上 0.39）ので、どれよりも外側に。
+// 数字の箱を縮めるときは、上下 0.45em ずつ（0.9em）より低くしない（上の箱の白で、下の箱の数字を隠しきるため）
+var PC_DIGIT_UP_ = 0.42, PC_DIGIT_BOX_ = 0.9;
 function fitPresenterCategory_(xml, catId, W, H) {
   var g = readShapeGeomEmu_(xml, catId), r = findShapeRange_(xml, catId);
   if (!g || !r) return xml;
@@ -467,22 +474,36 @@ function fitPresenterCategory_(xml, catId, W, H) {
   if (n === 1) return need(1, pt) > g.cy ? setShapeGeomEmu_(xml, catId, { cy: Math.round(need(1, pt)) }) : xml;
 
   xml = pcToFront_(xml, catId);
-  // カウントダウンの数字の箱（カテゴリーと横に重なるもの）。1行のときの下端までは、かかっていてよい
+  // カウントダウンの数字の箱（カテゴリーと横に重なるもの）。カテゴリーの下端は、数字の字の上端（の少し上）まで。
+  // 1行のときの下端までは、いつでもかかっていてよい（雛形どおり）
   var cds = pcCountdowns_(xml), cdIds = {}, bottomN = g.y + need(n, pt), allowed = Infinity;
-  cds.forEach(function (c) { cdIds[c.id] = true; });
+  cds.forEach(function (c) { cdIds[c.id] = true; c.text = pcDigitText_(xml, c.id); });
   var cdOver = cds.filter(function (c) { return pcOverlapX_(c, g) > 0.2; });
   if (cdOver.length) {
-    var cdTop = Math.min.apply(null, cdOver.map(function (c) { return c.y; }));
-    allowed = Math.max(cdTop, g.y + need(1, pt));
+    // 雛形の1行のカテゴリーは数字にかかっていない（見えていた）ので、1行のときの下端までは、いつでもよい
+    var top = Math.min.apply(null, cdOver.map(function (c) { return pcDigitTop_(c); }));
+    allowed = Math.max(top - PC_GAP_EMU_, g.y + need(1, pt));
     var dy = bottomN - allowed;
     if (dy > 0) {
+      // ① カウントダウン（全部の箱）を下げる。数字も同じだけ下がる
       var cdBottom = Math.max.apply(null, cds.map(function (c) { return c.y + c.cy; }));
       var room = pcRoomBelow_(xml, cds, cdIds, catId, W, H) - cdBottom;
       var move = Math.max(0, Math.min(dy, room));
-      if (move > 0) {
-        cds.forEach(function (c) { xml = setShapeGeomEmu_(xml, c.id, { y: Math.round(c.y + move) }); });
-        allowed += move;
+      if (move > 0) cds.forEach(function (c) { c.y += move; xml = setShapeGeomEmu_(xml, c.id, { y: Math.round(c.y) }); });
+      // ② まだかかるなら、箱の上側を縮める（下端はそのまま）。真ん中寄せの数字は縮めた半分、上寄せの数字は縮めたぶん下がる
+      //    （下寄せの数字は下がらないので縮めない）。重ねた箱は同じ形のまま。字が小さくならないよう、自動で縮める設定は外す
+      var t0 = cdOver[0].text, per = t0.anchor === 'ctr' ? 2 : (t0.anchor === 'b' ? 0 : 1), cut = 0;
+      if (dy > move && per) {
+        cut = Math.min.apply(null, cds.map(function (c) {
+          return c.cy - (c.text.anchor === 'ctr' ? PC_DIGIT_BOX_ * c.text.em : c.text.tIns + 1.15 * c.text.em);
+        }));
+        cut = Math.max(0, Math.min((dy - move) * per, cut));
+        if (cut > 0) cds.forEach(function (c) {
+          c.y += cut; c.cy -= cut;
+          xml = noAutofitInShape_(setShapeGeomEmu_(xml, c.id, { y: Math.round(c.y), cy: Math.round(c.cy) }), c.id);
+        });
       }
+      allowed += move + (per ? cut / per : 0);
     }
   }
   var other = presenterLimitBelow_(xml, catId, g, W, H, cdIds), limit = Math.min(allowed, other);
@@ -500,6 +521,22 @@ function fitPresenterCategory_(xml, catId, W, H) {
   }
   xml = setFontSizeInShape_(xml, catId, to);
   return setShapeGeomEmu_(xml, catId, { cy: Math.round(need(useOne ? 1 : n, to)) });
+}
+// カウントダウンの数字の箱の文字の置き方（字の大きさ em・上下の余白・寄せ方。EMU）
+function pcDigitText_(xml, id) {
+  var r = findShapeRange_(xml, id), seg = r ? xml.substring(r.start, r.end) : '';
+  var bp = (seg.match(/<a:bodyPr\b[^>]*>/) || [''])[0];
+  var ins = function (k) { var m = bp.match(new RegExp('\\s' + k + '="(\\d+)"')); return m ? +m[1] : 45720; };
+  var sz = 0, m, re = /<a:(?:rPr|endParaRPr|defRPr)\b[^>]*\ssz="(\d+)"/g;
+  while ((m = re.exec(seg)) !== null) sz = Math.max(sz, +m[1]);
+  return { anchor: (bp.match(/\sanchor="(\w+)"/) || [])[1] || 't', tIns: ins('tIns'), bIns: ins('bIns'), em: (sz ? sz / 100 : 18) * 12700 };
+}
+// 数字の字の上端（EMU。多めに＝高めに見積もる）。c … { y, cy, text: pcDigitText_ }
+function pcDigitTop_(c) {
+  var t = c.text;
+  if (t.anchor === 'ctr') return c.y + t.tIns + (c.cy - t.tIns - t.bIns) / 2 - PC_DIGIT_UP_ * t.em;
+  if (t.anchor === 'b') return c.y + c.cy - t.bIns - 1.3 * t.em;
+  return c.y + t.tIns;
 }
 // カテゴリーの枠の下で、文字が届いてはいけないところ（EMU）：横に重なる下の図形の上端・カテゴリーが載っている
 // 色の帯の下端・ページの下端のうち、いちばん上（少しすき間をあける）。skip の図形（カウントダウン）は見ない

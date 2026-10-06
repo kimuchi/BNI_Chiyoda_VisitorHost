@@ -13,25 +13,53 @@
 // 画面は slides_meeting_second.html（3. 推薦のことば）。ページを作るのは meeting_slides_srv.js の expandRecommendations_。
 
 var RECO_SLIDE_FOLDER_ = '推薦のことばのスライド';
-var RECO_SLIDE_KEY_ = 'BNI_RECO_SLIDES';            // { 'yyyy/MM/dd': [{ g, r, id, name, w, h, at }] }
+// 覚え方：開催日ごとに1つ（'BNI_RECO_SLIDES_20261007' → [{ g, r, id, name, w, h, at }]）。
+// 以前は全部の開催日を1つ（'BNI_RECO_SLIDES' → { 'yyyy/MM/dd': [...] }）に入れていたが、スクリプトのプロパティは
+// 1つ 9KB までなので、数か月ぶんたまると置けなくなる（置いたファイルはドライブにあるのに組に付かない）。
+// 以前の1つのものは、次に置く・外すときに開催日ごとへ移して消す（それまでは読むときにも見る）
+var RECO_SLIDE_KEY_ = 'BNI_RECO_SLIDES';
 var RECO_SLIDE_KEEP_DAYS_ = 120;                    // これより前の開催日の覚えは消す（ファイルはドライブに残る）
 var RECO_SLIDE_MAX_BYTES_ = 15 * 1024 * 1024;       // 送られる画像・pptx の上限
 var RECO_PPTX_MIME_ = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
 
 function recoSlideFolder_() { return ensureChildFolder_(getAssetFolder_('output'), RECO_SLIDE_FOLDER_); }
 
-function recoSlideAll_() {
+function recoSlideKeyOf_(d) { return RECO_SLIDE_KEY_ + '_' + Utilities.formatDate(d, 'Asia/Tokyo', 'yyyyMMdd'); }
+function recoSlideParse_(raw, isList) {
   try {
-    var raw = PropertiesService.getScriptProperties().getProperty(RECO_SLIDE_KEY_);
-    var all = raw ? JSON.parse(raw) : {};
-    return (all && typeof all === 'object') ? all : {};
-  } catch (e) { return {}; }
+    var v = raw ? JSON.parse(raw) : null;
+    if (isList) return Array.isArray(v) ? v : [];
+    return (v && typeof v === 'object' && !Array.isArray(v)) ? v : {};
+  } catch (e) { return isList ? [] : {}; }
 }
-function recoSlideSaveAll_(all) {
+// その開催日に覚えているもの（開催日ごとのものが無ければ、以前の1つのものから）
+function recoSlideList_(d) {
+  var props = PropertiesService.getScriptProperties(), raw = props.getProperty(recoSlideKeyOf_(d));
+  if (raw != null) return recoSlideParse_(raw, true);
+  return recoSlideParse_(props.getProperty(RECO_SLIDE_KEY_), false)[fmtDate_(d)] || [];
+}
+// その開催日の覚えを書き戻す。あわせて、以前の1つのものを開催日ごとへ移し、古い開催日の覚えを消す
+function recoSlideSaveList_(d, list) {
+  var props = PropertiesService.getScriptProperties(), key = recoSlideKeyOf_(d);
   var from = new Date(); from.setDate(from.getDate() - RECO_SLIDE_KEEP_DAYS_);
-  var cut = fmtDate_(from), out = {};
-  Object.keys(all).forEach(function (k) { if (k >= cut && all[k] && all[k].length) out[k] = all[k]; });
-  PropertiesService.getScriptProperties().setProperty(RECO_SLIDE_KEY_, JSON.stringify(out));
+  var cut = Utilities.formatDate(from, 'Asia/Tokyo', 'yyyyMMdd');
+  var old = props.getProperty(RECO_SLIDE_KEY_);
+  if (old != null) {
+    var all = recoSlideParse_(old, false);
+    Object.keys(all).forEach(function (k) {
+      var ymd = String(k).replace(/\D/g, ''), k2 = RECO_SLIDE_KEY_ + '_' + ymd;
+      if (ymd.length === 8 && ymd >= cut && k2 !== key && all[k] && all[k].length && props.getProperty(k2) == null) {
+        props.setProperty(k2, JSON.stringify(all[k]));
+      }
+    });
+    props.deleteProperty(RECO_SLIDE_KEY_);
+  }
+  if (list && list.length) props.setProperty(key, JSON.stringify(list));
+  else props.deleteProperty(key);
+  (props.getKeys() || []).forEach(function (k) {
+    var m = String(k).match(/^BNI_RECO_SLIDES_(\d{8})$/);
+    if (m && m[1] < cut) props.deleteProperty(k);
+  });
 }
 function recoSlideView_(x) { return { giver: x.g, receiver: x.r, id: x.id, name: x.name, w: x.w, h: x.h }; }
 function recoTrash_(id) { try { DriveApp.getFileById(id).setTrashed(true); } catch (e) {} }
@@ -43,7 +71,7 @@ function getRecommendationSlides(dateStr) {
   try {
     var d = parseDate_(dateStr);
     if (!d) return { ok: false, message: '開催日が分かりません。', slides: [] };
-    return { ok: true, slides: (recoSlideAll_()[fmtDate_(d)] || []).map(recoSlideView_) };
+    return { ok: true, slides: recoSlideList_(d).map(recoSlideView_) };
   } catch (e) {
     return { ok: false, message: '受け取ったスライドを読めませんでした: ' + (e && e.message ? e.message : e), slides: [] };
   }
@@ -52,7 +80,7 @@ function getRecommendationSlides(dateStr) {
 // 画面で画像にしたスライドを置く。req … { date, giver, receiver, name（元のファイル名）, data（画像の data URL か base64） }
 // 同じ組に前に置いたものは、ゴミ箱に入れて置き換える
 function saveRecommendationSlide(req) {
-  var lock = LockService.getScriptLock(), locked = false;
+  var lock = LockService.getScriptLock(), locked = false, file = null, kept = false;
   try {
     var r = req || {}, d = parseDate_(r.date);
     if (!d) return { ok: false, message: '開催日が分かりません。' };
@@ -67,24 +95,25 @@ function saveRecommendationSlide(req) {
     if (!size || !size.width || !size.height) return { ok: false, message: '画像として読めませんでした（PNG・JPEG にしてください）。' };
     var fileName = Utilities.formatDate(d, 'Asia/Tokyo', 'yyyyMMdd') + '_推薦のことば_' + recoSafeName_(g) + '→' + recoSafeName_(rv)
       + (png ? '.png' : '.jpg');
-    var file;
     try { file = recoSlideFolder_().createFile(Utilities.newBlob(bytes, png ? 'image/png' : 'image/jpeg', fileName)); }
     catch (e) { return { ok: false, message: '受け取ったスライドをドライブに置けませんでした。' + driveHelpHint_(e) }; }
     locked = lock.tryLock(20000);
-    var all = recoSlideAll_(), key = fmtDate_(d);
-    var list = (all[key] || []).filter(function (x) {
-      if (x.g === g && x.r === rv) { if (x.id !== file.getId()) recoTrash_(x.id); return false; }
+    var old = [];
+    var list = recoSlideList_(d).filter(function (x) {
+      if (x.g === g && x.r === rv) { if (x.id !== file.getId()) old.push(x.id); return false; }
       return true;
     });
     var item = { g: g, r: rv, id: file.getId(), name: String(r.name || fileName).slice(0, 120), w: size.width, h: size.height,
                  at: Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy/MM/dd HH:mm') };
     list.push(item);
-    all[key] = list;
-    recoSlideSaveAll_(all);
+    recoSlideSaveList_(d, list);
+    kept = true;
+    old.forEach(recoTrash_);                          // 覚え直してから、前のものをゴミ箱へ
     return { ok: true, slide: recoSlideView_(item),
              message: '「' + item.name + '」を、' + (g || '（推薦する方）') + ' → ' + (rv || '（推薦される方）') + ' のページのあとに入れます。' };
   } catch (e) {
     console.error('[RECO] ' + (e && e.stack ? e.stack : e));
+    if (file && !kept) recoTrash_(file.getId());      // 覚えられなかったファイルは残さない（組に付かないまま、ドライブに残るため）
     return { ok: false, message: '受け取ったスライドを置けませんでした: ' + (e && e.message ? e.message : e) };
   } finally {
     if (locked) { try { lock.releaseLock(); } catch (e) {} }
@@ -98,9 +127,8 @@ function removeRecommendationSlide(dateStr, id) {
     var d = parseDate_(dateStr);
     if (!d) return { ok: false, message: '開催日が分かりません。' };
     locked = lock.tryLock(20000);
-    var all = recoSlideAll_(), key = fmtDate_(d), hit = false;
-    all[key] = (all[key] || []).filter(function (x) { if (x.id === id) { hit = true; return false; } return true; });
-    recoSlideSaveAll_(all);
+    var hit = false;
+    recoSlideSaveList_(d, recoSlideList_(d).filter(function (x) { if (x.id === id) { hit = true; return false; } return true; }));
     recoTrash_(id);
     return { ok: true, message: hit ? '受け取ったスライドを外しました。' : '外すスライドが見つかりませんでした（もう外してあります）。' };
   } catch (e) {

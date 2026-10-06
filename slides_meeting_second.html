@@ -64,7 +64,9 @@
    <div id="rcNote" style="font-size:11px;color:#888;margin-top:6px;line-height:1.7;"></div>
    <div style="font-size:11px;color:#888;margin-top:4px;line-height:1.7;">
      推薦する方から<b>スライドを1枚</b>受け取ったときは、その組の <b>「📎 受け取ったスライド」</b> で選んでください（pptx・pdf・画像）。
-     その組の推薦のことばのページの<b>すぐあと</b>に、1枚のページとして入れます（PDF・pptx は1ページ目）。</div>
+     作成するときに、その組の推薦のことばのページの<b>すぐあと</b>に、1枚のページとして入れます（PDF・pptx は1ページ目）。
+     アフター・定例会後の組は、抽選コーナーのあとに並ぶ、その組のページのすぐあとです。
+     選んだファイルは画像にして、素材フォルダの「03_生成物／推薦のことばのスライド」に置きます。</div>
    <div class="mk">
      <h5>抽選コーナー</h5>
      <select id="lt1"></select>　<select id="lt2"></select>
@@ -110,7 +112,7 @@
    loadFrom('music','登録した音楽','getMeetingMusicFiles',[],renderMusicFiles);
  };
  // 作成できる状態か（読み込みが済み、後半テンプレートがある）
- function ready(){ return !!(ctx && ctx.templates && ctx.templates.meetingSecond); }
+ function ready(){ return !!(ctx && ctx.templates && ctx.templates.meetingSecond) && !recoBusy(); }
 
  function init(c){
    if(!c.ok){ fail({message:c.message}); return; }
@@ -272,12 +274,19 @@
              +' style="display:none;" onchange="recoPick('+a+',this)"></div>'
              +(p.busy ? '<div class="mkrow" style="padding-left:22px;color:#0055ff;">⏳ '+esc(p.busy)+'</div>'
                : p.slide ? '<div class="mkrow" style="padding-left:22px;"><span class="nm">📄 '+esc(p.slide.name)
-                 +' <span class="dt">… この組のページのあとに入れます</span></span>'
-                 +' <button class="mkbtn" onclick="recoUnset('+a+')">スライドを外す</button></div>' : '');
+                 +' <span class="dt">… '+(w==='after' ? '抽選コーナーのあとの、この組のページのすぐあとに入れます'
+                                                       : 'この組のページのすぐあとに入れます')+'（作成したときに）</span></span>'
+                 +' <button class="mkbtn" onclick="recoUnset('+a+')">スライドを外す</button></div>' : '')
+             +(p.err ? '<div class="mkrow" style="padding-left:22px;color:#d00;white-space:pre-wrap;">⚠ '+esc(p.err)+'</div>' : '');
          }).join('')
        : '<div style="font-size:11px;color:#888;padding:3px 0;">（なし）</div>';
      pairs[w].forEach(function(p,i){ val('rp_'+w+'_g_'+i, p.g); val('rp_'+w+'_r_'+i, p.r); });
    });
+   refreshGen();                                     // 受け取ったスライドを準備しているあいだは、作成のボタンを押せない
+ }
+ // 受け取ったスライドを準備している組があるか（画像にしている・ドライブに置いている）
+ function recoBusy(){
+   return ['during','after'].some(function(w){ return (pairs[w]||[]).some(function(p){ return !!p.busy; }); });
  }
  function addPair(w){ syncPairs(); pairs[w].push({ g:'', r:'' }); renderPairs(); }
  function delPair(w,i){ syncPairs(); pairs[w].splice(i,1); renderPairs(); }
@@ -318,7 +327,9 @@
  function recoChoose(w,i){
    syncPairs();
    var p=pairs[w][i]; if(!p) return;
-   if(!p.g && !p.r){ show('先に、推薦する方・推薦される方を選んでから、受け取ったスライドを選んでください。',false); return; }
+   if(!p.g && !p.r){
+     p.err='先に、推薦する方・推薦される方を選んでから、受け取ったスライドを選んでください。'; renderPairs(); show(p.err,false); return;
+   }
    var f=document.getElementById('rf_'+w+'_'+i); if(f) f.click();
  }
  function recoPick(w,i,input){
@@ -327,16 +338,18 @@
    syncPairs();
    var p=pairs[w][i]; if(!p) return;
    var kind=recoKind(f);
-   if(!kind){ show('「'+f.name+'」は使えません。pptx・pdf・画像（png・jpg など）を選んでください。',false); return; }
-   if(f.size>RECO_MAX_MB*1024*1024){ show('「'+f.name+'」は大きすぎます（'+RECO_MAX_MB+'MBまで）。PDFか画像にして選んでください。',false); return; }
-   var fail2=function(e){ p.busy=''; renderPairs(); show('「'+f.name+'」を入れられませんでした: '+((e&&e.message)?e.message:e),false); };
-   p.busy='「'+f.name+'」を画像にしています…'; renderPairs(); show('',null);
+   input.value='';                                   // 同じファイルを選び直しても選べるように
+   var ng=function(t){ p.busy=''; p.err=t; renderPairs(); show(t,false); };
+   if(!kind) return ng('「'+f.name+'」は使えません。pptx・pdf・画像（png・jpg など）を選んでください'
+     +'（Keynote・古い ppt・HEIC の写真などは、PDFか画像にしてから選んでください）。');
+   if(f.size>RECO_MAX_MB*1024*1024) return ng('「'+f.name+'」は大きすぎます（'+RECO_MAX_MB+'MBまで）。PDFか画像にして選んでください。');
+   var fail2=function(e){ ng('「'+f.name+'」を入れられませんでした: '+((e&&e.message)?e.message:e)); };
+   p.err=''; p.busy='「'+f.name+'」を画像にしています…'; renderPairs(); show('',null);
    var upload=function(dataUrl, note){
      p.busy='「'+f.name+'」をドライブに置いています…'; renderPairs();
      google.script.run.withSuccessHandler(function(r){
-       p.busy='';
-       if(!r || !r.ok){ renderPairs(); show((r&&r.message)||'置けませんでした。',false); return; }
-       p.slide=r.slide; renderPairs(); show(r.message+(note?'\n'+note:''),true);
+       if(!r || !r.ok) return ng((r&&r.message)||'受け取ったスライドを置けませんでした。');
+       p.busy=''; p.err=''; p.slide=r.slide; renderPairs(); show(r.message+(note?'\n'+note:''),true);
      }).withFailureHandler(fail2).saveRecommendationSlide({ date:get('meeting'), giver:p.g, receiver:p.r, name:f.name, data:dataUrl });
    };
    var fromPdf=function(buf){
@@ -420,7 +433,7 @@
  function recoUnset(w,i){
    syncPairs();
    var p=pairs[w][i]; if(!p || !p.slide) return;
-   var id=p.slide.id; p.slide=null; renderPairs();
+   var id=p.slide.id; p.slide=null; p.err=''; renderPairs();
    google.script.run.withSuccessHandler(function(r){ show((r&&r.message)||'', !!(r&&r.ok)); })
      .withFailureHandler(fail).removeRecommendationSlide(get('meeting'), id);
  }
@@ -534,6 +547,7 @@
  }
 
  function gen(){
+   if(recoBusy()){ show('受け取ったスライドを準備しています（⏳ の組）。終わってから「後半スライドを作成」を押してください。',false); return; }
    genSlides('meetingSecond', {
      patterns: document.getElementById('pat').checked,
      recommendPairs: collectPairs(),

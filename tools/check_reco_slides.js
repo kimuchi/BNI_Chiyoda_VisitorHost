@@ -8,11 +8,15 @@
 //
 // 確かめること
 //   1) サーバー：受け取ったスライド（画像）をドライブの「03_生成物／推薦のことばのスライド」に置き、開催日・組ごとに覚える。
-//      同じ組に置き直すと前のものはゴミ箱へ。外す。画像でないもの・組が空のときは置かない。pptx はGoogleスライドに変換してPDFで返す
+//      同じ組に置き直すと前のものはゴミ箱へ。外す。画像でないもの・組が空のときは置かない。pptx はGoogleスライドに変換してPDFで返す。
+//      覚えるのは開催日ごとのプロパティ（1つ 9KB まで。以前は全部を1つに入れていて、数か月ぶんたまると置けなくなった）。
+//      以前の1つのものは開催日ごとへ移す（古い開催日のものは移さない）。覚えられなかったときは、置いたファイルをゴミ箱へ
 //   2) 作成：その組の推薦のことばのページのすぐあとに、受け取ったスライドのページを入れる（定例会中・アフターとも）。
-//      画像は縦横比のままページいっぱいに真ん中へ・まわりは黒・レイアウトの飾りは出さない。開けないファイルはお知らせして入れない
+//      画像は縦横比のままページいっぱいに真ん中へ・まわりは黒・レイアウトの飾りは出さない。開けないファイルはお知らせして入れない。
+//      お知らせに、推薦のことばのページと受け取ったスライドが何枚目かを出す
 //   3) 画面（Chromium）：画像は長い辺2400pxまでに縮めて送る・PDFは1ページ目を画像にして送る・pptxはPDFにしてもらってから同じく・
-//      使えないファイル・組が空のときは送らない・置いてあるものは開き直しても同じ組に付く・外す・作成に組ごとのファイルが渡る
+//      使えないファイル・組が空のときは送らない（理由はその組のすぐ下にも出す）・置いてあるものは開き直しても同じ組に付く・外す・
+//      アフターの組は「抽選コーナーのあとの、この組のページのすぐあと」と出す・準備しているあいだは作成させない・作成に組ごとのファイルが渡る
 
 process.env.TZ = 'Asia/Tokyo';
 const fs = require('fs');
@@ -51,8 +55,21 @@ vm.createContext(F);
 for (const f of fs.readdirSync(ROOT).filter((x) => /\.js$/.test(x)).sort()) {
   vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), F, { filename: f });
 }
+// 以前の覚え方（全部の開催日を1つのプロパティに）。古い開催日と、前の回の開催日のもの
 env.reset([['メンバー名簿', false, [['No', '業種区分', '氏名'], ['1', '', '見本 一郎'], ['2', '', '試験 花子']]]],
-          { BNI_RECO_SLIDES: J({ '2026/01/07': [{ g: '昔 一郎', r: '昔 二郎', id: 'OLD', name: '古い.png', w: 10, h: 10 }] }) });
+          { BNI_RECO_SLIDES: J({ '2026/01/07': [{ g: '昔 一郎', r: '昔 二郎', id: 'OLD', name: '古い.png', w: 10, h: 10 }],
+                                 '2026/09/30': [{ g: '前回 一郎', r: '前回 二郎', id: 'PREV', name: '前の回.png', w: 10, h: 10 }] }) });
+// スクリプトのプロパティは、1つの値が 9KB まで（本物と同じく、超えたら止まる）
+{
+  const real = F.PropertiesService.getScriptProperties;
+  F.PropertiesService = Object.assign({}, F.PropertiesService, { getScriptProperties: () => {
+    const st = real();
+    return Object.assign({}, st, { setProperty: (k, v) => {
+      if (Buffer.byteLength(String(v), 'utf8') > 9 * 1024) throw new Error('Argument too large: value');
+      return st.setProperty(k, v);
+    } });
+  } });
+}
 F.findPhotoIdForName_ = () => '';
 const DATE = '2026/10/07';
 const folderOf = (id) => (env.drive.files[id] || {}).parent || '';
@@ -60,13 +77,18 @@ const saved = (d) => F.getRecommendationSlides(d || DATE).slides || [];
 
 // ----- 1) 置く・覚える・置き直す・外す -----
 {
+  ck(J(saved('2026/09/30').map((x) => x.id)) === J(['PREV']), '1) 以前の覚え方（1つのプロパティ）のものを読めない: ' + J(saved('2026/09/30')));
   const r1 = F.saveRecommendationSlide({ date: DATE, giver: '見本 一郎', receiver: '試験 花子', name: '推薦のスライド.pdf', data: dataUrlOf(png(1600, 900, [10, 20, 30]), 'image/png') });
   ck(r1.ok && r1.slide && r1.slide.w === 1600 && r1.slide.h === 900 && r1.slide.name === '推薦のスライド.pdf',
      '1) 受け取ったスライドを置けない: ' + J(r1));
   ck(r1.ok && /03_生成物\/推薦のことばのスライド$/.test(folderOf(r1.slide.id)) && /^20261007_推薦のことば_見本一郎→試験花子\.png$/.test(env.drive.files[r1.slide.id].name),
      '1) 置き場所・ファイル名: ' + J({ folder: folderOf(r1.slide && r1.slide.id), name: r1.slide && (env.drive.files[r1.slide.id] || {}).name }));
   ck(J(saved().map((s) => [s.giver, s.receiver, s.id])) === J([['見本 一郎', '試験 花子', r1.slide.id]]), '1) 開催日・組ごとに覚えていない: ' + J(saved()));
-  ck(!JSON.parse(env.props.BNI_RECO_SLIDES)['2026/01/07'], '1) 古い開催日の覚えを消さない');
+  // 開催日ごとに覚える。以前の1つのものは開催日ごとへ移して消し、古い開催日（120日より前）のものは移さない
+  ck(env.props.BNI_RECO_SLIDES === undefined && J(JSON.parse(env.props.BNI_RECO_SLIDES_20261007 || '[]').map((x) => x.id)) === J([r1.slide.id])
+     && J(JSON.parse(env.props.BNI_RECO_SLIDES_20260930 || '[]').map((x) => x.id)) === J(['PREV']) && env.props.BNI_RECO_SLIDES_20260107 === undefined
+     && J(saved('2026/09/30').map((x) => x.id)) === J(['PREV']),
+     '1) 開催日ごとに覚えていない・以前のものを移さない・古い開催日のものを消さない: ' + J(Object.keys(env.props).filter((k) => /RECO/.test(k))));
   // 同じ組に置き直す → 前のものはゴミ箱へ。別の組は別に覚える
   const r2 = F.saveRecommendationSlide({ date: DATE, giver: '見本 一郎', receiver: '試験 花子', name: '差し替え.jpg', data: dataUrlOf(jpegHead(800, 600), 'image/jpeg') });
   ck(r2.ok && r2.slide.w === 800 && r2.slide.h === 600 && env.drive.files[r1.slide.id].trashed && /\.jpg$/.test(env.drive.files[r2.slide.id].name),
@@ -78,6 +100,28 @@ const saved = (d) => F.getRecommendationSlides(d || DATE).slides || [];
   ck(!bad.ok && /画像として読めません/.test(bad.message) && saved().length === 2, '1) 画像でないものを置いた: ' + J(bad));
   const noPair = F.saveRecommendationSlide({ date: DATE, giver: '', receiver: '', name: 'a.png', data: dataUrlOf(png(10, 10, [0, 0, 0]), 'image/png') });
   ck(!noPair.ok && /先に、推薦する方/.test(noPair.message), '1) 組が空なのに置いた: ' + J(noPair));
+  // 数か月ぶん（毎週3組・長いファイル名）たまっても置ける（以前は全部を1つのプロパティに入れていたため、9KB を超えて置けなくなった）
+  {
+    const longName = '【推薦のことば】' + '見本'.repeat(20) + '様への推薦スライド_最終版.pptx';
+    let bad = null;
+    for (let w = 0; w < 16 && !bad; w++) {
+      const day = new Date(2026, 5, 17 + w * 7), ds = day.getFullYear() + '/' + String(day.getMonth() + 1).padStart(2, '0') + '/' + String(day.getDate()).padStart(2, '0');
+      for (let k = 0; k < 3 && !bad; k++) {
+        const q = F.saveRecommendationSlide({ date: ds, giver: '長い名前の方 ' + k, receiver: '推薦される方 ' + k, name: longName, data: dataUrlOf(png(16, 9, [k, w, 0]), 'image/png') });
+        if (!q.ok) bad = ds + ' ' + q.message;
+      }
+    }
+    const kept = Object.keys(env.props).filter((k) => /^BNI_RECO_SLIDES_/.test(k));
+    ck(!bad && kept.length >= 16 && saved('2026/06/17').length === 3 && saved('2026/09/30').length === 4,
+       '1) 数か月ぶんたまると置けない（プロパティの 9KB）: ' + J({ bad, kept: kept.length, june: saved('2026/06/17').length, sep30: saved('2026/09/30').length }));
+    // 置けなかったときは、ドライブに置いたファイルを残さない
+    const before = Object.keys(env.drive.files).length, realSet = F.PropertiesService;
+    F.PropertiesService = { getScriptProperties: () => Object.assign({}, realSet.getScriptProperties(), { setProperty: () => { throw new Error('Argument too large: value'); } }) };
+    const ng = F.saveRecommendationSlide({ date: DATE, giver: '見本 一郎', receiver: '架空 三郎', name: 'x.png', data: dataUrlOf(png(16, 9, [1, 1, 1]), 'image/png') });
+    F.PropertiesService = realSet;
+    const made = Object.keys(env.drive.files).slice(before).map((id) => env.drive.files[id]);
+    ck(!ng.ok && made.length === 1 && made[0].trashed, '1) 覚えられなかったのに、ドライブにファイルを残した: ' + J({ ng, made: made.map((f) => [f.name, f.trashed]) }));
+  }
   // 外す
   const rm = F.removeRecommendationSlide(DATE, r3.slide.id);
   ck(rm.ok && saved().length === 1 && env.drive.files[r3.slide.id].trashed, '1) 外せない: ' + J({ rm, saved: saved() }));
@@ -156,6 +200,10 @@ function makeParts() {
                    'リファーラル', '抽選コーナー', '推薦:例示 五月→模擬 六助', 'スライド:recoslide3.png', '推薦:空想 七海→見本 一郎', '締めの言葉']),
      '2) 受け取ったスライドのページの場所（その組の推薦のことばのページのすぐあと）: ' + J(got));
   ck(res.slides && res.slides.length === 3 && /受け取ったスライド 3枚/.test(res.message), '2) お知らせ: ' + J(res.message));
+  // お知らせに、何枚目に入れたか（PowerPoint の左の一覧の番号）
+  ck(/定例会中。2〜6枚目/.test(res.message) && /抽選コーナー（8枚目）のあと（9〜11枚目）/.test(res.message)
+     && /見本 一郎 → 試験 花子 … 3枚目、架空 三郎 → 仮名 四郎 … 6枚目、例示 五月 → 模擬 六助 … 10枚目/.test(res.message),
+     '2) お知らせに、推薦のことばのページ・受け取ったスライドが何枚目かが無い: ' + J(res.message));
   // ページの中身：縦横比のままページいっぱいに真ん中へ・まわりは黒・レイアウトの飾りは出さない・レイアウトは推薦のことばのページと同じ
   const pics = order.filter((p) => /受け取ったスライド/.test(F.xmlOf_(parts, p)));
   const geo = (p) => { const x = F.xmlOf_(parts, p); const o = x.match(/<a:off x="(\d+)" y="(\d+)"\/><a:ext cx="(\d+)" cy="(\d+)"\/><\/a:xfrm><a:prstGeom/); return o ? o.slice(1).map(Number) : null; };
@@ -261,7 +309,7 @@ function tinyPdf() {
   ck(up[0].date === DATE && up[0].giver === '見本 一郎' && up[0].receiver === '試験 花子' && up[0].name === '推薦の画像.png'
      && J(sizeOfUpload(up[0])) === J({ w: 2400, h: 1200 }), '3) 画像を縮めて送らない: ' + J({ date: up[0].date, g: up[0].giver, r: up[0].receiver, size: up[0].data ? sizeOfUpload(up[0]) : null }));
   await page.waitForTimeout(100);
-  ck(/推薦の画像\.png/.test(await text('recoDuring')) && /この組のページのあとに入れます/.test(await text('recoDuring')), '3) 置いたスライドが組に出ない: ' + await text('recoDuring'));
+  ck(/推薦の画像\.png/.test(await text('recoDuring')) && /この組のページのすぐあとに入れます/.test(await text('recoDuring')), '3) 置いたスライドが組に出ない: ' + await text('recoDuring'));
   // 1組目をPDFに置き直す（1ページ目を、長い辺2400pxの画像にして送る）
   await page.setInputFiles('#rf_during_0', { name: '推薦のスライド.pdf', mimeType: 'application/pdf', buffer: tinyPdf() });
   await waitCall('saveRecommendationSlide', 2);
@@ -285,16 +333,36 @@ function tinyPdf() {
   await page.setInputFiles('#rf_during_0', { name: '原稿.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', buffer: Buffer.from('PK') });
   await page.waitForTimeout(150);
   ck(/使えません/.test(await text('msg')) && (await calls('saveRecommendationSlide')).length === 3, '3) 使えないファイルを送った: ' + await text('msg'));
+  // 置けなかった理由は、画面のいちばん下だけでなく、その組のすぐ下にも出す（下のお知らせは見落としやすい）
+  ck(/⚠ 「原稿\.docx」は使えません/.test(await text('recoDuring')), '3) 使えないファイルのお知らせが、その組の下に出ない: ' + await text('recoDuring'));
   // 組が空のときは選ばせない
   await page.evaluate(() => { addPair('after'); });
   await page.evaluate(() => { recoChoose('after', 0); });
-  ck(/先に、推薦する方・推薦される方を選んで/.test(await text('msg')), '3) 組が空なのに選ばせた: ' + await text('msg'));
+  ck(/先に、推薦する方・推薦される方を選んで/.test(await text('msg')) && /⚠ 先に、推薦する方・推薦される方を選んで/.test(await text('recoAfter')),
+     '3) 組が空なのに選ばせた・お知らせが組の下に出ない: ' + await text('msg') + ' / ' + await text('recoAfter'));
+  // アフターの組：入る場所は「抽選コーナーのあとの、この組のページのすぐあと」
+  await page.evaluate(() => { pairs.after[0].g = '仮名 四郎'; pairs.after[0].r = '見本 一郎'; renderPairs(); });
+  await page.setInputFiles('#rf_after_0', { name: 'アフターの推薦.png', mimeType: 'image/png', buffer: png(800, 450, [10, 120, 200]) });
+  await waitCall('saveRecommendationSlide', 4);
+  await page.waitForTimeout(150);
+  ck(/アフターの推薦\.png … 抽選コーナーのあとの、この組のページのすぐあとに入れます/.test(await text('recoAfter')) && !/⚠/.test(await text('recoAfter')),
+     '3) アフターの組の入る場所の書き方・前のお知らせが残る: ' + await text('recoAfter'));
+  // 受け取ったスライドを準備しているあいだは作成させない（以前は押せて、スライドの入らないものができた）
+  await page.evaluate(() => { pairs.during[0].busy = '「x.pptx」をPDFにしています…'; renderPairs(); });
+  const dis = await page.evaluate(() => document.getElementById('genBtn').disabled);
+  await page.evaluate(() => gen());
+  await page.waitForTimeout(50);
+  ck(dis && (await calls('generateMeetingSlides')).length === 0 && /受け取ったスライドを準備しています/.test(await text('msg')),
+     '3) 受け取ったスライドを準備しているあいだに作成できた: ' + J({ dis, msg: await text('msg') }));
+  await page.evaluate(() => { pairs.during[0].busy = ''; renderPairs(); });
+  ck(!(await page.evaluate(() => document.getElementById('genBtn').disabled)), '3) 準備が終わっても作成のボタンを押せない');
   // 作成に、組ごとのファイルが渡る（1組目は最後に置いたPDF・2組目は pptx）
   await page.waitForTimeout(100);
   await page.evaluate(() => gen());
   await waitCall('generateMeetingSlides', 1);
   const gp = ((await calls('generateMeetingSlides'))[0] || [])[3] || {};
-  ck(J((gp.recommendPairs || []).map((p) => p.slide && p.slide.id)) === J(['UP2', 'UP3']), '3) 作成に受け取ったスライドが渡らない: ' + J(gp.recommendPairs));
+  ck(J((gp.recommendPairs || []).map((p) => [p.after, p.slide && p.slide.id])) === J([[false, 'UP2'], [false, 'UP3'], [true, 'UP4']]),
+     '3) 作成に受け取ったスライドが渡らない: ' + J(gp.recommendPairs));
   // 外す
   await page.evaluate(() => recoUnset('during', 1));
   await waitCall('removeRecommendationSlide', 1);
