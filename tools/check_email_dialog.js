@@ -10,6 +10,9 @@
 //   ・次回のシートが無く、過ぎた回が選ばれたときは赤字で知らせる
 //   ・代理送信の Web App が動いていない（ログインの画面などが返る）ときは、1人目で止めて理由を出し、
 //     「自分のGmailから送る」で送れる。送れなかった方がいるのに「完了🎉」と出さない
+//   ・代理送信の返事は「転送（302）→ 返事のページ」で来る。返事のページを読めないときは読み直す（送り直さない）。
+//     読めなければ送れているはず（止めずに、確かめるよう知らせる）。送れたか分からないときは止めるが、その方は
+//     「自分のGmailから送る」に入れず、開き直してもチェックを外しておく（2通届かないように）
 //   ・開いたときに送信元を確かめる。代理送信の Web App が動いていなければ知らせて「自分のGmailから送る」を選んでおく
 //   ・Web App が動いているかのテスト：代理送信を確かめる（届くか・合言葉・持ち主の Gmail の許可・版）、テストメールを送る、
 //     メニュー「🔧 動作確認 > メール送信のテスト」、doPost の確かめ（送らない）・/dev のURLの知らせ
@@ -173,6 +176,60 @@ try {
      '0) メニューのメール送信のテスト（代理送信が動いていない）: ' + JSON.stringify(alerts));
   delete env.props.MAIL_WEB_APP_URL;
   srv.SpreadsheetApp.getUi = realUi;
+
+  // ---- 0b) 代理送信の返事は、Google の仕組みでは「転送（302）→ 返事を置いたページ（script.googleusercontent.com）」で来る ----
+  //   返事のページを読めなかったとき、メールはもう送られている（doPost は動いた）。「送られていません」と言わず、
+  //   返事だけを読み直す（送り直さない）。読めなければ「送れているはず」として送信済みの印を付け、確かめるよう知らせる
+  const ECHO = 'https://script.googleusercontent.com/macros/echo?user_content_key=KEY';
+  const redirect = (to) => ({ code: 302, body: Buffer.from('<html>Moved Temporarily</html>'), type: 'text/html', headers: { Location: to || ECHO } });
+  const echoFetches = () => env.fetchLog.filter((f) => f.url === ECHO).length;
+  const SERVER_ERR = '<html><title>エラー</title>doPost の実行中にサーバー エラーが発生しました</html>';
+  env.props.MAIL_WEB_APP_URL = RELAY;
+  let posts0 = relayFetches(), echo0 = echoFetches();
+  env.onFetch = (url) => (url === RELAY ? redirect() : json({ success: true }));
+  r = srv.sendSingleEmail(Object.assign({}, draft, { email: 'redir@example.com' }), '', '');
+  ck(r.success && !r.unconfirmed && relayFetches() === posts0 + 1 && echoFetches() === echo0 + 1
+     && env.fetchLog.filter((f) => f.url === RELAY).pop().options.followRedirects === false, '0b) 転送で来る返事を読めない: ' + JSON.stringify(r));
+  // 返事のページが2回読めず、3回目で読めた：送り直していない（POSTは1回）
+  let n2 = 0;
+  posts0 = relayFetches(); echo0 = echoFetches();
+  env.onFetch = (url) => (url === RELAY ? redirect() : (++n2 < 3 ? html(500, SERVER_ERR) : json({ success: true })));
+  r = srv.sendSingleEmail(Object.assign({}, draft, { email: 'retry@example.com' }), '', '');
+  ck(r.success && !r.unconfirmed && relayFetches() === posts0 + 1 && echoFetches() === echo0 + 3,
+     '0b) 返事を読み直していない・送り直した: ' + JSON.stringify(r) + ' POST ' + (relayFetches() - posts0) + ' 返事 ' + (echoFetches() - echo0));
+  // 返事のページがずっと読めない：送れているはず（送信済みの印・確かめるよう知らせる）。止めない・送り直さない
+  posts0 = relayFetches();
+  env.onFetch = (url) => (url === RELAY ? redirect() : html(500, SERVER_ERR));
+  r = srv.sendSingleEmail(Object.assign({}, draft, { email: 'lost@example.com' }), '', '');
+  ck(r.success && r.unconfirmed && !r.relayBroken && /送信済み/.test(r.warning) && JSON.parse(env.props['MAIL_SENT_20260930参加者'] || '{}')['lost@example.com']
+     && relayFetches() === posts0 + 1, '0b) 送れたのに返事を読めなかったとき: ' + JSON.stringify(r));
+  // ログインの画面へ転送：送られていない（止める）
+  env.onFetch = () => redirect('https://accounts.google.com/ServiceLogin?continue=x');
+  r = srv.sendSingleEmail(Object.assign({}, draft, { email: 'login@example.com' }), '', '');
+  ck(r.relayBroken && !r.unsure && /送られていません/.test(r.error) && /ログイン/.test(r.error), '0b) ログインの画面へ転送されたとき: ' + JSON.stringify(r));
+  // doPost の無いスクリプト：送られていない
+  env.onFetch = () => html(200, '<html><title>エラー</title>Script function not found: doPost</html>');
+  r = srv.sendSingleEmail(Object.assign({}, draft, { email: 'nofn@example.com' }), '', '');
+  ck(r.relayBroken && !r.unsure && /doPost）がありません/.test(r.error), '0b) doPost が無いときの知らせ: ' + JSON.stringify(r));
+  // 転送されずにエラーのページ（送れたか分からない）：止めるが「送られていません」とは言わず、送れたか分からないとして記録する
+  env.onFetch = () => html(500, SERVER_ERR);
+  r = srv.sendSingleEmail(Object.assign({}, draft, { email: 'unsure@example.com' }), '', '');
+  ck(r.relayBroken && r.unsure && !/このメールは送られていません/.test(r.error) && /送れたかどうか分かりません/.test(r.error) && /HTTP 500/.test(r.error)
+     && JSON.parse(env.props['MAIL_UNSURE_20260930参加者'] || '{}')['unsure@example.com'] && !JSON.parse(env.props['MAIL_SENT_20260930参加者'] || '{}')['unsure@example.com'],
+     '0b) 送れたか分からないとき: ' + JSON.stringify(r));
+  // 確かめる・テストメールも同じ（転送で来る返事・読めないとき）
+  env.onFetch = (url) => (url === RELAY ? redirect() : json({ success: true, ping: true, sender: 'chapter@example.com', gmail: true, version: 'v' }));
+  t = srv.testMailWebApp({ webAppUrl: RELAY, webAppToken: 'x' });
+  ck(t.ok && !t.unconfirmed && /chapter@example\.com/.test(t.message), '0b) 確かめる（転送で来る返事）: ' + JSON.stringify(t));
+  env.onFetch = (url) => (url === RELAY ? redirect() : html(500, SERVER_ERR));
+  t = srv.testMailWebApp({ webAppUrl: RELAY, webAppToken: 'x' });
+  ck(t.ok && t.unconfirmed && /返事を受け取れませんでした/.test(t.message), '0b) 確かめる（返事を読めない）: ' + JSON.stringify(t));
+  tm = srv.sendMailTest({ to: 'check@example.com', webAppUrl: RELAY, webAppToken: 'x' });
+  ck(tm.ok && /届いたか確かめて/.test(tm.message), '0b) テストメール（返事を読めない）: ' + JSON.stringify(tm));
+  env.onFetch = () => html(500, SERVER_ERR);
+  tm = srv.sendMailTest({ to: 'check@example.com', webAppUrl: RELAY, webAppToken: 'x' });
+  ck(!tm.ok && /送れたかどうか分かりません/.test(tm.message) && !/送られていません/.test(tm.message), '0b) テストメール（送れたか分からない）: ' + JSON.stringify(tm));
+  delete env.props.MAIL_WEB_APP_URL;
 } catch (e) {
   fails.push('0) 止まった: ' + (e && e.message ? e.message : e));
 } finally {
@@ -263,6 +320,67 @@ try {
     env.onFetch = null;
     delete env.props.MAIL_WEB_APP_URL;
 
+    // ---- 2e) 代理送信で送れていたのに、「送れました」の返事を受け取れなかった（Google側の一時的な不調）：
+    //          止めずに最後まで送り（送り直さない）、その方を確かめるよう知らせる。送信済みの印は付ける ----
+    start(true);
+    env.props.MAIL_WEB_APP_URL = RELAY;
+    {
+      const ECHO2 = 'https://script.googleusercontent.com/macros/echo?user_content_key=';
+      const posted = [];
+      env.onFetch = (url, o) => {
+        if (url === RELAY) {
+          const p = JSON.parse(o.payload);
+          if (!p.ping) posted.push(p.to);
+          return { code: 302, body: Buffer.from(''), type: 'text/html', headers: { Location: ECHO2 + (p.ping ? 'ping' : encodeURIComponent(p.to)) } };
+        }
+        if (url === ECHO2 + 'ping') return json({ success: true, ping: true, sender: 'chapter@example.com', gmail: true, version: 'v' });
+        return url.includes('taro') ? html(500, '<html><title>エラー</title>doPost</html>') : json({ success: true });   // 1人目の返事だけ読めない
+      };
+      const { page } = await open(browser);
+      await page.waitForFunction(() => /送信元/.test(document.getElementById('routeNote').textContent), null, { timeout: 10000 });
+      ck(/✓/.test(await page.textContent('#routeNote')), '2e) 開いたときに、転送で来る返事を読めない: ' + await page.textContent('#routeBox'));
+      await page.click('#sendBtn');
+      await page.waitForFunction(() => /送れなかった方がいます|すべての処理が完了しました/.test(document.getElementById('doneMsg').textContent)
+        || document.getElementById('relayBox').style.display === 'block', null, { timeout: 15000 });
+      ck(await page.evaluate(() => document.getElementById('relayBox').style.display) !== 'block', '2e) 送れていたのに止めた');
+      ck(posted.join(',') === 'taro@example.com,hana@example.com', '2e) 送った宛先が違う・送り直した: ' + posted.join(','));
+      const log = await page.textContent('#logArea'), done = await page.textContent('#doneMsg');
+      ck(/見本 太郎 様/.test(log) && /送信済み/.test(log) && /見本 太郎 様/.test(done) && /確かめて/.test(done), '2e) 返事を受け取れなかった方を知らせない: ' + log + ' / ' + done);
+      const sentMap = JSON.parse(env.props['MAIL_SENT_20260930参加者'] || '{}');
+      ck(sentMap['taro@example.com'] && sentMap['hana@example.com'], '2e) 送信済みの印が付いていない: ' + JSON.stringify(sentMap));
+      await page.close();
+    }
+
+    // ---- 2f) 送れたか分からない返事（転送されずにエラーのページ）：止めるが、その方は「自分のGmailから送る」に入れない（2通届かないように）。
+    //          開き直すと、その方のチェックは外れていて「送れたか不明」と出る ----
+    start(true);
+    env.props.MAIL_WEB_APP_URL = RELAY;
+    env.onFetch = (url, o) => (JSON.parse(o.payload).ping ? json({ success: true, ping: true, sender: 'chapter@example.com', gmail: true, version: 'v' })
+      : html(502, '<html><title>Server Error</title>エラー</html>'));
+    {
+      const { page } = await open(browser);
+      await page.waitForFunction(() => /送信元/.test(document.getElementById('routeNote').textContent), null, { timeout: 10000 });
+      await page.click('#sendBtn');
+      await page.waitForFunction(() => document.getElementById('relayBox').style.display === 'block', null, { timeout: 10000 });
+      const head = await page.textContent('#relayHead'), un = await page.textContent('#relayUnsure');
+      ck(/残りの 1 名には送っていません/.test(head) && !/メールは送られていません/.test(head) && /見本 太郎 様（taro@example\.com）には、送れたかどうか分かりません/.test(un)
+         && /1名に送る/.test(await page.textContent('#directBtn')), '2f) 送れたか分からないときの知らせ: ' + head + ' / ' + un + ' / ' + await page.textContent('#directBtn'));
+      await page.click('#directBtn');
+      await page.waitForFunction(() => /すべての処理が完了しました|送れなかった方がいます/.test(document.getElementById('doneMsg').textContent), null, { timeout: 10000 });
+      ck(env.mail.map((m) => m.to).join(',') === 'hana@example.com', '2f) 送れたか分からない方にも自分のGmailから送った（2通届く）: ' + env.mail.map((m) => m.to).join(','));
+      await page.close();
+    }
+    {
+      const { page } = await open(browser);
+      const c = await cards(page);
+      const taro = c.find((x) => /見本 太郎/.test(x.head));
+      ck(taro && !taro.checked && /送れたか不明/.test(taro.head), '2f) 開き直したら、送れたか分からない方にチェックが入っている・印が無い: ' + JSON.stringify(taro));
+      ck(/送れたか分からなかった方（1名）/.test(await page.textContent('#meetNote')), '2f) 開き直したときに、送れたか分からない方を知らせない: ' + await page.textContent('#meetNote'));
+      await page.close();
+    }
+    env.onFetch = null;
+    delete env.props.MAIL_WEB_APP_URL;
+
     // ---- 2c) 1人だけ送れなかった：「完了🎉」ではなく、送れなかった人数を出す ----
     start(true);
     {
@@ -325,7 +443,8 @@ try {
   }
   console.log('メールの確認・一括送信の画面（ブラウザ）: 検査 ' + checks + ' 件 OK: 次回のリンク・キャンセル・記号・全角アドレス・送信済みで二重に送らない・過ぎた回の知らせ・'
     + '代理送信が動かないときは止めて理由と「自分のGmailから送る」・送れなかった方がいるのに完了と出さない・'
-    + '開いたときに送信元を確かめる・Web App のテスト（確かめる・テストメール・メニュー）');
+    + '開いたときに送信元を確かめる・Web App のテスト（確かめる・テストメール・メニュー）・'
+    + '代理送信の返事を受け取れなかったとき（読み直す・送り直さない・送れたか分からない方を分ける）');
 })().catch((e) => {
   console.log('NG 検査が止まった: ' + (e && e.stack ? e.stack.split('\n').slice(0, 2).join(' / ') : e));
   fails.forEach((f) => console.log('  - ' + f));   // 止まる前に見つかったもの

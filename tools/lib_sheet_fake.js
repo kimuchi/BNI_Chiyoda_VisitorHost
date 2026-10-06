@@ -182,7 +182,8 @@ function makeEnv(opt) {
     getBlob: () => new FakeBlob(r.body, r.type, ''),
     getContent: () => Array.from(r.body).map((b) => (b > 127 ? b - 256 : b)),
     getContentText: () => r.body.toString('utf8'),
-    getHeaders: () => ({ 'Content-Type': r.type }),
+    getHeaders: () => Object.assign({ 'Content-Type': r.type }, r.headers || {}),
+    getAllHeaders: () => Object.assign({ 'Content-Type': r.type }, r.headers || {}),   // 転送先（Location）など
   });
 
   // ---- 日付の字 ----
@@ -298,13 +299,21 @@ function makeEnv(opt) {
     },
     ScriptApp: { getOAuthToken: () => 'TOKEN' },
     Session: { getActiveUser: () => ({ getEmail: () => env.userEmail || 'tester@example.com' }), getEffectiveUser: () => ({ getEmail: () => env.userEmail || 'tester@example.com' }) },
-    UrlFetchApp: { fetch: (url, o) => {
+    UrlFetchApp: { fetch: function fetch(url, o) {
       env.fetchLog.push({ url, options: o });
       const plan = env.fetchPlan.shift();
-      if (plan) return response(plan(url, o));
-      if (/docs\.google\.com\/spreadsheets\/d\/[^/]+\/export/.test(url)) return response(exportPdf(url));
-      if (env.onFetch) return response(env.onFetch(url, o));
-      throw new Error('検査では外に出ません: ' + url);
+      let r;
+      if (plan) r = plan(url, o);
+      else if (/docs\.google\.com\/spreadsheets\/d\/[^/]+\/export/.test(url)) r = exportPdf(url);
+      else if (env.onFetch) r = env.onFetch(url, o);
+      else throw new Error('検査では外に出ません: ' + url);
+      // 本物と同じく、followRedirects が false でなければ転送（302 など）について行く（行き先は GET で読む）
+      const loc = r && r.headers && (r.headers.Location || r.headers.location);
+      const hops = (o && o._hops) || 0;
+      if (loc && r.code >= 300 && r.code < 400 && !(o && o.followRedirects === false) && hops < 5) {
+        return fetch(loc, { method: 'get', muteHttpExceptions: o && o.muteHttpExceptions, followRedirects: true, _hops: hops + 1 });
+      }
+      return response(r);
     } },
     Drive: { Permissions: {
       create: (res, id, args) => {
