@@ -12,6 +12,9 @@
 //       お1人でも、見出しにお名前が入り、写真の側が空になった）
 //   ・お2人の部門は、お2人のページ（ほかの部門のもの）を写して、その部門の見出しと数にする。元の1人のページは非表示
 //   ・お1人の部門は、その部門のページに入れる。見出しと数はそのまま（数だけその月の数）
+//   ・まとめのページ（「○月のネットワーキングリーダーの皆さま」）：該当者のいない部門は、見出しの字も出さない
+//     （以前は「ビジター招待数」の字だけが浮いて残った）。ほかの部門は詰めて、端から端までを等分した位置に並べる。
+//     お2人の部門と空いた部門が同じ月にあっても、全員が並ぶ。まだ入力の無い月は、そのまま
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -87,9 +90,17 @@ const SLIDES = {
   visitor: kindPage(['ビジター', '招待数'], '8名'),
   extPair: pairPage(['外部', 'リファーラル'], '17件'),
   weekly: sp(2, 0, 200, 960, 80, ['ウィークリープレゼンテーション'], 5400),
+  // まとめのページ：部門ごとの列（見出し・写真・お名前・会社名と【カテゴリー】）が5つ。列の幅は180pt
+  summary: sp(2, 100, 10, 760, 60, ['６月のネットワーキングリーダーの皆さま'], 3600, true)
+    + [['CEU'], ['サンキュー'], ['外部', 'リファーラル'], ['1to1'], ['ビジター', '招待数']].map((label, i) => {
+      const x = 30 + i * 180, id = 10 + i * 10;
+      return sp(id, x + 10, 90, 160, 50, label, 2000) + pic(id + 1, x + 30, 150, 120, 150, 'rId' + (2 + (i % 3)))
+        + sp(id + 2, x, 310, 180, 40, ['見本 太郎'], 2000) + sp(id + 3, x, 350, 180, 60, ['見本株式会社', '【見本カテゴリー】'], 1400);
+    }).join(''),
 };
 const ORDER = ['cover', 'title', 'ceu', 'thanks', 'ext', 'oto', 'visitor', 'extPair', 'weekly'];
-function makeParts() {
+function makeParts(order) {
+  const ORDER = order || module.exports.ORDER;
   const parts = {};
   const put = (p, s) => { parts[p] = blob(s, 'application/xml', p); };
   put('[Content_Types].xml', '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
@@ -107,6 +118,7 @@ function makeParts() {
   });
   return parts;
 }
+module.exports.ORDER = ORDER;
 const W = 12192000, H = 6858000;
 const shapeText = (xml, id) => { const r = F.findShapeRange_(xml, id); return r ? F.slideText_(xml.substring(r.start, r.end)) : null; };
 // 表示のページのうち、その部門のページ：[{ path, xml, info }]
@@ -183,10 +195,55 @@ const winner = (name) => ({ name, raw: name + 'さん', category: '' });
   ck(!/試験 二郎/.test(shapeText(F.xmlOf_(parts, 'ppt/slides/slide4.xml'), 4) || ''), '2) 月桂樹の中の見出しに、お名前が入った');
 }
 
+// ===== 3. まとめのページ：該当者のいない部門は見出しも出さない。ほかの部門は詰めて並べる =====
+{
+  const ORDER_S = ['cover', 'title', 'ceu', 'thanks', 'ext', 'oto', 'visitor', 'summary', 'weekly'];
+  const SUM = `ppt/slides/slide${ORDER_S.indexOf('summary') + 1}.xml`;
+  const KEYS = ['ceu', 'thanks', 'ext', 'oto', 'visitor'];
+  const idOf = (k, part) => String(10 + KEYS.indexOf(k) * 10 + { label: 0, photo: 1, name: 2, info: 3 }[part]);
+  const hidden = (xml, id) => new RegExp(`<p:cNvPr\\b[^>]*\\sid="${id}"[^>]*\\shidden="1"`).test(xml);
+  const geom = (xml, id) => F.readShapeGeomEmu_(xml, id);
+  const centerPt = (xml, id) => { const g = geom(xml, id); return Math.round((g.x + g.cx / 2) / E); };
+  const run = (wins) => {
+    const parts = makeParts(ORDER_S);
+    const nl = { show: true, month: '2026-06', items: KEYS.map((k) => ({ key: k, value: '1', unit: '', winners: (wins[k] || []).map(winner) })) };
+    const res = F.applyNetworkingLeaders_(parts, nl, { by: {}, seq: 0 });
+    return { res, xml: F.xmlOf_(parts, SUM) };
+  };
+  // a) ビジター招待数だけ該当者なし：見出し・お名前・会社名・写真を隠し、4部門を詰めて等分に並べる（幅はそのまま）
+  let { res, xml } = run({ ceu: ['見本 一郎'], thanks: ['試験 二郎'], ext: ['仮名 四郎'], oto: ['例示 五郎'] });
+  ck(['label', 'name', 'info', 'photo'].every((p) => hidden(xml, idOf('visitor', p))), '3a) 該当者のいない部門の見出し・枠が残った: '
+     + J(['label', 'name', 'info', 'photo'].map((p) => [p, hidden(xml, idOf('visitor', p))])));
+  ck(shapeText(xml, idOf('visitor', 'name')) === '' && !/見本株式会社|見本 太郎/.test(F.slideText_(xml)), '3a) 該当者のいない部門のお名前・会社名に見本の字が残った');
+  ck(['ceu', 'thanks', 'ext', 'oto'].every((k) => !hidden(xml, idOf(k, 'label')) && !hidden(xml, idOf(k, 'name'))), '3a) 受賞者のいる部門まで隠した');
+  const names4 = ['ceu', 'thanks', 'ext', 'oto'].map((k) => shapeText(xml, idOf(k, 'name')));
+  ck(J(names4) === J(['見本 一郎', '試験 二郎', '仮名 四郎', '例示 五郎']), '3a) 受賞者のお名前: ' + J(names4));
+  const centers = ['ceu', 'thanks', 'ext', 'oto'].map((k) => centerPt(xml, idOf(k, 'name')));
+  ck(J(centers) === J([143, 368, 593, 818]) || centers.every((c, i) => Math.abs(c - [142.5, 367.5, 592.5, 817.5][i]) <= 1),
+     '3a) 4部門が端から端までを等分した位置に並んでいない（30pt〜930pt を4等分）: ' + J(centers));
+  ck(['ceu', 'thanks', 'ext', 'oto'].every((k) => Math.round(geom(xml, idOf(k, 'name')).cx / E) === 180 && Math.round(geom(xml, idOf(k, 'photo')).cx / E) === 120),
+     '3a) 詰めたときに、枠の幅が変わった（広げない）');
+  ck(['ceu', 'thanks', 'ext', 'oto'].every((k) => Math.abs(centerPt(xml, idOf(k, 'label')) - centerPt(xml, idOf(k, 'name'))) <= 1),
+     '3a) 見出しが、その部門の列の真ん中にない');
+  ck(/該当者のいない部門.*ビジター招待数/.test(res.message) && /詰めて並べました/.test(res.message), '3a) 知らせ: ' + res.message);
+  // b) サンキューがお2人・ビジター招待数は該当者なし：5人ぶん（お2人とも）並び、ビジター招待数の見出しは出さない
+  ({ res, xml } = run({ ceu: ['見本 一郎'], thanks: ['試験 二郎', '架空 三郎'], ext: ['仮名 四郎'], oto: ['例示 五郎'] }));
+  const text = F.slideText_(xml);
+  ck(['見本 一郎', '試験 二郎', '架空 三郎', '仮名 四郎', '例示 五郎'].every((n) => text.includes(n)), '3b) お2人の部門と空いた部門がある月に、全員が並ばない: ' + text);
+  ck(hidden(xml, idOf('visitor', 'label')) && !hidden(xml, idOf('thanks', 'label')), '3b) 見出しの出し方');
+  // c) 全部門に受賞者：並べ直さない（位置そのまま）・隠さない
+  ({ res, xml } = run({ ceu: ['見本 一郎'], thanks: ['試験 二郎'], ext: ['仮名 四郎'], oto: ['例示 五郎'], visitor: ['模擬 六郎'] }));
+  ck(KEYS.every((k, i) => centerPt(xml, idOf(k, 'name')) === 30 + i * 180 + 90 && !hidden(xml, idOf(k, 'label'))), '3c) 全部門に受賞者がいるのに並べ直した・隠した');
+  ck(!/該当者のいない部門/.test(res.message), '3c) 該当者のいない部門は無いのに知らせた: ' + res.message);
+  // d) まだ入力が無い月：見出しは隠さない（そのまま）
+  ({ res, xml } = run({}));
+  ck(KEYS.every((k) => !hidden(xml, idOf(k, 'label'))), '3d) 入力の無い月に、見出しを隠した');
+}
+
 if (fails.length) {
   console.log('NG ' + fails.length + '件 / ' + checks + '件の検査');
   fails.forEach((f) => console.log('  - ' + f));
   process.exit(1);
 }
 console.log('ネットワーキングリーダーのページ: 検査 ' + checks + ' 件 OK: 見出し（サンキュー）をお名前の枠と取り違えない・'
-  + 'お2人の部門はお2人のページ・お1人の部門は見出しと数をそのまま');
+  + 'お2人の部門はお2人のページ・お1人の部門は見出しと数をそのまま・まとめのページで該当者のいない部門は見出しも出さず詰めて並べる');

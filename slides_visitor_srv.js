@@ -35,13 +35,14 @@ function parseParticipantSheet_(sheetName) {
     if (!no || no === 'No.' || !name || name === '参加者氏名') continue;
     // Spreadingでキャンセルになった方は、スライドに入れない（ようこそのページ・プレゼンのページに出さない）
     if (statusIdx >= 0 && /キャンセル|cancel/i.test(String(row[statusIdx] == null ? '' : row[statusIdx]))) { cancelled.push(name); continue; }
+    // セルの中の改行は外す（残っていると、スライドの行が増えて枠の外にはみ出し、見えなくなることがある）
     var item = {
       no: no,
-      name: name,
-      kana:     String(row[2] == null ? '' : row[2]).trim(),
-      category: String(row[3] == null ? '' : row[3]).trim(),
-      company:  String(row[4] == null ? '' : row[4]).trim(),
-      inviter:  String(row[5] == null ? '' : row[5]).trim()
+      name: slideOneLine_(name),
+      kana:     slideOneLine_(row[2]),
+      category: slideOneLine_(row[3]),
+      company:  slideOneLine_(row[4]),
+      inviter:  slideOneLine_(row[5])
     };
     // No. は V01 / G01 / 代理28 の形。ゲストはビジターと別に数える
     if (/^代理/.test(no)) dairi.push(item);
