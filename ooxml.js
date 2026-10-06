@@ -780,7 +780,7 @@ function removeShape_(xml, shapeId) {
 }
 
 // 写真の切り抜き（srcRect）。CSSの object-fit: cover と同じ考え方で、
-// 縦横比を変えずに枠いっぱいに入るよう、はみ出す分を左右または上下から均等に切る。
+// 縦横比を変えずに枠いっぱいに入るよう、はみ出す分を切る（切り方は coverCrop_）。
 function setSrcRectInPic_(xml, picId, crop) {
   var r = findShapeRange_(xml, picId);
   if (!r) return xml;
@@ -796,12 +796,15 @@ function setSrcRectInPic_(xml, picId, crop) {
 
 // 枠(boxW×boxH)に srcW×srcH の画像を縦横比そのままで敷き詰めるときの切り抜き量。
 // 単位は srcRect と同じ「10万分率」。
+// 横にはみ出す分は左右から均等に切る。縦にはみ出す分（枠より縦長の写真）は下だけを切り、上はそろえる
+// （CSSの object-position: center top。メンバーブックの写真と同じ）。
+// 顔写真は頭が上のほうにあるので、上下から均等に切ると頭のてっぺんが切れることがあった
 function coverCrop_(srcW, srcH, boxW, boxH) {
   var c = { l: 0, t: 0, r: 0, b: 0 };
   if (!srcW || !srcH || !boxW || !boxH) return c;
   var sr = srcW / srcH, tr = boxW / boxH;
   if (sr > tr) { c.l = c.r = (1 - tr / sr) / 2 * 100000; }
-  else if (sr < tr) { c.t = c.b = (1 - sr / tr) / 2 * 100000; }
+  else if (sr < tr) { c.b = (1 - sr / tr) * 100000; }
   return c;
 }
 
