@@ -421,7 +421,57 @@ step('PDFの作る場所と共有', () => {
   const last = env.drive.created[env.drive.created.length - 1];
   ck(err && /リンクを知っている全員が閲覧可/.test(err.message), '8b) リンクで共有できないことを知らせない: ' + (err && err.message));
   ck(!env.props['VISITOR_PDF_ID_20261021参加者'] && last && env.drive.files[last.id].trashed === true, '8b) 共有できないPDFを登録した・残した');
+  // 知らせ：動かしたアカウント・組織の設定・複数のアカウント・Googleの返事・名簿のシートはできている（PDFのみ再作成）
+  const msg = String(err && err.message);
+  ck(/動かしたGoogleアカウント: tester@example\.com/.test(msg) && /組織の設定でリンクの共有が禁止/.test(msg) && /複数のGoogleアカウント/.test(msg)
+     && /Googleの返事: .*Access denied: DriveApp/.test(msg) && /drive\.permissions\.create/.test(msg), '8b) 共有できない知らせに、アカウント・考えられること・Googleの返事が無い: ' + msg);
+  ck(/名簿のシート「20261021参加者」は作成済み/.test(msg) && /PDFのみ再作成/.test(msg) && env.sheet('20261021参加者_印刷用'), '8b) 名簿のシートはできていて、PDFだけ作り直せることを知らせない: ' + msg);
+  ck(env.drive.shareTries >= 3 && env.sleeps.includes(2000) && env.sleeps.includes(4000), '8b) 共有を、少し待ってやり直していない: ' + env.drive.shareTries + ' ' + JSON.stringify(env.sleeps));
+  // Gmail のアカウントには組織の設定が無いので、その話はしない
+  env.userEmail = 'someone@gmail.com';
+  err = null;
+  try { srv.regeneratePdfOnly('20261021参加者'); } catch (e) { err = e; }
+  ck(err && /someone@gmail\.com/.test(err.message) && !/会社などの組織のアカウント/.test(err.message) && /一時的な不調/.test(err.message), '8b) Gmail のアカウントに、組織の設定の話をした: ' + (err && err.message));
+  env.userEmail = '';
   env.sharingBlocked = false;
+  // そのあと共有できるようになったら「PDFのみ再作成」で作れる（作り直しの手間なし）
+  srv.regeneratePdfOnly('20261021参加者');
+  const id21 = env.props['VISITOR_PDF_ID_20261021参加者'];
+  ck(id21 && env.drive.files[id21].sharing === 'ANYONE_WITH_LINK/VIEW' && env.props['VISITOR_PDF_URL_20261021参加者'] && env.fileText(id21).includes('翌週 来子'),
+     '8b) 共有できなかったあと、PDFのみ再作成で作れない');
+  env.errors.length = 0;
+});
+
+// ---- 8c) リンクで共有するとき：作った直後に断られても、少し待って通す ----
+step('リンクの共有のやり直し', () => {
+  const rows = srv.analyzeCsvData(CSV_1007);
+  const make = (date, disp, key) => {
+    env.sleeps.length = 0; env.drive.shareTries = 0;
+    let err = null;
+    try { srv.createFinalSheet(date, disp, rows.rows, rows.header); } catch (e) { err = e; }
+    const id = env.props['VISITOR_PDF_ID_' + key + '参加者'];
+    return { err, id, f: id && env.drive.files[id] };
+  };
+  // 2回断られて、3回目で通る
+  env.sharingFlaky = 2;
+  let r = make('2026/10/28', '2026/10/28(水) 第539回', '20261028');
+  ck(!r.err && r.f && r.f.sharing === 'ANYONE_WITH_LINK/VIEW' && !r.f.trashed && env.drive.shareTries === 3 && JSON.stringify(env.sleeps) === '[2000,4000]',
+     '8c) 一時的に断られたあと、やり直して共有できない: ' + (r.err && r.err.message) + ' ' + env.drive.shareTries + ' ' + JSON.stringify(env.sleeps));
+  // 断られたのに共有は付いている：それで良しとする（やり直さない）
+  env.sharingFlaky = 1; env.sharingAppliedAnyway = true;
+  r = make('2026/11/18', '2026/11/18(水) 第540回', '20261118');
+  ck(!r.err && r.f && r.f.sharing === 'ANYONE_WITH_LINK/VIEW' && env.drive.shareTries === 1 && !env.sleeps.length,
+     '8c) 断られても共有が付いているのに、やり直した・止まった: ' + (r.err && r.err.message) + ' ' + env.drive.shareTries);
+  env.sharingFlaky = 0; env.sharingAppliedAnyway = false;
+  // DriveApp だけが断られる：Drive API で「リンクを知っている全員（閲覧）」を付ける
+  env.sharingDriveAppBroken = true;
+  r = make('2026/11/25', '2026/11/25(水) 第541回', '20261125');
+  const perm = env.drive.permissions[env.drive.permissions.length - 1];
+  ck(!r.err && r.f && r.f.sharing === 'ANYONE_WITH_LINK/VIEW' && perm && perm.id === r.id && JSON.stringify(perm.res) === JSON.stringify({ type: 'anyone', role: 'reader', allowFileDiscovery: false }),
+     '8c) DriveApp で断られたとき、Drive API で共有しない: ' + (r.err && r.err.message) + ' ' + JSON.stringify(perm));
+  env.sharingDriveAppBroken = false;
+  // 共有できたら、ふだんと同じ知らせ
+  ck(env.props['VISITOR_PDF_URL_20261125参加者'] === 'https://drive.example/' + r.id, '8c) やり直して共有できたPDFを登録していない');
   env.errors.length = 0;
 });
 

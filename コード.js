@@ -2,7 +2,7 @@
 
 // 反映されたか確かめるための版。変更したら日付を更新する。
 // clasp push / デプロイが効いているかは、これを画面で見れば分かる。
-var SYSTEM_VERSION_ = '2026-10-04e';
+var SYSTEM_VERSION_ = '2026-10-06a';
 
 function getSystemVersion() { return SYSTEM_VERSION_; }
 
@@ -821,8 +821,13 @@ function createFinalSheet(meetingDateVal, meetingDisplay, finalRows, originalHea
   for(var w=0; w<widths.length; w++) printSheet.setColumnWidth(w+1, widths[w]);
   for(var row = 6; row <= lastPrintRow; row++) printSheet.setRowHeight(row, 30);
   SpreadsheetApp.flush();
-  var pdfFileIdKey = 'VISITOR_PDF_ID_' + baseSheetName, pdfInfo = {};
-  var pdfUrl = exportSheetToPdf(printSheet, meetingDisplay + " ビジター様リスト.pdf", pdfFileIdKey, pdfInfo);
+  var pdfFileIdKey = 'VISITOR_PDF_ID_' + baseSheetName, pdfInfo = {}, pdfUrl;
+  try { pdfUrl = exportSheetToPdf(printSheet, meetingDisplay + " ビジター様リスト.pdf", pdfFileIdKey, pdfInfo); }
+  catch (e) {
+    // 名簿のシートはもうできている。編集し直さなくても、PDFだけを作り直せることを添える
+    throw new Error((e && e.message ? e.message : e) + '\n\n名簿のシート「' + baseSheetName + '」は作成済みです。'
+      + 'PDFだけを作り直すときは、この画面の「作成済みデータを再編集」で「' + baseSheetName + '」を選び、「PDFのみ再作成」を押してください。');
+  }
   PropertiesService.getScriptProperties().setProperty('VISITOR_PDF_URL_' + baseSheetName, pdfUrl);   // メールに入れるリンク（開催日ごと）
   PropertiesService.getScriptProperties().setProperty('LATEST_VISITOR_LIST_URL', pdfUrl);
   PropertiesService.getScriptProperties().setProperty('LATEST_MEETING_DATE', meetingDateVal); 
@@ -892,14 +897,56 @@ function createSharedPdf_(spreadsheetId, blob) {
     catch (e) { lastErr = e; console.warn('[PDF] ここには作れないので、次の場所に作ります: ' + (e && e.message ? e.message : e)); }
   }
   if (!pdfFile) throw new Error('PDFを保存できる場所がありませんでした: ' + driveHelpHint_(lastErr));
-  try { pdfFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); }
-  catch (e) {
+  var why = shareWithLink_(pdfFile);
+  if (why) {
     try { pdfFile.setTrashed(true); } catch (x) {}
-    throw new Error('PDFを「リンクを知っている全員が閲覧可」にできませんでした（このGoogleアカウントでは、組織の設定でリンクの共有が禁止されている可能性があります）。'
-      + 'ビジターの方が開けないため、PDFは登録していません。リンクの共有ができるアカウント（スプレッドシートの持ち主など）で作り直してください。（'
-      + (e && e.message ? e.message : e) + '）');
+    throw new Error(linkShareProblem_(why));
   }
   return pdfFile;
+}
+
+// ファイルを「リンクを知っている全員が閲覧可」にする。できたら ''、できなければ Google の返事（断られた理由）。
+// 作った直後は、ドライブの側でまだ共有を変えられずに断られることがある（少し待つと通る）ので、待って3回まで。
+// 断られても共有は付いていることがあるので、確かめてから次へ。DriveApp で通らなければ Drive API でも試す
+function shareWithLink_(file) {
+  var why = '';
+  for (var attempt = 0; attempt < 3; attempt++) {
+    if (attempt) Utilities.sleep(2000 * attempt);
+    try { file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); return ''; }
+    catch (e) { why = String(e && e.message ? e.message : e); }
+    if (sharedWithLink_(file)) return '';
+  }
+  try {
+    Drive.Permissions.create({ type: 'anyone', role: 'reader', allowFileDiscovery: false }, file.getId(), { supportsAllDrives: true });
+    return '';
+  } catch (e) { why += ' / ' + String(e && e.message ? e.message : e); }
+  console.error('[PDF] リンクで共有できません: ' + why);
+  return why;
+}
+function sharedWithLink_(file) {
+  try {
+    var a = file.getSharingAccess();
+    return !!a && (a == DriveApp.Access.ANYONE_WITH_LINK || a == DriveApp.Access.ANYONE);
+  } catch (e) { return false; }
+}
+
+// リンクで共有できなかったときの知らせ：動かしたGoogleアカウントと、考えられること・どうするか。
+// 会社などの組織のアカウント（Google Workspace）は、組織の設定でリンクの共有が禁止されていることがある（Gmailのアカウントには無い）。
+// ブラウザで複数のアカウントにログインしていると、ふだんと違うアカウントで動くことがある
+function linkShareProblem_(why) {
+  var user = '';
+  try { user = Session.getEffectiveUser().getEmail() || ''; } catch (e) {}
+  return 'PDFを「リンクを知っている全員が閲覧可」にできませんでした（少し待って3回やり直しました）。'
+    + 'リンクを受け取った方が開けないため、PDFは登録していません。\n'
+    + '動かしたGoogleアカウント: ' + (user || '（分かりませんでした）') + '\n'
+    + '考えられること:\n'
+    + (/@(gmail|googlemail)\.com$/i.test(user) ? ''
+      : '・このアカウントが会社などの組織のアカウント（Google Workspace）で、組織の設定でリンクの共有が禁止されている'
+        + ' → リンクの共有ができるアカウント（ふだんチャプターで使っているアカウント・スプレッドシートの持ち主など）で作り直してください。\n')
+    + '・上のアカウントが、ふだん使っているものと違う（ブラウザで複数のGoogleアカウントにログインしていると起こります）'
+    + ' → ふだんのアカウントだけでログインした画面（Chromeの別のプロファイル・シークレットウィンドウ）で作り直してください。\n'
+    + '・Googleドライブの一時的な不調 → 数分おいて、もう一度お試しください。\n'
+    + '（Googleの返事: ' + why + '）';
 }
 
 // 前のPDFを差し替えられずに新しく作ったとき（URLが変わった）の知らせ。送ったリンクは古い中身のままなので、送り直してもらう
@@ -1003,8 +1050,7 @@ function memberBookCreate_(blob) {
     delete res.parents;
     file = Drive.Files.create(res, blob, { supportsAllDrives: true });
   }
-  var f = DriveApp.getFileById(file.id), shared = true;
-  try { f.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch (e) { shared = false; }
+  var f = DriveApp.getFileById(file.id), shared = !shareWithLink_(f);
   var url = f.getUrl();
   props.setProperty('MEMBER_BOOK_ID', file.id);
   props.setProperty('MEMBER_BOOK_URL', url);

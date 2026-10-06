@@ -86,17 +86,24 @@
           sel.appendChild(opt);
         }
       }).getMeetingCandidates();
+      loadSheetList();
+    };
+
+    // 「作成済みデータを再編集」のシートの一覧。pick … 選んでおくシート名
+    function loadSheetList(pick) {
       google.script.run.withSuccessHandler(function(sheets) {
-        if (sheets.length === 0) return;
         var sel = document.getElementById('sheetSelect');
+        sel.innerHTML = '';
+        if (sheets.length === 0) return;
         for(var i=0; i<sheets.length; i++) {
           var opt = document.createElement('option');
           opt.value = sheets[i]; opt.text = sheets[i];
+          if (sheets[i] === pick) opt.selected = true;
           sel.appendChild(opt);
         }
         document.getElementById('existingSheets').classList.remove('hidden');
       }).getExistingVisitorSheets();
-    };
+    }
 
     var dropZone = document.getElementById('drop_zone');
     dropZone.addEventListener('dragover', function(e) { e.preventDefault(); dropZone.style.background = '#e9e9e9'; });
@@ -351,6 +358,9 @@
       resetMeeting();
       document.getElementById('loading').classList.add('hidden');
       document.getElementById('step1').classList.remove('hidden');
+      // 名簿のシートまでできていて、PDFだけ作れなかったとき：一覧にそのシートを出して選んでおく（「PDFのみ再作成」ですぐ作り直せる）
+      var made = String(err && err.message || '').match(/名簿のシート「([^」]+)」は作成済み/);
+      if (made) loadSheetList(made[1]);
     }
   </script>
 </body>
