@@ -9,6 +9,8 @@
 //   役職のページ … 今週の共有事項を、役職の順（プレジデント → … → スプレディング委員）に、担当者の写真・お名前つきで。
 //                  短いもの（180文字以下）同士は2人で1枚にする（ツールと同じ）。
 //                  共有事項が空・「なし」の役職のページは作らない。
+//   割り振り表   … ビジターホストコーディネーターのページのすぐあとに、その開催日の「割り振り表」シートの
+//                  ビジターごとの表（No.〜オリエンテーション）。上の集計の行・メンバー別の表は入れない（premtgAllocation_）
 //
 // ひな形 … 「⚙️ 設定 ＞ 大きなスライド」の「事前MTG（朝イチMTG）」に登録したpptx。
 //          登録していなければ、同梱の既定のひな形（premtg_template.html。これまでと同じデザイン）で作る。
@@ -214,6 +216,8 @@ function premtgData_(target) {
 
   // 新入会の方（熱烈歓迎のページを作る。welcome_srv.js）
   out.newMembers = welcomeMembers_(sheet(/^新入会$/, null, ''));
+  // 割り振り表（ビジターホストコーディネーターのページのあと）
+  out.allocation = premtgAllocation_(target);
 
   // 役職ごとの共有事項：「今週の共有事項（役職）」と、ルーティンチェックシートの「（役職）より」の行
   // （「書記兼会計より」「プレジデントより」など。朝一MTGでその役職が話すこと）の両方から。
@@ -238,20 +242,190 @@ function premtgData_(target) {
 }
 
 // 役職のページの割り付け（ツールと同じ）：共有事項のある役職を順に、
-// 隣どうしがどちらも180文字以下なら2人で1枚、そうでなければ1人で1枚
-function premtgPages_(roles, canPair) {
+// 隣どうしがどちらも180文字以下なら2人で1枚、そうでなければ1人で1枚。
+// endKey の役職（割り振り表を入れる日のビジターホストコーディネーター）は、うしろの役職と同じページにしない
+function premtgPages_(roles, canPair, endKey) {
   var list = [], pages = [], i;
   for (i = 0; i < roles.length; i++) if (roles[i].text) list.push(roles[i]);
   i = 0;
   while (i < list.length) {
     var a = list[i], b = list[i + 1];
-    if (canPair && b && a.text.length <= PREMTG_PAIR_MAX_ && b.text.length <= PREMTG_PAIR_MAX_) {
+    if (canPair && b && a.key !== endKey && a.text.length <= PREMTG_PAIR_MAX_ && b.text.length <= PREMTG_PAIR_MAX_) {
       pages.push([a, b]); i += 2;
     } else {
       pages.push([a]); i += 1;
     }
   }
   return pages;
+}
+
+// --- 割り振り表のページ ---
+// その開催日の「yyyyMMdd割り振り表」（以前の「MMdd割り振り表」）シートの、ビジターごとの表だけを読む
+// （「No.」の見出しの行から、空の行・「※」の行の前まで。上の集計の行・下のメンバー別の表は読まない）。
+//   戻り値 { found, sheetName, heads: [見出し], rows: [[セルの文字]] }
+var PREMTG_ALLOC_AFTER_ = 'vhc';
+function premtgAllocation_(target) {
+  var key = sheetKeyOf_(target), name = key + '割り振り表', out = { found: false, sheetName: name, heads: [], rows: [] };
+  var ss = getSS_(), sh = ss.getSheetByName(name);
+  if (!sh) {
+    var old = Utilities.formatDate(target, 'Asia/Tokyo', 'MMdd') + '割り振り表';
+    if (ss.getSheetByName(old)) { sh = ss.getSheetByName(old); out.sheetName = old; }
+  }
+  if (!sh) return out;
+  var v = sh.getDataRange().getValues(), h = -1, i;
+  for (i = 0; i < Math.min(10, v.length); i++) {
+    if (v[i].some(function (c) { return String(c).trim() === 'No.'; })) { h = i; break; }
+  }
+  if (h < 0) return out;
+  var cols = [];
+  v[h].forEach(function (c, k) { if (String(c == null ? '' : c).trim()) cols.push(k); });
+  var cell = function (r, k) {
+    return String(r[k] == null ? '' : r[k]).replace(/\r\n?/g, '\n').split('\n')
+      .map(function (t) { return t.replace(/[ \t　]+$/, ''); }).join('\n').replace(/^\n+|\n+$/g, '');
+  };
+  out.heads = cols.map(function (k) { return cell(v[h], k); });
+  for (i = h + 1; i < v.length; i++) {
+    var first = String(v[i][cols[0]] == null ? '' : v[i][cols[0]]).trim();
+    if (!first || first.indexOf('※') === 0) break;
+    out.rows.push(cols.map(function (k) { return cell(v[i], k); }));
+  }
+  out.found = true;
+  return out;
+}
+
+// 列の幅（pt。合わせて 910pt）・寄せ方・見出しの色（割り振り表のシートと同じ色）。知らない見出しは幅を分け合う
+var PREMTG_ALLOC_COLS_ = {
+  'No.': { w: 52, algn: 'ctr' }, 'お名前': { w: 100, algn: 'l' }, 'カテゴリー': { w: 150, algn: 'l' }, '招待者': { w: 96, algn: 'l' },
+  'つなげたいメンバー': { w: 128, algn: 'ctr' }, 'ファシリテーター': { w: 112, algn: 'ctr', fill: 'FFF2CC' },
+  'ルームメンバー': { w: 128, algn: 'ctr', fill: 'E6F2FF' }, 'オリエンテーション': { w: 144, algn: 'ctr', fill: 'D9EAD3' }
+};
+var PREMTG_ALLOC_HEAD_FILL_ = 'F3F3F3', PREMTG_ALLOC_PAD_PT_ = 3.6, PREMTG_ALLOC_LINE_ = 1.5;
+function premtgAllocCols_(heads, totalPt) {
+  var known = 0, unknown = 0;
+  heads.forEach(function (t) { if (PREMTG_ALLOC_COLS_[t]) known += PREMTG_ALLOC_COLS_[t].w; else unknown++; });
+  var rest = unknown ? Math.max(60, (totalPt - known) / unknown) : 0;
+  var cols = heads.map(function (t) { var d = PREMTG_ALLOC_COLS_[t] || {}; return { w: d.w || rest, algn: d.algn || 'l', fill: d.fill || PREMTG_ALLOC_HEAD_FILL_ }; });
+  var sum = cols.reduce(function (a, c) { return a + c.w; }, 0);
+  cols.forEach(function (c) { c.w = c.w * totalPt / sum; });            // 合わせてちょうど totalPt に
+  return cols;
+}
+// 文字の幅（em。全角1・半角0.6）
+function premtgEm_(t) {
+  var w = 0, s = String(t == null ? '' : t);
+  for (var i = 0; i < s.length; i++) w += s.charCodeAt(i) < 0x2000 ? (s.charAt(i) === ' ' ? 0.35 : 0.6) : 1;
+  return w;
+}
+// 1行の高さ（pt）。セルごとに、折り返しを見込んだ行数のいちばん多いもの
+function premtgAllocRowPt_(cells, cols, pt) {
+  var lines = 1;
+  cells.forEach(function (t, k) {
+    var wPt = Math.max(1, cols[k].w - 2 * PREMTG_ALLOC_PAD_PT_), n = 0;
+    String(t).split('\n').forEach(function (line) { n += Math.max(1, Math.ceil(premtgEm_(line) * pt * 1.05 / wPt)); });
+    lines = Math.max(lines, n);
+  });
+  return lines * pt * PREMTG_ALLOC_LINE_ + 2 * PREMTG_ALLOC_PAD_PT_;
+}
+// 字の大きさとページの分け方を決める。見出しの行は各ページに付ける。
+// 10pt で要るページ数（それより大きい字でも同じページ数で入るなら、いちばん大きい字。16ptまで）にし、
+// ページごとの行は高さがそろうように分ける
+function premtgAllocLayout_(heads, rows, cols, availPt) {
+  var pagesAt = function (pt, limit) {
+    var hh = premtgAllocRowPt_(heads, cols, pt), hs = rows.map(function (r) { return premtgAllocRowPt_(r, cols, pt); });
+    var cap = (limit || availPt) - hh, pages = [], cur = [], used = 0;
+    for (var i = 0; i < hs.length; i++) {
+      if (hs[i] > availPt - hh) return null;                        // 1行も入らない
+      if (cur.length && used + hs[i] > cap) { pages.push(cur); cur = []; used = 0; }
+      cur.push(i); used += hs[i];
+    }
+    if (cur.length) pages.push(cur);
+    return { pages: pages, head: hh, rows: hs };
+  };
+  var minPt = 10, best = null, pt;
+  for (pt = minPt; pt >= 7 && !pagesAt(pt); pt--) minPt = pt - 1;    // 10pt でも1行が入らないときだけ、もっと小さく
+  var base = pagesAt(minPt);
+  if (!base) return null;
+  for (pt = 16; pt >= minPt; pt--) {
+    var r = pagesAt(pt);
+    if (r && r.pages.length <= base.pages.length) { best = { pt: pt, at: r }; break; }
+  }
+  // 同じページ数のまま、ページごとの高さをそろえる（いちばん高いページが低くなる区切り）
+  var lo = 0, hi = availPt, at = best.at;
+  for (var k = 0; k < 20; k++) {
+    var mid = (lo + hi) / 2, t = pagesAt(best.pt, mid);
+    if (t && t.pages.length <= best.at.pages.length) { hi = mid; at = t; } else lo = mid;
+  }
+  return { pt: best.pt, pages: at.pages, head: at.head, rows: at.rows };
+}
+// 表（a:tbl）を1つ作る。cells … 行ごとのセルの文字。head … 見出しの行か
+function premtgAllocTable_(id, x, y, cols, lines, heights, pt) {
+  var E = 12700, sz = Math.round(pt * 100);
+  var ln = function (tag) { return '<a:' + tag + ' w="9525"><a:solidFill><a:srgbClr val="9E9E9E"/></a:solidFill></a:' + tag + '>'; };
+  var tc = function (text, col, head) {
+    var paras = String(text).split('\n').map(function (t) {
+      return '<a:p><a:pPr algn="' + (head ? 'ctr' : col.algn) + '"/>'
+        + (t ? '<a:r><a:rPr lang="ja-JP" sz="' + sz + '"' + (head ? ' b="1"' : '') + ' dirty="0"><a:solidFill><a:srgbClr val="222222"/></a:solidFill></a:rPr>'
+             + '<a:t>' + escapeXml_(t) + '</a:t></a:r>' : '')
+        + '<a:endParaRPr lang="ja-JP" sz="' + sz + '" dirty="0"/></a:p>';
+    }).join('');
+    var pad = Math.round(PREMTG_ALLOC_PAD_PT_ * E);
+    return '<a:tc><a:txBody><a:bodyPr/><a:lstStyle/>' + paras + '</a:txBody>'
+      + '<a:tcPr marL="' + pad + '" marR="' + pad + '" marT="' + pad + '" marB="' + pad + '" anchor="ctr">'
+      + ln('lnL') + ln('lnR') + ln('lnT') + ln('lnB')
+      + '<a:solidFill><a:srgbClr val="' + (head ? col.fill : 'FFFFFF') + '"/></a:solidFill></a:tcPr></a:tc>';
+  };
+  var cx = 0, cy = 0, grid = '', trs = '';
+  cols.forEach(function (c) { var w = Math.round(c.w * E); cx += w; grid += '<a:gridCol w="' + w + '"/>'; });
+  lines.forEach(function (cells, i) {
+    var h = Math.round(heights[i] * E); cy += h;
+    trs += '<a:tr h="' + h + '">' + cells.map(function (t, k) { return tc(t, cols[k], i === 0); }).join('') + '</a:tr>';
+  });
+  return '<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="' + id + '" name="割り振り表"/>'
+    + '<p:cNvGraphicFramePr><a:graphicFrameLocks noGrp="1"/></p:cNvGraphicFramePr><p:nvPr/></p:nvGraphicFramePr>'
+    + '<p:xfrm><a:off x="' + x + '" y="' + y + '"/><a:ext cx="' + cx + '" cy="' + cy + '"/></p:xfrm>'
+    + '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table"><a:tbl><a:tblPr firstRow="1"/>'
+    + '<a:tblGrid>' + grid + '</a:tblGrid>' + trs + '</a:tbl></a:graphicData></a:graphic></p:graphicFrame>';
+}
+// 割り振り表のページを作る（ページ数ぶん。並びには入れない）。
+// レイアウトは役職のページと同じもの。上に、ビジターホストコーディネーターの色の帯と題
+//   戻り値 { slides: [addSlidePart_ の戻り値], pt }
+function premtgAllocationSlides_(parts, alloc, layoutRels, md) {
+  var prs = xmlOf_(parts, 'ppt/presentation.xml') || '';
+  var sz = prs.match(/<p:sldSz\b[^>]*\bcx="(\d+)"[^>]*\bcy="(\d+)"/);
+  var W = sz ? parseInt(sz[1], 10) : 12192000, H = sz ? parseInt(sz[2], 10) : 6858000, E = 12700;
+  var side = 25 * E, bandH = 56 * E, top = bandH + 14 * E, availPt = (H - top) / E - 12;
+  var cols = premtgAllocCols_(alloc.heads, (W - 2 * side) / E);
+  var lay = premtgAllocLayout_(alloc.heads, alloc.rows, cols, availPt);
+  if (!lay) return { slides: [], pt: 0 };
+  var layout = (String(layoutRels || '').match(/<Relationship\b[^>]*Type="[^"]*\/slideLayout"[^>]*\/>/) || [''])[0];
+  var lt = (layout.match(/Target="([^"]+)"/) || [])[1] || ('../slideLayouts/' + firstLayout_(parts).replace(/^.*\//, ''));
+  var REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+  var rels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+    + '<Relationship Id="rId1" Type="' + REL + '/slideLayout" Target="' + lt + '"/></Relationships>';
+  var color = PREMTG_COLORS_.coord, slides = [];
+  lay.pages.forEach(function (idx, n) {
+    var title = '🤝 ビジター割り振り表　' + md + (lay.pages.length > 1 ? '（' + (n + 1) + '/' + lay.pages.length + '）' : '');
+    var heights = [lay.head].concat(idx.map(function (i) { return lay.rows[i]; }));
+    var lines = [alloc.heads].concat(idx.map(function (i) { return alloc.rows[i]; }));
+    var xml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+      + '<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="' + REL + '" '
+      + 'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld name="割り振り表"><p:spTree>'
+      + '<p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>'
+      + '<p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>'
+      + '<p:sp><p:nvSpPr><p:cNvPr id="2" name="帯"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="0" y="0"/>'
+      + '<a:ext cx="' + W + '" cy="' + bandH + '"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom>'
+      + '<a:solidFill><a:srgbClr val="' + color + '"/></a:solidFill><a:ln><a:noFill/></a:ln></p:spPr></p:sp>'
+      + '<p:sp><p:nvSpPr><p:cNvPr id="3" name="題"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm>'
+      + '<a:off x="' + side + '" y="0"/><a:ext cx="' + (W - 2 * side) + '" cy="' + bandH + '"/></a:xfrm>'
+      + '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/></p:spPr>'
+      + '<p:txBody><a:bodyPr wrap="square" lIns="0" rIns="0" anchor="ctr"><a:noAutofit/></a:bodyPr><a:lstStyle/><a:p>'
+      + '<a:r><a:rPr lang="ja-JP" sz="2400" b="1" dirty="0"><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></a:rPr>'
+      + '<a:t>' + escapeXml_(title) + '</a:t></a:r></a:p></p:txBody></p:sp>'
+      + premtgAllocTable_(4, side, top, cols, lines, heights, lay.pt)
+      + '</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>';
+    slides.push(addSlidePart_(parts, xml, rels));
+  });
+  return { slides: slides, pt: lay.pt };
 }
 
 // --- ひな形 ---
@@ -568,7 +742,7 @@ function premtgLayoutBlocks_(xml, ids, info) {
 //   cache … 写真の控え（mpAddPhoto_ と同じもの { by: {}, seq: 0 }）
 //   welcomeSrc … 熱烈歓迎のひな形を展開したもの（新入会の方がいるときだけ。welcome_srv.js）
 function buildPreMeetingDeck_(parts, data, cache, welcomeSrc) {
-  var models = premtgModels_(parts), info = { summary: false, pages: [], welcome: [], noPhoto: [], overflow: [], messages: [] };
+  var models = premtgModels_(parts), info = { summary: false, pages: [], welcome: [], noPhoto: [], overflow: [], messages: [], allocation: null };
   var w = ['日', '月', '火', '水', '木', '金', '土'], d = parseDate_(data.date);
   var common = { '月日': data.md, '開催回': data.meetingNo || '',
                  '開催日': d ? d.getFullYear() + '年' + (d.getMonth() + 1) + '月' + d.getDate() + '日（' + w[d.getDay()] + '）' : '' };
@@ -592,7 +766,14 @@ function buildPreMeetingDeck_(parts, data, cache, welcomeSrc) {
   }
 
   // 役職のページ（ひな形の役職のページの場所に、作ったページを並べる。ひな形のページは消す）
-  var pages = premtgPages_(data.roles, !!models.two), added = [];
+  // 割り振り表がある日は、ビジターホストコーディネーターのページのすぐあとに割り振り表のページ（そのページはうしろの役職と組まない）
+  var alloc = data.allocation || null, withAlloc = !!(alloc && alloc.found && alloc.rows.length);
+  if (alloc && !withAlloc) {
+    info.messages.push(alloc.found ? '割り振り表（' + alloc.sheetName + '）にビジターの行が無いので、割り振り表のページは入れませんでした。'
+      : '割り振り表（' + alloc.sheetName + '）がまだ無いので、割り振り表のページは入れませんでした'
+        + '（「3. ルーム・オリエン割り振り表」で作ってから作り直すと、ビジターホストコーディネーターのページのあとに入ります）。');
+  }
+  var pages = premtgPages_(data.roles, !!models.two, withAlloc ? PREMTG_ALLOC_AFTER_ : ''), added = [];
   if (!models.two && !models.one) {
     if (pages.length) info.messages.push('役職のページのひな形（{{共有事項1}} のあるページ）が無いので、役職のページは作りませんでした。');
   } else {
@@ -611,6 +792,12 @@ function buildPreMeetingDeck_(parts, data, cache, welcomeSrc) {
     var ct = xmlOf_(parts, '[Content_Types].xml');
     for (var ext in photoTypes) ct = ensureDefaultType_(ct, ext);
     putXml_(parts, '[Content_Types].xml', ct);
+    if (withAlloc) {
+      var al = premtgAllocationSlides_(parts, alloc, xmlOf_(parts, relsPathOf_(models.one || models.two)) || '', data.md);
+      var at = premtgAllocAt_(pages);
+      added = added.slice(0, at + 1).concat(al.slides, added.slice(at + 1));
+      info.allocation = { pages: al.slides.length, rows: alloc.rows.length, pt: al.pt, sheetName: alloc.sheetName };
+    }
     var entries = slideEntries_(parts), out = [], placed = false;
     for (var e = 0; e < entries.length; e++) {
       var path = entries[e].path;
@@ -623,6 +810,18 @@ function buildPreMeetingDeck_(parts, data, cache, welcomeSrc) {
     setSlideEntries_(parts, out);
     if (models.two) premtgDropSlide_(parts, models.two);
     if (models.one) premtgDropSlide_(parts, models.one);
+  }
+
+  // 役職のページのひな形が無いときの割り振り表のページは、まとめのページのあと（無ければ最後）
+  if (withAlloc && !info.allocation) {
+    var al2 = premtgAllocationSlides_(parts, alloc, models.summary ? xmlOf_(parts, relsPathOf_(models.summary)) || '' : '', data.md);
+    var ents = slideEntries_(parts), out2 = [], put = false;
+    for (var e2 = 0; e2 < ents.length; e2++) {
+      out2.push(ents[e2]);
+      if (ents[e2].path === models.summary) { out2 = out2.concat(al2.slides); put = true; }
+    }
+    setSlideEntries_(parts, put ? out2 : out2.concat(al2.slides));
+    info.allocation = { pages: al2.slides.length, rows: alloc.rows.length, pt: al2.pt, sheetName: alloc.sheetName };
   }
 
   // 熱烈歓迎のページ（新入会の方ごとに1枚。まとめのページのすぐあと）
@@ -701,6 +900,17 @@ function premtgRoleSlide_(parts, xml, rels, people, slots, common, cache) {
   return { xml: xml, rels: rels, noPhoto: noPhoto, types: types, overflow: overflow };
 }
 
+// 割り振り表のページを入れる場所：ビジターホストコーディネーターのページのあと（何枚目の役職のページのあとか。-1 は役職のページの前）。
+// そのページが無い日（共有事項が無い）は、ビジターホストコーディネーターより前の役職のページのあと
+function premtgAllocAt_(pages) {
+  var order = PREMTG_ROLES_.map(function (r) { return r.key; }), vi = order.indexOf(PREMTG_ALLOC_AFTER_), at = -1;
+  for (var p = 0; p < pages.length; p++) {
+    if (pages[p].some(function (r) { return r.key === PREMTG_ALLOC_AFTER_; })) return p;
+    if (pages[p].every(function (r) { return order.indexOf(r.key) < vi; })) at = p;
+  }
+  return at;
+}
+
 // ひな形のページを消す（並びからは setSlideEntries_ で外してあるもの）
 function premtgDropSlide_(parts, path) {
   var rels = xmlOf_(parts, relsPathOf_(path)) || '';
@@ -739,7 +949,8 @@ function getPreMeetingPreview(dateStr) {
     }
     if (models && !models.summary) warn.push('ひな形にまとめのページ（{{定例会関連}} などのあるページ）がありません。');
     if (models && !models.two && !models.one) warn.push('ひな形に役職のページ（{{共有事項1}} のあるページ）がありません。');
-    var pages = premtgPages_(data.roles, models ? !!models.two : true).map(function (pg) {
+    var al = data.allocation || {}, withAlloc = !!(al.found && al.rows && al.rows.length);
+    var pages = premtgPages_(data.roles, models ? !!models.two : true, withAlloc ? PREMTG_ALLOC_AFTER_ : '').map(function (pg) {
       return pg.map(function (r) { return { label: r.label, icon: r.icon, holder: r.holder, chars: r.text.length, color: r.color, from: r.from }; });
     });
     // 熱烈歓迎のページ（新入会の方ごと）と、そのひな形
@@ -756,6 +967,7 @@ function getPreMeetingPreview(dateStr) {
              welcomeTemplate: wtpl ? { registered: wtpl.registered, name: wtpl.name, error: wtpl.error || '',
                                        notes: wchk ? wchk.notes : [] } : null,
              skipped: data.roles.filter(function (r) { return !r.text; }).map(function (r) { return r.label; }),
+             allocation: { found: !!al.found, sheetName: al.sheetName || '', rows: (al.rows || []).length, heads: al.heads || [] },
              template: { registered: tpl.registered, name: tpl.name, error: warn.join('\n') } };
   } catch (e) {
     console.error('[PREMTG] ' + (e && e.stack ? e.stack : e));
@@ -784,9 +996,12 @@ function generatePreMeetingSlides(dateStr) {
     var outName = slideFileName_(target, '事前MTG');
     var saved = saveOutputFile_(zipFromMap_(parts, outName), outName);
 
+    var al = info.allocation;
     var msg = data.display + ' の事前MTG（朝イチMTG）のパワポを作りました（'
       + (info.summary ? 'まとめ1枚＋' : '') + (info.welcome.length ? '熱烈歓迎 ' + info.welcome.length + '枚＋' : '')
-      + '役職のページ ' + info.pages.length + '枚）。';
+      + '役職のページ ' + info.pages.length + '枚' + (al ? '＋割り振り表 ' + al.pages + '枚' : '') + '）。';
+    if (al) msg += '\n割り振り表のページ: ビジターホストコーディネーターのページのあとに、「' + al.sheetName + '」のビジターの表（'
+      + al.rows + '行・' + al.pt + 'pt' + (al.pages > 1 ? '・' + al.pages + 'ページに分けました' : '') + '）';
     if (info.welcome.length) msg += '\n熱烈歓迎のページ: ' + info.welcome.map(function (n) { return n + 'さん'; }).join('、')
       + '（ひな形: ' + (wtpl && wtpl.registered ? '登録したもの（' + wtpl.name + '）' : '既定のもの') + '）';
     if (welcomeErr) msg += '\n熱烈歓迎のひな形を開けませんでした: ' + welcomeErr;
@@ -798,7 +1013,7 @@ function generatePreMeetingSlides(dateStr) {
     if (info.messages.length) msg += '\n' + info.messages.join('\n');
     msg += '\nひな形: ' + (tpl.registered ? '登録したもの（' + tpl.name + '）' : '既定のもの');
     return { ok: true, message: msg, url: saved.url, downloadUrl: saved.downloadUrl, fileName: outName,
-             pages: info.pages.length + info.welcome.length + (info.summary ? 1 : 0) };
+             pages: info.pages.length + info.welcome.length + (info.summary ? 1 : 0) + (al ? al.pages : 0) };
   } catch (e) {
     console.error('[PREMTG] ' + (e && e.stack ? e.stack : e));
     return { ok: false, message: '事前MTGのパワポを作れませんでした: ' + (e && e.message ? e.message : e) };
