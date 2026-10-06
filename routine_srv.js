@@ -729,13 +729,37 @@ function routineAbsentees_(absText, medText) {
   [[absText, '欠席'], [medText, '医療欠席']].forEach(function (x) {
     var t = routineText_(x[0]);
     if (t) raws.push(x[1] + '：' + t);
-    routineAbsentTokens_(x[0]).forEach(function (tok) {
-      var r = routineMemberName_(tok);
-      if (r.matched && r.name) { if (out.names.indexOf(r.name) < 0) out.names.push(r.name); }
-      else if (out.unknown.indexOf(tok) < 0) out.unknown.push(tok);
+    routineAbsentTokens_(x[0]).forEach(function (tok0) {
+      routineAbsentSplit_(tok0).forEach(function (tok) {
+        var r = routineMemberName_(tok);
+        if (r.matched && r.name) { if (out.names.indexOf(r.name) < 0) out.names.push(r.name); }
+        else if (out.unknown.indexOf(tok) < 0) out.unknown.push(tok);
+      });
     });
   });
   out.raw = raws.join('　／　');
+  return out;
+}
+// 空白の入った書き方（敬称なし）を、1人ずつに分ける。左から見て、続く2語が名簿の方の「名字 名前（の頭）」
+// （「見本 太郎」「見本 太」）なら2語で1人、そうでなければ1語（名字）で1人とみなす。
+//   「見本　試験」→ 見本・試験／「見本 太郎　試験 花子」→ 見本 太郎・試験 花子
+//   （以前は空白の入った書き方を「名字 名前」の1人として読み、うしろの名字の方だけになって、
+//     前の方は名簿に無い書き方としても出なかった）
+function routineAbsentSplit_(tok) {
+  var words = String(tok == null ? '' : tok).split(/[\s　]+/).filter(function (w) { return w; });
+  if (words.length < 2) return [tok];
+  var keys = getMembersList({ withoutNo: true }).map(function (m) {
+    return { full: routineFoldName_(m.name), sur: routineFoldName_(String(m.name).trim().split(/[\s　]+/)[0]) };
+  });
+  var out = [], i = 0;
+  while (i < words.length) {
+    if (i + 1 < words.length) {
+      var sur = routineFoldName_(words[i]), both = routineFoldName_(words[i] + words[i + 1]);
+      var hit = keys.filter(function (k) { return k.sur === sur && k.full.indexOf(both) === 0; });
+      if (hit.length === 1) { out.push(words[i] + ' ' + words[i + 1]); i += 2; continue; }
+    }
+    out.push(words[i]); i++;
+  }
   return out;
 }
 

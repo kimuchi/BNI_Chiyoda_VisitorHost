@@ -7,7 +7,8 @@
 //
 // 確かめること
 //   ・欄の読み方：かっこの中（当欠など）・「遅刻：」・「○○さん遅刻」・「代理：」「→」・「復帰」・「なし」・「○時時点でなし」・
-//     敬称ごとに1人・うしろの書き足し。名簿の方に合わせる（同じ名字の方が2人なら決めず、画面で選んでもらう）
+//     敬称ごとに1人・うしろの書き足し。敬称なしで名字を空白で並べた書き方（「試験　架空」）は1人ずつ（氏名の「名字 名前」は1人のまま）。
+//     名簿の方に合わせる（同じ名字の方が2人なら決めず、画面で選んでもらう。名簿に無い書き方は黙って落とさず、画面に出す）
 //   ・代理を立てた方（「代理」の欄）は外さない（代理の方が発表する）。医療欠席の方は外す
 //   ・前半：欠席の方の個人ページを作らない。扉ページの表・先頭の写真・NEXT にも出さない。
 //     チェックを外せば作る・「欠席の方を足す」で選べば外す。その日の列が無い日は、前の日の欠席の方を残さない
@@ -83,6 +84,35 @@ env.reset([
   ck(r.raw === '欠席：試験さん（当欠）、見本さん、例示ED　／　医療欠席：仮名さん', '1) 欄の文字: ' + J(r.raw));
   const r2 = F.routineAbsentees_('空想 七海、例示ED', '');
   ck(J(r2.names) === J(['空想 七海']) && J(r2.unknown) === J(['例示ED']), '1) 敬称の無い書き方: ' + J(r2));
+  // 敬称なしで名字を空白で並べた書き方（いただいた画面の件：2人なのに、うしろの方だけになっていた）
+  const r3 = F.routineAbsentees_('試験　架空', '');
+  ck(J(r3.names) === J(['試験 花子', '架空 三郎']) && r3.unknown.length === 0, '1) 名字を空白で並べた書き方が2人にならない: ' + J(r3));
+  const r4 = F.routineAbsentees_('試験 仮名 模擬', 'なし');
+  ck(J(r4.names) === J(['試験 花子', '仮名 四郎', '模擬 六助']), '1) 名字を3人並べた書き方: ' + J(r4));
+  // 名簿の方の氏名（名字 名前）は1人のまま。名前の頭だけの書き方も
+  const r5 = F.routineAbsentees_('試験 花子　架空 三', '');
+  ck(J(r5.names) === J(['試験 花子', '架空 三郎']) && r5.unknown.length === 0, '1) 氏名を空白で並べた書き方: ' + J(r5));
+  const r6 = F.routineAbsentees_('例示 五月', '');
+  ck(J(r6.names) === J(['例示 五月']) && r6.unknown.length === 0, '1) 氏名1人を分けてしまった: ' + J(r6));
+  // 並べた名字のうち、名簿に無い方は黙って落とさず「名簿の方と結びつかなかった書き方」に出す
+  const r7 = F.routineAbsentees_('外部　試験', '');
+  ck(J(r7.names) === J(['試験 花子']) && J(r7.unknown) === J(['外部']), '1) 名簿に無い名字を黙って落とした: ' + J(r7));
+}
+// 事前MTGのパワポの人数（premtgCountNames_）と、役職ごとの入力の画面の人数（role_input.html の countNames）も同じ数え方
+{
+  const html = fs.readFileSync(path.join(ROOT, 'role_input.html'), 'utf8');
+  const grab = (re) => (html.match(re) || [''])[0];
+  const code = [/ function isNone\(s\)\{[\s\S]*?\n \}/, / function countNames\(v\)\{[\s\S]*?\n \}/, / var NAME_VARIANTS=\{[\s\S]*?\};/,
+                / function foldName\(s\)\{[\s\S]*?\n \}/, / function spacedNames\(it\)\{[\s\S]*?\n \}/].map(grab);
+  const S = { ctx: { members: NAMES } };
+  vm.createContext(S);
+  ck(code.every((c) => c), '1) 役職ごとの入力の画面の数え方（countNames など）が見つからない');
+  vm.runInContext(code.join('\n'), S);
+  [['試験　架空', 2], ['試験 仮名 模擬', 3], ['試験 花子', 1], ['試験 花子　架空 三', 2], ['外部　試験', 2],
+   ['試験さん　架空さん', 2], ['例示ED', 1], ['なし', 0], ['試験さん（当欠）、架空 三郎さん／遅刻：模擬さん', 2]].forEach(([t, n]) => {
+    const a = F.premtgCountNames_(t), b = S.countNames(t);
+    ck(a === n && b === n, `1) 人数の数え方「${t}」→ パワポ ${a}・画面 ${b}（${n} のはず）`);
+  });
 }
 
 // ===== 2) ルーティンチェックシートから（getRoutineInfo）=====

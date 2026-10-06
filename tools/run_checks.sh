@@ -52,7 +52,7 @@ run "定例会スライド（指示どおりか）" node tools/check_meeting_sli
 run "ビジター・代理スライド（「$」の入った名前・テンプレートの2ページ目・消した枠・キャンセルの方・会社名44pt／カテゴリー32pt・自動で次へ進めない・ファイル名）" node tools/check_visitor_slides.js
 run "会社名・カテゴリーの組版（メンバー・リファーラル：44pt／32ptにそろえる・入らなければ同じ大きさで2行・語の途中で折らない・名簿の改行を外す）" node tools/check_layout_sizes.js
 run "リファーラル発表のカテゴリー（1行は32ptのまま・2行は前面に出し数字にかからないところまで・カウントダウンを下げる／数字の箱の上を縮める・会社名も2行の方も32pt・帯の外や下の文字に隠れない・名簿の改行）" node tools/check_referral_category.js
-run "欠席の方のページを作らない（ウィークリープレゼン・リファーラル発表：欄の読み方・名簿の方に合わせる・NEXT／次の発表者・外す・足す）" node tools/check_absent_skip.js
+run "欠席の方のページを作らない（ウィークリープレゼン・リファーラル発表：欄の読み方・名字を空白で並べた書き方（事前MTGの人数も）・名簿の方に合わせる・NEXT／次の発表者・外す・足す）" node tools/check_absent_skip.js
 run "推薦のことばの受け取ったスライド（ブラウザ：pptx・pdf・画像を画像にして置く・その組のページのすぐあとに入れる・開催日ごとに覚える・準備中は作成させない・置けない理由は組の下に）" node tools/check_reco_slides.js
 run "後半の1枚目のメインプレゼンのページ（前半のテンプレートから見た目ごと写す・お名前・会社名・カテゴリー）" node tools/check_second_main_page.js
 run "新メンバー・更新メンバーのページ" node tools/check_member_pages.js

@@ -93,6 +93,8 @@ function premtgNone_(s) {
 //   ・「なし」「○日○時時点でなし」は0
 // 敬称（さん・様など）が1つでもあれば、敬称の数を人数とする（「梅田さん　相田さん」は2名）。
 // 敬称が1つも無ければ、区切り（、・／改行など）で分けた数とする（「大庭ED」は1名）。
+// そのとき、名字を空白で並べた書き方（「見本　試験」）は1人ずつ数える（名簿の方の「名字 名前」になる2語は1人。
+// routineAbsentSplit_。以前は1名と数えていた）。
 // 画面（role_input.html の countNames）も同じ数え方にしてある。
 function premtgCountNames_(text) {
   var s = String(text == null ? '' : text).normalize('NFKC'), out = '', depth = 0;
@@ -117,9 +119,11 @@ function premtgCountNames_(text) {
       items.push(it);
     }
   }
-  var honor = 0;
-  for (var k = 0; k < items.length; k++) honor += (items[k].match(HONOR) || []).length;
-  return honor ? honor : items.length;
+  var honor = 0, n = 0, k;
+  for (k = 0; k < items.length; k++) honor += (items[k].match(HONOR) || []).length;
+  if (honor) return honor;
+  for (k = 0; k < items.length; k++) n += (typeof routineAbsentSplit_ === 'function') ? routineAbsentSplit_(items[k]).length : 1;
+  return n;
 }
 
 // 開催日の材料。役職ごとの入力（ルーティンチェックシート）から読む。
