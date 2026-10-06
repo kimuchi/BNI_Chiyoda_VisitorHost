@@ -11,6 +11,8 @@
 //   ・公式ファイルから作った雛形でも、雛形の字の大きさ（companyPt・categoryPt）には合わせない。
 //     雛形の会社名の枠が44ptの1行より低いときは、枠を伸ばしてカテゴリーもそのぶん下げる
 //   ・サーバーへ渡す大きさはいつも書いてある（0 だとテンプレートの大きさのままになり、そろわない）
+//   ・名簿の文字の中の改行（「デジタル広告制作」⏎「(ホームページ・動画)」）は外してから組む。英数字のあいだだけ空白に
+//     （改行が残ると、ここで決めた行数よりスライドの行が増え、枠の外にはみ出して見えなくなる）
 // canvas の代わりに、全角1文字・半角0.5文字で測る（tools/mp_plan.js と同じ）
 const fs = require('fs');
 const path = require('path');
@@ -108,10 +110,23 @@ const items = JSON.parse(J(L.memberPresenItems(mctx, 'A', '', false))).filter((x
 ck(items.length === 3 && items.every((x) => x.companyPt === 44 && x.categoryPt === 32),
    '4) メンバーのページへ渡す大きさ: ' + J(items.map((x) => [x.name, x.companyPt, x.categoryPt])));
 
+// ===== 5. 名簿の文字の中の改行：外してから組む（行の中に改行を残さない）=====
+const BR = ['\n', '\r\n', String.fromCharCode(0x2028), String.fromCharCode(0x0B)];
+BR.forEach((br) => {
+  const a = ca('デジタル広告制作' + br + '(ホームページ・動画)'), b = ca('デジタル広告制作(ホームページ・動画)');
+  ck(J(a) === J(b), '5) 改行の入ったカテゴリーの組み方が、改行なしと違う: ' + J([br, a.lines, b.lines]));
+  ck(J(co('見本' + br + '株式会社')) === J(co('見本株式会社')), '5) 改行の入った会社名の組み方が、改行なしと違う: ' + J(br));
+});
+ck(J([L.oneLine('Web\nDesign'), L.oneLine(' 税理士 \n'), L.oneLine('普通の\t名前'), L.oneLine(null)]) === J(['Web Design', '税理士', '普通の 名前', '']),
+   '5) 改行の外し方: ' + J([L.oneLine('Web\nDesign'), L.oneLine(' 税理士 \n'), L.oneLine('普通の\t名前')]));
+const brItems = JSON.parse(J(L.memberPresenItems(Object.assign({}, mctx, { members: [{ name: '見本\n一郎', company: '見本商事', title: '税理士\n(法人)', blockKey: 'A' }] }), 'A', '', false)));
+ck(brItems.every((x) => !/[\r\n]/.test(J(x.rows || [])) && !(x.categoryLines || []).some((l) => /[\r\n]/.test(l))),
+   '5) メンバーのページ・扉ページの一覧に改行が残った: ' + J(brItems.map((x) => x.rows || x.categoryLines)));
+
 if (fails.length) {
   console.log('NG ' + fails.length + '件 / ' + checks + '件の検査');
   fails.forEach((f) => console.log('  - ' + f));
   process.exit(1);
 }
 console.log('会社名・カテゴリーの組版: 検査 ' + checks + ' 件 OK: 会社名44pt・カテゴリー32ptにそろえる・入らなければ同じ大きさで2行'
-  + '（社名／株式会社）・2行目が短すぎない・とても長いときだけ小さく・雛形の字の大きさに合わせない・枠を戻す');
+  + '（社名／株式会社）・2行目が短すぎない・とても長いときだけ小さく・雛形の字の大きさに合わせない・枠を戻す・名簿の改行を外す');

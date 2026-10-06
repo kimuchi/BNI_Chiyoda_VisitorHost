@@ -26,9 +26,10 @@ function fpRoster_() {
 function fpPerson_(p, by) {
   if (!p) return null;
   var m = by[normName_(p.name || '')];
-  if (m) return { name: m.name, company: m.company || '', category: m.title || '', matched: true };
+  // 名簿の文字の中の改行は外す（残っていると、行が増えて枠の外にはみ出し、見えなくなることがある）
+  if (m) return { name: m.name, company: slideOneLine_(m.company), category: slideOneLine_(m.title), matched: true };
   var nm = String(p.name || p.raw || '').replace(/(さん|様)$/, '').trim();
-  return nm ? { name: nm, company: '', category: p.category || '', matched: false } : null;
+  return nm ? { name: nm, company: '', category: slideOneLine_(p.category), matched: false } : null;
 }
 function fpNonEmpty_(t) { return !!String(t || '').trim(); }
 
@@ -695,6 +696,10 @@ function applyNetworkingLeaders_(parts, nl, cache) {
         return k.label + ' ' + items[k.key].people.map(function (p) { return p.name; }).join('・');
       }).join('／') : '受賞者の入力がありません') + '。';
   if (res.pairs.length) res.message += '\nお2人のページを作った部門: ' + res.pairs.join('、');
+  if (res.emptyKinds && res.emptyKinds.length) {
+    res.message += '\n該当者のいない部門（まとめのページでは見出しも出しません' + (res.emptyPacked ? '。ほかの部門を詰めて並べました' : '') + '）: '
+      + NL_KINDS_.filter(function (k) { return res.emptyKinds.indexOf(k.key) >= 0; }).map(function (k) { return k.label; }).join('、');
+  }
   if (res.missing.length) res.message += '\nテンプレートにページが無い部門: ' + res.missing.join('、');
   if (res.unmatched.length) res.message += '\nネットワーキングリーダーで名簿に無い方: ' + res.unmatched.join('、');
   if (res.noPhoto.length) res.message += '\nネットワーキングリーダーで写真が見つからない方（写真なし）: ' + res.noPhoto.join('、');
@@ -732,13 +737,21 @@ function fpNlSummary_(parts, path, items, sz, cache, res) {
   cols = cols.filter(function (c) { return c.name; });
   if (!cols.length) return;
   var peopleOf = function (c) { return (items[c.kind] && items[c.kind].people) || []; };
+  // 受賞者のいない部門（該当者なし）は、見出しも出さず、列も取らない（以前は見出しの字だけが浮いて残った）。
+  // どの部門にも受賞者がいない（まだ入力が無い）ときは、そのままにする
+  var any = cols.some(function (c) { return peopleOf(c).length; });
+  var slotsOf = function (c) { return peopleOf(c).length || (any ? 0 : 1); };
+  cols.forEach(function (c) { if (!slotsOf(c)) xml = fpHide_(xml, c.label.id, true); });
   var total = 0;
-  cols.forEach(function (c) { total += Math.max(1, peopleOf(c).length); });
+  cols.forEach(function (c) { total += slotsOf(c); });
   var grouped = cols.some(function (c) { return c.label.parent || c.name.parent || (c.photo && c.photo.parent); });
-  if (total > cols.length && !grouped) {
-    var re = fpNlRelayout_(xml, cols, peopleOf, total);
+  // お2人以上の部門があるとき・空いた部門があるときは、列を並べ直す（空いたところを詰め、端から端までを等分）
+  var relaid = false;
+  if (cols.some(function (c) { return slotsOf(c) !== 1; }) && total && !grouped) {
+    var re = fpNlRelayout_(xml, cols, slotsOf, total);
     xml = re.xml;
     cols = re.cols;
+    relaid = true;
   }
   cols.forEach(function (c) {
     (c.units || [{ name: c.name, info: c.info || [], photo: c.photo }]).forEach(function (u, i) {
@@ -749,13 +762,21 @@ function fpNlSummary_(parts, path, items, sz, cache, res) {
       xml = f.xml; rels = f.rels;
       if (p) res.filled.push({ path: path, kind: c.kind, name: p.name, summary: true });
     });
+    // 受賞者のいない部門は、空にしたお名前・会社名の枠も隠す（色の付いた枠だけが残らないように）。写真の枠は空なら隠れている
+    if (!slotsOf(c)) [c.name].concat(c.info || []).forEach(function (s) { xml = fpHide_(xml, s.id, true); });
   });
+  if (any) {
+    res.emptyKinds = cols.filter(function (c) { return !peopleOf(c).length; }).map(function (c) { return c.kind; });
+    res.emptyPacked = relaid;
+  }
   putXml_(parts, path, xml);
   if (rels) putXml_(parts, rp, rels);
 }
-// 列を増やして並べ直す。受賞者の数だけ（写真・お名前・会社名とカテゴリー）の組を複製し、
-// 端から端までを人数で等分した位置に置く。部門の見出しは、その部門の列の真ん中に
-function fpNlRelayout_(xml, cols, peopleOf, total) {
+// 列を並べ直す。受賞者の数だけ（写真・お名前・会社名とカテゴリー）の組を複製し、
+// 端から端までを人数で等分した位置に置く。部門の見出しは、その部門の列の真ん中に。
+// slotsOf(c) が 0 の部門（受賞者なし）は列を取らず、その場で空にするだけ（見出しは呼ぶ側で隠す）。
+// 人数が部門の数より少ないときは、枠を広げずに間隔だけ広げる
+function fpNlRelayout_(xml, cols, slotsOf, total) {
   var L = Infinity, R = -Infinity, maxId = 0, m, re = /<p:cNvPr\b[^>]*\sid="(\d+)"/g;
   while ((m = re.exec(xml)) !== null) maxId = Math.max(maxId, +m[1]);
   cols.forEach(function (c) {
@@ -764,13 +785,14 @@ function fpNlRelayout_(xml, cols, peopleOf, total) {
       L = Math.min(L, s.ax); R = Math.max(R, s.ax + s.acx);
     });
   });
-  var slotW = (R - L) / total, colW = (R - L) / cols.length, f = slotW / colW, slot = 0;
+  var slotW = (R - L) / total, colW = (R - L) / cols.length, f = Math.min(1, slotW / colW), slot = 0;
   var place = function (x, s, center, newCenter) {
     var cx = Math.round(s.acx * f), nx = Math.round(newCenter + (s.ax + s.acx / 2 - center) * f - cx / 2);
     return setShapeGeomEmu_(x, s.id, { x: nx, cx: cx });
   };
   cols.forEach(function (c) {
-    var n = Math.max(1, peopleOf(c).length), center = c.name.ax + c.name.acx / 2, members = [c.photo, c.name].concat(c.info || []).filter(Boolean);
+    var n = slotsOf(c), center = c.name.ax + c.name.acx / 2, members = [c.photo, c.name].concat(c.info || []).filter(Boolean);
+    if (!n) { c.units = [{ name: c.name, info: c.info || [], photo: c.photo }]; return; }   // 受賞者なし：動かさずに空にする
     c.units = [];
     for (var i = 0; i < n; i++) {
       var nc = L + (slot + i + 0.5) * slotW, unit = { info: [] };

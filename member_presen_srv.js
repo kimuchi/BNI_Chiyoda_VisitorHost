@@ -364,8 +364,9 @@ function mpOverviewSlide_(tplXml, tplRels, item, photo) {
 }
 
 // 個人ページ
-function mpIndividualSlide_(tplXml, tplRels, item, photo) {
+function mpIndividualSlide_(tplXml, tplRels, item, photo, size) {
   var xml = tplXml;
+  item = presenterOneLine_(item);
   xml = setParagraphsInShape_(xml, MP_INDIVIDUAL_.nameBox, [item.name || '']);
 
   // 会社名：行の分け方・文字の大きさ・枠の大きさは、すべて画面側で決めてある
@@ -387,6 +388,7 @@ function mpIndividualSlide_(tplXml, tplRels, item, photo) {
   xml = setParagraphsInShape_(xml, MP_INDIVIDUAL_.category, item.categoryLines || ['']);
   if (item.categoryPt) xml = setFontSizeInShape_(xml, MP_INDIVIDUAL_.category, item.categoryPt);
   if (item.categoryTight) xml = setLineSpacingInShape_(xml, MP_INDIVIDUAL_.category, 85);
+  xml = fitPresenterCategory_(xml, MP_INDIVIDUAL_.category, size && size.W, size && size.H);
 
   // 秒数（チャプターの設定。スタートアッププレゼンの方は長い）がテンプレートと違うときは、
   // カウントダウンごと作り直す。同じならテンプレートのまま使う（カウントダウンの無いテンプレートも、そのまま）
@@ -421,6 +423,122 @@ function mpLayoutBoxes_(map) {
 
 // 会社名・カテゴリーの枠（EMU）と文字の大きさ（pt）→ 画面の setLayoutBoxes() に渡す形。
 // 画面は枠の位置だけを使う（文字の大きさは、会社名44pt・カテゴリー32ptにそろえる。slides_layout.html）
+// ページに入れる氏名・会社名・カテゴリーの行から、名簿の改行などを外す（画面の古い版から来たときのため）
+function presenterOneLine_(item) {
+  var o = {}, k;
+  for (k in item) o[k] = item[k];
+  o.name = slideOneLine_(item.name);
+  ['companyLines', 'categoryLines'].forEach(function (key) {
+    if (item[key]) o[key] = item[key].map(slideOneLine_);
+  });
+  return o;
+}
+// 名簿の文字の中の改行・タブなどを外して1行にする（英数字どうしのあいだの改行だけ空白に）。
+// 改行がそのままスライドに入ると、画面で決めた行数より増え、枠の外にはみ出して見えなくなることがあった
+function slideOneLine_(s) {
+  var t = String(s == null ? '' : s);
+  return t.replace(/[ \t\u3000]*[\r\n\u000B\u000C\u0085\u2028\u2029]+[ \t\u3000]*/g, function (m, at) {
+    return /[A-Za-z0-9]/.test(t.charAt(at - 1)) && /[A-Za-z0-9]/.test(t.charAt(at + m.length)) ? ' ' : '';
+  }).replace(/\t/g, ' ').trim();
+}
+
+// === カテゴリーの枠を、行数に合わせて見えるところに収める（メンバーのページ・リファーラル発表）===
+// 画面で決めた行（32pt・1〜2行）を入れたあと、枠の高さを行数に合わせる。下にある図形（「次の発表者」の帯・
+// ほかの文字・写真・色の付いた図形）の上端や、カテゴリーが載っている色の帯の下端を越えるときは、越えない大きさまで
+// 文字を小さくする（2行のまま小さくするより、1行にした方が大きく入るなら1行に）。
+// 以前は枠の高さがひな形のまま（1行ぶん）で、2行目が枠の外へはみ出し、下の図形の陰や帯の外に隠れて見えないことがあった
+var PC_LINE_EMU_ = 12700 * 1.213, PC_PAD_EMU_ = 91440, PC_GAP_EMU_ = 25400;
+function fitPresenterCategory_(xml, catId, W, H) {
+  var g = readShapeGeomEmu_(xml, catId), r = findShapeRange_(xml, catId);
+  if (!g || !r) return xml;
+  var seg = xml.substring(r.start, r.end);
+  var lines = findTagRanges_(seg, 'a:p').map(function (p) { return pcText_(seg.substring(p.start, p.end)); })
+    .filter(function (t) { return t.trim(); });
+  if (!lines.length) return xml;
+  var pt = 0, m, re = /<a:(?:rPr|endParaRPr)\b[^>]*\ssz="(\d+)"/g;
+  while ((m = re.exec(seg)) !== null) pt = Math.max(pt, +m[1] / 100);
+  pt = pt || 32;
+  var spc = /<a:lnSpc>\s*<a:spcPct val="(\d+)"/.exec(seg), sp = spc ? +spc[1] / 100000 : 1;
+  var need = function (n, p) { return PC_PAD_EMU_ + n * p * PC_LINE_EMU_ * (n > 1 ? sp : 1); };
+  xml = pcNoClip_(xml, catId);
+  var avail = presenterLimitBelow_(xml, catId, g, W || 12192000, H || 6858000) - g.y, n = lines.length;
+  if (need(n, pt) <= avail) return setShapeGeomEmu_(xml, catId, { cy: Math.round(Math.max(need(n, pt), Math.min(g.cy, avail))) });
+  // 入らない：同じ行のまま小さくする／1行にして入る大きさにする、の大きい方（10ptより小さくはしない）
+  var even = function (v) { return Math.floor(v / 2) * 2; };
+  var ptA = even((avail - PC_PAD_EMU_) / (n * PC_LINE_EMU_ * (n > 1 ? sp : 1)));
+  var one = lines.join(''), wPt = Math.max(1, g.cx - 2 * 91440) / 12700;
+  var ptB = n > 1 ? even(Math.min((avail - PC_PAD_EMU_) / PC_LINE_EMU_, wPt / (pcTextEm_(one) * 1.1))) : 0;
+  var useOne = ptB > ptA, to = Math.max(10, Math.min(pt, useOne ? ptB : ptA));
+  if (useOne) {
+    xml = setParagraphsInShape_(xml, catId, [one]);
+    xml = setLineSpacingInShape_(xml, catId, 100);
+  }
+  xml = setFontSizeInShape_(xml, catId, to);
+  return setShapeGeomEmu_(xml, catId, { cy: Math.round(need(useOne ? 1 : n, to)) });
+}
+// カテゴリーの枠の下で、文字が届いてはいけないところ（EMU）：横に重なる下の図形の上端・カテゴリーが載っている
+// 色の帯の下端・ページの下端のうち、いちばん上（少しすき間をあける）
+function presenterLimitBelow_(xml, catId, g, W, H) {
+  var limit = H;
+  pcShapes_(xml).forEach(function (s) {
+    if (String(s.id) === String(catId) || s.tag === 'p:grpSp') return;
+    var seg = xml.substring(s.start, s.end);
+    if (/<p:cNvPr\b[^>]*\shidden="1"/.test(seg)) return;
+    if (s.acx >= W * 0.9 && s.acy >= H * 0.9) return;                                   // 背景いっぱいの図形
+    var ov = Math.min(s.ax + s.acx, g.x + g.cx) - Math.max(s.ax, g.x);
+    if (ov <= Math.min(s.acx, g.cx) * 0.2) return;                                      // 横に重ならない
+    var text = s.tag === 'p:sp' && String(s.text || '').trim(), filled = s.tag === 'p:sp' && pcFilled_(seg);
+    if (!(s.tag === 'p:pic' || s.tag === 'p:graphicFrame' || text || filled)) return;   // 見えない枠
+    if (s.ay > g.y + PC_GAP_EMU_) limit = Math.min(limit, s.ay);
+    else if ((s.tag === 'p:pic' || (!text && filled)) && s.ay + s.acy > g.y + PC_GAP_EMU_) {
+      limit = Math.min(limit, s.ay + s.acy);                                            // 載っている色の帯・帯の絵
+    }
+  });
+  return limit - PC_GAP_EMU_;
+}
+// 図形に色が塗ってあるか（枠線だけ・塗りなしは塗っていない）。塗りの指定が無ければ、図形の書式（fillRef）で
+function pcFilled_(seg) {
+  var sp = (seg.match(/<p:spPr\b[\s\S]*?<\/p:spPr>/) || [''])[0].replace(/<a:ln\b[\s\S]*?<\/a:ln>/g, '');
+  if (/<a:noFill\s*\/>/.test(sp)) return false;
+  if (/<a:(solidFill|gradFill|blipFill|pattFill)\b/.test(sp)) return true;
+  return /<a:fillRef\b[^>]*\sidx="[1-9]/.test(seg);
+}
+// ページの図形の一覧（グループの中は、ページの座標に直したもの）。役職のメンバー紹介の読み方を使う
+function pcShapes_(xml) {
+  if (typeof riShapes_ === 'function') return riShapes_(xml);
+  var out = [];
+  ['p:sp', 'p:pic', 'p:graphicFrame'].forEach(function (tag) {
+    findTagRanges_(xml, tag).forEach(function (rg) {
+      var seg = xml.substring(rg.start, rg.end), id = (seg.match(/<p:cNvPr\b[^>]*\sid="(\d+)"/) || [])[1];
+      var off = seg.match(/<a:off\s+x="(-?\d+)"\s+y="(-?\d+)"\s*\/>/), ext = seg.match(/<a:ext\s+cx="(\d+)"\s+cy="(\d+)"\s*\/>/);
+      if (!id || !off || !ext) return;
+      out.push({ tag: tag, id: id, start: rg.start, end: rg.end, ax: +off[1], ay: +off[2], acx: +ext[1], acy: +ext[2],
+                 text: tag === 'p:sp' ? pcText_(seg) : '' });
+    });
+  });
+  return out;
+}
+// 文字（<a:t> をつないだもの）
+function pcText_(xml) {
+  var t = '', m, re = /<a:t(?=[\s>])[^>]*>([\s\S]*?)<\/a:t>/g;
+  while ((m = re.exec(xml)) !== null) t += unescapeXml_(m[1]);
+  return t;
+}
+function pcTextEm_(t) {
+  var w = 0, s = String(t == null ? '' : t);
+  for (var i = 0; i < s.length; i++) w += s.charAt(i) === ' ' ? 0.3 : (s.charCodeAt(i) < 0x2000 ? 0.55 : 1);
+  return w;
+}
+// はみ出した文字を切る設定（vertOverflow="clip" など）を外す
+function pcNoClip_(xml, id) {
+  var r = findShapeRange_(xml, id);
+  if (!r) return xml;
+  var seg = xml.substring(r.start, r.end).replace(/<a:bodyPr\b[^>]*>/, function (tag) {
+    return tag.replace(/\s(?:vertOverflow|horzOverflow)="[^"]*"/g, '');
+  });
+  return xml.substring(0, r.start) + seg + xml.substring(r.end);
+}
+
 function presenterBoxesOf_(xml, companyId, categoryId) {
   var co = readShapeGeomEmu_(xml, companyId), ca = readShapeGeomEmu_(xml, categoryId);
   if (!co || !ca) return null;
@@ -906,6 +1024,7 @@ function buildMemberPresenSlides_(map, items) {
   }
 
   var prs = xmlOf_(map, 'ppt/presentation.xml');
+  var sldSz = prs.match(/<p:sldSz\s+cx="(\d+)"\s+cy="(\d+)"/), size = sldSz ? { W: +sldSz[1], H: +sldSz[2] } : null;
   var prsRels = xmlOf_(map, 'ppt/_rels/presentation.xml.rels');
   var ct = xmlOf_(map, '[Content_Types].xml');
 
@@ -924,7 +1043,7 @@ function buildMemberPresenSlides_(map, items) {
 
     var built = (it.kind === 'overview')
       ? mpOverviewSlide_(ovXml, ovRels, it, photo)
-      : mpIndividualSlide_(ivXml, ivRels, it, photo);
+      : mpIndividualSlide_(ivXml, ivRels, it, photo, size);
 
     putXml_(map, 'ppt/slides/slide' + n + '.xml', built.xml);
     putXml_(map, 'ppt/slides/_rels/slide' + n + '.xml.rels', built.rels);

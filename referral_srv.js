@@ -92,6 +92,7 @@ function rfFindModels_(parts, title) {
 // 1人ぶんのページを作る
 function rfBuildSlide_(tplXml, tplRels, item, photo, SH) {
   var xml = tplXml;
+  item = presenterOneLine_(item);             // 名簿の改行などを外す（画面の古い版から来たときも）
   xml = setParagraphsInShape_(xml, SH.nameBox, [item.name || '']);
 
   xml = setParagraphsInShape_(xml, SH.company, item.companyLines || ['']);
@@ -107,6 +108,8 @@ function rfBuildSlide_(tplXml, tplRels, item, photo, SH) {
   xml = setParagraphsInShape_(xml, SH.category, item.categoryLines || ['']);
   if (item.categoryPt) xml = setFontSizeInShape_(xml, SH.category, item.categoryPt);
   if (item.categoryTight) xml = setLineSpacingInShape_(xml, SH.category, 85);
+  // 2行になったカテゴリーが、下の図形（次の発表者の帯など）の陰や色の帯の外に隠れないよう、見えるところに収める
+  xml = fitPresenterCategory_(xml, SH.category, SH.W, SH.H);
 
   if (item.nextName && SH.nextName) {
     xml = setParagraphsInShape_(xml, SH.nextName, [item.nextName]);
@@ -153,8 +156,9 @@ function expandPresenterSlides_(parts, items, opts) {
 
   var model = models[0];
   var prsXml = xmlOf_(parts, 'ppt/presentation.xml') || '';
-  var szm = prsXml.match(/<p:sldSz\s+cx="(\d+)"/);
+  var szm = prsXml.match(/<p:sldSz\s+cx="(\d+)"(?:\s+cy="(\d+)")?/);
   var SH = presenterShapes_(model.xml, szm ? parseInt(szm[1], 10) : 12192000);
+  SH.W = szm ? parseInt(szm[1], 10) : 12192000; SH.H = szm && szm[2] ? parseInt(szm[2], 10) : 6858000;
   if (!SH.nameBox || !SH.company || !SH.category) {
     return { message: label + 'のひな形から、氏名・会社名・カテゴリーの枠を見分けられませんでした。' };
   }

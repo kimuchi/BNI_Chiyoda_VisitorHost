@@ -100,6 +100,14 @@ function mergeOrphan(lines){
   return lines;
 }
 function normParens(s){ return String(s==null?'':s).replace(/（/g,'(').replace(/）/g,')'); }
+// 名簿の文字の中の改行・タブなどを外して1行にする（英数字どうしのあいだの改行だけ空白に）。
+// 改行が残っていると、ここで決めた行数よりスライドの行が増え、枠の外にはみ出して見えなくなることがあった
+function oneLine(s){
+  var t=String(s==null?'':s);
+  return t.replace(/[ \t\u3000]*[\r\n\u000B\u000C\u0085\u2028\u2029]+[ \t\u3000]*/g, function(m, at){
+    return /[A-Za-z0-9]/.test(t.charAt(at-1)) && /[A-Za-z0-9]/.test(t.charAt(at+m.length)) ? ' ' : '';
+  }).replace(/\t/g,' ').trim();
+}
 function expandCorp(s){ return String(s==null?'':s).replace(/㈱/g,'株式会社').replace(/㈲/g,'有限会社').replace(/㈾/g,'合資会社'); }
 var CORP_SUFFIXES=['株式会社','有限会社','合同会社','合資会社'];
 function splitCorp(text){
@@ -147,6 +155,7 @@ function companyCalc(lines, pt){
 // ④では枠の高さと【カテゴリー】の位置を実際の行数から出し直す。
 // 2行決め打ちのままだと、3行になったときに【カテゴリー】と文字が重なる。
 function layoutCompany(raw){
+  raw=oneLine(raw);
   var wasAbbrev=/[㈱㈲㈾]/.test(raw||''), text=expandCorp(raw);
   var base=COMPANY_PT, min=minPtOf(base), hard=hardMinPtOf(base);
   if(!text) return companyFit([''], base, COMPANY_DEFAULT, CATEGORY_TOP);
@@ -169,7 +178,7 @@ function layoutCompany(raw){
 // カテゴリー（32pt）：【】で囲む。1行に入らなければ、同じ大きさのまま2行（行間を少し詰める）。
 // 2行にも入らないほど長いときだけ小さくする（20ptまで）
 function layoutCategory(rawTitle){
-  var text='【'+normParens(rawTitle||'')+'】', base=CATEGORY_PT, min=minPtOf(base), pt=base;
+  var text='【'+normParens(oneLine(rawTitle))+'】', base=CATEGORY_PT, min=minPtOf(base), pt=base;
   var lines=wrapKinsoku(text,pt,true,CATEGORY_W_PT);
   if(lines.length<=1) return { lines:lines, fontPt:pt, tight:false };
   if(lines.length===2) return { lines:rebalance2(lines), fontPt:pt, tight:true };
@@ -243,7 +252,7 @@ function memberPresenItems(mctx, startKey, longName, auto, skip){
       for(var p=0;p<pages;p++){
         items.push({ kind:'overview', block:b.block, photoName:list[0].name, nextName:list[0].name,
           rows:list.slice(p*rows,(p+1)*rows).map(function(m){
-            return { title:normParens(m.title||''), name:m.name }; }) });
+            return { title:normParens(oneLine(m.title)), name:oneLine(m.name) }; }) });
       }
       list.forEach(function(m,i){
         var co=layoutCompany(m.company||''), ca=layoutCategory(m.title||'');
