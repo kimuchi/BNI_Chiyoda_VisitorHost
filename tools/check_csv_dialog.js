@@ -9,6 +9,7 @@
 //   ・CSV：Shift_JIS のCSVを読み込み → 上で選んだ定例会（10/7）に作る
 //   ・PDFのみ再作成：開催日が過ぎた回でも使える
 //   ・PDFを作れなかったとき：画面に知らせて、はじめの画面に戻る
+//   ・PDFをリンクで共有できなかったとき：アカウントと考えられることを知らせ、作れた名簿のシートを一覧で選んでおく → PDFのみ再作成
 // 名前・メールアドレスはすべて架空。
 
 process.env.TZ = 'Asia/Tokyo';
@@ -147,6 +148,34 @@ const lastCall = (name) => calls.filter((c) => c.name === name).pop();
       env.fetchPlan = [];
       await page.close();
     }
+
+    // ---- 5) PDFをリンクで共有できなかったとき：知らせ（アカウント・考えられること）→ 一覧にその回のシートが選ばれている
+    //         → 共有できるようになったら「PDFのみ再作成」でPDFだけ作れる（編集し直さない） ----
+    {
+      const { page, dialogs } = await openDialog(browser);
+      env.sharingBlocked = true;
+      const csv = ['Name,Furigana,Company Name,Business Category,Inviter,Email,Type,Status',
+        '共有 待子,きょうゆう まちこ,待合社,花屋,例示 五月,machi@example.com,Visitor,参加予定'].join('\r\n') + '\r\n';
+      const sjis = execFileSync('python3', ['-c', 'import sys; sys.stdout.buffer.write(sys.stdin.buffer.read().decode("utf-8").encode("cp932"))'], { input: Buffer.from(csv, 'utf8') });
+      await page.selectOption('#meetingSelect', '2026/10/14');
+      await page.setInputFiles('#csvFile', { name: 'visitors.csv', mimeType: 'text/csv', buffer: sjis });
+      await page.click('button:has-text("全データを解析して編集画面へ")');
+      await page.waitForFunction(() => !document.getElementById('step2').classList.contains('hidden'), null, { timeout: 10000 });
+      await page.click('button:has-text("この内容でシートとPDFを作成する")');
+      await page.waitForFunction(() => !document.getElementById('step1').classList.contains('hidden'), null, { timeout: 15000 });
+      const al = dialogs.filter((d) => /^alert:/.test(d)).pop() || '';
+      ck(/リンクを知っている全員が閲覧可/.test(al) && /動かしたGoogleアカウント: tester@example\.com/.test(al) && /複数のGoogleアカウント/.test(al)
+         && /名簿のシート「20261014参加者」は作成済み/.test(al) && /PDFのみ再作成/.test(al), '5) 共有できなかった知らせが足りない: ' + al);
+      await page.waitForFunction(() => document.getElementById('sheetSelect').value === '20261014参加者', null, { timeout: 10000 }).catch(() => {});
+      ck(await page.inputValue('#sheetSelect') === '20261014参加者', '5) 作れた名簿のシートが一覧で選ばれていない: ' + await page.inputValue('#sheetSelect'));
+      ck(!env.props['VISITOR_PDF_ID_20261014参加者'], '5) 共有できなかったPDFを登録した');
+      env.sharingBlocked = false;
+      await page.click('button:has-text("PDFのみ再作成")');
+      await page.waitForFunction(() => /PDFを再作成しました/.test(document.getElementById('loading').textContent), null, { timeout: 15000 });
+      const id = env.props['VISITOR_PDF_ID_20261014参加者'];
+      ck(id && env.drive.files[id].sharing === 'ANYONE_WITH_LINK/VIEW' && env.fileText(id).includes('共有 待子'), '5) PDFのみ再作成で、共有したPDFを作れない');
+      await page.close();
+    }
   } finally {
     await browser.close();
   }
@@ -156,7 +185,7 @@ const lastCall = (name) => calls.filter((c) => c.name === name).pop();
     fails.forEach((f) => console.log('  - ' + f));
     process.exit(1);
   }
-  console.log('CSVから名簿・PDF作成の画面（ブラウザ）: 検査 ' + checks + ' 件 OK: 過ぎた回の再編集はその回に書き戻す・Shift_JIS のCSV・PDFのみ再作成・PDFを作れなかったとき');
+  console.log('CSVから名簿・PDF作成の画面（ブラウザ）: 検査 ' + checks + ' 件 OK: 過ぎた回の再編集はその回に書き戻す・Shift_JIS のCSV・PDFのみ再作成・PDFを作れなかったとき・リンクで共有できなかったとき');
 })().catch((e) => {
   console.log('NG 検査が止まった: ' + (e && e.stack ? e.stack.split('\n').slice(0, 2).join(' / ') : e));
   fails.forEach((f) => console.log('  - ' + f));   // 止まる前に見つかったもの

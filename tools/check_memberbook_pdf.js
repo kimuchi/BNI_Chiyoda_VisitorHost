@@ -39,6 +39,7 @@ function server(opts) {
       getProperty: (k) => (k in props ? props[k] : null), setProperty: (k, v) => { props[k] = String(v); } }) },
     LockService: { getScriptLock: () => ({ tryLock: () => !o.busy, releaseLock() {} }) },
     Utilities: {
+      sleep: (ms) => { log.push(['sleep', ms]); },
       base64Decode: (s) => Array.from(Buffer.from(s, 'base64')).map((b) => (b > 127 ? b - 256 : b)),
       base64Encode: (a) => Buffer.from(a.map((b) => b & 255)).toString('base64'),
       newBlob: (bytes, type, name) => {
@@ -46,7 +47,12 @@ function server(opts) {
         return { _bytes: Buffer.from(bytes.map((b) => b & 255)), getContentType: () => type, getName: () => nm, setName(n) { nm = n; return this; } };
       },
     },
-    Drive: { Files: {
+    Drive: { Permissions: {
+      create: (res, id) => {
+        if (o.noShare) throw new Error('API call to drive.permissions.create failed with error: The user does not have sufficient permissions for this file.');
+        log.push(['share-api', id, J(res)]); files[id].shared = true; return { id: 'anyoneWithLink' };
+      },
+    }, Files: {
       get: (id, args) => {
         log.push(['get', id, args && args.fields]);
         if (o.scope) throw new Error('API call to drive.files.get failed with error: Insufficient Permission: Request had insufficient authentication scopes.');
@@ -73,7 +79,7 @@ function server(opts) {
       },
     } },
     DriveApp: {
-      Access: { ANYONE_WITH_LINK: 'ANYONE_WITH_LINK' }, Permission: { VIEW: 'VIEW' },
+      Access: { ANYONE_WITH_LINK: 'ANYONE_WITH_LINK', ANYONE: 'ANYONE', PRIVATE: 'PRIVATE' }, Permission: { VIEW: 'VIEW' },
       getFileById: (id) => {
         if (o.photos && id in o.photos) {
           if (o.photos[id] === 'broken') throw new Error('写真を読めない');
@@ -82,7 +88,11 @@ function server(opts) {
         }
         return {
           getUrl: () => 'https://drive.test/file/d/' + id + '/view',
-          setSharing: (a, p) => { if (o.noShare) throw new Error('共有は組織の設定で禁止'); log.push(['share', id, a, p]); files[id].shared = true; },
+          setSharing: (a, p) => {
+            if (o.noShare || (o.shareFlaky && o.shareFlaky-- > 0)) throw new Error('共有は組織の設定で禁止');
+            log.push(['share', id, a, p]); files[id].shared = true;
+          },
+          getSharingAccess: () => (files[id] && files[id].shared ? 'ANYONE_WITH_LINK' : 'PRIVATE'),
         };
       },
     },
@@ -162,6 +172,11 @@ const pdfBlob = (S) => S.box.Utilities.newBlob(Array.from(Buffer.from('%PDF-1.4'
   S = server({ noShare: true });
   r = S.box.saveMemberBookPdfToDrive(PDF64);
   ck(r.ok && r.created && /共有を設定できませんでした/.test(r.message), '共有できないとき: ' + J(r));
+  // 作った直後に共有を断られても、少し待ってやり直して共有する
+  S = server({ shareFlaky: 1 });
+  r = S.box.saveMemberBookPdfToDrive(PDF64);
+  ck(r.ok && r.created && S.files.new1.shared && !/共有を設定できませんでした/.test(r.message) && S.log.some((x) => x[0] === 'sleep'),
+     '共有を一時的に断られたとき、やり直さない: ' + J(r) + ' ' + J(S.log));
   // ほかの方が更新中・空のデータ
   S = server({ props: reg, files: { mb: {} }, busy: true });
   r = S.box.saveMemberBookPdfToDrive(PDF64);

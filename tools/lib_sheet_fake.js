@@ -148,7 +148,12 @@ function makeEnv(opt) {
     env.mail = []; env.fetchLog = []; env.fetchPlan = []; env.sleeps = []; env.errors = [];
     env.denied = new Set();   // このIDのファイルは開けない（作った方以外で権限が無い）
     env.readOnly = new Set(); // このフォルダには作れない（閲覧だけの共有）
-    env.sharingBlocked = false;   // リンクでの共有が組織の設定で禁止されている
+    env.sharingBlocked = false;   // リンクでの共有が組織の設定で禁止されている（DriveApp でも Drive API でも断られる）
+    env.sharingFlaky = 0;         // リンクでの共有が、この回数だけ一時的に断られる（作った直後など）
+    env.sharingAppliedAnyway = false;   // 断られたのに、共有は付いている
+    env.sharingDriveAppBroken = false;  // DriveApp の共有だけが断られる（Drive API では通る）
+    env.drive.permissions = [];   // Drive API で付けた共有
+    env.userEmail = '';           // 動かしているアカウント（空なら tester@example.com）
     return env;
   };
   env.sheet = (n) => env.ss.getSheetByName(n);
@@ -215,9 +220,17 @@ function makeEnv(opt) {
       getBlob: () => f.blob, isTrashed: () => !!f.trashed,
       setTrashed: (t) => { f.trashed = !!t; },
       setSharing: (a, p) => {
+        env.drive.shareTries = (env.drive.shareTries || 0) + 1;
         if (env.sharingBlocked) throw new Error('Access denied: DriveApp.（リンクの共有が組織の設定で禁止されています）');
+        if (env.sharingDriveAppBroken) throw new Error('Access denied: DriveApp.');
+        if (env.sharingFlaky > 0) {
+          env.sharingFlaky--;
+          if (env.sharingAppliedAnyway) f.sharing = a + '/' + p;
+          throw new Error('Access denied: DriveApp.');
+        }
         f.sharing = a + '/' + p;
       },
+      getSharingAccess: () => (f.sharing ? f.sharing.split('/')[0] : 'PRIVATE'),
       getParents: () => { let used = false; return { hasNext: () => !used, next: () => { used = true; return folder; } }; },
     };
   };
@@ -284,7 +297,7 @@ function makeEnv(opt) {
       getUi: () => ({ alert: () => {}, ButtonSet: { OK: 'OK' } }),
     },
     ScriptApp: { getOAuthToken: () => 'TOKEN' },
-    Session: { getActiveUser: () => ({ getEmail: () => 'tester@example.com' }), getEffectiveUser: () => ({ getEmail: () => 'tester@example.com' }) },
+    Session: { getActiveUser: () => ({ getEmail: () => env.userEmail || 'tester@example.com' }), getEffectiveUser: () => ({ getEmail: () => env.userEmail || 'tester@example.com' }) },
     UrlFetchApp: { fetch: (url, o) => {
       env.fetchLog.push({ url, options: o });
       const plan = env.fetchPlan.shift();
@@ -293,7 +306,16 @@ function makeEnv(opt) {
       if (env.onFetch) return response(env.onFetch(url, o));
       throw new Error('検査では外に出ません: ' + url);
     } },
-    Drive: { Files: {
+    Drive: { Permissions: {
+      create: (res, id, args) => {
+        const f = env.drive.files[id];
+        if (!f) throw new Error('API call to drive.permissions.create failed with error: File not found: ' + id);
+        if (env.sharingBlocked) throw new Error('API call to drive.permissions.create failed with error: The user does not have sufficient permissions for this file.');
+        env.drive.permissions.push({ id, res, args });
+        if (res && res.type === 'anyone' && res.role === 'reader' && res.allowFileDiscovery === false) f.sharing = 'ANYONE_WITH_LINK/VIEW';
+        return { id: 'anyoneWithLink' };
+      },
+    }, Files: {
       get: (id) => { const f = env.drive.files[id]; if (!f) throw new Error('File not found: ' + id); return { id, name: f.name, trashed: !!f.trashed }; },
       update: (meta, id, blob) => {
         const f = env.drive.files[id];
@@ -305,7 +327,7 @@ function makeEnv(opt) {
       },
     } },
     DriveApp: {
-      Access: { ANYONE_WITH_LINK: 'ANYONE_WITH_LINK' }, Permission: { VIEW: 'VIEW' },
+      Access: { ANYONE_WITH_LINK: 'ANYONE_WITH_LINK', ANYONE: 'ANYONE', PRIVATE: 'PRIVATE' }, Permission: { VIEW: 'VIEW' },
       getFileById: fileObj,
       getRootFolder: () => rootFolder,
       getFolderById: (id) => {
