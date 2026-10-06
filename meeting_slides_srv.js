@@ -620,17 +620,18 @@ function expandRecommendations_(parts, pairs, cache) {
     fill(add.path, pair);
     return add;
   };
-  // 受け取ったスライドのページ（その組のページのすぐ後ろに並べる）
-  var slides = [], seq = 0;
-  var slideOf = function (pair) {
+  // 受け取ったスライドのページ（その組のページのすぐ後ろに並べる）。placed … どの組のページのあとか（お知らせ用）
+  var slides = [], seq = 0, placed = [];
+  var slideOf = function (pair, pagePath) {
     if (!pair.slideImage) return [];
     var s = recoImageSlide_(parts, modelRels, pair.slideImage, ++seq);
     slides.push(s.path);
+    placed.push({ pair: pair, page: pagePath, path: s.path });
     return [s];
   };
-  var moreDuring = [], afterPages = [], firstSlide = during.length ? slideOf(during[0]) : [];
-  for (i = 1; i < during.length; i++) moreDuring = moreDuring.concat([clone(during[i])], slideOf(during[i]));
-  for (i = 0; i < after.length; i++) afterPages = afterPages.concat([clone(after[i])], slideOf(after[i]));
+  var moreDuring = [], afterPages = [], firstSlide = during.length ? slideOf(during[0], model) : [], c;
+  for (i = 1; i < during.length; i++) { c = clone(during[i]); moreDuring = moreDuring.concat([c], slideOf(during[i], c.path)); }
+  for (i = 0; i < after.length; i++) { c = clone(after[i]); afterPages = afterPages.concat([c], slideOf(after[i], c.path)); }
   if (during.length) {
     putXml_(parts, model, modelXml);
     fill(model, during[0]);
@@ -648,13 +649,27 @@ function expandRecommendations_(parts, pairs, cache) {
   if (!placedAfter) out = out.concat(afterPages);        // 抽選コーナーが無ければ最後に
   setSlideEntries_(parts, out);
 
+  // 何枚目に入れたか（PowerPoint の左の一覧の番号。非表示のページも数える）。このあとページの並びは変えない
+  var pos = {};
+  slideOrder_(parts).forEach(function (p, k) { pos[p] = k + 1; });
+  var span = function (paths) {
+    var n = paths.map(function (p) { return pos[p]; }).filter(Boolean);
+    if (!n.length) return '';
+    var lo = Math.min.apply(null, n), hi = Math.max.apply(null, n);
+    return lo === hi ? lo + '枚目' : lo + '〜' + hi + '枚目';
+  };
+  var pathsOf = function (list) { return list.map(function (x) { return x.path; }); };
+  var who = function (pair) { return ((pair.giver || {}).name || '（推薦する方）') + ' → ' + ((pair.receiver || {}).name || '（推薦される方）'); };
   var msg = during.length
-    ? ('推薦のことばのページを ' + during.length + '枚作りました（定例会中）')
+    ? ('推薦のことばのページを ' + during.length + '枚作りました（定例会中。' + span([model].concat(pathsOf(firstSlide), pathsOf(moreDuring))) + '）')
     : '定例会中の推薦のことばは無いので、そのページは非表示にしました';
   if (after.length) msg += '。アフター・定例会後の ' + after.length + '枚は、'
-    + (lottery ? '抽選コーナーのあと' : '最後') + 'に入れました';
+    + (lottery ? '抽選コーナー（' + pos[lottery] + '枚目）のあと' : '最後') + '（' + span(pathsOf(afterPages)) + '）に入れました';
   msg += '。';
-  if (slides.length) msg += '\n受け取ったスライド ' + slides.length + '枚を、その組の推薦のことばのページのあとに入れました。';
+  if (slides.length) {
+    msg += '\n受け取ったスライド ' + slides.length + '枚を、その組の推薦のことばのページのすぐあとに入れました: '
+      + placed.map(function (x) { return who(x.pair) + ' … ' + pos[x.path] + '枚目'; }).join('、') + '。';
+  }
   if (missing.length) msg += '\n推薦のことばで写真が見つからない方（写真なし）: ' + missing.join('、');
   var pagePaths = function (list) { return list.filter(function (x) { return slides.indexOf(x.path) < 0; }).map(function (x) { return x.path; }); };
   return { message: msg, during: during.length, after: after.length, slides: slides,
