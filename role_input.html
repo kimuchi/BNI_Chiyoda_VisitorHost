@@ -115,7 +115,8 @@
          <button class="primary" id="premtgBtn" onclick="premtgMake()">パワポを作る</button>
        </span>
      </div>
-     <div class="muted" style="margin-top:3px;">この開催日の入力内容から、まとめ1枚と、役職ごとの「今週の共有事項」のページを作ります。</div>
+     <div class="muted" style="margin-top:3px;">この開催日の入力内容から、まとめ1枚と、役職ごとの「今週の共有事項」のページを作ります。
+       割り振り表を作ってある日は、ビジターホストコーディネーターのページのあとに割り振り表（ビジターごとの表）も入れます。</div>
      <div id="premtgOut"></div>
    </div>
    <div class="cards" id="cards"></div>
@@ -821,6 +822,16 @@
             +' <span class="muted">'+esc(r.holder||'担当者 未設定')+'・'+r.chars+'文字'+esc(src)+'</span></span>';
         }).join(' ＋ ')+'</li>';
       }).join('')+'</ol>':'<div class="muted">今週の共有事項がまだ1つもありません（まとめのページだけになります）。</div>')+'</div>';
+   // 割り振り表のページ（ビジターホストコーディネーターのページのあと。ビジターごとの表だけ）
+   if(p.allocation){
+     var al=p.allocation;
+     h+='<div class="pmpages"><b>🤝 割り振り表のページ（ビジターホストコーディネーターのページのあと）</b><div class="hint" style="margin-top:2px;">'
+       +(al.found ? (al.rows ? '「'+esc(al.sheetName)+'」のビジターの表（'+al.rows+'行）を入れます。上の集計の行・メンバー別の表は入れません。'
+                               +'行が多いときは字を小さくし、入らなければページを分けます。'
+                             : '「'+esc(al.sheetName)+'」にビジターの行が無いので、入れません。')
+                  : '<b style="color:#b3261e;">割り振り表（'+esc(al.sheetName)+'）がまだありません。</b>「3. ルーム・オリエン割り振り表」で作ってから作成すると入ります。')
+       +'</div></div>';
+   }
    if(p.skipped.length) h+='<div class="hint">今週の共有事項が無い役職（ページを作りません）：'+esc(p.skipped.join('、'))+'</div>';
    if(p.blank.length) h+='<div class="hint">空欄の項目（パワポでは「—」）：'
      +esc(p.blank.map(function(b){ return b.label+(b.role?'（'+b.role+'）':''); }).join('、'))+'</div>';

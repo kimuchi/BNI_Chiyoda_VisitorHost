@@ -40,6 +40,7 @@ run "スピーカーローテーション（保存していないとき：見た
 run "メインプレゼンターの画像（ブラウザ：写真・お名前・ご紹介して欲しいカテゴリー・回を替える・保存・書体は Meiryo UI）" node tools/check_mp_image.js
 run "スピーカーローテーションの画面で定例会を変える（ブラウザ：画面はそのまま・ご案内する回と画像がその日の回に・戻ると選んだ日の書記兼会計の入力・続けて変えたとき）" node tools/check_rotation_meeting.js
 run "事前MTGのパワポの役職のページ（「書記兼会計より」などの行からも作る・入力済みの数え方・XMLに書けない文字）" node tools/check_premtg_roles.js
+run "事前MTGのパワポの割り振り表のページ（ビジターホストコーディネーターのすぐあと・ビジターの表だけ・字を小さく／ページを分ける・割り振り表が無い日）" node tools/check_premtg_allocation.js
 run "本日の招待者を参加者シートから（ビジター・ゲストの招待者・代理とキャンセルの方は入れない・トークスクリプト）" node tools/check_inviters.js
 run "事前MTGの熱烈歓迎のページ（新入会の方ごと・まとめのあと・写真・土台の違うひな形はマスターごと写す・pptxとして壊れていない）" node tools/check_welcome.js
 run "ルーティンチェックシートの名前の照合（同じ名字・似た氏名・名簿に無い新メンバー）" node tools/check_routine_names.js
