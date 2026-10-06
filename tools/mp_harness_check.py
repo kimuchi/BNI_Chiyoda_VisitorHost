@@ -136,7 +136,8 @@ def img_size(path):
 
 
 def cover_crop(sw, sh_, bw, bh):
-    """はみ出す分を左右または上下から均等に切る量（10万分率）。ooxml.js の coverCrop_ と同じ式。"""
+    """はみ出す分を切る量（10万分率）。ooxml.js の coverCrop_ と同じ式。
+    横にはみ出す分は左右から均等に、縦にはみ出す分は下だけを切る（上をそろえる＝頭が切れない）。"""
     if not (sw and sh_ and bw and bh):
         return (0, 0, 0, 0)
     sr, tr = sw / sh_, bw / bh
@@ -144,8 +145,8 @@ def cover_crop(sw, sh_, bw, bh):
         f = round((1 - tr / sr) / 2 * 100000)
         return (f, 0, f, 0)
     if sr < tr:
-        g = round((1 - sr / tr) / 2 * 100000)
-        return (0, g, 0, g)
+        g = round((1 - sr / tr) * 100000)
+        return (0, 0, 0, g)
     return (0, 0, 0, 0)
 
 

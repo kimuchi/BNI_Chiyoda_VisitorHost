@@ -60,7 +60,14 @@ def render(z, n):
                     src = 'data:image/%s;base64,%s' % (ext, base64.b64encode(z.read(tgt)).decode())
             sr = ch.getElementsByTagNameNS(NS_A, 'srcRect')
             fit = 'cover' if sr else 'fill'
-            out.append('<img class="pic" style="%sobject-fit:%s;" src="%s">' % (box, fit, src))
+            pos = ''
+            if sr:
+                # 切り抜きの寄せ方（縦長の写真は上をそろえて下だけ切る）を、そのまま見本にも
+                v = dict((k, int(sr[0].getAttribute(k) or 0)) for k in 'ltrb')
+                px = 100.0 * v['l'] / (v['l'] + v['r']) if v['l'] + v['r'] else 50.0
+                py = 100.0 * v['t'] / (v['t'] + v['b']) if v['t'] + v['b'] else 50.0
+                pos = 'object-position:%.0f%% %.0f%%;' % (px, py)
+            out.append('<img class="pic" style="%sobject-fit:%s;%s" src="%s">' % (box, fit, pos, src))
             continue
 
         if ch.localName == 'graphicFrame':
