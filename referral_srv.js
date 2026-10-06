@@ -108,8 +108,6 @@ function rfBuildSlide_(tplXml, tplRels, item, photo, SH) {
   xml = setParagraphsInShape_(xml, SH.category, item.categoryLines || ['']);
   if (item.categoryPt) xml = setFontSizeInShape_(xml, SH.category, item.categoryPt);
   if (item.categoryTight) xml = setLineSpacingInShape_(xml, SH.category, 85);
-  // 2行になったカテゴリーが、下の図形（次の発表者の帯など）の陰や色の帯の外に隠れないよう、見えるところに収める
-  xml = fitPresenterCategory_(xml, SH.category, SH.W, SH.H);
 
   if (item.nextName && SH.nextName) {
     xml = setParagraphsInShape_(xml, SH.nextName, [item.nextName]);
@@ -129,6 +127,9 @@ function rfBuildSlide_(tplXml, tplRels, item, photo, SH) {
     xml = mpSetCountdown_(xml, sec, true);
     xml = mpNoAutoAdvance_(xml);
   }
+  // 2行になったカテゴリーが、カウントダウンの白い箱の陰や色の帯の外に隠れないよう、見えるところに収める
+  // （カウントダウンを作り直したあとで。カウントダウンを下げることがあるため）
+  xml = fitPresenterCategory_(xml, SH.category, SH.W, SH.H);
 
   var rels = tplRels;
   if (!SH.photo) {

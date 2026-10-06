@@ -146,11 +146,18 @@
  // 左右にお2人が並ぶページ（氏名・会社名・カテゴリーは名簿から引く）
  function twoPersonValues(m, prefix, idPrefix){
    [1,2].forEach(function(n){
-     var name=get(idPrefix+n), who=memberOf(name);
+     var name=get(idPrefix+n), who=memberOf(name), title=flatCell(who.title);
      m[prefix+n+'氏名']=name;
-     m[prefix+n+'会社名']=who.company||'';
-     m[prefix+n+'カテゴリー']=who.title?('【'+who.title+'】'):'';
+     m[prefix+n+'会社名']=flatCell(who.company);
+     m[prefix+n+'カテゴリー']=title?('【'+title+'】'):'';
    });
+ }
+ // 名簿のセルの中の改行を外す（英数字のあいだだけ空白に）。改行が残ると、ページの行が増えて下の段に重なる
+ function flatCell(s){
+   var t=String(s==null?'':s);
+   return t.replace(/[ \t]*[\r\n]+[ \t]*/g, function(x, at){
+     return /[A-Za-z0-9]/.test(t.charAt(at-1)) && /[A-Za-z0-9]/.test(t.charAt(at+x.length)) ? ' ' : '';
+   }).trim();
  }
  function baseValues(){
    var m={}, sel=document.getElementById('meeting');

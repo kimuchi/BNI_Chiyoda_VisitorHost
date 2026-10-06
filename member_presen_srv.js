@@ -388,13 +388,14 @@ function mpIndividualSlide_(tplXml, tplRels, item, photo, size) {
   xml = setParagraphsInShape_(xml, MP_INDIVIDUAL_.category, item.categoryLines || ['']);
   if (item.categoryPt) xml = setFontSizeInShape_(xml, MP_INDIVIDUAL_.category, item.categoryPt);
   if (item.categoryTight) xml = setLineSpacingInShape_(xml, MP_INDIVIDUAL_.category, 85);
-  xml = fitPresenterCategory_(xml, MP_INDIVIDUAL_.category, size && size.W, size && size.H);
 
   // 秒数（チャプターの設定。スタートアッププレゼンの方は長い）がテンプレートと違うときは、
   // カウントダウンごと作り直す。同じならテンプレートのまま使う（カウントダウンの無いテンプレートも、そのまま）
   var nowSec = item.countdownSec ? mpCountdownSeconds_(xml) : 0;
   if (nowSec && item.countdownSec !== nowSec) xml = mpSetCountdown_(xml, item.countdownSec);
   if (item.auto) xml = mpAdvanceAfterCountdown_(xml, item.countdownSec);
+  // 2行になったカテゴリーが、カウントダウンの白い箱の陰に隠れないように（カウントダウンを作り直したあとで）
+  xml = fitPresenterCategory_(xml, MP_INDIVIDUAL_.category, size && size.W, size && size.H);
 
   if (item.nextName) {
     xml = setParagraphsInShape_(xml, MP_INDIVIDUAL_.nextName, [item.nextName]);
@@ -421,8 +422,6 @@ function mpLayoutBoxes_(map) {
   return presenterBoxesOf_(iv.xml, MP_INDIVIDUAL_.company, MP_INDIVIDUAL_.category);
 }
 
-// 会社名・カテゴリーの枠（EMU）と文字の大きさ（pt）→ 画面の setLayoutBoxes() に渡す形。
-// 画面は枠の位置だけを使う（文字の大きさは、会社名44pt・カテゴリー32ptにそろえる。slides_layout.html）
 // ページに入れる氏名・会社名・カテゴリーの行から、名簿の改行などを外す（画面の古い版から来たときのため）
 function presenterOneLine_(item) {
   var o = {}, k;
@@ -443,14 +442,17 @@ function slideOneLine_(s) {
 }
 
 // === カテゴリーの枠を、行数に合わせて見えるところに収める（メンバーのページ・リファーラル発表）===
-// 画面で決めた行（32pt・1〜2行）を入れたあと、枠の高さを行数に合わせる。下にある図形（「次の発表者」の帯・
-// ほかの文字・写真・色の付いた図形）の上端や、カテゴリーが載っている色の帯の下端を越えるときは、越えない大きさまで
-// 文字を小さくする（2行のまま小さくするより、1行にした方が大きく入るなら1行に）。
-// 以前は枠の高さがひな形のまま（1行ぶん）で、2行目が枠の外へはみ出し、下の図形の陰や帯の外に隠れて見えないことがあった
-var PC_LINE_EMU_ = 12700 * 1.213, PC_PAD_EMU_ = 91440, PC_GAP_EMU_ = 25400;
+// 1行のカテゴリーは雛形どおり（32pt。下のカウントダウンの数字の箱に枠が少しかかっても、数字には重ならず見えていた）。
+// 2行のときだけ、2行目が見えるようにする：
+//   ・カテゴリーを前面に出す（カウントダウンの白い箱が上に重なると、2行目が隠れて見えなかった）
+//   ・2行目のぶん、カウントダウンを下げる（その下の「次の発表者」の帯・ページの下端まで）
+//   ・それでも足りないとき・色の帯の下端や下の文字に届くときだけ、少し小さくする（24ptまで。それより小さくなるなら1行に）
+// 以前（2026-10-06c）は、カウントダウンの箱を「下の図形」と見て、1行のカテゴリーまで小さくしていた
+var PC_LINE_EMU_ = 12700 * 1.213, PC_PAD_EMU_ = 91440, PC_GAP_EMU_ = 25400, PC_MIN_TWO_PT_ = 24;
 function fitPresenterCategory_(xml, catId, W, H) {
   var g = readShapeGeomEmu_(xml, catId), r = findShapeRange_(xml, catId);
   if (!g || !r) return xml;
+  W = W || 12192000; H = H || 6858000;
   var seg = xml.substring(r.start, r.end);
   var lines = findTagRanges_(seg, 'a:p').map(function (p) { return pcText_(seg.substring(p.start, p.end)); })
     .filter(function (t) { return t.trim(); });
@@ -460,15 +462,38 @@ function fitPresenterCategory_(xml, catId, W, H) {
   pt = pt || 32;
   var spc = /<a:lnSpc>\s*<a:spcPct val="(\d+)"/.exec(seg), sp = spc ? +spc[1] / 100000 : 1;
   var need = function (n, p) { return PC_PAD_EMU_ + n * p * PC_LINE_EMU_ * (n > 1 ? sp : 1); };
+  var n = lines.length;
   xml = pcNoClip_(xml, catId);
-  var avail = presenterLimitBelow_(xml, catId, g, W || 12192000, H || 6858000) - g.y, n = lines.length;
-  if (need(n, pt) <= avail) return setShapeGeomEmu_(xml, catId, { cy: Math.round(Math.max(need(n, pt), Math.min(g.cy, avail))) });
-  // 入らない：同じ行のまま小さくする／1行にして入る大きさにする、の大きい方（10ptより小さくはしない）
+  if (n === 1) return need(1, pt) > g.cy ? setShapeGeomEmu_(xml, catId, { cy: Math.round(need(1, pt)) }) : xml;
+
+  xml = pcToFront_(xml, catId);
+  // カウントダウンの数字の箱（カテゴリーと横に重なるもの）。1行のときの下端までは、かかっていてよい
+  var cds = pcCountdowns_(xml), cdIds = {}, bottomN = g.y + need(n, pt), allowed = Infinity;
+  cds.forEach(function (c) { cdIds[c.id] = true; });
+  var cdOver = cds.filter(function (c) { return pcOverlapX_(c, g) > 0.2; });
+  if (cdOver.length) {
+    var cdTop = Math.min.apply(null, cdOver.map(function (c) { return c.y; }));
+    allowed = Math.max(cdTop, g.y + need(1, pt));
+    var dy = bottomN - allowed;
+    if (dy > 0) {
+      var cdBottom = Math.max.apply(null, cds.map(function (c) { return c.y + c.cy; }));
+      var room = pcRoomBelow_(xml, cds, cdIds, catId, W, H) - cdBottom;
+      var move = Math.max(0, Math.min(dy, room));
+      if (move > 0) {
+        cds.forEach(function (c) { xml = setShapeGeomEmu_(xml, c.id, { y: Math.round(c.y + move) }); });
+        allowed += move;
+      }
+    }
+  }
+  var other = presenterLimitBelow_(xml, catId, g, W, H, cdIds), limit = Math.min(allowed, other);
+  if (bottomN <= limit) return setShapeGeomEmu_(xml, catId, { cy: Math.round(need(n, pt)) });
+  // 入らない：同じ行のまま少し小さく（24ptまで）。それより小さくなるなら、1行にして入る大きさ（大きい方）。
+  // 1行なら、カウントダウンの箱にはかかってよい（1行のときと同じ）。ほかの図形・帯には届かない大きさに
   var even = function (v) { return Math.floor(v / 2) * 2; };
-  var ptA = even((avail - PC_PAD_EMU_) / (n * PC_LINE_EMU_ * (n > 1 ? sp : 1)));
+  var ptA = Math.min(pt, even((limit - g.y - PC_PAD_EMU_) / (n * PC_LINE_EMU_ * sp)));
   var one = lines.join(''), wPt = Math.max(1, g.cx - 2 * 91440) / 12700;
-  var ptB = n > 1 ? even(Math.min((avail - PC_PAD_EMU_) / PC_LINE_EMU_, wPt / (pcTextEm_(one) * 1.1))) : 0;
-  var useOne = ptB > ptA, to = Math.max(10, Math.min(pt, useOne ? ptB : ptA));
+  var ptB = Math.min(pt, even(wPt / (pcTextEm_(one) * 1.1)), even((other - g.y - PC_PAD_EMU_) / PC_LINE_EMU_));
+  var useOne = ptA < PC_MIN_TWO_PT_ && ptB > ptA, to = Math.max(10, useOne ? ptB : ptA);
   if (useOne) {
     xml = setParagraphsInShape_(xml, catId, [one]);
     xml = setLineSpacingInShape_(xml, catId, 100);
@@ -477,16 +502,15 @@ function fitPresenterCategory_(xml, catId, W, H) {
   return setShapeGeomEmu_(xml, catId, { cy: Math.round(need(useOne ? 1 : n, to)) });
 }
 // カテゴリーの枠の下で、文字が届いてはいけないところ（EMU）：横に重なる下の図形の上端・カテゴリーが載っている
-// 色の帯の下端・ページの下端のうち、いちばん上（少しすき間をあける）
-function presenterLimitBelow_(xml, catId, g, W, H) {
+// 色の帯の下端・ページの下端のうち、いちばん上（少しすき間をあける）。skip の図形（カウントダウン）は見ない
+function presenterLimitBelow_(xml, catId, g, W, H, skip) {
   var limit = H;
   pcShapes_(xml).forEach(function (s) {
-    if (String(s.id) === String(catId) || s.tag === 'p:grpSp') return;
+    if (String(s.id) === String(catId) || s.tag === 'p:grpSp' || (skip && skip[s.id])) return;
     var seg = xml.substring(s.start, s.end);
     if (/<p:cNvPr\b[^>]*\shidden="1"/.test(seg)) return;
     if (s.acx >= W * 0.9 && s.acy >= H * 0.9) return;                                   // 背景いっぱいの図形
-    var ov = Math.min(s.ax + s.acx, g.x + g.cx) - Math.max(s.ax, g.x);
-    if (ov <= Math.min(s.acx, g.cx) * 0.2) return;                                      // 横に重ならない
+    if (pcOverlapX_({ x: s.ax, cx: s.acx }, g) <= 0.2) return;                          // 横に重ならない
     var text = s.tag === 'p:sp' && String(s.text || '').trim(), filled = s.tag === 'p:sp' && pcFilled_(seg);
     if (!(s.tag === 'p:pic' || s.tag === 'p:graphicFrame' || text || filled)) return;   // 見えない枠
     if (s.ay > g.y + PC_GAP_EMU_) limit = Math.min(limit, s.ay);
@@ -495,6 +519,48 @@ function presenterLimitBelow_(xml, catId, g, W, H) {
     }
   });
   return limit - PC_GAP_EMU_;
+}
+// 横の重なり（狭い方の幅に対する割合）
+function pcOverlapX_(a, b) {
+  var w = Math.min(a.x + a.cx, b.x + b.cx) - Math.max(a.x, b.x);
+  return w > 0 ? w / Math.max(1, Math.min(a.cx, b.cx)) : 0;
+}
+// カウントダウンの数字の箱の位置 [{ id, x, y, cx, cy }]
+function pcCountdowns_(xml) {
+  return mpCountdownShapes_(xml).map(function (b) {
+    var g = readShapeGeomEmu_(xml, b.id);
+    return g ? { id: b.id, x: g.x, y: g.y, cx: g.cx, cy: g.cy } : null;
+  }).filter(Boolean);
+}
+// カウントダウンを下げられるところ（EMU）：カウントダウンの下にある図形（「次の発表者」の帯など）の上端・ページの下端
+function pcRoomBelow_(xml, cds, cdIds, catId, W, H) {
+  var box = { x: Math.min.apply(null, cds.map(function (c) { return c.x; })), cx: 0 };
+  box.cx = Math.max.apply(null, cds.map(function (c) { return c.x + c.cx; })) - box.x;
+  var bottom = Math.max.apply(null, cds.map(function (c) { return c.y + c.cy; })), limit = H;
+  pcShapes_(xml).forEach(function (s) {
+    if (cdIds[s.id] || String(s.id) === String(catId) || s.tag === 'p:grpSp') return;
+    if (/<p:cNvPr\b[^>]*\shidden="1"/.test(xml.substring(s.start, s.end))) return;
+    if (s.acx >= W * 0.9 && s.acy >= H * 0.9) return;
+    if (pcOverlapX_({ x: s.ax, cx: s.acx }, box) <= 0.2) return;
+    if (s.ay >= bottom - PC_GAP_EMU_) limit = Math.min(limit, s.ay);
+  });
+  return limit - PC_GAP_EMU_;
+}
+// 図形を前面へ（ページの図形の並びのいちばん最後へ）。グループの中の図形は動かさない
+function pcToFront_(xml, id) {
+  var r = findShapeRange_(xml, id);
+  if (!r) return xml;
+  var depth = 0, re = /<(\/?)p:grpSp\b[^>]*>/g, m;
+  while ((m = re.exec(xml)) !== null && m.index < r.start) depth += m[1] ? -1 : 1;
+  if (depth > 0) return xml;
+  var seg = xml.substring(r.start, r.end), rest = xml.substring(0, r.start) + xml.substring(r.end);
+  var end = rest.lastIndexOf('</p:spTree>'), at = -1;
+  if (end < 0) return xml;
+  ['</p:sp>', '</p:pic>', '</p:grpSp>', '</p:graphicFrame>', '</p:cxnSp>', '</p:contentPart>', '</mc:AlternateContent>'].forEach(function (t) {
+    var i = rest.lastIndexOf(t, end);
+    if (i >= 0 && i + t.length > at) at = i + t.length;
+  });
+  return at < 0 ? xml : rest.substring(0, at) + seg + rest.substring(at);
 }
 // 図形に色が塗ってあるか（枠線だけ・塗りなしは塗っていない）。塗りの指定が無ければ、図形の書式（fillRef）で
 function pcFilled_(seg) {
@@ -539,6 +605,8 @@ function pcNoClip_(xml, id) {
   return xml.substring(0, r.start) + seg + xml.substring(r.end);
 }
 
+// 会社名・カテゴリーの枠（EMU）と文字の大きさ（pt）→ 画面の setLayoutBoxes() に渡す形。
+// 画面は枠の位置だけを使う（文字の大きさは、会社名44pt・カテゴリー32ptにそろえる。slides_layout.html）
 function presenterBoxesOf_(xml, companyId, categoryId) {
   var co = readShapeGeomEmu_(xml, companyId), ca = readShapeGeomEmu_(xml, categoryId);
   if (!co || !ca) return null;

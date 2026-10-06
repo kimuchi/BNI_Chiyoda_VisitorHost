@@ -1108,6 +1108,10 @@ function editMeetingSlides_(parts, map, rules, o) {
   // 写真は1つの控えで取り込む。同じ方の写真は1枚だけ入れて使い回し、
   // 別の処理が同じ名前の画像を作って上書きし合うこと（写真の取り違い）も起きない。
   var photoCache = { by: {}, seq: 0 };
+  // 後半：1枚目に、前半の最後のページ（メインプレゼンテーション）を入れる（前半のテンプレートから写す）。
+  // お名前・会社名・カテゴリーは差し込み口 {{メインプレゼン1氏名}} など、写真はあとのお2人の写真の処理で入る
+  var mainPage = o.mainPageSource ? insertMainPresenPage_(parts, o.mainPageSource)
+               : (o.mainPageNote ? { message: o.mainPageNote } : null);
   // コアバリューのページは、差し込み・書き換えの前に、テンプレートの字で見分けておく（メンバーの会社名などに英語の語が
   // あっても、そのページをコアバリューのページとして非表示にしないように）
   var corePages = o.coreValue ? coreValuePages_(parts) : null;
@@ -1164,6 +1168,15 @@ function editMeetingSlides_(parts, map, rules, o) {
     }
     if (xml !== before) { putXml_(parts, path, xml); touched++; }
   }
+  // 後半の1枚目に写したメインプレゼンのページ：後半で入れる値の無い差し込み口（前半だけのもの）は空にする
+  if (mainPage && mainPage.path) {
+    var mx = xmlOf_(parts, mainPage.path), left = mx ? Object.keys(listTokensInXml_(mx)) : [];
+    if (left.length) {
+      var blank = {};
+      left.forEach(function (t) { blank[t] = ''; });
+      putXml_(parts, mainPage.path, replaceTokensInXml_(mx, blank));
+    }
+  }
   // 前半：スピーカーローテーションの表（以前は書記兼会計が作った画像）。
   // 「第○回」の書き換えのあとに入れる（表の中の先の回の番号まで、今回の番号にしないように）
   var rotation = o.speakerRotation ? applySpeakerRotation_(parts, o.speakerRotation) : null;
@@ -1181,7 +1194,25 @@ function editMeetingSlides_(parts, map, rules, o) {
   return { touched: touched, byPattern: byPattern, core: core, policy: policy, photoGone: gone,
            photos: photos, audio: audio, referral: referral, weekly: weekly, guests: guests,
            reco: reco, renewal: renewal, rotation: rotation, roles: roles,
-           members: members, vp: vp, leaders: leaders };
+           members: members, vp: vp, leaders: leaders, mainPage: mainPage };
+}
+
+// 後半の1枚目に、メインプレゼンのページ（前半の最後のページ。差し込み口 {{メインプレゼン1氏名}} のあるページ）を入れる。
+// 前半のテンプレート（src）から、見た目（レイアウト・マスター）ごと写す。後半のテンプレートにもうあれば、そのまま使う
+//   戻り値 { path: 入れたページ, message }
+function insertMainPresenPage_(parts, src) {
+  var mark = '{{メインプレゼン1氏名}}';
+  if (findSlideWithText_(parts, mark)) return { message: '' };
+  var model = findSlideWithText_(src, mark);
+  if (!model) {
+    return { message: '前半のテンプレートに、メインプレゼンのページ（差し込み口 {{メインプレゼン1氏名}} のあるページ）が見つからないため、'
+      + '後半の1枚目には入れませんでした。' };
+  }
+  fitSourceToTargetSize_(parts, src);                         // ページの大きさが違えば、後半の大きさに合わせる
+  var made = importSlideCopies_(parts, src, model, 1).slides[0];
+  setSlideEntries_(parts, [made].concat(slideEntries_(parts).filter(function (e) { return e.path !== made.path; })));
+  syncSections_(parts);                                       // PowerPoint のセクションも、並びに合わせる
+  return { path: made.path, message: '後半の1枚目に、メインプレゼンのページ（前半のテンプレートの最後のページ）を入れました。' };
 }
 
 // ファイル名の（ ）の中
@@ -1217,6 +1248,14 @@ function generateMeetingSlides(kind, values, meetingDateVal, opts) {
     }
     // 後半の推薦のことば：組に付いた受け取ったスライド（画像）を開いておく（reco_slide_srv.js）
     var recoGone = (kind === 'meetingSecond' && o.recommendPairs && o.recommendPairs.length) ? recoLoadSlides_(o.recommendPairs) : '';
+    // 後半の1枚目のメインプレゼンのページは、前半のテンプレートから写す（前半のテンプレートを開いておく）
+    if (kind === 'meetingSecond' && o.mainPage) {
+      try { o.mainPageSource = bigTemplateParts_('meetingFirst'); }
+      catch (e) {
+        o.mainPageNote = '後半の1枚目にメインプレゼンのページを入れられませんでした（前半のテンプレートを開けません: '
+          + (e && e.message ? e.message : e) + '）。';
+      }
+    }
 
     var r = editPptxOnServer_(kind, outName, function (parts) {
       return editMeetingSlides_(parts, map, rules, o);
@@ -1250,6 +1289,7 @@ function generateMeetingSlides(kind, values, meetingDateVal, opts) {
     if (info.members && info.members.message) msg += '\n' + info.members.message;
     if (info.vp && info.vp.message) msg += '\n' + info.vp.message;
     if (info.leaders && info.leaders.message) msg += '\n' + info.leaders.message;
+    if (info.mainPage && info.mainPage.message) msg += '\n' + info.mainPage.message;
     return { ok: true, message: msg, url: r.saved.url, downloadUrl: r.saved.downloadUrl,
              fileName: outName, touched: info.touched, core: info.core, policy: info.policy,
              timing: r.timing };
