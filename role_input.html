@@ -607,9 +607,35 @@
        items.push(it);
      });
    });
-   var honor=0;
+   var honor=0, n=0;
    items.forEach(function(it){ honor+=(it.match(HONOR)||[]).length; });
-   return honor||items.length;
+   if(honor) return honor;
+   items.forEach(function(it){ n+=spacedNames(it); });
+   return n;
+ }
+ // 敬称の無い書き方で、名字を空白で並べたもの（「見本　試験」）は1人ずつ数える。
+ // 左から見て、続く2語が名簿の方の「名字 名前（の頭）」なら2語で1人（サーバーの routineAbsentSplit_ と同じ）
+ var NAME_VARIANTS={'邉':'辺','邊':'辺','齋':'斉','齊':'斉','斎':'斉','髙':'高','﨑':'崎','嵜':'崎','澤':'沢','濱':'浜','濵':'浜',
+   '廣':'広','嶋':'島','嶌':'島','國':'国','眞':'真','冨':'富','瀨':'瀬','德':'徳','藏':'蔵','櫻':'桜','龍':'竜','萬':'万','槇':'槙',
+   '桒':'桑','淵':'渕','條':'条','峯':'峰','藪':'薮','籔':'薮','栁':'柳','惠':'恵','實':'実','壽':'寿','豐':'豊','禮':'礼'};
+ function foldName(s){
+   var t=String(s==null?'':s).normalize('NFKC').replace(/[\s　]/g,'').replace(/さん$/,''), o='';
+   for(var i=0;i<t.length;i++) o+=NAME_VARIANTS[t.charAt(i)]||t.charAt(i);
+   return o;
+ }
+ function spacedNames(it){
+   var w=String(it||'').split(/[\s　]+/).filter(function(x){ return x; });
+   if(w.length<2) return 1;
+   var keys=((ctx&&ctx.members)||[]).map(function(m){ return { full:foldName(m), sur:foldName(String(m).trim().split(/[\s　]+/)[0]) }; });
+   var n=0, i=0;
+   while(i<w.length){
+     if(i+1<w.length){
+       var sur=foldName(w[i]), both=foldName(w[i]+w[i+1]);
+       if(keys.filter(function(k){ return k.sur===sur && k.full.indexOf(both)===0; }).length===1){ n++; i+=2; continue; }
+     }
+     n++; i++;
+   }
+   return n;
  }
 
  function renderItems(){
