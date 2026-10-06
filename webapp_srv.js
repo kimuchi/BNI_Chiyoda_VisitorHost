@@ -39,7 +39,7 @@ function getSS_() {
 }
 
 // コピー元のスプレッドシートで作ったファイルを指す控え（開催日ごとのPDF・メンバーブック・送った記録）
-var COPIED_FILE_KEYS_ = /^(VISITOR_PDF_(ID|URL)_|ALLOC_PDF_(ID|URL)_|MAIL_SENT_|LATEST_VISITOR_LIST_URL$|LATEST_ALLOCATION_URL$|LATEST_MEETING_DATE$|MEMBER_BOOK_(ID|URL|UPDATED)$)/;
+var COPIED_FILE_KEYS_ = /^(VISITOR_PDF_(ID|URL)_|ALLOC_PDF_(ID|URL)_|MAIL_SENT_|MAIL_UNSURE_|LATEST_VISITOR_LIST_URL$|LATEST_ALLOCATION_URL$|LATEST_MEETING_DATE$|MEMBER_BOOK_(ID|URL|UPDATED)$)/;
 function forgetCopiedFiles_(props, prevId) {
   var gone = (props.getKeys() || []).filter(function (k) { return COPIED_FILE_KEYS_.test(k); });
   gone.forEach(function (k) { props.deleteProperty(k); });

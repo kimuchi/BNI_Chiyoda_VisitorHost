@@ -2,7 +2,7 @@
 
 // 反映されたか確かめるための版。変更したら日付を更新する。
 // clasp push / デプロイが効いているかは、これを画面で見れば分かる。
-var SYSTEM_VERSION_ = '2026-10-06a';
+var SYSTEM_VERSION_ = '2026-10-06b';
 
 function getSystemVersion() { return SYSTEM_VERSION_; }
 
@@ -1295,16 +1295,73 @@ function relayProblem_(code, text, ctx) {
       + '代理送信用の Apps Script の「デプロイを管理」で「次のユーザーとして実行：自分」「アクセスできるユーザー：全員」にして、'
       + 'デプロイし直してください（URLの最後が /dev のもの、名簿システムのウェブアプリ（メンバーが開く画面）のURLは使えません）。' + fix;
   }
+  // 「Script function not found: doPost」（doPost の無いスクリプト）。「見つかりません」より先に見る
+  if (/(not found|見つかりません)[^<]{0,40}doPost/i.test(t)) {
+    return head + 'そのURLの Web App には、メールを送る仕組み（doPost）がありません。代理送信用にデプロイした Web App のURLか確かめてください。' + fix;
+  }
   if (code === 404 || /見つかりません|not found|ファイルを開くことができません|unable to open the file/i.test(t)) {
     return head + '代理送信の Web App のURLが見つかりません（デプロイを削除した・URLが違う）。設定のURLを確かめてください。' + fix;
   }
   if (/承認|Authorization is required|requires authorization/i.test(t)) {
     return head + '代理送信の Web App の持ち主の方が、Googleの許可をしていません。持ち主の方が Apps Script の画面で一度実行して、許可してください。' + fix;
   }
-  if (/doPost/.test(t)) {
-    return head + 'そのURLの Web App には、メールを送る仕組み（doPost）がありません。代理送信用にデプロイした Web App のURLか確かめてください。' + fix;
-  }
   return head + '代理送信の Web App から、送った結果ではなく別のページが返ってきました（HTTP ' + code + (title ? '・「' + title + '」' : '') + '）。' + fix;
+}
+// JSONでない返事が、「doPost は動いていない（送られていない）」と言い切れるページか：
+// ログインの画面・見つからない（doPost が無い も）・持ち主の許可が無い。それ以外（Google側のエラーのページなど）は、送れたか分からない
+function relayNotSent_(code, text) {
+  var t = String(text || '');
+  return code === 401 || code === 403 || code === 404
+    || /accounts\.google\.com|ServiceLogin|signin|ログイン|Sign in/i.test(t)
+    || /見つかりません|not found|ファイルを開くことができません|unable to open the file/i.test(t)
+    || /承認|Authorization is required|requires authorization/i.test(t);
+}
+// 送れたか分からないときの知らせ（二重に送らないよう、確かめてもらう）
+function relayUnsure_(code, text) {
+  var t = String(text || ''), title = ((t.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1] || '').replace(/\s+/g, ' ').trim();
+  return 'この方に送れたかどうか分かりません（代理送信の Web App から、送った結果ではなく別のページが返ってきました（HTTP ' + code
+    + (title ? '・「' + title + '」' : '') + '））。代理送信の Web App の持ち主（管理者）のGmailの「送信済み」で、この方に送れているか確かめてください。'
+    + '2通届かないよう、この方は「自分のGmailから送る」には入れていません。';
+}
+
+// 代理送信の Web App に送る（POST）。Web App は doPost を動かしたあと、返事を置いた別のURL（script.googleusercontent.com の
+// macros/echo）を「そちらを見て」と返し（302）、そこを読みに行くと返事（JSON）が来る。この読みに行くところが、まれに
+// Google側で失敗して、返事ではないページが返ることがある。そのときメールはもう送られている（doPost は動いた）ので、
+// 「送られていません」とは言わずに、返事だけを読み直す（読み直してもメールは送られない）。
+// 以前は転送をまかせていたため、送れていたのに「動いていない」と止め、その方も「自分のGmailから送る」に入れていた（2通届く）。
+// → { json: 返事（JSON）か null, code, text, ran: doPost が動いた（true）・動いていない（false）・分からない（null） }
+function callMailRelay_(url, payload) {
+  var res = UrlFetchApp.fetch(url, { method: 'post', contentType: 'application/json', payload: JSON.stringify(payload),
+                                     muteHttpExceptions: true, followRedirects: false });
+  var code = res.getResponseCode(), loc = responseHeader_(res, 'Location');
+  if (code >= 300 && code < 400 && loc) {
+    if (/^https:\/\/script\.googleusercontent\.com\//.test(loc)) {
+      var c = 0, t = '', out = null;
+      for (var attempt = 0; attempt < 3 && !out; attempt++) {
+        if (attempt) Utilities.sleep(2000 * attempt);
+        try {
+          var r = UrlFetchApp.fetch(loc, { muteHttpExceptions: true, followRedirects: true });
+          c = r.getResponseCode(); t = r.getContentText(); out = relayJson_(t);
+        } catch (e) { c = 0; t = String(e && e.message ? e.message : e); }
+      }
+      if (!out) console.error('[MAIL] 代理送信の返事を受け取れません（doPost は動いた）: HTTP ' + c + ' ' + t.slice(0, 300));
+      return { json: out, code: c, text: t, ran: true };
+    }
+    // ログインの画面へ（doPost は動いていない）・そのほかの行き先（分からない）
+    return { json: null, code: code, text: 'Location: ' + loc, ran: /accounts\.google\.com/.test(loc) ? false : null };
+  }
+  var text = res.getContentText(), json = relayJson_(text);
+  if (!json) console.error('[MAIL] 代理送信の Web App の返事が JSON ではありません: HTTP ' + code + ' ' + text.slice(0, 300));
+  return { json: json, code: code, text: text, ran: null };
+}
+function relayJson_(t) {
+  try { var o = JSON.parse(t); return o && typeof o === 'object' ? o : null; } catch (e) { return null; }
+}
+function responseHeader_(res, name) {
+  var h = {};
+  try { h = (res.getAllHeaders ? res.getAllHeaders() : res.getHeaders()) || {}; } catch (e) { h = {}; }
+  for (var k in h) if (String(k).toLowerCase() === String(name).toLowerCase()) return String(Array.isArray(h[k]) ? h[k][0] : h[k]);
+  return '';
 }
 function relayTokenProblem_(ctx) {
   var test = ctx === 'test';
@@ -1324,11 +1381,13 @@ function mailSenderAddress_() {
 function pingMailWebApp_(url, token) {
   var warn = mailWebAppUrlWarning_(url), tail = warn ? '\n⚠ ' + warn : '';
   try {
-    var res = UrlFetchApp.fetch(url, { method: 'post', contentType: 'application/json', payload: JSON.stringify({ token: token, ping: true }),
-                                       muteHttpExceptions: true, followRedirects: true });
-    var code = res.getResponseCode(), text = res.getContentText(), r = null;
-    try { r = JSON.parse(text); } catch (e) { r = null; }
-    if (!r || typeof r !== 'object') return { ok: false, reachable: false, message: relayProblem_(code, text, 'test') + tail };
+    var call = callMailRelay_(url, { token: token, ping: true }), r = call.json;
+    if (!r && call.ran === true) {
+      // 届いて動いたが、返事を受け取れなかった（Google側の一時的な不調）。止めずに送ってみてもらう
+      return { ok: true, reachable: true, unconfirmed: true,
+               message: '代理送信の Web App には届きましたが、返事を受け取れませんでした（Google側の一時的な不調）。送れるかは、送ってみると分かります。' };
+    }
+    if (!r) return { ok: false, reachable: false, message: relayProblem_(call.code, call.text, 'test') + tail };
     if (/アクセス権限がありません/.test(String(r.error || ''))) return { ok: false, reachable: true, message: relayTokenProblem_('test') };
     if (r.success && r.ping) {
       var who = (r.sender ? '送信元：' + r.sender : '') + (r.version ? (r.sender ? '・' : '') + 'Web App の版：' + r.version : '');
@@ -1393,11 +1452,15 @@ function sendMailTest(data) {
       GmailApp.sendEmail(to, subject, body, options);
       return { ok: true, message: to + ' に、' + (me ? me + ' の' : 'あなたの') + 'Gmailからテストメールを送りました。届いたか確かめてください。' };
     }
-    var res = UrlFetchApp.fetch(route.url, { method: 'post', contentType: 'application/json',
-      payload: JSON.stringify({ token: route.token, to: to, subject: subject, body: body, options: options }), muteHttpExceptions: true, followRedirects: true });
-    var code = res.getResponseCode(), text = res.getContentText(), r = null;
-    try { r = JSON.parse(text); } catch (e) { r = null; }
-    if (!r || typeof r !== 'object') return { ok: false, message: 'テストメールは送られていません。' + relayProblem_(code, text, 'test') };
+    var call = callMailRelay_(route.url, { token: route.token, to: to, subject: subject, body: body, options: options }), r = call.json;
+    if (!r && call.ran === true) {
+      return { ok: true, message: to + ' に、代理送信の Web App からテストメールを送りました。ただし「送れました」の返事を受け取れませんでした'
+        + '（Google側の一時的な不調）。届いたか確かめてください（届かないときは、迷惑メールのフォルダも）。' };
+    }
+    if (!r) {
+      return { ok: false, message: relayNotSent_(call.code, call.text) ? 'テストメールは送られていません。' + relayProblem_(call.code, call.text, 'test')
+        : 'テストメールが送れたかどうか分かりません（代理送信の Web App から、送った結果ではなく別のページが返ってきました（HTTP ' + call.code + '））。届いたか確かめてください。' };
+    }
     if (!r.success) {
       return { ok: false, message: 'テストメールは送られていません。' + (/アクセス権限がありません/.test(String(r.error || ''))
         ? relayTokenProblem_('test') : '代理送信の Web App がエラーを返しました: ' + r.error) };
@@ -1574,7 +1637,7 @@ function generateEmailDrafts(sheetName) {
   if (!d) { var raw = props.getProperty('LATEST_MEETING_DATE') || ""; if (raw) d = new Date(raw); }
   if (d && !isNaN(d.getTime())) dateFormatted = d.getFullYear() + "年" + (d.getMonth() + 1) + "月" + d.getDate() + "日";
   
-  var drafts = [], noEmail = [], sent = mailSentMap_(sheet.getName());
+  var drafts = [], noEmail = [], sent = mailSentMap_(sheet.getName()), unsure = mailUnsureMap_(sheet.getName());
   for (var i = 1; i < data.length; i++) {
     var name = data[i][nameIdx], email = data[i][emailIdx], type = data[i][typeIdx];
     var inviter = inviterIdx !== -1 ? data[i][inviterIdx] : "";
@@ -1590,11 +1653,12 @@ function generateEmailDrafts(sheetName) {
     // {{inviter}} と、念のための {{invitee}} 両方で置換対応
     var vals = { name: name, inviter: inviter, invitee: inviter, date: dateFormatted, visitorlist: visitorListUrl, memberbook: memberBookUrl };
     var subject = fillMailTemplate_(tplSubj, vals), body = fillMailTemplate_(tplBody, vals);
-    // Spreadingでキャンセルになった方・すでに送った方は、はじめからチェックを外す（二重に送らないように）
+    // Spreadingでキャンセルになった方・すでに送った方・代理送信で送れたか分からなかった方は、はじめからチェックを外す（二重に送らないように）
     var status = statusIdx !== -1 ? String(data[i][statusIdx] == null ? "" : data[i][statusIdx]).trim() : "";
-    var cancelled = /キャンセル|cancel/i.test(status), sentAt = sent[String(email).trim().toLowerCase()] || "";
-    drafts.push({ name: name, email: email, type: type, subject: subject, body: body, send: !cancelled && !sentAt,
-                  cancelled: cancelled, status: status, sentAt: sentAt, sheet: sheet.getName() });
+    var key = String(email).trim().toLowerCase(), cancelled = /キャンセル|cancel/i.test(status), sentAt = sent[key] || "";
+    var unsureAt = sentAt ? "" : (unsure[key] || "");
+    drafts.push({ name: name, email: email, type: type, subject: subject, body: body, send: !cancelled && !sentAt && !unsureAt,
+                  cancelled: cancelled, status: status, sentAt: sentAt, unsureAt: unsureAt, sheet: sheet.getName() });
   }
   return { drafts: drafts, cc: tpls.cc, bcc: tpls.bcc, sheet: sheet.getName(), date: dateFormatted,
            visitorList: listUrl, memberBook: bookUrl, noEmail: noEmail };
@@ -1636,12 +1700,24 @@ function sendSingleEmail(e, cc, bcc, opt) {
       GmailApp.sendEmail(toEmail, e.subject, e.body, options);
     } else {
       var payload = { token: cfg.token, to: toEmail, subject: e.subject, body: e.body, options: options };
-      var res = UrlFetchApp.fetch(cfg.url, { method: "post", contentType: "application/json", payload: JSON.stringify(payload), muteHttpExceptions: true, followRedirects: true });
-      var code = res.getResponseCode(), text = res.getContentText(), resData = null;
-      try { resData = JSON.parse(text); } catch (pe) { resData = null; }
-      // 送った結果（JSON）でなければ、代理送信の Web App が動いていない（ログインの画面・見つからないページなど）。
-      // ほかの方にも同じく送れないので、画面はここで止めて「自分のGmailから送る」を出す（relayBroken）
-      if (!resData || typeof resData !== 'object') return { success: false, relayBroken: true, me: mailSenderAddress_(), error: relayProblem_(code, text) };
+      var call = callMailRelay_(cfg.url, payload), resData = call.json;
+      if (!resData) {
+        // doPost は動いた（メールは送られている）が、返事を受け取れなかった：送ったものとして印を付け、念のため確かめてもらう
+        if (call.ran === true) {
+          return { success: true, unconfirmed: true, sentAt: markMailSent_(e.sheet, toEmail), direct: false,
+                   warning: '送れているはずですが、代理送信の Web App から「送れました」の返事を受け取れませんでした（Google側の一時的な不調）。'
+                     + '念のため、代理送信の Web App の持ち主（管理者）のGmailの「送信済み」で確かめてください。' };
+        }
+        // 送られていないと言い切れる（ログインの画面・見つからない・doPost が無い・許可が無い）：
+        // ほかの方にも同じく送れないので、画面はここで止めて「自分のGmailから送る」を出す（relayBroken）
+        if (call.ran === false || relayNotSent_(call.code, call.text)) {
+          return { success: false, relayBroken: true, me: mailSenderAddress_(), error: relayProblem_(call.code, call.text) };
+        }
+        // それ以外は、送れたか分からない：止めて、この方は「自分のGmailから送る」に入れない（2通届かないように）。
+        // 開き直したときもチェックを外しておく（送れたか分からない、と出す）
+        markMailUnsure_(e.sheet, toEmail);
+        return { success: false, relayBroken: true, unsure: true, me: mailSenderAddress_(), error: relayUnsure_(call.code, call.text) };
+      }
       if (!resData.success) {
         if (/アクセス権限がありません/.test(String(resData.error || ''))) return { success: false, relayBroken: true, me: mailSenderAddress_(), error: relayTokenProblem_() };
         throw new Error(resData.error);
@@ -1659,14 +1735,26 @@ function mailSentMap_(sheetName) {
   catch (e) { return {}; }
 }
 function markMailSent_(sheetName, email) {
+  return markMailMap_('MAIL_SENT_', sheetName, email);
+}
+// 代理送信で、送れたかどうか分からなかった方の記録（同じ形）。開き直したときにチェックを外して知らせる（2通届かないように）
+function mailUnsureMap_(sheetName) {
+  try { return JSON.parse(PropertiesService.getScriptProperties().getProperty('MAIL_UNSURE_' + sheetName) || '{}') || {}; }
+  catch (e) { return {}; }
+}
+function markMailUnsure_(sheetName, email) {
+  return markMailMap_('MAIL_UNSURE_', sheetName, email);
+}
+function markMailMap_(prefix, sheetName, email) {
   var at = new Date().toISOString();
   if (!sheetName) return at;
   var lock = LockService.getScriptLock();
   try {
     lock.waitLock(10000);
-    var m = mailSentMap_(sheetName);
+    var props = PropertiesService.getScriptProperties(), m = {};
+    try { m = JSON.parse(props.getProperty(prefix + sheetName) || '{}') || {}; } catch (pe) { m = {}; }
     m[String(email).trim().toLowerCase()] = at;
-    PropertiesService.getScriptProperties().setProperty('MAIL_SENT_' + sheetName, JSON.stringify(m));
+    props.setProperty(prefix + sheetName, JSON.stringify(m));
   } catch (err) {
     console.warn('[MAIL] 送った記録を残せませんでした: ' + (err && err.message ? err.message : err));
   } finally {

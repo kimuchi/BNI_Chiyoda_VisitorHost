@@ -59,9 +59,11 @@
     </div>
     <p id="progressText" style="font-weight:bold; font-size:18px;">0 / 0 件 処理完了</p>
     <p id="progressDetail" style="font-size:14px; color:#666;"></p>
-    <!-- 代理送信の Web App が動いていないとき：止めて、理由と「自分のGmailから送る」を出す -->
+    <!-- 代理送信の Web App が動いていないとき：止めて、理由と「自分のGmailから送る」を出す。
+         送れたか分からない方がいるときは、その方を分けて出す（「自分のGmailから送る」には入れない） -->
     <div id="relayBox" style="display:none; text-align:left; background:#fff4e5; border:2px solid #e67e22; border-radius:6px; padding:12px 14px; margin:14px 0;">
-      <div style="font-weight:bold; color:#c0392b; font-size:15px;">メールは送られていません（<span id="relayCount">0</span>名）。代理送信の Web App が動いていないため、止めました。</div>
+      <div id="relayHead" style="font-weight:bold; color:#c0392b; font-size:15px;"></div>
+      <div id="relayUnsure" style="display:none; font-size:13px; margin:8px 0; padding:8px 10px; background:#fff8e1; border:1px solid #f0c36d; border-radius:4px; line-height:1.6;"></div>
       <div id="relayWhy" style="font-size:13px; margin:8px 0; white-space:pre-wrap; line-height:1.6;"></div>
       <button id="directBtn" onclick="sendDirect()" style="background:#e67e22; color:#fff; border:none; padding:10px 16px; font-weight:bold; border-radius:4px; cursor:pointer; font-size:14px;">自分のGmailから送る</button>
       <div id="directNote" style="font-size:12px; color:#555; margin-top:6px;"></div>
@@ -75,6 +77,7 @@
     var sendList = [];
     var currentIndex = 0;
     var sendOpt = {}, errCount = 0, pendingRest = [], senderMe = '';   // 代理送信が動かないときに止めた、まだ送っていない方
+    var unconfirmed = [];   // 代理送信で送れているはずだが、「送れました」の返事を受け取れなかった方
     var commonCc = "";
     var commonBcc = "";
     var linkWarning = "";   // 本文に入れるPDFのリンクが無いときの知らせ（送る前の確認にも出す）
@@ -138,8 +141,8 @@
       }
       box.style.border = 'none';
       if (st.route === 'relay') {
-        box.style.background = st.old ? '#fff8e1' : '#e8f5e9';
-        note.innerText = (st.old ? '送信元：代理送信の Web App。' : '✓ 送信元：代理送信の Web App。') + (st.message || '');
+        box.style.background = st.old || st.unconfirmed ? '#fff8e1' : '#e8f5e9';
+        note.innerText = (st.old || st.unconfirmed ? '送信元：代理送信の Web App。' : '✓ 送信元：代理送信の Web App。') + (st.message || '');
         document.getElementById('directWrap').style.display = 'block';  // 選びたいときのために出しておく（既定は代理送信）
         document.getElementById('useDirect').checked = false;
         return;
@@ -169,7 +172,8 @@
         ? '⚠ ' + missing.join('・') + 'がありません。本文のリンクは「【未生成】」になります。'
           + '先に「1. CSVから名簿・PDF作成」（メンバーブックは「メンバーブックの編集・PDF出力」）で作ってください。'
         : '';
-      var skipped = (data.drafts || []).filter(function (d) { return d.send === false; }).length;
+      var unsureN = (data.drafts || []).filter(function (d) { return d.unsureAt; }).length;
+      var skipped = (data.drafts || []).filter(function (d) { return d.send === false && !d.unsureAt; }).length;
       if (pastSheets[data.sheet]) {
         linkWarning = '⚠ 選ばれているのは過ぎた回（' + pastSheets[data.sheet] + '）です。次回の案内なら、先に「1. CSVから名簿・PDF作成」で次回の名簿を作ってください。'
           + (linkWarning ? '\n' + linkWarning : '');
@@ -178,6 +182,8 @@
         '「' + data.sheet + '」を読み込みました。'
         + (data.date ? '本文の{{date}}には「' + data.date + '」が入ります。' : '')
         + (skipped ? '\nすでに送った方・Spreadingでキャンセルの方（' + skipped + '名）は、チェックを外してあります。' : '')
+        + (unsureN ? '\n前に代理送信で、送れたか分からなかった方（' + unsureN + '名）も、チェックを外してあります。'
+          + '管理者のGmailの「送信済み」で確かめて、送れていなければチェックを入れて送ってください。' : '')
         + (data.noEmail && data.noEmail.length ? '\nメールアドレスが無いため送れない方：' + data.noEmail.join('、') : '')
         + (linkWarning ? '\n' + linkWarning : '');
       document.getElementById('meetNote').style.color = linkWarning ? '#c00' : '';
@@ -196,7 +202,8 @@
         div.className = 'card';
         // 名前・件名・本文はHTMLとして読ませない（件名に「"」があると、そこで切れて送られてしまうため）
         var marks = (d.cancelled ? `<span style="background:#c00; color:#fff; padding:3px 8px; border-radius:12px; font-size:11px; margin-left:6px;">キャンセル（Spreading）</span>` : '')
-          + (d.sentAt ? `<span style="background:#777; color:#fff; padding:3px 8px; border-radius:12px; font-size:11px; margin-left:6px;">送信済み ${esc(fmtSent(d.sentAt))}</span>` : '');
+          + (d.sentAt ? `<span style="background:#777; color:#fff; padding:3px 8px; border-radius:12px; font-size:11px; margin-left:6px;">送信済み ${esc(fmtSent(d.sentAt))}</span>` : '')
+          + (d.unsureAt ? `<span style="background:#e67e22; color:#fff; padding:3px 8px; border-radius:12px; font-size:11px; margin-left:6px;">送れたか不明 ${esc(fmtSent(d.unsureAt))}（管理者のGmailの送信済みで確かめてください）</span>` : '');
         div.innerHTML = `
           <div class="card-header">
             <div>
@@ -250,7 +257,7 @@
 
     // プログレス画面に切り替えて、sendList を順に送る
     function runSend() {
-      errCount = 0;
+      errCount = 0; unconfirmed = [];
       document.getElementById('setupArea').style.display = 'none';
       document.getElementById('progressArea').style.display = 'block';
       document.getElementById('relayBox').style.display = 'none';
@@ -261,21 +268,32 @@
       currentIndex = 0;
       sendNext();
     }
-    function addErr(text) {
+    function addErr(text, warn) {
       var errDiv = document.createElement('div');
       errDiv.className = 'error-log';
+      if (warn) { errDiv.style.color = '#8a5a00'; errDiv.style.background = '#fff8e1'; }
       errDiv.innerText = text;
       document.getElementById('logArea').appendChild(errDiv);
     }
     // 代理送信の Web App が動いていない：ほかの方にも同じく送れないので、ここで止める（以前は全員に同じエラーを出しながら
-    // 最後まで進み、「すべての処理が完了しました！🎉」と出ていた）。まだ送っていない方は「自分のGmailから送る」で送れる
+    // 最後まで進み、「すべての処理が完了しました！🎉」と出ていた）。まだ送っていない方は「自分のGmailから送る」で送れる。
+    // 送れたか分からない（res.unsure）ときは、その方を「自分のGmailから送る」に入れない（送れていたら2通届くため）
     function stopForRelay(res) {
-      pendingRest = sendList.slice(currentIndex);
+      var cur = sendList[currentIndex];
+      pendingRest = sendList.slice(currentIndex + (res.unsure ? 1 : 0));
       senderMe = res.me || '';
       document.getElementById('progressHead').innerText = '送信を止めました';
       document.getElementById('progressDetail').innerText = '';
-      document.getElementById('relayCount').innerText = pendingRest.length;
+      document.getElementById('relayHead').innerHTML = res.unsure
+        ? '代理送信の Web App から思わぬ返事が来たため、止めました。残りの <span id="relayCount">' + pendingRest.length + '</span> 名には送っていません。'
+        : 'メールは送られていません（<span id="relayCount">' + pendingRest.length + '</span>名）。代理送信の Web App が動いていないため、止めました。';
+      var un = document.getElementById('relayUnsure');
+      un.style.display = res.unsure && cur ? 'block' : 'none';
+      un.innerText = res.unsure && cur ? '⚠ ' + cur.name + ' 様（' + cur.email + '）には、送れたかどうか分かりません。'
+        + '代理送信の Web App の持ち主（管理者）のGmailの「送信済み」で確かめてください。送れていなかったときは、この画面を開き直して、'
+        + 'その方にチェックを入れて送ってください（開き直すと、その方のチェックは外れています）。' : '';
       document.getElementById('relayWhy').innerText = res.error || '';
+      document.getElementById('directBtn').style.display = pendingRest.length ? '' : 'none';
       document.getElementById('directBtn').innerText = '自分のGmail' + (senderMe ? '（' + senderMe + '）' : '') + 'から、' + pendingRest.length + '名に送る';
       document.getElementById('directNote').innerText = '代理送信（管理者のGmail）ではなく、この画面を開いている方のGmailから送ります（送り主の名前は、これまでどおりチャプター名です）。';
       document.getElementById('relayBox').style.display = 'block';
@@ -296,10 +314,15 @@
         document.getElementById('progressDetail').innerText = "完了";
         document.getElementById('progressHead').innerText = errCount ? '送れなかった方がいます' : '送信が終わりました';
         // 送れなかった方がいるのに「完了🎉」と出さない
-        document.getElementById('doneMsg').innerHTML = errCount
+        // 「送れました」の返事を受け取れなかった方（送れているはず）は、名前を出して確かめてもらう
+        var unc = unconfirmed.length
+          ? "<p style='text-align:center; color:#8a5a00;'>⚠ 次の方は送れているはずですが、代理送信の Web App から「送れました」の返事を受け取れませんでした（Google側の一時的な不調）："
+            + esc(unconfirmed.join('、')) + "。念のため、管理者のGmailの「送信済み」で確かめてください（「送信済み」の印は付けてあります）。</p>"
+          : "";
+        document.getElementById('doneMsg').innerHTML = (errCount
           ? "<h3 style='color:#c0392b; text-align:center; margin-top:30px;'>送れなかった方がいます（" + errCount + "名）。上の理由を確かめてください。</h3>"
             + "<p style='text-align:center;'>送れた方には「送信済み」の印が付きます。画面を開き直すと、送れなかった方にだけチェックが入ります。</p>"
-          : "<h3 style='color:green; text-align:center; margin-top:30px;'>すべての処理が完了しました！🎉</h3><p style='text-align:center;'>画面を閉じてください。</p>";
+          : "<h3 style='color:green; text-align:center; margin-top:30px;'>すべての処理が完了しました！🎉</h3><p style='text-align:center;'>画面を閉じてください。</p>") + unc;
         return;
       }
 
@@ -313,6 +336,9 @@
             if (res.relayBroken && !sendOpt.direct) { stopForRelay(res); return; }
             errCount++;
             addErr("⚠️ " + e.name + " 様: " + res.error);
+          } else if (res.unconfirmed) {
+            unconfirmed.push(e.name + ' 様');
+            addErr("⚠ " + e.name + " 様: " + (res.warning || ''), true);
           }
 
           currentIndex++;
