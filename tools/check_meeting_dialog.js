@@ -1,6 +1,7 @@
 // 定例会スライドの画面（前半 slides_meeting_first.html／後半 slides_meeting_second.html）を、
 // Node上の簡易DOMで動かしてみる。構文は正しくても、ボタンを押したときに初めて出るエラー
 // （関数が無い・値の渡し忘れ）や、「読み込み中」の出し忘れを見つけるため。
+// 後半の1枚目のメインプレゼンのページ（お2人はルーティンチェックシートから・チェックを外せば入れない）も確かめる。
 // サーバーの返事は、それらしい固定値で代用する。
 //
 //   node tools/check_meeting_dialog.js               … 架空の60名の名簿で動かす
@@ -322,6 +323,16 @@ const shown = (el) => !!el && el.style.display !== 'none' && el.style.display !=
      '音楽の指定: ' + JSON.stringify(o.music));
   ck(o.memberPresen === undefined && o.weeklyGuests === undefined, '後半なのにメンバーのページが渡っている');
   ck(lastCall()[1]['更新90'] === 'Aさん' && lastCall()[1]['新メンバー'] === undefined, '後半の差し込む値がおかしい');
+  // 1枚目のメインプレゼンのページ：既定で入れる。お2人はルーティンチェックシートの「22 メインプレゼン」から
+  const mpWant = (routine.mainPresenters || []).map((x) => x.name);
+  ck(els.mpPage.checked === true && els.mp1.value === mpWant[0] && els.mp2.value === mpWant[1] && /記載：/.test(els.mpNote.innerHTML),
+     '後半：1枚目のメインプレゼンのお2人が入っていない: ' + J([els.mpPage.checked, els.mp1.value, els.mp2.value, mpWant]));
+  ck(o.mainPage === true && J(o.mainPresenters) === J(mpWant) && lastCall()[1]['メインプレゼン1氏名'] === mpWant[0]
+     && lastCall()[1]['メインプレゼン2氏名'] === mpWant[1] && 'メインプレゼン1会社名' in lastCall()[1],
+     '後半：1枚目のメインプレゼンのページに渡す値: ' + J([o.mainPage, o.mainPresenters, lastCall()[1]['メインプレゼン1氏名']]));
+  step('後半：1枚目のメインプレゼンのページを入れない', () => { els.mpPage.checked = false; run('gen()'); });
+  ck(lastOpts().mainPage === false, '後半：チェックを外したのに、1枚目のメインプレゼンのページを入れる: ' + J(lastOpts().mainPage));
+  els.mpPage.checked = true;
 
   // 推薦のことば：ルーティンチェックシートの組が、定例会中・アフターに分かれて入っている
   const rows = (w) => (els[w === 'during' ? 'recoDuring' : 'recoAfter'].innerHTML.match(/id="rp_\w+_g_\d+"/g) || []).length;
@@ -381,8 +392,9 @@ const shown = (el) => !!el && el.style.display !== 'none' && el.style.display !=
   const routineFound2 = routine;
   routine = { ok: true, found: false, message: 'ルーティンチェックシートに、この開催日の列が見つかりませんでした。' };
   step('後半：列の無い日に選び直す', () => { els.lt1.value = N(12); run('reload()'); });
-  ck(rows('during') === 1 && rows('after') === 0 && els.rp_during_g_0.value === '' && els.lt1.value === '' && els.lt2.value === '',
-     '後半：列の無い日に、前の日の推薦のことば・抽選が残った: ' + [rows('during'), rows('after'), els.rp_during_g_0.value, els.lt1.value].join(' / '));
+  ck(rows('during') === 1 && rows('after') === 0 && els.rp_during_g_0.value === '' && els.lt1.value === '' && els.lt2.value === ''
+     && els.mp1.value === '' && els.mp2.value === '',
+     '後半：列の無い日に、前の日の推薦のことば・抽選・メインプレゼンが残った: ' + [rows('during'), rows('after'), els.rp_during_g_0.value, els.lt1.value, els.mp1.value].join(' / '));
   ck(/空にしました/.test(els.routineNote.innerText), '後半：列の無い日に、欄を空にしたことを知らせない: ' + els.routineNote.innerText);
   routine = routineFound2;
 
@@ -402,4 +414,4 @@ if (fails.length) {
   fails.slice(0, 30).forEach((f) => console.log('   ' + f));
   process.exit(1);
 }
-console.log('OK: 前半（読み込み中・メンバーのページ・アンバサダー・ディレクター）／後半（読み込み中・推薦のことば・リファーラル発表・音楽・「更新した」で手直しが戻らない）');
+console.log('OK: 前半（読み込み中・メンバーのページ・アンバサダー・ディレクター）／後半（読み込み中・推薦のことば・リファーラル発表・音楽・「更新した」で手直しが戻らない・1枚目のメインプレゼン）');

@@ -139,14 +139,7 @@ function editPptxOnServer_(kind, outName, editFn) {
   var blob = file.getBlob();                       // Driveから直接。ブラウザを経由しない
   var t1 = new Date().getTime();
 
-  var parts = Utilities.unzip(blob.setContentType('application/zip'));
-  var map = {}, count = 0;
-  for (var i = 0; i < parts.length; i++) {
-    var nm = parts[i].getName();
-    if (!nm || nm.charAt(nm.length - 1) === '/') continue;   // ディレクトリは捨てる
-    map[nm] = parts[i];                            // Blobのまま保持（getBytesしない）
-    count++;
-  }
+  var map = unzipParts_(blob), count = Object.keys(map).length;
   var t2 = new Date().getTime();
 
   var info = editFn(map, { fileName: file.getName(), partCount: count });
@@ -161,6 +154,21 @@ function editPptxOnServer_(kind, outName, editFn) {
   var timing = { 読込: t1 - t0, 展開: t2 - t1, 書換: t3 - t2, 再梱包: t4 - t3, 保存: t5 - t4, 合計: t5 - t0 };
   console.log('[PPTX] ' + outName + ' parts=' + count + ' timing=' + JSON.stringify(timing));
   return { saved: saved, partCount: count, timing: timing, info: info };
+}
+
+// pptx を展開して { パーツ名: Blob } にする（ディレクトリは捨てる。Blobのまま保持し、getBytesしない）
+function unzipParts_(blob) {
+  var parts = Utilities.unzip(blob.setContentType('application/zip')), map = {};
+  for (var i = 0; i < parts.length; i++) {
+    var nm = parts[i].getName();
+    if (!nm || nm.charAt(nm.length - 1) === '/') continue;
+    map[nm] = parts[i];
+  }
+  return map;
+}
+// 登録した大きなスライドのテンプレートを展開したもの（後半に前半のメインプレゼンのページを写すときなど）
+function bigTemplateParts_(kind) {
+  return unzipParts_(getBigTemplateFile_(kind).getBlob());
 }
 
 // 実測用。テンプレートを「何も変えずに」展開→再梱包→保存して所要時間を測る。

@@ -44,7 +44,15 @@
  </div>
 
  <div class="sec">
-   <h4>3. 推薦のことば・抽選コーナー <span class="auto">ルーティンチェックシート</span></h4>
+   <h4>3. メインプレゼン・推薦のことば・抽選コーナー <span class="auto">ルーティンチェックシート</span></h4>
+   <div style="margin-bottom:8px;">
+     <label><input type="checkbox" id="mpPage" checked>
+       <b>1枚目にメインプレゼンのページ</b>（前半の最後のページ）を入れる</label>
+     <div class="row" style="margin-top:4px;">メインプレゼン：<select id="mp1"></select>　<select id="mp2"></select></div>
+     <div id="mpNote" style="font-size:11px;color:#888;"></div>
+     <div style="font-size:11px;color:#888;line-height:1.7;">前半のテンプレートのメインプレゼンのページを写して、
+       お名前・会社名・【カテゴリー】・写真を入れます（前半のテンプレートを登録してあるとき）。</div>
+   </div>
    <h5 style="margin:0 0 4px;font-size:12px;color:#555;">推薦のことば（定例会中）… 推薦のことばのページの場所に、組の数だけ並べます</h5>
    <div id="recoDuring"></div>
    <button class="mkbtn" onclick="addPair('during')">＋ 組を足す</button>
@@ -110,7 +118,7 @@
    if(c.seconds && c.seconds.referral) document.getElementById('rfSec').value=c.seconds.referral;
    initMeetings(c);
    var mh=memberOptions();
-   ['lt1','lt2'].forEach(function(id){ document.getElementById(id).innerHTML=mh; });
+   ['lt1','lt2','mp1','mp2'].forEach(function(id){ document.getElementById(id).innerHTML=mh; });
    renderPairs();
    applyRoutine(c.routine);
    applyLists(c.lists);
@@ -183,9 +191,10 @@
    if(!R || !R.ok || !R.found){
      // その日の列が無い：前に選んでいた開催日の推薦のことば・抽選を残さない
      pairs={ during:[{ g:'', r:'' }], after:[] }; renderPairs();
-     val('lt1',''); val('lt2',''); document.getElementById('rcNote').innerHTML='';
+     val('lt1',''); val('lt2',''); val('mp1',''); val('mp2',''); document.getElementById('rcNote').innerHTML='';
+     document.getElementById('mpNote').innerHTML='';
      note.innerText = ((R&&R.message) ? R.message : 'ルーティンチェックシートに該当する開催日が見つかりません。')
-       + '（推薦のことば・抽選の欄は空にしました。手で入れてください）';
+       + '（メインプレゼン・推薦のことば・抽選の欄は空にしました。手で入れてください）';
      note.style.color='#c60'; return;
    }
    if(R.meetingNo) val('no', R.meetingNo);
@@ -198,9 +207,16 @@
    if(!pairs.during.length) pairs.during.push({ g:'', r:'' });
    renderPairs();
    recoLoadSaved();                                  // 置いてある受け取ったスライドを、同じ組に付ける
-   // 抽選コーナー（通常はメインプレゼンと同じ）
-   document.getElementById('lt1').value = (mp[0] && mp[0].name) || '';
-   document.getElementById('lt2').value = (mp[1] && mp[1].name) || '';
+   // 1枚目のメインプレゼンのページ・抽選コーナー（通常はメインプレゼンと同じ）
+   ['mp','lt'].forEach(function(id){
+     document.getElementById(id+'1').value = (mp[0] && mp[0].name) || '';
+     document.getElementById(id+'2').value = (mp[1] && mp[1].name) || '';
+   });
+   var mpUn=mp.filter(function(x){ return x.raw && !x.name; });
+   document.getElementById('mpNote').innerHTML = mpUn.length
+     ? '<span style="color:#c60;">「'+esc(R.mainPresentersRaw)+'」から、'+esc(mpUn.map(function(x){return x.raw;}).join('・'))
+       +' は名簿の氏名と一致しませんでした。手で選んでください。</span>'
+     : (R.mainPresentersRaw ? '記載：'+esc(R.mainPresentersRaw) : '');
    var notes=[];
    if(R.recommendationsRaw) notes.push('記載：'+esc(String(R.recommendationsRaw).replace(/\n+/g,' ／ ')));
    var un=[];
@@ -225,6 +241,7 @@
    var m=baseValues();
    ['更新90','更新60','更新30','更新超過'].forEach(function(k){ m[k]=get('t_'+k); });
    twoPersonValues(m,'抽選','lt');
+   twoPersonValues(m,'メインプレゼン','mp');        // 1枚目のメインプレゼンのページ（前半のテンプレートから写す）
    return m;
  }
 
@@ -521,6 +538,8 @@
      patterns: document.getElementById('pat').checked,
      recommendPairs: collectPairs(),
      lottery: [get('lt1'), get('lt2')],
+     mainPage: document.getElementById('mpPage').checked,
+     mainPresenters: [get('mp1'), get('mp2')],
      music: collectMusic(),
      referral: buildReferral()
    });

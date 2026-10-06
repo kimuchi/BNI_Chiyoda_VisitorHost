@@ -5,6 +5,10 @@
 //   node tools/check_referral_category.js
 //
 // 確かめること
+//   ・1行のカテゴリーは、雛形どおり32pt（下のカウントダウンの数字の箱に枠が少しかかっていても、小さくしない。
+//     2026-10-06c では、カウントダウンの箱を「下の図形」と見て、1行のカテゴリーまで小さくしていた）
+//   ・2行のときは、カテゴリーを前面に出し（カウントダウンの白い箱に隠れないように）、2行目のぶんカウントダウンを下げる
+//     （「次の発表者」の帯の上まで）。足りないぶんだけ少し小さくする（24ptまで）
 //   ・下に何も無ければ、32ptの2行のまま、枠の高さを2行ぶんにする（以前は雛形の1行ぶんのまま、2行目が枠の外へ）
 //   ・カテゴリーが載っている色の帯（や帯の絵）の下端・下にある文字（「今週のポジティブな貢献は？」など）に届くなら、
 //     届かない大きさまで小さくする（2行のまま／1行にして、の大きい方）。字は1つも落とさない
@@ -46,7 +50,18 @@ const band = (id, [x, y, cx, cy]) => `<p:sp><p:nvSpPr><p:cNvPr id="${id}" name="
 const pic = (id, [x, y, cx, cy], name) => `<p:pic><p:nvPicPr><p:cNvPr id="${id}" name="${name || '図 ' + id}"/><p:cNvPicPr/><p:nvPr/></p:nvPicPr>`
   + `<p:blipFill><a:blip r:embed="rId2"/><a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr>${xf(x, y, cx, cy)}<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic>`;
 const CAT = [4830481, 4071101, 7311519, 584404];         // カテゴリーの枠（雛形は1行ぶんの高さ）
-const page = ({ under = '', below = '', catBody } = {}) => `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sld ${NS}><p:cSld><p:spTree>`
+// カウントダウン：数字を書いた白い箱を重ねたもの（同じ大きさ。1つめの箱に消える動き）。カテゴリーの1行ぶんの枠に少しかかる高さ
+const CD = [6000000, 4400000, 4000000, 1500000];
+const countdown = (ids) => ids.map((id, i) => `<p:sp><p:nvSpPr><p:cNvPr id="${id}" name="数字 ${id}"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>`
+  + `<p:spPr>${xf(...CD)}<a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></p:spPr>`
+  + `<p:txBody><a:bodyPr anchor="ctr"/><a:lstStyle/><a:p><a:pPr algn="ctr"/><a:r><a:rPr lang="en-US" sz="9600" b="1"/><a:t>${ids.length - i}</a:t></a:r></a:p></p:txBody></p:sp>`).join('');
+const TIMING = (id) => `<p:timing><p:tnLst><p:par><p:cTn id="1" dur="indefinite" restart="never" nodeType="tmRoot"><p:childTnLst><p:seq concurrent="1" nextAc="seek">`
+  + `<p:cTn id="2" dur="indefinite" nodeType="mainSeq"><p:childTnLst><p:par><p:cTn id="3" fill="hold"><p:stCondLst><p:cond delay="0"/></p:stCondLst><p:childTnLst>`
+  + `<p:par><p:cTn id="4" presetID="10" presetClass="exit" presetSubtype="0" fill="hold" nodeType="clickEffect"><p:stCondLst><p:cond delay="0"/></p:stCondLst><p:childTnLst>`
+  + `<p:set><p:cBhvr><p:cTn id="5" dur="1" fill="hold"><p:stCondLst><p:cond delay="999"/></p:stCondLst></p:cTn><p:tgtEl><p:spTgt spid="${id}"/></p:tgtEl>`
+  + `<p:attrNameLst><p:attrName>style.visibility</p:attrName></p:attrNameLst></p:cBhvr><p:to><p:strVal val="hidden"/></p:to></p:set>`
+  + `</p:childTnLst></p:cTn></p:par></p:childTnLst></p:cTn></p:par></p:childTnLst></p:cTn></p:seq></p:childTnLst></p:cTn></p:par></p:tnLst></p:timing>`;
+const page = ({ under = '', below = '', catBody, cd = false } = {}) => `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sld ${NS}><p:cSld><p:spTree>`
   + '<p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>'
   + under
   + sp(2, [600000, 200000, 11000000, 700000], 'REFERRAL PRESENTATION', 4000)
@@ -57,7 +72,8 @@ const page = ({ under = '', below = '', catBody } = {}) => `<?xml version="1.0" 
   + below
   + sp(7, [4830858, 6200000, 1500000, 500000], 'NEXT➡', 2400)
   + sp(8, [6500000, 6200000, 3000000, 500000], '次の 方', 2400)
-  + '</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>';
+  + (cd ? countdown([40, 41, 42, 43, 44, 45, 46]) : '')
+  + '</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>' + (cd ? TIMING(40) : '') + '</p:sld>';
 const RELS = '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>';
 
 const TWO = ['【デジタル広告制作(ホームページ・', '動画・SNS運用)】'];
@@ -76,6 +92,33 @@ const catOf = (xml) => {
 };
 const LINE = 12700 * 1.213, PAD = 91440;
 const need = (n, pt, sp) => PAD + n * pt * LINE * (n > 1 ? sp : 1);
+const lastShapeId = (xml) => { const ids = [...xml.replace(/<p:timing>[\s\S]*$/, '').matchAll(/<p:cNvPr id="(\d+)"/g)].map((m) => m[1]); return ids[ids.length - 1]; };
+
+// ===== 0. 1行のカテゴリー：下にカウントダウンの数字の箱がかかっていても、雛形どおり32pt（いただいた画面の件）=====
+{
+  ['【デジタル広告制作(ホームページ・動画)】', '【生命保険(法人)】'].forEach((t) => {
+    const x = build(page({ cd: true }), item([t]));
+    const c = catOf(x), g = F.readShapeGeomEmu_(x, 40);
+    ck(J(c.paras) === J([t]) && c.pt === 32, '0) 1行のカテゴリーを小さくした: ' + J(c));
+    ck(g.y === CD[1], '0) 1行なのにカウントダウンを動かした: ' + g.y);
+  });
+}
+
+// ===== 0b. 2行のカテゴリー：前面に出し、2行目のぶんカウントダウンを下げる（次の発表者の帯まで）。足りないぶんだけ少し小さく =====
+{
+  const x = build(page({ cd: true }), item(TWO)), c = catOf(x), moved = F.readShapeGeomEmu_(x, 40).y - CD[1];
+  ck(lastShapeId(x) === '6', '0b) 2行のカテゴリーが前面にない（カウントダウンの白い箱に隠れる）: ' + lastShapeId(x));
+  ck(moved > 0 && [41, 42, 43, 44, 45, 46].every((id) => F.readShapeGeomEmu_(x, id).y === CD[1] + moved), '0b) カウントダウン（全部の箱）を下げていない: ' + moved);
+  ck(CD[1] + moved + CD[3] <= 6200000 - 25400, '0b) カウントダウンが「次の発表者」の帯に重なった: ' + (CD[1] + moved + CD[3]));
+  ck(J(c.paras) === J(TWO) && c.pt >= 24 && c.pt <= 32, '0b) 2行のままでない・小さすぎる: ' + J(c));
+  // 1行のときの下端（カウントダウンの箱にかかってよいところ）＋下げたぶん、より下へは出ない
+  const allowed = Math.max(CD[1], CAT[1] + need(1, 32, 1)) + moved;
+  ck(c.bottom <= allowed + 2, '0b) 2行目がカウントダウンの数字の方へはみ出した: ' + J({ c, moved, allowed }));
+  // 下げる余白が十分なら、32ptのまま
+  const roomy = page({ cd: true }).replace(/<a:off x="(4830858|6500000)" y="6200000"\/>/g, '<a:off x="$1" y="6600000"/>');
+  const c2 = catOf(build(roomy, item(TWO)));
+  ck(c2.pt === 32 && J(c2.paras) === J(TWO), '0b) 下げる余白があるのに小さくした: ' + J(c2));
+}
 
 // ===== 1. 下に何も無い：32ptの2行のまま、枠を2行ぶんの高さに =====
 {
@@ -97,7 +140,7 @@ const need = (n, pt, sp) => PAD + n * pt * LINE * (n > 1 ? sp : 1);
   ck(p.bottom <= BAND[1] + BAND[3] - 25400 && p.paras.join('') === TWO.join(''), '2) 帯の絵の下端を越えた: ' + J(p));
 }
 
-// ===== 3. 下に別の文字（「今週のポジティブな貢献は？」）：その上端を越えない =====
+// ===== 3. 下に別の文字（「今週のポジティブな貢献は？」）：2行目がその上端を越えない =====
 {
   const ASK = [5000000, 4750000, 5900000, 500000];
   const c = catOf(build(page({ below: sp(30, ASK, '今週のポジティブな貢献は？', 2800) }), item(TWO)));
