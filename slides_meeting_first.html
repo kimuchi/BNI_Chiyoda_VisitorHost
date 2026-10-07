@@ -404,12 +404,14 @@
  }
 
  // --- 新メンバー・更新メンバー（ルーティンチェックシートの「新入会」「更新式」）---
- // 1行に1人。お名前は名簿から選ぶ（名簿に無い方は、書いてあったとおりの名前で作る）。更新は1年・2年
- var nmList={'new':[],renew:[]};
+ // 1行に1人。お名前は名簿から選ぶ（名簿に無い方は、書いてあったとおりの名前で作る。お名前・カテゴリーは直せる）。更新は1年・2年。
+ // 欄に書いてあるのにお名前を読み取れなかったとき（nmUnread）は、「いません」とだけ出さずに知らせる
+ var nmList={'new':[],renew:[]}, nmUnread={'new':'',renew:''};
  function nmFromRoutine(F){
-   nmList['new']=(F.newMembers||[]).map(function(x){ return {name:x.name||'', raw:x.raw||'', category:x.category||''}; });
+   nmList['new']=(F.newMembers||[]).map(function(x){ return {name:x.name||'', raw:x.raw||'', category:x.category||'', byCat:!!x.byCategory}; });
    nmList.renew=(F.renewMembers||[]).map(function(x){
-     return {name:x.name||'', raw:x.raw||'', category:x.category||'', years:x.years||1, noYears:!x.years}; });
+     return {name:x.name||'', raw:x.raw||'', category:x.category||'', byCat:!!x.byCategory, years:x.years||1, noYears:!x.years}; });
+   nmUnread={'new':F.newMembersUnread?(F.newMembersRaw||''):'', renew:F.renewMembersUnread?(F.renewMembersRaw||''):''};
    var t=[];
    if(F.newMembersRaw) t.push('新入会「'+F.newMembersRaw+'」');
    if(F.renewMembersRaw) t.push('更新式「'+F.renewMembersRaw+'」');
@@ -417,35 +419,55 @@
      : 'ルーティンチェックシートの「新入会」「更新式」は空欄です。';
    renderNM();
  }
+ function nmNoHonor(s){ return String(s||'').replace(/(さん|様|さま|氏)$/,'').trim(); }
  function nmOptions(x){
    var h='<option value="">（なし）</option>';
-   if(x.raw && !x.name) h+='<option value="?" selected>「'+esc(x.raw)+'」（名簿にありません）</option>';
+   h+='<option value="?"'+(!x.name&&(x.raw||x.manual)?' selected':'')+'>'
+     +(x.raw?'「'+esc(x.raw)+'」（名簿にありません）':'✏️ 名簿に無い方（お名前を入れる）')+'</option>';
    ((ctx&&ctx.members)||[]).forEach(function(m){
      h+='<option value="'+esc(m.name)+'"'+(m.name===x.name?' selected':'')+'>'+esc(m.name)+'</option>'; });
    return h;
  }
  function renderNM(){
    ['new','renew'].forEach(function(k){
+     var label=k==='new'?'新メンバー':'更新メンバー';
      document.getElementById('nm_'+k).innerHTML = nmList[k].length ? nmList[k].map(function(x,i){
-       var who=x.name?memberOf(x.name):null;
+       var who=x.name?memberOf(x.name):null, own=!x.name&&(x.raw||x.manual);
        return '<div class="mkrow"><select onchange="nmSet(\''+k+'\','+i+',this.value)">'+nmOptions(x)+'</select>'
+         +(own ? ' <input type="text" placeholder="お名前" style="width:9em;" value="'+esc(nmNoHonor(x.raw))+'" onchange="nmText(\''+k+'\','+i+',\'raw\',this.value)">'
+             +' <input type="text" placeholder="カテゴリー" style="width:11em;" value="'+esc(x.category||'')+'" onchange="nmText(\''+k+'\','+i+',\'category\',this.value)">' : '')
          +(k==='renew' ? ' <select onchange="nmYears('+i+',this.value)"><option value="1"'+(x.years==2?'':' selected')
              +'>1年更新</option><option value="2"'+(x.years==2?' selected':'')+'>2年更新</option></select>'
              +(x.noYears ? '<span class="dt" style="color:#c60;">年数の記載なし（1年にしています）</span>' : '') : '')
-         +(x.raw && !x.name ? '<span class="dt" style="color:#c60;">名簿に無いので、会社名・カテゴリー・写真は空です</span>' : '')
+         +(own ? '<span class="dt" style="color:#c60;">名簿に無い方：このお名前・カテゴリーで作ります（会社名・写真は空）</span>' : '')
+         +(x.name && x.byCat ? '<span class="dt" style="color:#c60;">記載「'+esc(x.raw)+'」をカテゴリーで名簿の方に合わせました。違うときは選び直してください</span>' : '')
          +(who && !who.hasPhoto ? '<span class="dt" style="color:#c60;">写真なし</span>' : '')
          +' <button class="mkbtn" onclick="nmDel(\''+k+'\','+i+')">×</button></div>';
-     }).join('') : '<div style="color:#888;font-size:12px;padding:2px 0;">いません（ページは非表示にします）</div>';
+     }).join('') : (nmUnread[k]
+       ? '<div style="color:#c60;font-size:12px;padding:2px 0;">⚠ ルーティンチェックシートに「'+esc(nmUnread[k])+'」と書いてありますが、お名前を読み取れませんでした。'
+         +label+'がいるときは「＋ 追加」で入れてください（名簿に無い方は「✏️ 名簿に無い方」を選んで、お名前とカテゴリーを入れます）。'
+         +'このままでは、'+label+'のページは非表示にします。</div>'
+       : '<div style="color:#888;font-size:12px;padding:2px 0;">いません（ページは非表示にします）</div>');
    });
  }
- function nmSet(k,i,v){ var x=nmList[k][i]; if(v!=='?'){ x.name=v; if(!v) x.raw=''; } renderNM(); }
+ function nmSet(k,i,v){
+   var x=nmList[k][i];
+   if(v==='?'){ x.name=''; x.manual=true; }
+   else { x.name=v; x.byCat=false; if(!v){ x.raw=''; x.manual=false; } }
+   renderNM();
+ }
+ function nmText(k,i,f,v){ nmList[k][i][f]=String(v||'').trim(); renderNM(); }
  function nmYears(i,v){ nmList.renew[i].years=parseInt(v,10)||1; nmList.renew[i].noYears=false; renderNM(); }
  function nmAdd(k){ nmList[k].push(k==='renew'?{name:'',raw:'',years:1}:{name:'',raw:''}); renderNM(); }
  function nmDel(k,i){ nmList[k].splice(i,1); renderNM(); }
  function nmForSlides(){
    var pick=function(k){ return nmList[k].filter(function(x){ return x.name||x.raw; }).map(function(x){
      return {name:x.name||'', raw:x.raw||'', category:x.category||'', years:k==='renew'?(x.years||1):0}; }); };
-   return { newMembers: pick('new'), renewMembers: pick('renew') };
+   var out={ newMembers: pick('new'), renewMembers: pick('renew') };
+   // 読み取れなかった記載のまま、どなたも入れなかったとき（作ったあとのお知らせに出す）
+   var un={'new':out.newMembers.length?'':nmUnread['new'], renew:out.renewMembers.length?'':nmUnread.renew};
+   if(un['new']||un.renew) out.unread=un;
+   return out;
  }
 
  // --- バイスプレジデントによる報告（ルーティンチェックシートの読み上げる文から拾った数字）---

@@ -260,6 +260,32 @@ const shown = (el) => !!el && el.style.display !== 'none' && el.style.display !=
   ck(J(o.memberPages) === J({ newMembers: [], renewMembers: [] }) && o.networkingLeaders.show === true && o.networkingLeaders.items.length === 0
      && lastCall()[1]['新メンバー'] === '該当者なし', '新メンバーなし・ネットワーキングリーダーの原稿なしの渡し方: ' + J([o.memberPages, o.networkingLeaders]));
 
+  // 「新入会」の欄に書いてあるのに、お名前を読み取れなかった日：「いません」とだけ出さずに知らせる（以前は黙って「なし」）。
+  // 「＋ 追加」→「✏️ 名簿に無い方」でお名前・カテゴリーを入れて作れる。カテゴリーで名簿の方に合わせたときは、その旨を出す
+  {
+    const UNREAD = 'カテゴリー洋菓子製造販売みほんたろう';
+    step('前半：読み取れなかった記載を出す', () => run('nmFromRoutine(' + J({ newMembers: [], newMembersRaw: UNREAD, newMembersUnread: true,
+      renewMembers: [{ raw: 'かくう', name: NM(2), matched: true, years: 1, category: '', byCategory: true }],
+      renewMembersRaw: 'カテゴリー　内装業　かくう（1年）' }) + ')'));
+    ck(/⚠ ルーティンチェックシートに「カテゴリー洋菓子製造販売みほんたろう」と書いてありますが、お名前を読み取れませんでした/.test(els.nm_new.innerHTML)
+       && /新メンバーのページは非表示にします/.test(els.nm_new.innerHTML) && !/いません/.test(els.nm_new.innerHTML),
+       '読み取れなかった記載の表示: ' + els.nm_new.innerHTML.slice(0, 300));
+    ck(/記載「かくう」をカテゴリーで名簿の方に合わせました/.test(els.nm_renew.innerHTML), 'カテゴリーで合わせた方の表示: ' + els.nm_renew.innerHTML.slice(0, 300));
+    step('読み取れなかったまま作る', () => run('gen()'));
+    ck(J(lastOpts().memberPages.unread) === J({ new: UNREAD, renew: '' }) && lastCall()[1]['新メンバー'] === '該当者なし',
+       '読み取れなかった記載が渡らない: ' + J(lastOpts().memberPages));
+    step('名簿に無い方を入れる', () => { run("nmAdd('new')"); run("nmSet('new',0,'?')"); });
+    ck(/placeholder="お名前"/.test(els.nm_new.innerHTML) && /placeholder="カテゴリー"/.test(els.nm_new.innerHTML)
+       && /<option value="\?" selected>✏️ 名簿に無い方（お名前を入れる）/.test(els.nm_new.innerHTML), '名簿に無い方の入力欄が出ない: ' + els.nm_new.innerHTML.slice(0, 300));
+    step('お名前とカテゴリーを入れて作る', () => { run("nmText('new',0,'raw','みほん たろう')"); run("nmText('new',0,'category','洋菓子製造販売')"); run('gen()'); });
+    ck(J(lastOpts().memberPages.newMembers) === J([{ name: '', raw: 'みほん たろう', category: '洋菓子製造販売', years: 0 }]) && !lastOpts().memberPages.unread
+       && lastCall()[1]['新メンバー'] === 'みほん たろうさん', '入れた名簿に無い方が渡らない: ' + J(lastOpts().memberPages));
+    ck(/value="みほん たろう"/.test(els.nm_new.innerHTML) && /value="洋菓子製造販売"/.test(els.nm_new.innerHTML)
+       && /名簿に無い方：このお名前・カテゴリーで作ります/.test(els.nm_new.innerHTML), '入れたお名前・カテゴリーが欄に残らない: ' + els.nm_new.innerHTML.slice(0, 300));
+    step('名簿の方を選び直す', () => run("nmSet('renew',0,'" + NM(3) + "')"));
+    ck(!/カテゴリーで名簿の方に合わせました/.test(els.nm_renew.innerHTML), '選び直したのに「カテゴリーで合わせました」が残る');
+  }
+
   // ルーティンチェックシートにその日の列が無い開催日に選び直すと、前の日のメインプレゼン・コアバリュー・一般規定・カテゴリーを残さない
   // （以前は前の日の値のまま、その日のスライドを作っていた。メインプレゼンは、その日のスピーカーローテーションのお2人にする）
   routine = Object.assign({}, routine, { coreValue: 'Accountability', generalPolicy: 3, wantedCategories: ['見本分野'], openCategory: '開放の見本',
@@ -414,4 +440,4 @@ if (fails.length) {
   fails.slice(0, 30).forEach((f) => console.log('   ' + f));
   process.exit(1);
 }
-console.log('OK: 前半（読み込み中・メンバーのページ・アンバサダー・ディレクター）／後半（読み込み中・推薦のことば・リファーラル発表・音楽・「更新した」で手直しが戻らない・1枚目のメインプレゼン）');
+console.log('OK: 前半（読み込み中・メンバーのページ・アンバサダー・ディレクター・新メンバーの読み取れなかった記載と名簿に無い方の入力）／後半（読み込み中・推薦のことば・リファーラル発表・音楽・「更新した」で手直しが戻らない・1枚目のメインプレゼン）');

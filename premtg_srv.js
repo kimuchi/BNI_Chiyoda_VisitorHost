@@ -133,11 +133,12 @@ function premtgCountNames_(text) {
 //   roles   … 役職ごとの共有事項（PREMTG_ROLES_ の順）
 //   blank   … 空欄の項目（パワポでは「—」になるもの）。{ label, role }
 //   newMembers … 新入会の方（熱烈歓迎のページを作る。welcome_srv.js の welcomeMembers_）
+//   newMembersUnread … 「新入会」の欄に書いてあるのに、お名前を読み取れなかったときの記載（黙って熱烈歓迎のページを省かず、知らせる）
 function premtgData_(target) {
   var ctx = roleBuildContext_(target, '');
   var out = { ok: true, date: fmtDate_(target), md: (target.getMonth() + 1) + '/' + target.getDate(),
               display: roleMd_(target), meetingNo: ctx.meetingNo || '', sheetName: ctx.sheetName || '',
-              summary: {}, roles: [], blank: [], newMembers: [] };
+              summary: {}, roles: [], blank: [], newMembers: [], newMembersUnread: '' };
   if (!ctx.found) {
     out.ok = false;
     out.message = ctx.message || ('ルーティンチェックシートに ' + out.date + ' の列が見つかりません。');
@@ -215,7 +216,9 @@ function premtgData_(target) {
   ];
 
   // 新入会の方（熱烈歓迎のページを作る。welcome_srv.js）
-  out.newMembers = welcomeMembers_(sheet(/^新入会$/, null, ''));
+  var newText = sheet(/^新入会$/, null, '');
+  out.newMembers = welcomeMembers_(newText);
+  if (routineUnread_(newText, out.newMembers)) out.newMembersUnread = newText.replace(/\n+/g, '　');
   // 割り振り表（ビジターホストコーディネーターのページのあと）
   out.allocation = premtgAllocation_(target);
 
@@ -955,7 +958,8 @@ function getPreMeetingPreview(dateStr) {
     });
     // 熱烈歓迎のページ（新入会の方ごと）と、そのひな形
     var welcome = data.newMembers.map(function (m) {
-      return { name: m.name, company: m.company, category: m.category, matched: m.matched, photo: !!findPhotoIdForName_(m.name) };
+      return { name: m.name, raw: m.raw, company: m.company, category: m.category, matched: m.matched, byCategory: !!m.byCategory,
+               photo: !!findPhotoIdForName_(m.name) };
     });
     var wtpl = data.newMembers.length ? welcomeTemplateInfo_() : null, wchk = null;
     if (wtpl && !wtpl.error) {                                      // お名前・お写真を入れる場所があるか（welcome_srv.js）
@@ -963,7 +967,7 @@ function getPreMeetingPreview(dateStr) {
       catch (e) { wchk = { notes: ['熱烈歓迎のひな形を開けませんでした: ' + (e && e.message ? e.message : e)] }; }
     }
     return { ok: true, date: data.date, display: data.display, meetingNo: data.meetingNo, summary: data.summary,
-             pages: pages, blank: data.blank, welcome: welcome,
+             pages: pages, blank: data.blank, welcome: welcome, welcomeUnread: data.newMembersUnread || '',
              welcomeTemplate: wtpl ? { registered: wtpl.registered, name: wtpl.name, error: wtpl.error || '',
                                        notes: wchk ? wchk.notes : [] } : null,
              skipped: data.roles.filter(function (r) { return !r.text; }).map(function (r) { return r.label; }),
@@ -1005,6 +1009,11 @@ function generatePreMeetingSlides(dateStr) {
     if (info.welcome.length) msg += '\n熱烈歓迎のページ: ' + info.welcome.map(function (n) { return n + 'さん'; }).join('、')
       + '（ひな形: ' + (wtpl && wtpl.registered ? '登録したもの（' + wtpl.name + '）' : '既定のもの') + '）';
     if (welcomeErr) msg += '\n熱烈歓迎のひな形を開けませんでした: ' + welcomeErr;
+    if (data.newMembersUnread) msg += '\n熱烈歓迎のページ: ルーティンチェックシートの「新入会」の欄（' + data.newMembersUnread
+      + '）からお名前を読み取れなかったので、作っていません。お名前（漢字かふりがな）を「、」で区切って書き直すと入ります。';
+    var byCat = data.newMembers.filter(function (m) { return m.byCategory; });
+    if (byCat.length) msg += '\n熱烈歓迎のページ: ' + byCat.map(function (m) { return '「' + m.raw + '」→ ' + m.name + 'さん'; }).join('、')
+      + ' は、カテゴリーで名簿の方に合わせました。違うときは、「新入会」の欄のお名前を漢字で書くか、名簿のふりがなを確かめて作り直してください。';
     var skipped = data.roles.filter(function (r) { return !r.text; }).map(function (r) { return r.label; });
     if (skipped.length) msg += '\n今週の共有事項が無いので、ページを作らなかった役職: ' + skipped.join('、');
     if (data.blank.length) msg += '\n空欄の項目（「—」と出ています）: ' + data.blank.map(function (b) { return b.label; }).join('、');

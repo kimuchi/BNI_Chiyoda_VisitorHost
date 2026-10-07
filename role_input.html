@@ -806,12 +806,19 @@
        +p.welcome.map(function(w){
          return '<span class="pmrole" style="border-left-color:#C8102E;">'+esc(w.name+'さん')
            +' <span class="muted">'+esc([w.category, w.company].filter(function(x){ return x; }).join('・')||'カテゴリー・会社名なし')
-           +(w.matched?'':'・名簿にありません')+(w.photo?'':'・写真なし')+'</span></span>';
+           +(w.matched?'':'・名簿にありません')+(w.byCategory?'・記載「'+esc(w.raw||'')+'」をカテゴリーで名簿の方に合わせました':'')
+           +(w.photo?'':'・写真なし')+'</span></span>';
        }).join(' ')+'</div>'
        +'<div class="hint">熱烈歓迎のひな形：'+(wt.registered?'登録したもの（'+esc(wt.name)+'）':'既定のもの')
        +'。⚙️ 設定 ＞ 大きなスライド の「熱烈歓迎（事前MTG・新入会メンバー）」で差し替えられます。'
        +(wt.error?'<br><b style="color:#b3261e;">'+esc(wt.error)+'</b>':'')
        +(wt.notes||[]).map(function(n){ return '<br><b style="color:#b3261e;">⚠ '+esc(n)+'</b>'; }).join('')+'</div></div>';
+   }
+   // 「新入会」の欄に書いてあるのに、お名前を読み取れなかったとき（黙って熱烈歓迎のページを省かない）
+   if(p.welcomeUnread){
+     h+='<div class="pmpages"><b>🎉 熱烈歓迎のページ</b><div class="hint" style="margin-top:2px;"><b style="color:#b3261e;">⚠ 「新入会」の欄の「'
+       +esc(p.welcomeUnread)+'」から、お名前を読み取れませんでした。このままでは熱烈歓迎のページは作りません。</b><br>'
+       +'お名前（漢字・ひらがな・カタカナ）を「、」で区切って書き直してください（「カテゴリー　洋菓子製造販売　みほん たろう」のような書き方も読みます）。</div></div>';
    }
    h+='<div class="pmpages"><b>役職のページ（'+p.pages.length+'枚）</b>'
      +(p.pages.length?'<ol start="2">'+p.pages.map(function(pg){
