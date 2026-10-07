@@ -200,6 +200,7 @@ if (made.memberPresen) {
     if (it.kind === 'overview') {
       ck(t.includes(it.block) && it.rows.every((r) => t.includes(r.name)) && t.includes(it.nextName),
          'メンバープレゼン：扉 ' + it.block + ': ' + t.slice(0, 120));
+      ck(/advTm="1000"/.test(x), 'メンバープレゼン：扉 ' + it.block + ' が1秒で次へ進まない');
       return;
     }
     const sec = it.name === '見本　花子' ? SEC.startup : SEC.weekly;

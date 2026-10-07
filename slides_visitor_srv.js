@@ -108,7 +108,8 @@ function buildPresenXml_(xml, v, sec) {
   return mpNoAutoAdvance_(xml);
 }
 
-// 紹介／代理紹介スライド1枚分（3人）。空き枠は空文字で上書きしてダミー文字を消す
+// 紹介／代理紹介スライド1枚分（3人）。空き枠は空文字で上書きしてダミー文字を消す。
+// ビジターのスライドは、どのページも自動では次へ進めない（プレゼンのページは buildPresenXml_）
 // 公式ファイルから作った雛形のように「専門分野：」「招待者：」の見出しが値と同じ枠に入っているときは、
 // 見出しを残して後ろに値を入れる（空き枠は見出しごと消す）
 function buildGroupXml_(xml, trio) {
@@ -130,7 +131,8 @@ function buildGroupXml_(xml, trio) {
       for (var L = 0; L < b.labels.length; L++) xml = setTextInShape_(xml, b.labels[L], '');
     }
   }
-  return xml;
+  // ビジター・ゲスト・代理の紹介のページも、自動で次へ進めない（テンプレートに「○秒後に次へ」が入っていても外す）
+  return mpNoAutoAdvance_(xml);
 }
 
 // 枠の文字の頭にある見出し（「専門分野：」「招待者：」）。無ければ空
