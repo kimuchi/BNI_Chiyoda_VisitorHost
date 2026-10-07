@@ -850,6 +850,77 @@ function replaceSlideAudio_(parts, audio, fileId) {
   return true;
 }
 
+// --- 音楽を止める（後半：リファーラル発表のあと、推薦のことばのページに入ったところ）---
+// テンプレートの音楽は「○枚のスライドにわたって再生」で鳴っている（数はテンプレートの並びで決めてある）。
+// リファーラル発表のページを人数ぶんに増やす・欠席の方のページを作らないと、その数がずれて、
+// 推薦のことばのページになっても音楽が止まらなかった。そこで
+//   ・止めるページ（stopPath。非表示なら、そのあとの最初の表示のページ）の画面切り替えに「前のサウンドを停止」を付ける
+//   ・それより前のページから鳴っていて、そのページまで届く音楽は、そのページの手前で止まる枚数に直す
+//     （表示のページだけ数える）。「前のサウンドを停止」で止まる合図（onStopAudio）も付けておく
+//   戻り値 { slide: 何枚目で止めるか, fixed: [枚数を直した音楽], message }
+function stopMusicAt_(parts, stopPath) {
+  var order = slideOrder_(parts), stop = order.indexOf(stopPath);
+  if (stop < 0) return null;
+  var shown = function (p) { return !/<p:sld\b[^>]*\sshow="0"/.test(xmlOf_(parts, p) || ''); };
+  while (stop < order.length && !shown(order[stop])) stop++;
+  if (stop >= order.length) return null;
+  var fixed = [];
+  listMeetingAudio_(parts).forEach(function (a) {
+    var at = order.indexOf(a.slide);
+    if (a.video || at < 0 || at >= stop || !shown(a.slide)) return;
+    var n = 0;
+    for (var k = at; k < stop; k++) if (shown(order[k])) n++;
+    var xml = xmlOf_(parts, a.slide), next = mediaPlayAcross_(xml, a.spid, n);
+    if (next !== xml) { putXml_(parts, a.slide, next); fixed.push((a.name || '音楽') + '（' + (at + 1) + '枚目から' + n + '枚）'); }
+  });
+  putXml_(parts, order[stop], transitionStopSound_(xmlOf_(parts, order[stop])));
+  return { slide: stop + 1, fixed: fixed,
+           message: '音楽：推薦のことばのページ（' + (stop + 1) + '枚目）に入ったところで止まるようにしました'
+             + (fixed.length ? '（鳴らす枚数を直した音楽: ' + fixed.join('、') + '）' : '') + '。' };
+}
+// spid の音楽が n 枚より多く鳴る設定なら、n 枚にする（<p:cMediaNode numSld>。無いときは1枚）。
+// 「前のサウンドを停止」で止まる合図（終わりの条件 onStopAudio）が無ければ足す
+function mediaPlayAcross_(xml, spid, n) {
+  var rs = findTagRanges_(xml, 'p:audio');
+  for (var i = rs.length - 1; i >= 0; i--) {
+    var seg = xml.substring(rs[i].start, rs[i].end);
+    if (seg.indexOf('spid="' + spid + '"') < 0) continue;
+    var m = seg.match(/<p:cMediaNode\b[^>]*>/);
+    if (!m) continue;
+    var now = +((m[0].match(/\snumSld="(\d+)"/) || [])[1] || 1);
+    if (now <= n) continue;
+    var tag = /\snumSld="/.test(m[0]) ? m[0].replace(/\snumSld="\d+"/, ' numSld="' + n + '"') : m[0].replace(/^<p:cMediaNode\b/, '<p:cMediaNode numSld="' + n + '"');
+    seg = seg.replace(m[0], tag);
+    if (!/evt="onStopAudio"/.test(seg)) {
+      var END = '<p:endCondLst><p:cond evt="onStopAudio" delay="0"><p:tgtEl><p:sldTgt/></p:tgtEl></p:cond></p:endCondLst>';
+      var ct = seg.match(/<p:cTn\b[^>]*?(\/?)>/);
+      if (ct && ct[1]) seg = seg.replace(ct[0], ct[0].replace(/\/>$/, '>') + END + '</p:cTn>');
+      else if (ct) {
+        var at = seg.indexOf(ct[0]) + ct[0].length, sc = seg.indexOf('</p:stCondLst>', at), close = seg.indexOf('</p:cTn>', at);
+        var put = (sc >= 0 && (close < 0 || sc < close)) ? sc + '</p:stCondLst>'.length : at;
+        seg = seg.substring(0, put) + END + seg.substring(put);
+      }
+    }
+    xml = xml.substring(0, rs[i].start) + seg + xml.substring(rs[i].end);
+  }
+  return xml;
+}
+// 画面切り替えに「前のサウンドを停止」（<p:sndAc><p:endSnd/></p:sndAc>）を付ける。切り替えが無いページには足す
+function transitionStopSound_(xml) {
+  var SND = '<p:sndAc><p:endSnd/></p:sndAc>';
+  if (!/<p:transition\b/.test(xml)) {
+    var tr = '<p:transition>' + SND + '</p:transition>';
+    return xml.indexOf('</p:clrMapOvr>') >= 0 ? xml.replace('</p:clrMapOvr>', '</p:clrMapOvr>' + tr) : xml.replace('</p:cSld>', '</p:cSld>' + tr);
+  }
+  return xml.replace(/<p:transition\b([^>]*?)\/>/g, '<p:transition$1>' + SND + '</p:transition>')
+    .replace(/(<p:transition\b[^>]*>)([\s\S]*?)(<\/p:transition>)/g, function (all, open, body, close) {
+      if (body.indexOf(SND) >= 0) return all;
+      body = body.replace(/<p:sndAc>[\s\S]*?<\/p:sndAc>/g, '');
+      var ext = body.indexOf('<p:extLst>');
+      return open + (ext >= 0 ? body.substring(0, ext) + SND + body.substring(ext) : body + SND) + close;
+    });
+}
+
 // 画面から指示された差し替え・音量をまとめて適用する。
 // music: { 'slide1.xml#3': { fileId: '…', volume: 30 }, … }
 function applyMeetingAudio_(parts, music) {
@@ -1104,13 +1175,15 @@ function insertMemberPresen_(parts, items) {
   var src = unzipToMap_(file.getBlob());
   var built = buildMemberPresenSlides_(src, items);
   var sp = spliceSlides_(parts, src, slideOrder_(src), anchor);
-  var auto = false;
-  for (var i = 0; i < items.length; i++) if (items[i].auto) auto = true;
+  // auto … 個人ページがカウントダウンのあと自動で次へ進むか。業種区分の扉ページは、いつも1秒で次へ進む
+  // （どちらかがあれば、ファイルの「保存済みのタイミングを使用」を入れる）
+  var auto = false, flip = false;
+  for (var i = 0; i < items.length; i++) { if (items[i].auto) auto = true; if (items[i].kind === 'overview') flip = true; }
   var msg = 'メンバープレゼンのページを ' + sp.paths.length + '枚 差し込みました（'
-          + (auto ? '自動で次へ' : 'クリックで次へ') + '）。';
+          + (auto ? '自動で次へ' : 'クリックで次へ') + (flip ? '・業種区分のページは1秒で次へ' : '') + '）。';
   if (built.noPhoto && built.noPhoto.length) msg += '\n写真が見つからない方: ' + built.noPhoto.join('、');
   if (sp.missingLayout.length) msg += '\n※ 同じ名前のレイアウトが無いページがありました（見た目が変わる可能性があります）。';
-  return { message: msg, paths: sp.paths, auto: auto, gone: built.gone || [], opened: built.opened || 0 };
+  return { message: msg, paths: sp.paths, auto: auto || flip, gone: built.gone || [], opened: built.opened || 0 };
 }
 
 // pptxの中身を書き換える本体。Driveの読み書きから切り離してあるので、
@@ -1159,6 +1232,9 @@ function editMeetingSlides_(parts, map, rules, o) {
   // 推薦のことば：組の数だけページを作る（定例会中はその場所、アフター・定例会後は抽選コーナーのあと）
   var reco = (o.recommendPairs && o.recommendPairs.length !== undefined)
     ? expandRecommendations_(parts, o.recommendPairs, photoCache) : null;
+  // 後半：リファーラル発表のあと、推薦のことばのページに入ったところで音楽を止める（ページの並びが決まってから）
+  var recoPath = (reco && reco.paths && reco.paths[0]) || findSlideWithText_(parts, RECO_PREFIX_ + '1氏名');
+  var musicStop = recoPath ? stopMusicAt_(parts, recoPath) : null;
   // 書記兼会計による報告（更新状況一覧）
   var renewal = applyRenewalStatus_(parts, map);
   var photoMsgs = [], TWO = [
@@ -1208,7 +1284,7 @@ function editMeetingSlides_(parts, map, rules, o) {
   }
   return { touched: touched, byPattern: byPattern, core: core, policy: policy, photoGone: gone,
            photos: photos, audio: audio, referral: referral, weekly: weekly, guests: guests,
-           reco: reco, renewal: renewal, rotation: rotation, roles: roles,
+           reco: reco, musicStop: musicStop, renewal: renewal, rotation: rotation, roles: roles,
            members: members, vp: vp, leaders: leaders, mainPage: mainPage };
 }
 
@@ -1298,6 +1374,7 @@ function generateMeetingSlides(kind, values, meetingDateVal, opts) {
     if (info.guests && info.guests.message) msg += '\n' + info.guests.message;
     if (info.reco && info.reco.message) msg += '\n' + info.reco.message;
     if (recoGone) msg += '\n⚠ ' + recoGone;
+    if (info.musicStop && info.musicStop.message) msg += '\n' + info.musicStop.message;
     if (info.renewal && info.renewal.message) msg += '\n' + info.renewal.message;
     if (info.rotation && info.rotation.message) msg += '\n' + info.rotation.message;
     if (info.roles && info.roles.message) msg += '\n' + info.roles.message;

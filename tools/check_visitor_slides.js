@@ -142,7 +142,7 @@ step('テンプレートの登録', () => {
   const wrong = srv.saveTemplateBase64('presen', b64(makePptx([PRESEN_WRONG])), 'wrong.pptx');
   ck(wrong.ok === false && /27/.test(wrong.message) && /文字の枠ではありません/.test(wrong.message),
      '1) 27番が動画のテンプレートを、ビジタープレゼンとして登録した: ' + J(wrong));
-  const intro = srv.saveTemplateBase64('intro', b64(makePptx([INTRO, LEFTOVER])), 'intro.pptx');
+  const intro = srv.saveTemplateBase64('intro', b64(makePptx([[INTRO, AUTO_NEXT], LEFTOVER])), 'intro.pptx');
   ck(intro.ok === true && /2ページありますが、使うのは1ページ目だけ/.test(intro.message), '1) ビジター紹介の登録: ' + J(intro.message));
   const presen = srv.saveTemplateBase64('presen', b64(makePptx([[PRESEN, AUTO_NEXT]])), 'presen.pptx');
   ck(presen.ok === true && !/ページありますが/.test(presen.message), '1) ビジタープレゼンの登録: ' + J(presen.message));
@@ -168,6 +168,9 @@ step('ビジター紹介', () => {
   ck(!o.slides.some((s) => /取消 した/.test(s.text)), '2) キャンセルの方をスライドに入れた');
   ck(J(o.sectionIds) === J(o.order.map((x) => x.id)), '2) PowerPoint のセクションと、ページの並びが合わない: ' + J([o.sectionIds, o.order.map((x) => x.id)]));
   ck(!o.parts['ppt/notesSlides/notesSlide3.xml'], '2) 取り除いたページのノートが残った');
+  // ビジターのスライドは、紹介のページも自動で次へ進めない（テンプレートの「○秒後に次へ」も外す）
+  ck(o.slides.every((x) => !/advTm=/.test(x.xml) && !/advClick="0"/.test(x.xml)),
+     '2) ビジター紹介のページが、自動で次へ進む: ' + J(o.slides.map((x) => (x.xml.match(/<p:transition\b[^>]*>/) || [''])[0])));
 });
 
 // ---- 3) まとめて作成：ビジター2枚・ゲスト1枚・代理1枚。見出しが節ごとに替わる ----
@@ -180,6 +183,7 @@ step('まとめて作成', () => {
      '3) 見出しの並び: ' + J(o.slides.map((s) => s.text.split('|')[0])));
   ck(/ゲスト 客人 様/.test(o.slides[2].text) && /代理 太一 様/.test(o.slides[3].text), '3) ゲスト・代理のページの中身: ' + o.slides.slice(2).map((s) => s.text).join(' / '));
   ck(!o.slides.some((s) => /先週の見本/.test(s.text)), '3) テンプレートの2ページ目が残った');
+  ck(o.slides.every((x) => !/advTm=/.test(x.xml)), '3) まとめて作った紹介のページ（ゲスト・代理も）が、自動で次へ進む');
 });
 
 // ---- 4) ビジタープレゼン：1人1枚。お名前の枠（見本の文字を消した枠）にも入る ----

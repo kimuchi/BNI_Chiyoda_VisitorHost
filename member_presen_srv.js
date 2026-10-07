@@ -38,6 +38,7 @@ var MP_INDIVIDUAL_ = {
   photoRid: 'rId2'
 };
 var MP_ROWS_PER_OVERVIEW_ = 7;     // 一覧の表は7行。8人以上いるとページが増える
+var MP_OVERVIEW_ADVANCE_MS_ = 1000; // 業種区分の扉ページは1秒で次へ（個人ページの「自動で次へ」を選ばなかったときも）
 
 // 会社名・カテゴリーの枠（EMU）。元ツールが実物のスライドから採った値。
 var MP_COMPANY_DEFAULT_ = { x: 4830858, y: 2849608, cx: 7461517, cy: 769441 };
@@ -350,9 +351,9 @@ function mpApplyPhoto_(xml, rels, def, photo) {
   return { xml: xml, rels: retargetRel_(rels, def.photoRid, '../media/' + photo.path.replace('ppt/media/', '')) };
 }
 
-// 業種区分の扉ページ（一覧の表つき）
+// 業種区分の扉ページ（一覧の表つき）。1秒で次のページへ進む（MP_OVERVIEW_ADVANCE_MS_）
 function mpOverviewSlide_(tplXml, tplRels, item, photo) {
-  var xml = tplXml;
+  var xml = mpAutoAdvance_(tplXml, MP_OVERVIEW_ADVANCE_MS_);
   xml = setParagraphsInShape_(xml, MP_OVERVIEW_.title, [item.block]);
   xml = setParagraphsInShape_(xml, MP_OVERVIEW_.nextName, [item.nextName || '']);
   for (var r = 0; r < MP_ROWS_PER_OVERVIEW_; r++) {
