@@ -292,6 +292,22 @@ const LAYOUTS = {
      '枠より多いことを知らせない: ' + res.message);
 }
 
+// ルーティンチェックシートに書いてあったのに、お名前を読み取れなかった（画面でどなたも入れなかった）：
+// 「いないので」ではなく、読み取れなかったことを知らせる。名簿に無い方は、書いてあったお名前・カテゴリーで作る
+{
+  const parts = makeParts(['cover', 'renew', 'neu', 'ethics', 'weekly']);
+  const res = F.applyMemberPages_(parts, { newMembers: [], renewMembers: people(['見本 更一'], 1), unread: { new: 'カテゴリー洋菓子製造販売みほんたろう', renew: '' } },
+                                  { by: {}, seq: 0 });
+  ck(J(shown(parts)) === J(['表紙', '更新:見本 更一', '倫理', '週']), '読み取れなかった日の表示のページ: ' + J(shown(parts)));
+  ck(/新メンバー：ルーティンチェックシートの「カテゴリー洋菓子製造販売みほんたろう」からお名前を読み取れなかったので、そのページは非表示にしました/.test(res.message)
+     && !/新メンバーはいないので/.test(res.message), '読み取れなかったことを知らせない: ' + res.message);
+  const p2 = makeParts(['cover', 'renew', 'neu', 'ethics', 'weekly']);
+  const r2 = F.applyMemberPages_(p2, { newMembers: [{ name: '', raw: 'みほん たろう', category: '洋菓子製造販売' }], renewMembers: [] }, { by: {}, seq: 0 });
+  const nt = F.slideOrder_(p2).map((p) => F.xmlOf_(p2, p)).filter((x) => !/<p:sld\b[^>]*\sshow="0"/.test(x) && F.fpMemberKind_(x) === 'new').map((x) => F.slideText_(x));
+  ck(nt.length === 1 && /みほん たろう/.test(nt[0]) && /洋菓子製造販売/.test(nt[0]), '名簿に無い方のページ（書いてあったお名前・カテゴリー）: ' + J(nt));
+  ck(/名簿に無い方（書いてあったお名前・カテゴリーで作りました。会社名・写真は空です）: みほん たろう/.test(r2.message), '名簿に無い方の知らせ: ' + r2.message);
+}
+
 console.log(`新メンバー・更新メンバーのページ: 検査 ${checks} 件`);
 if (fails.length) {
   console.log(`NG: ${fails.length} 件`);
@@ -299,4 +315,4 @@ if (fails.length) {
   process.exit(1);
 }
 console.log('OK: 新メンバー → 倫理規定 → 更新メンバー → 倫理規定（雛形の並びによらず・ページ番号があっても）・見出しと一言は一緒に動く・'
-  + '1人1枚・いないまとまりは非表示・PowerPoint のセクションも合わせる・新規および更新メンバーの1枚');
+  + '1人1枚・いないまとまりは非表示・PowerPoint のセクションも合わせる・新規および更新メンバーの1枚・読み取れなかった記載の知らせ・名簿に無い方');

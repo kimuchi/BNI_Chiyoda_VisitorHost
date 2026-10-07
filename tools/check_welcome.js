@@ -16,6 +16,9 @@
 //     ページの大きさを事前MTGのパワポに合わせて縮める（図形・文字・写したマスターも同じ割合で。はみ出さない）。
 //     縦横の比が違うひな形は、収まる大きさで真ん中に置く
 //   ・ひな形を確かめる：お名前・お写真の場所が無ければ、登録したときと作る前の確かめで知らせる
+//   ・「カテゴリー　工務店　しけん じろう」のように、かなのお名前とカテゴリーで書いてあっても読む（名簿のふりがなで照合・
+//     名簿に無い方は書いてあったお名前とカテゴリー）。欄に書いてあるのにお名前を読み取れなければ、作る前の確かめと
+//     作ったあとのお知らせで知らせる（黙って熱烈歓迎のページを省かない）
 //   ・書体はメイリオ：既定のひな形（事前MTG・熱烈歓迎）のテーマの書体・行間（100%・110%）。作ったパワポのテーマの書体は
 //     どれもメイリオ（テーマがＭＳ Ｐゴシックのひな形でも）。ひな形で書体を指定した文字はそのまま
 
@@ -49,14 +52,16 @@ const HEAD = ['No', '業種区分', '氏名', 'ふりがな', 'カテゴリー',
 const ROSTER = [['見本 一郎', 'みほん いちろう', '税理士', '見本会計事務所'], ['新入 花子', 'しんにゅう はなこ', '行政書士（建設業許可・外国人ビザ）', '株式会社新入リーガルサービス'],
                 ['試験 二郎', 'しけん じろう', '工務店', '試験工務店']];
 const rosterRows = [HEAD].concat(ROSTER.map(([n, k, t, c], i) => HEAD.map((h) => ({ No: String(i + 1), 氏名: n, ふりがな: k, カテゴリー: t, 会社名: c }[h] || ''))));
-const DATE = '2026/10/07', NEXT = '2026/10/14';
-const row = (c, role, vals) => ['', '', c, '', '', role, '', '', '', (vals || [])[0] || '', '', (vals || [])[1] || ''];
+const DATE = '2026/10/07', NEXT = '2026/10/14', KANA = '2026/10/21', UNREAD = '2026/10/28';
+const row = (c, role, vals) => ['', '', c, '', '', role, '', '', '', (vals || [])[0] || '', '', (vals || [])[1] || '', '', (vals || [])[2] || '', '', (vals || [])[3] || ''];
+// KANA … かなのお名前とカテゴリーの書き方。UNREAD … 書いてあるのに、お名前を読み取れない書き方（区切りが無い）
 const ROUTINE = [
-  ['', '', '開催日', '', '', '', '', '', '', DATE, '', NEXT],
-  ['', '', '定例会回数', '', '', '', '', '', '', '536', '', '537'],
-  ['', 'No', '内容', '', '', '担当', '期日', '曜日目安', '備考', '', '', ''],
-  row('新入会', 'バイス', ['新入 花子さん、新規 太郎さん（エステサロン）', 'なし']),
-  row('ウィークリープレゼン', 'プレジ', ['', '']),
+  ['', '', '開催日', '', '', '', '', '', '', DATE, '', NEXT, '', KANA, '', UNREAD],
+  ['', '', '定例会回数', '', '', '', '', '', '', '536', '', '537', '', '538', '', '539'],
+  ['', 'No', '内容', '', '', '担当', '期日', '曜日目安', '備考', '', '', '', '', '', '', ''],
+  row('新入会', 'バイス', ['新入 花子さん、新規 太郎さん（エステサロン）', 'なし',
+                         'カテゴリー　工務店　しけん じろう\nカテゴリー：洋菓子製造販売　しんき たろう', 'カテゴリー洋菓子製造販売しんきたろう']),
+  row('ウィークリープレゼン', 'プレジ', ['', '', '', '']),
 ];
 const env = makeEnv({ now: new Date(2026, 9, 5, 10, 0, 0) });
 const F = Object.assign({}, env.globals);
@@ -83,10 +88,26 @@ F.saveRoleHolders({ president: '見本 一郎', vice: '試験 二郎' }, 24, DAT
 // ===== 1) 新入会の方 =====
 const data = F.premtgData_(new Date(2026, 9, 7));
 ck(J(data.newMembers) === J([
-  { name: '新入 花子', raw: '新入 花子さん', matched: true, company: '株式会社新入リーガルサービス', category: '行政書士（建設業許可・外国人ビザ）', kana: 'しんにゅう はなこ' },
-  { name: '新規 太郎', raw: '新規 太郎さん', matched: false, company: '', category: 'エステサロン', kana: '' }]),
+  { name: '新入 花子', raw: '新入 花子さん', matched: true, company: '株式会社新入リーガルサービス', category: '行政書士（建設業許可・外国人ビザ）', kana: 'しんにゅう はなこ', byCategory: false },
+  { name: '新規 太郎', raw: '新規 太郎さん', matched: false, company: '', category: 'エステサロン', kana: '', byCategory: false }]),
    '1) 新入会の方（名簿の方は名簿から・名簿に無い方は書いてあったとおり）: ' + J(data.newMembers));
-ck(F.premtgData_(new Date(2026, 9, 14)).newMembers.length === 0, '1) 「なし」の日に新入会の方がいる');
+ck(data.newMembersUnread === '', '1) 読み取れたのに「読み取れなかった」になる: ' + J(data.newMembersUnread));
+{
+  const nx = F.premtgData_(new Date(2026, 9, 14));
+  ck(nx.newMembers.length === 0 && nx.newMembersUnread === '', '1) 「なし」の日に新入会の方がいる・読み取れなかったことになる: ' + J(nx.newMembers) + J(nx.newMembersUnread));
+}
+// かなのお名前とカテゴリー（「カテゴリー　工務店　しけん じろう」）：名簿のふりがなで照合。名簿に無い方は書いてあったお名前とカテゴリー
+{
+  const kd = F.premtgData_(new Date(2026, 9, 21));
+  ck(J(kd.newMembers) === J([
+    { name: '試験 二郎', raw: 'しけん じろう', matched: true, company: '試験工務店', category: '工務店', kana: 'しけん じろう', byCategory: false },
+    { name: 'しんき たろう', raw: 'しんき たろう', matched: false, company: '', category: '洋菓子製造販売', kana: '', byCategory: false }])
+     && kd.newMembersUnread === '', '1) かなのお名前とカテゴリーの書き方: ' + J(kd.newMembers) + ' / ' + J(kd.newMembersUnread));
+  // 書いてあるのに読み取れない：いないことにせず、その記載を返す
+  const ud = F.premtgData_(new Date(2026, 9, 28));
+  ck(ud.newMembers.length === 0 && ud.newMembersUnread === 'カテゴリー洋菓子製造販売しんきたろう',
+     '1) 読み取れなかった記載: ' + J(ud.newMembers) + ' / ' + J(ud.newMembersUnread));
+}
 
 // ===== 2) 既定のひな形で作る =====
 const slidesOf = () => {
@@ -184,6 +205,25 @@ function customTemplate() {
   const h = String(page.els.premtgOut && page.els.premtgOut.innerHTML).replace(/<[^>]+>/g, ' ');
   ck(/熱烈歓迎のページ（2枚・まとめのページのあと）/.test(h) && /新入 花子さん/.test(h) && /新規 太郎さん/.test(h) && /名簿にありません/.test(h) && /写真なし/.test(h) && /既定のもの/.test(h),
      '5) 画面に熱烈歓迎のページが出ない: ' + h.replace(/\s+/g, ' ').slice(0, 400));
+  ck(!/読み取れませんでした/.test(h), '5) 読み取れた日に「読み取れませんでした」が出る');
+  // 「新入会」の欄に書いてあるのに、お名前を読み取れなかった日：画面で知らせる（熱烈歓迎のページは作らない）
+  const pu = F.getPreMeetingPreview(UNREAD);
+  ck(pu.ok && pu.welcome.length === 0 && pu.welcomeUnread === 'カテゴリー洋菓子製造販売しんきたろう', '5) 読み取れなかった日の確かめ: ' + J({ w: pu.welcome, u: pu.welcomeUnread }));
+  page.step('読み取れなかった日の確かめを出す', () => page.run('renderPremtg(' + J(pu) + ')'));
+  const hu = String(page.els.premtgOut && page.els.premtgOut.innerHTML).replace(/<[^>]+>/g, ' ');
+  ck(/「新入会」の欄の「カテゴリー洋菓子製造販売しんきたろう」から、お名前を読み取れませんでした/.test(hu) && /熱烈歓迎のページは作りません/.test(hu),
+     '5) 読み取れなかったことが画面に出ない: ' + hu.replace(/\s+/g, ' ').slice(0, 400));
+  // 作ったあとのお知らせ
+  const ru = F.generatePreMeetingSlides(UNREAD);
+  ck(ru.ok && /「新入会」の欄（カテゴリー洋菓子製造販売しんきたろう）からお名前を読み取れなかったので、作っていません/.test(ru.message),
+     '5) 読み取れなかったことを作ったあとに知らせない: ' + J(ru.message));
+  // かなのお名前の日：名簿の方（ふりがなで照合）と、名簿に無い方（書いてあったお名前・カテゴリー）のページを作る
+  const rk = F.generatePreMeetingSlides(KANA);
+  ck(rk.ok && /熱烈歓迎のページ: 試験 二郎さん、しんき たろうさん/.test(rk.message) && !/読み取れなかった/.test(rk.message),
+     '5) かなのお名前の日のお知らせ: ' + J(rk.message));
+  const SK = slidesOf(), tk = SK.order.map((p) => SK.text(p)).filter((t) => /熱烈歓迎/.test(t));
+  ck(tk.length === 2 && /試験 二郎さん/.test(tk[0]) && /試験工務店/.test(tk[0]) && /しんき たろうさん/.test(tk[1]) && /洋菓子製造販売/.test(tk[1]),
+     '5) かなのお名前の日の熱烈歓迎のページ: ' + J(tk));
 }
 
 // ===== 6) 画像から作ったひな形（「お名前」「お写真」と書いた四角・ページが 20×11.25インチ）=====
@@ -357,5 +397,6 @@ if (fails.length) {
   process.exit(1);
 }
 console.log('熱烈歓迎のページ: 検査 ' + checks + ' 件 OK: 新入会の方ごとに1枚・まとめのページのあと・名簿に無い方・写真・'
-  + '土台の違うひな形はマスターごと写す（番号が重ならない・壊れていない）・いない日は作らない・作る前の確かめ・'
+  + '土台の違うひな形はマスターごと写す（番号が重ならない・壊れていない）・いない日は作らない・'
+  + 'かなのお名前とカテゴリーの書き方・読み取れなかった記載を知らせる・作る前の確かめ・'
   + '画像から作ったひな形（「お名前」「お写真」・大きさを合わせる・縦横の比が違う）・ひな形を確かめる・書体はメイリオ');

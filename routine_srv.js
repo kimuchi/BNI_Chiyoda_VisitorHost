@@ -182,9 +182,10 @@ function routineResetCache_() {
 // 「なし」「無し」「休会」などは、指定されていないものとして扱う。
 // 「なし（4/2火曜10時時点）」のように但し書きが付くことがあるので、先頭だけ見る。
 // 「該当なし」の書き方。「ー」（長音の記号）・「−」「‐」も、なしの印として書かれるので含める
-// （以前は「ー」という名前の新メンバー・更新メンバーのページを作っていた）
+// （以前は「ー」という名前の新メンバー・更新メンバーのページを作っていた）。
+// ひらがなで書いたお名前（「ないとう」「なしもと」）は、なしの印にしない（うしろにかなが続けばお名前。「なしです」などは除く）
 function routineIsBlank_(s) {
-  return !s || /^(なし|無し|ナシ|ない|―|－|-|—|ー|−|‐|休会|済|未定|\?|？)/.test(s);
+  return !s || /^(?:(?:なし|無し|ナシ|ない)(?:で|と(?!う)|に|$|(?![ぁ-ゖァ-ヺー]))|―|－|-|—|ー|−|‐|休会|済|未定|\?|？)/.test(s);
 }
 
 // 「谷口さん」のような書き方を、メンバー名簿のフルネームに合わせる。
@@ -425,13 +426,20 @@ function routineParenSegs_(s) {
 // 名簿の氏名に合わせる。routineMemberName_ より慎重に、名字・氏名がそのまま一致する方を先に採り、
 // 前にカテゴリーなどが付いた書き方（「店舗オフィス岩渕」「占いを使ったインサイトカウンセラー神楽」）は
 // うしろが名字・氏名に一致する方を採る（2文字以上）。
-// 同じ名字の方が2人以上いるときは、書き添えてあるカテゴリー（hint）が名簿のカテゴリーに合う方に決める。決まらなければ空
+// 同じ名字の方が2人以上いるときは、書き添えてあるカテゴリー（hint）が名簿のカテゴリーに合う方に決める。決まらなければ空。
+// ひらがな・カタカナで書いたお名前（「みほん たろう」「ミホン」）は、名簿のふりがなと比べる（routineRosterKana_）。
+// カテゴリーで決めたときは ROUTINE_MATCH_BY_ を 'category' にする（画面で「カテゴリーで合わせました」と出すため）
+var ROUTINE_MATCH_BY_ = '';
 function routineRosterName_(text, roster, hint) {
+  ROUTINE_MATCH_BY_ = '';
   var t = routineFoldName_(String(text).replace(/【[^】]*】/g, ''));
   if (!t) return '';
   var keys = roster.map(function (m) {
+    var kn = String(m.kana || '').normalize('NFKC').trim(), kw = kn.split(/[\s・]+/);
+    if (!kn && routineKanaOnly_(m.name)) { kn = String(m.name).normalize('NFKC').trim(); kw = kn.split(/[\s・]+/); }   // お名前がカタカナの方
     return { name: m.name, title: routineFoldName_(m.title || ''),
-             full: routineFoldName_(m.name), sur: routineFoldName_(String(m.name).trim().split(/[\s　]+/)[0]) };
+             full: routineFoldName_(m.name), sur: routineFoldName_(String(m.name).trim().split(/[\s　]+/)[0]),
+             kana: routineKana_(kn), ksur: kw.length > 1 ? routineKana_(kw[0]) : '' };
   });
   var h = routineFoldName_(String(hint || '').replace(/[()（）【】「」]/g, ''));
   var one = function (list) {
@@ -465,15 +473,105 @@ function routineRosterName_(text, roster, hint) {
       else if (w.length === bestLen && best.indexOf(k) < 0) best.push(k);
     });
   });
-  if (best.length > 1 && !h) h = routineFoldName_(t.slice(0, -bestLen));      // 前に付いているのがカテゴリー
-  return one(best);
+  if (best.length) {
+    if (best.length > 1 && !h) h = routineFoldName_(t.slice(0, -bestLen));    // 前に付いているのがカテゴリー
+    return one(best);
+  }
+  return routineRosterKana_(text, keys, String(hint || ''), one);
 }
-// 名簿（氏名とカテゴリー）。1回の実行の中で使い回す
+// かなで書いたお名前を、名簿のふりがなに合わせる（routineRosterName_ の続き。keys … 名簿をそろえたもの）
+//   ・ふりがなと同じ（「みほん たろう」「ミホンタロウ」）。前にカタカナのカテゴリーが付いていても（「パティシエ みほん たろう」）
+//   ・名字のふりがなと同じ（「みほん」。名簿のふりがなが「みほん たろう」のように空白で分かれている方だけ）
+//   ・カテゴリーが書き添えてあれば（「カテゴリー　洋菓子製造販売　みほん たろう」）、名簿のカテゴリーが同じ方が1人だけで、
+//     その方のふりがなと食い違わない（名簿にふりがなが無い・書いてあるのがふりがなの頭（名字だけなど））ときは、その方
+//   名簿に無い新メンバー（「みほん はなこ」）を、名字だけ同じ方（カテゴリーも同じ方。家業を継いだ方など）にはしない
+function routineRosterKana_(text, keys, hint, one) {
+  var ks = routineKanaSplit_(String(text).replace(/【[^】]*】/g, '').replace(/[（(][^）)]*[）)]/g, ' '));
+  if (!ks) return '';
+  var all = routineKana_(ks.name), kk = keys.filter(function (k) { return k.kana; }), i, list, got;
+  for (i = 0; i < ks.words.length; i++) {
+    var w = routineKana_(ks.words.slice(i).join(''));
+    if (w.length < 2 || (i > 0 && ks.before)) break;                         // 前の語を外すのは、かなだけの書き方のときだけ
+    list = kk.filter(function (k) { return k.kana === w; });
+    if (list.length) { got = one(list); if (got) return got; break; }
+  }
+  list = kk.filter(function (k) { return k.ksur && k.ksur === all; });
+  if (list.length) { got = one(list); if (got) return got; }
+  var hc = routineFoldName_(String(hint || ks.before || '').replace(/[()（）【】「」]/g, ''));
+  if (!hc || all.length < 2) return '';
+  var byCat = keys.filter(function (k) {
+    var ti = k.title.replace(/[()（）【】「」]/g, '');
+    return ti && (ti === hc || (Math.min(ti.length, hc.length) >= 3 && (ti.indexOf(hc) >= 0 || hc.indexOf(ti) >= 0)));
+  });
+  if (byCat.length !== 1) return '';
+  var c = byCat[0];
+  if (c.kana && c.kana.indexOf(all) !== 0) return '';
+  ROUTINE_MATCH_BY_ = 'category';
+  return c.name;
+}
+
+// --- かなで書いたお名前 ---
+var ROUTINE_KANA_CH_ = 'ぁ-ゖゝゞァ-ヺヽヾー・･ｦ-ﾟ';
+var ROUTINE_KANA_TAIL_RE_ = new RegExp('(^|[\\s、,，:：/／])((?:[' + ROUTINE_KANA_CH_ + ']+\\s+)*[' + ROUTINE_KANA_CH_ + ']+)$');
+// かなだけか（空白は除いて見る）
+function routineKanaOnly_(s) {
+  var t = String(s == null ? '' : s).replace(/\s+/g, '');
+  return !!t && new RegExp('^[' + ROUTINE_KANA_CH_ + ']+$').test(t);
+}
+// くらべるための形（カタカナ・半角カナはひらがなに。空白・「・」は外す）
+function routineKana_(s) {
+  return String(s == null ? '' : s).normalize('NFKC').replace(/[\s・･]/g, '')
+    .replace(/[\u30A1-\u30F6]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0x60); });
+}
+// 終わりの、かなだけの語（「洋菓子製造販売　みほん たろう」→ { name: 'みほん たろう', words: ['みほん', 'たろう'], before: '洋菓子製造販売' }）。
+// 語の途中からのかな（「見本たろう」の「たろう」）は採らない。うしろの「さん」などは外す。かなの語が無ければ null
+function routineKanaSplit_(s) {
+  var t = String(s == null ? '' : s).replace(/\s+$/, '').replace(/(さん|さま|様|くん|ちゃん|氏|君)$/, '');
+  var m = t.match(ROUTINE_KANA_TAIL_RE_);
+  if (!m) return null;
+  return { name: m[2], words: m[2].split(/\s+/),
+           before: t.substring(0, m.index).replace(/[\s、,，:：\/／]+$/, '').replace(/^\s+/, '') };
+}
+// 「カテゴリー　洋菓子製造販売　みほん たろう」→ { text: 'みほん たろう', category: '洋菓子製造販売' }。「カテゴリー」が無ければ null。
+// カテゴリーの言葉は、うしろの空白まで（うしろのお名前がかなだけなら、空白をはさんでも、そのお名前の前まで）。
+// 「、」などの区切りから先は、そのまま text に残す
+function routineCatLabel_(s) {
+  s = String(s == null ? '' : s);
+  var m = s.match(/カテゴリー\s*[：:]?\s*/);
+  if (!m) return null;
+  var pre = s.substring(0, m.index), rest = s.substring(m.index + m[0].length), tail = '';
+  var cut = rest.search(/[、,，。；;／\/]/);
+  if (cut >= 0) { tail = rest.substring(cut); rest = rest.substring(0, cut); }
+  var ks = routineKanaSplit_(rest), cat, name;
+  if (ks && ks.before) { cat = ks.before; name = ks.name; }
+  else { cat = (rest.match(/^\S*/) || [''])[0]; name = rest.substring(cat.length); }
+  return { text: (pre + ' ' + name + tail).replace(/^\s+|\s+$/g, ''), category: cat };
+}
+// 「見本・試験」のような「・」は、お名前の区切り。かなだけのお名前の中の「・」（「ジョン・スミス」）は区切らない
+// （どれも名簿の方に当たるとき（「みほん・ためし」）だけ区切る）
+function routineDotSplit_(p, roster) {
+  var parts = String(p).split(/[・･]+/).map(function (x) { return x.trim(); }).filter(Boolean);
+  if (parts.length < 2 || !parts.every(routineKanaOnly_)) return parts;
+  return parts.every(function (x) { return routineRosterName_(x, roster, ''); }) ? parts : [String(p).trim()];
+}
+// 欄に何か書いてあるのに、お名前を1人も読み取れなかったか（画面で「いません」とだけ出して、黙ってページを非表示にしないため）。
+// 「該当者なし」「いません」などは、いないものとして扱う
+function routineUnread_(v, list) {
+  if (list && list.length) return false;
+  var s = String(v == null ? '' : v).replace(/[\s　]/g, '');
+  return !!s && !routineIsBlank_(s) && !/該当|いません|いない|おりません|ありません|予定なし|なし$|無し$/.test(s);
+}
+
+// 名簿（氏名・カテゴリー・ふりがな）。1回の実行の中で使い回す
 var ROUTINE_ROSTER_ = null;
 function routineRoster_() {
   if (ROUTINE_ROSTER_) return ROUTINE_ROSTER_;
   var list = [];
-  try { list = (getMemberMaster({ membersOnly: true }).members || []).map(function (m) { return { name: m.name, title: m.title || '' }; }); } catch (e) {}
+  try {
+    list = (getMemberMaster({ membersOnly: true }).members || []).map(function (m) {
+      return { name: m.name, title: m.title || '', kana: m.kana || '' };
+    });
+  } catch (e) {}
   if (!list.length) {
     try { list = getMembersList({ withoutNo: true }).map(function (m) { return { name: m.name, title: '' }; }); } catch (e) {}
   }
@@ -506,6 +604,7 @@ function routineNameLike_(t) {
 //   小西さん（伊豆澤さんは10/7）                      … 括弧の中のお名前は数えない
 //   青木周一さん（…） ⏎ 遠藤さんのあと、31番に入ります … 「○○さんのあと」のような文の中のお名前も数えない
 //   深井 宗二郎（ふかた そういちろう）（法人コスト削減） … どこにも「さん」が無ければ、括弧の外をお名前とみなす
+//   カテゴリー　洋菓子製造販売　みほん たろう          … 「カテゴリー」のうしろはカテゴリー。かなのお名前は名簿のふりがなと比べる
 // category は、名簿に無い方（まだ名簿に入っていない新メンバー）のときに使う
 function routineMemberList_(v) {
   var s = String(v == null ? '' : v);
@@ -514,11 +613,23 @@ function routineMemberList_(v) {
   var add = function (rawName, shown, years, category) {
     var nm = String(rawName).replace(/【[^】]*】/g, '').replace(/^[\s　、,，・･と]+|[\s　、,，・･]+$/g, '');
     if (!nm || routineIsBlank_(nm.replace(/[\s　]/g, ''))) return;
-    var full = routineRosterName_(nm, roster, category), key = full || routineFoldName_(nm);
+    var full = routineRosterName_(nm, roster, category), byCat = ROUTINE_MATCH_BY_ === 'category';
+    if (!full) {
+      // 名簿に無い方で、前にカテゴリーの付いたかなのお名前（「洋菓子製造販売　みほん たろうさん」）は、お名前とカテゴリーに分ける。
+      // 「見本 たろう」（漢字の名字とかなのお名前）は分けない（かなが2語以上か、前の言葉が4字以上のときだけ）
+      var ks = routineKanaSplit_(nm);
+      if (ks && ks.before && (ks.words.length >= 2 || Array.from(ks.before.replace(/\s+/g, '')).length >= 4)) {
+        if (!category) category = ks.before;
+        var at = String(shown).lastIndexOf(ks.name);
+        shown = at >= 0 ? String(shown).substring(at) : ks.name;
+        nm = ks.name;
+      }
+    }
+    var key = full || routineFoldName_(nm);
     if (!full && !routineNameLike_(nm.replace(/^.*[\s　]/, ''))) return;
     if (seen[key]) return;
     seen[key] = true;
-    out.push({ raw: shown, name: full, matched: !!full, years: years || 0, category: full ? '' : (category || '') });
+    out.push({ raw: shown, name: full, matched: !!full, years: years || 0, category: full ? '' : (category || ''), byCategory: byCat });
   };
   var lines = s.split(/[\r\n]+/).map(function (l) { return l.replace(/[※＊].*$/, '').trim(); });
   var honor = /(さん|様|さま|氏)/;
@@ -534,6 +645,8 @@ function routineMemberList_(v) {
           var chunk = text.substring(cut, m.index), lead = cut === 0;
           cut = m.index + m[0].length;
           if (/^[のはがをにへもで]/.test(after)) continue;                 // 「遠藤さんのあと」
+          var lb = routineCatLabel_(chunk);                                   // 「カテゴリー　洋菓子製造販売　みほん たろうさん」
+          if (lb) chunk = lb.text;
           chunk = chunk.replace(/^.*[、,，。；;：:／\/]/, '');                 // 区切りより前（「法人コスト削減：」など）
           var reading = '';
           if (!chunk.trim() && lead && i >= 2 && segs[i - 1].paren && !segs[i - 2].paren) {
@@ -544,26 +657,42 @@ function routineMemberList_(v) {
           var ym = (next && next.paren ? next.text : after).match(/^[\s　]*([0-9０-９])\s*年/);
           var years = ym ? parseInt(String(ym[1]).normalize('NFKC'), 10) : 0;
           var prev = lead && !reading && i > 0 && segs[i - 1].paren ? segs[i - 1].text : '';
-          var cat = routineCategoryIn_(next && next.paren ? next.text : '') || routineCategoryIn_(prev);
+          var cat = routineCategoryIn_(next && next.paren ? next.text : '') || routineCategoryIn_(prev) || (lb ? lb.category : '');
           add(chunk, chunk.trim() + (reading ? '（' + reading + '）' : '') + m[0], years, cat);
         }
       }
     });
     return out;
   }
-  // どこにも「さん」が無い書き方：括弧の外の文字を「、」で区切って、それぞれお名前とみなす
-  lines.forEach(function (line) {
+  // どこにも「さん」が無い書き方：括弧の外の文字を「、」で区切って、それぞれお名前とみなす。
+  // 「カテゴリー」と書いてあれば、そのうしろの言葉はカテゴリー（以前は「カテゴリー」から行の終わりまでを捨てていたので、
+  // 「カテゴリー　洋菓子製造販売　みほん たろう」のお名前が消え、誰もいないことになっていた）。
+  // カテゴリーだけの行（「カテゴリー：洋菓子製造販売」）は、すぐ前の行（無ければすぐあとの行）のお名前のカテゴリーにする
+  var items = [], catOnly = [];
+  lines.forEach(function (line, li) {
     if (!line || routineIsBlank_(line.replace(/[\s　]/g, ''))) return;
     var segs = routineParenSegs_(line), cat = '';
-    var catM = line.match(/カテゴリー\s*[：:]?\s*([^\s　、,，（(]+(?:[（(][^）)]*[）)])?)/);
-    if (catM) cat = catM[1];
+    var catM = line.match(/カテゴリー\s*[：:]?\s*([^\s　、,，（(]+(?:[（(][^）)]*[）)])?)/);   // 括弧つきのカテゴリー（「飲食店（ホルモン焼肉）」）
     segs.forEach(function (x) { if (x.paren && !cat) cat = routineCategoryIn_(x.text); });
-    var plain = segs.filter(function (x) { return !x.paren; }).map(function (x) { return x.text; }).join('').replace(/カテゴリー.*$/, '');
-    plain.split(/[、,，・･／\/]+/).forEach(function (p) {
-      var t = p.replace(/^.*[：:]/, '').trim();
-      if (t) add(t, t, 0, cat);
+    var plain = segs.filter(function (x) { return !x.paren; }).map(function (x) { return x.text; }).join('');
+    plain.split(/[、,，／\/]+/).forEach(function (p) {
+      var c = cat, lb = routineCatLabel_(p);
+      if (lb) {
+        p = lb.text;
+        if (lb.category) c = catM && catM[1].indexOf(lb.category) === 0 ? catM[1] : lb.category;
+      }
+      p = p.replace(/^.*[：:]/, '').trim();
+      if (!p) { if (lb && c) catOnly.push({ li: li, cat: c }); return; }
+      routineDotSplit_(p, roster).forEach(function (q) { items.push({ text: q, cat: c, li: li }); });
     });
   });
+  catOnly.forEach(function (c) {
+    var before = items.filter(function (x) { return x.li < c.li; }), later = items.filter(function (x) { return x.li > c.li; });
+    var near = before.length ? before.filter(function (x) { return x.li === before[before.length - 1].li && !x.cat; }) : [];
+    if (!near.length && later.length) near = later.filter(function (x) { return x.li === later[0].li && !x.cat; });
+    near.forEach(function (x) { x.cat = c.cat; });
+  });
+  items.forEach(function (x) { add(x.text, x.text, 0, x.cat); });
   return out;
 }
 
@@ -845,8 +974,10 @@ function routineFirstHalf_(t, pick) {
       it.winners.forEach(function (w) { if (w.self && !w.matched && vice) { w.name = vice; w.matched = true; } });
     });
   }
-  return { newMembers: routineMemberList_(nw.value), newMembersRaw: routineText_(nw.value),
-           renewMembers: routineMemberList_(rn.value), renewMembersRaw: routineText_(rn.value),
+  var nwList = routineMemberList_(nw.value), rnList = routineMemberList_(rn.value);
+  // newMembersUnread … 欄に書いてあるのに、お名前を読み取れなかった（画面で「いません」とだけ出さず、知らせる）
+  return { newMembers: nwList, newMembersRaw: routineText_(nw.value), newMembersUnread: routineUnread_(nw.value, nwList),
+           renewMembers: rnList, renewMembersRaw: routineText_(rn.value), renewMembersUnread: routineUnread_(rn.value, rnList),
            vpReport: vpRep, vpReportFrom: vpFrom,
            networkingLeaders: nlRep, networkingLeadersRaw: routineText_(nl.value),
            firstOfMonth: routineFirstOfMonth_(t) };

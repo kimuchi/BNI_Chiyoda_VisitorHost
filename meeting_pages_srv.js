@@ -228,9 +228,11 @@ function fpMemberUnit_(xml, W, H) {
   })[0] || null : null;
   return unit;
 }
-// lists … { newMembers: [{ name, raw, category }], renewMembers: [{ name, raw, category, years }] }
+// lists … { newMembers: [{ name, raw, category }], renewMembers: [{ name, raw, category, years }],
+//           unread: { new, renew }（ルーティンチェックシートに書いてあったのに、お名前を読み取れなかった記載。お知らせに出す） }
 function applyMemberPages_(parts, lists, cache) {
-  var res = { new: [], renew: [], hidden: [], noPhoto: [], unmatched: [], missing: [], pages: [], ethics: [] };
+  var res = { new: [], renew: [], hidden: [], noPhoto: [], unmatched: [], missing: [], pages: [], ethics: [],
+              unread: (lists && lists.unread) || {} };
   var sz = fpSize_(parts), by = fpRoster_(), pages = { new: [], renew: [], both: [] };
   slideOrder_(parts).forEach(function (path) {
     var xml = xmlOf_(parts, path), k = xml ? fpMemberKind_(xml) : '';
@@ -426,6 +428,8 @@ function fpMemberMessage_(res, people) {
   [['new', '新メンバー'], ['renew', '更新メンバー']].forEach(function (k) {
     if (res[k[0]].length) msg.push(k[1] + 'のページ：' + nm(res[k[0]]));
     else if (res.missing.indexOf(k[0]) >= 0) msg.push(k[1] + '（' + nm(people[k[0]]) + '）のページがテンプレートにありません');
+    else if (res.unread[k[0]]) msg.push(k[1] + '：ルーティンチェックシートの「' + res.unread[k[0]] + '」からお名前を読み取れなかったので、'
+      + 'そのページは非表示にしました（入れるときは、画面の「＋ 追加」で選んで作り直してください）');
     else msg.push(k[1] + 'はいないので、そのページは非表示にしました');
   });
   var out = msg.join('。') + '。';
@@ -439,7 +443,7 @@ function fpMemberMessage_(res, people) {
       + 'の最後の枠に、残りの方をまとめて入れました（枠を増やすときはテンプレートを直してください）。';
   }
   if ((res.noSlot || []).length) out += '\n「新規および更新メンバー」のページに氏名の枠が見つからず、入れられなかった方: ' + res.noSlot.join('、');
-  if (res.unmatched.length) out += '\n名簿に無い方（会社名・カテゴリーは空です）: ' + res.unmatched.join('、');
+  if (res.unmatched.length) out += '\n名簿に無い方（書いてあったお名前・カテゴリーで作りました。会社名・写真は空です）: ' + res.unmatched.join('、');
   if (res.noPhoto.length) out += '\n新メンバー・更新メンバーで写真が見つからない方（写真なし）: ' + res.noPhoto.join('、');
   return out;
 }
