@@ -34,7 +34,7 @@ run "CSVから名簿・PDF作成の画面（ブラウザ：過ぎた回の再編
 run "メールの確認・一括送信の画面（ブラウザ：リンク・キャンセル・記号・二重に送らない・代理送信が動かないとき・返事を受け取れないとき・Web App のテスト）" node tools/check_email_dialog.js
 run "ビジター情報の投稿文" node tools/check_visitor_post.js
 run "割り振り表のAI（待機リストに居ないビジターホスト・知らない番号・確度とメモ・入会確度（☆）の順番）" node tools/check_allocation_ai.js
-run "割り振り表の画面（ブラウザ：読み込んだ回に書き込む・Spreadingの文字を動かさない・入会確度（☆）を選ぶ・読み込み直すと戻る）" node tools/check_allocation_dialog.js
+run "割り振り表の画面（ブラウザ：読み込んだ回に書き込む・Spreadingの文字を動かさない・入会確度（☆）を選ぶ・読み込み直すと戻る・CSVの確度から☆）" node tools/check_allocation_dialog.js
 run "期の替わり目の担当者と名簿の役職（未登録の期で役職を消さない・取り込みを前の期に戻さない・設定の保存で期をずらさない）" node tools/check_role_terms.js
 run "スピーカーローテーション（保存していないとき：見た日で発表者が変わらない）" node tools/check_rotation_unsaved.js
 run "メインプレゼンターの画像（ブラウザ：写真・お名前・ご紹介して欲しいカテゴリー・回を替える・保存・書体は Meiryo UI）" node tools/check_mp_image.js

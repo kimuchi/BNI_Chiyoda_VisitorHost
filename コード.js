@@ -2,7 +2,7 @@
 
 // 反映されたか確かめるための版。変更したら日付を更新する。
 // clasp push / デプロイが効いているかは、これを画面で見れば分かる。
-var SYSTEM_VERSION_ = '2026-10-13d';
+var SYSTEM_VERSION_ = '2026-10-13e';
 
 function getSystemVersion() { return SYSTEM_VERSION_; }
 
@@ -492,6 +492,16 @@ function allocStarsOf_(v) {
   return n >= 1 && n <= 3 ? n : 0;
 }
 function allocStarsText_(v) { var n = allocStarsOf_(v); return n ? new Array(n + 1).join('☆') : ''; }
+// 割り振り表の入会確度の「－」… CSVに確度がある方を、画面で「－」（決めない）にしたしるし（読み込み直しても、CSVの☆に戻さない）
+var ALLOC_STAR_NONE_ = '－';
+function allocStarsNone_(v) { return /^[－\-‐ー―]$/.test(String(v == null ? '' : v).trim()); }
+// CSV（参加者シート）の確度（入会見込み・メンバーになる確度）→ ☆の数。1〜3 のときだけ（「２」「3（高い）」も）。ほかは 0
+function allocStarsOfCsv_(v) {
+  var n = allocStarsOf_(v);
+  if (n) return n;
+  var m = String(v == null ? '' : v).replace(/[０-９]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); }).trim().match(/^([1-3])(?![\d.])/);
+  return m ? parseInt(m[1], 10) : 0;
+}
 
 function analyzeCsvData(csvText) {
   var data = Utilities.parseCsv(csvText);
@@ -1905,7 +1915,7 @@ function getAllocationData(meetingDateVal) {
      if(!inviters[normalizeSpace(membersList[i].name)]) pool.push(membersList[i]);
   }
 
-  var facilAlloc = {}, orienAlloc = {}, roomAlloc = {}, connectReq = {}, mergedWith = {}, stars = {};
+  var facilAlloc = {}, orienAlloc = {}, roomAlloc = {}, connectReq = {}, mergedWith = {}, stars = {}, starNone = {}, starsFromCsv = {};
   var allocSheet = ss.getSheetByName(allocSheetName);
   
   if(allocSheet) {
@@ -1957,6 +1967,7 @@ function getAllocationData(meetingDateVal) {
              var vNo = String(matchedVisitor.no);
              connectReq[vNo] = connIdx !== -1 ? row[connIdx] : "";
              if (starIdx !== -1 && allocStarsOf_(row[starIdx])) stars[vNo] = allocStarsOf_(row[starIdx]);
+             else if (starIdx !== -1 && allocStarsNone_(row[starIdx])) starNone[vNo] = true;
              var fName = facilIdx !== -1 ? row[facilIdx] : ""; 
              
              if (fName && String(fName).indexOf("【合同】") === 0) {
@@ -2000,7 +2011,12 @@ function getAllocationData(meetingDateVal) {
          }
      }
   }
-  return { visitors: visitors, pool: pool, facilAlloc: facilAlloc, orienAlloc: orienAlloc, roomAlloc: roomAlloc, connectReq: connectReq, hosts: getVisitorHosts(), mergedWith: mergedWith, priorities: getMemberPriorities(), stars: stars };
+  // 入会確度をまだ決めていない方（割り振り表に☆が無い・「－」でもない）は、CSVの確度が 1〜3 なら、その数の☆にしておく
+  visitors.forEach(function (v) {
+    var no = String(v.no), n = allocStarsOfCsv_(visitorDetail_(v.details, 'kakudo'));
+    if (n && !stars[no] && !starNone[no]) { stars[no] = n; starsFromCsv[no] = true; }
+  });
+  return { visitors: visitors, pool: pool, facilAlloc: facilAlloc, orienAlloc: orienAlloc, roomAlloc: roomAlloc, connectReq: connectReq, hosts: getVisitorHosts(), mergedWith: mergedWith, priorities: getMemberPriorities(), stars: stars, starsFromCsv: starsFromCsv };
 }
 
 // 割り振り表のシートの列の数（No.・お名前・カテゴリー・入会確度・招待者・つなげたいメンバー・ファシリテーター・ルームメンバー・オリエンテーション）
@@ -2070,7 +2086,9 @@ function saveAllocationSheet(meetingDateVal, displayVal, visitors, pool, facilAl
     borRows.push({ room: v.no + v.name + "(" + v.cat + ")様ルーム",
                    inviter: v.inviter || "", facil: fName,
                    members: rNames.join("\n"), orien: oNames.join("\n") });
-    outputData.push([ v.no, v.name, v.cat, allocStarsText_(stars[v.no]), v.inviter, connectReq[v.no] || "", fName, rNames.join("\n"), oNames.join("\n") ]);
+    // CSVに確度（1〜3）がある方を「－」にしたときは「－」と書く（読み込み直しても、CSVの☆に戻さない）
+    var starCell = allocStarsText_(stars[v.no]) || (allocStarsOfCsv_(visitorDetail_(v.details, 'kakudo')) ? ALLOC_STAR_NONE_ : "");
+    outputData.push([ v.no, v.name, v.cat, starCell, v.inviter, connectReq[v.no] || "", fName, rNames.join("\n"), oNames.join("\n") ]);
   }
   var lastDataRow = outputData.length;
   

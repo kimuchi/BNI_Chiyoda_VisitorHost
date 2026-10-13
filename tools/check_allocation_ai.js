@@ -195,6 +195,9 @@ const ANSWER = J({ allocations: [{ visitorNo: 'V01', room: ['03', '04'] }, { vis
   ck(res.facilAlloc.V01 === '01' && res.facilAlloc.V02 === '02', '☆を決めていないときの順番（参加者シートの確度）: ' + J(res.facilAlloc));
   ck(J([3, '2', '☆☆☆', '★☆☆', '３', '', 0, 4, 'x'].map(box.allocStarsOf_)) === J([3, 2, 3, 1, 3, 0, 0, 0, 0])
      && box.allocStarsText_(2) === '☆☆' && box.allocStarsText_('') === '', '☆の読み方・書き方');
+  // CSVの確度（入会見込み）→ ☆：1〜3 のときだけ（全角・「3（高い）」・「2.0」も）。5・10・0.5・文字は付けない
+  ck(J(['1', '２', '3（高い）', '2.0', 3, '5', '10', '0.5', '高い', '', null].map(box.allocStarsOfCsv_)) === J([1, 2, 3, 2, 3, 0, 0, 0, 0, 0, 0])
+     && ['－', '-', 'ー'].every(box.allocStarsNone_) && !box.allocStarsNone_('') && !box.allocStarsNone_('☆'), 'CSVの確度の読み方・「－」のしるし');
 }
 
 // ---------- 名簿に居ない方（古い「メンバーリスト」シートだけの方）は番号と氏名だけ ----------
