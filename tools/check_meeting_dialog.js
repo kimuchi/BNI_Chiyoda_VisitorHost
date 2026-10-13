@@ -290,15 +290,30 @@ const shown = (el) => !!el && el.style.display !== 'none' && el.style.display !=
   {
     step('前半：同じ名字の方の記載を出す', () => run('nmFromRoutine(' + J({
       newMembers: [{ raw: '見本さん', name: NM(20), matched: true, years: 0, category: '', byDate: true },
-                   { raw: '試験さん', name: '', matched: false, years: 0, category: '', candidates: [NM(1), NM(21)] }],
-      newMembersRaw: '見本さん、試験さん', renewMembers: [], renewMembersRaw: '' }) + ')'));
+                   { raw: '試験さん', name: '', matched: false, years: 0, category: '', candidates: [NM(1), NM(21)], oldNamesakes: [NM(3)] },
+                   { raw: '架空さん', name: '', matched: false, years: 0, category: '見本業', candidates: [], oldNamesakes: [NM(4)] }],
+      newMembersRaw: '見本さん、試験さん、架空さん', renewMembers: [], renewMembersRaw: '' }) + ')'));
+    const rows = () => els.nm_new.innerHTML.split('<div class="mkrow">');
     ck(/記載「見本さん」：同じ名字の方が名簿にいるので、入会日から（新しく入会した方）この方にしました/.test(els.nm_new.innerHTML),
        '入会日で決めたことが出ない: ' + els.nm_new.innerHTML.slice(0, 300));
     ck(new RegExp('同じ名字の方が名簿に2人います（' + NM(1) + '・' + NM(21) + '）。どなたか選んでください').test(els.nm_new.innerHTML)
-       && /「試験さん」（どなたか決まっていません）/.test(els.nm_new.innerHTML) && !/名簿に無い方：このお名前/.test(els.nm_new.innerHTML),
+       && /<option value="" disabled selected>「試験さん」（どなたか決まっていません）/.test(rows()[2])
+       && new RegExp('<option value="' + NM(21) + '">' + NM(21) + '（同じ名字の方）').test(rows()[2])
+       && /<option value="\?">✏️ 名簿に無い方として作る/.test(rows()[2]) && !/名簿に無い方：このお名前/.test(rows()[2]),
        '同じ名字で決められないときの案内: ' + els.nm_new.innerHTML.slice(0, 400));
+    // 前からのメンバー（新入会に上がらない）は候補から外し、そう知らせる。同じ名字の方が前からのメンバーだけなら、名簿に無い方として作る
+    ck(new RegExp('名簿の同じ名字の方（' + NM(3) + '）は前からのメンバーなので、候補から外しました').test(rows()[2]),
+       '候補から外した前からのメンバーの案内: ' + rows()[2]);
+    ck(new RegExp('名簿の同じ名字の方（' + NM(4) + '）は前からのメンバーなので、新しく入会した方ではないものとしました').test(rows()[3])
+       && /名簿に無い方：このお名前・カテゴリーで作ります/.test(rows()[3]) && /value="架空"/.test(rows()[3]) && /value="見本業"/.test(rows()[3]),
+       '同じ名字の前からのメンバーだけのときの案内・入力欄: ' + rows()[3]);
+    step('候補のある方を「名簿に無い方」にする', () => run("nmSet('new',1,'?')"));
+    ck(/placeholder="お名前"/.test(rows()[2]) && !/どなたか選んでください/.test(rows()[2]) && /名簿に無い方：このお名前/.test(rows()[2]),
+       '候補のある方を名簿に無い方にできない: ' + rows()[2]);
     step('候補から選ぶ', () => run("nmSet('new',1,'" + NM(21) + "')"));
-    ck(!/どなたか選んでください/.test(els.nm_new.innerHTML), '選んだのに候補の案内が残る');
+    ck(!/どなたか選んでください/.test(els.nm_new.innerHTML) && !/候補から外しました/.test(els.nm_new.innerHTML), '選んだのに候補の案内が残る');
+    step('日付で決めた方を選び直す', () => run("nmSet('new',0,'" + NM(5) + "')"));
+    ck(!/入会日から（新しく入会した方）この方にしました/.test(els.nm_new.innerHTML), '選び直したのに「入会日からこの方にしました」が残る');
   }
 
   // ルーティンチェックシートにその日の列が無い開催日に選び直すと、前の日のメインプレゼン・コアバリュー・一般規定・カテゴリーを残さない

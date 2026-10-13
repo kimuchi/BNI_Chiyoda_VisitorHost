@@ -413,8 +413,9 @@
  var nmList={'new':[],renew:[]}, nmUnread={'new':'',renew:''};
  function nmFromRoutine(F){
    // byDate … 同じ名字の方が名簿に2人以上いて、入会日（更新は更新日など）で決めた。cands … 決められなかったときの候補
+   // old … 新入会の欄で外した、同じ名字の前からのメンバー（新入会に上がらない）
    nmList['new']=(F.newMembers||[]).map(function(x){ return {name:x.name||'', raw:x.raw||'', category:x.category||'', byCat:!!x.byCategory,
-     byDate:!!x.byDate, cands:x.candidates||[]}; });
+     byDate:!!x.byDate, cands:x.candidates||[], old:x.oldNamesakes||[]}; });
    nmList.renew=(F.renewMembers||[]).map(function(x){
      return {name:x.name||'', raw:x.raw||'', category:x.category||'', byCat:!!x.byCategory, byDate:!!x.byDate, cands:x.candidates||[],
              years:x.years||1, noYears:!x.years}; });
@@ -428,9 +429,13 @@
  }
  function nmNoHonor(s){ return String(s||'').replace(/(さん|様|さま|氏)$/,'').trim(); }
  function nmOptions(x){
-   var h='<option value="">（なし）</option>';
-   h+='<option value="?"'+(!x.name&&(x.raw||x.manual)?' selected':'')+'>'
-     +(x.raw?'「'+esc(x.raw)+'」'+((x.cands||[]).length?'（どなたか決まっていません）':'（名簿にありません）'):'✏️ 名簿に無い方（お名前を入れる）')+'</option>';
+   var h='<option value="">（なし）</option>', cands=!x.name?(x.cands||[]):[];
+   // 同じ名字の方が決まっていないとき：候補を先に出し、「名簿に無い方として作る」も選べるようにする（同じ項目を選び直しても変わらないため）
+   if(cands.length) h+='<option value="" disabled selected>「'+esc(x.raw)+'」（どなたか決まっていません）</option>'
+     +cands.map(function(n){ return '<option value="'+esc(n)+'">'+esc(n)+'（同じ名字の方）</option>'; }).join('')
+     +'<option value="?">✏️ 名簿に無い方として作る（お名前を入れる）</option>';
+   else h+='<option value="?"'+(!x.name&&(x.raw||x.manual)?' selected':'')+'>'
+     +(x.raw?'「'+esc(x.raw)+'」（名簿にありません）':'✏️ 名簿に無い方（お名前を入れる）')+'</option>';
    ((ctx&&ctx.members)||[]).forEach(function(m){
      h+='<option value="'+esc(m.name)+'"'+(m.name===x.name?' selected':'')+'>'+esc(m.name)+'</option>'; });
    return h;
@@ -439,7 +444,8 @@
    ['new','renew'].forEach(function(k){
      var label=k==='new'?'新メンバー':'更新メンバー';
      document.getElementById('nm_'+k).innerHTML = nmList[k].length ? nmList[k].map(function(x,i){
-       var who=x.name?memberOf(x.name):null, cands=!x.name?(x.cands||[]):[], own=!x.name&&(x.raw||x.manual)&&!cands.length;
+       var who=x.name?memberOf(x.name):null, cands=!x.name?(x.cands||[]):[], old=!x.name?(x.old||[]):[];
+       var own=!x.name&&(x.manual||(x.raw&&!cands.length));
        return '<div class="mkrow"><select onchange="nmSet(\''+k+'\','+i+',this.value)">'+nmOptions(x)+'</select>'
          +(own ? ' <input type="text" placeholder="お名前" style="width:9em;" value="'+esc(nmNoHonor(x.raw))+'" onchange="nmText(\''+k+'\','+i+',\'raw\',this.value)">'
              +' <input type="text" placeholder="カテゴリー" style="width:11em;" value="'+esc(x.category||'')+'" onchange="nmText(\''+k+'\','+i+',\'category\',this.value)">' : '')
@@ -452,6 +458,8 @@
              +(k==='new'?'入会日から（新しく入会した方）':'更新日・入会日から')+'この方にしました。違うときは選び直してください</span>' : '')
          +(cands.length ? '<span class="dt" style="color:#c60;">同じ名字の方が名簿に'+cands.length+'人います（'+esc(cands.join('・'))
              +'）。どなたか選んでください（選ばないと「'+esc(nmNoHonor(x.raw))+'」のままで作ります）</span>' : '')
+         +(old.length ? '<span class="dt" style="color:#c60;">名簿の同じ名字の方（'+esc(old.join('・'))+'）は前からのメンバーなので、'
+             +(cands.length?'候補から外しました':'新しく入会した方ではないものとしました（違うときは選び直してください）')+'</span>' : '')
          +(who && !who.hasPhoto ? '<span class="dt" style="color:#c60;">写真なし</span>' : '')
          +' <button class="mkbtn" onclick="nmDel(\''+k+'\','+i+')">×</button></div>';
      }).join('') : (nmUnread[k]
@@ -463,8 +471,9 @@
  }
  function nmSet(k,i,v){
    var x=nmList[k][i];
-   if(v==='?'){ x.name=''; x.manual=true; }
-   else { x.name=v; x.byCat=false; if(!v){ x.raw=''; x.manual=false; } }
+   x.byDate=false;
+   if(v==='?'){ x.name=''; x.manual=true; x.cands=[]; }
+   else { x.name=v; x.byCat=false; x.cands=[]; x.old=[]; if(!v){ x.raw=''; x.manual=false; } }
    renderNM();
  }
  function nmText(k,i,f,v){ nmList[k][i][f]=String(v||'').trim(); renderNM(); }

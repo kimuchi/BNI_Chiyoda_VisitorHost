@@ -89,7 +89,8 @@ function welcomeMembers_(raw, date) {
                company: m && m.company ? CB_.normalize(m.company) : '',
                category: m ? String(m.title || '').trim() : String(x.category || '').trim(),
                kana: m ? String(m.kana || '').trim() : '', byCategory: !!(x.name && x.byCategory),
-               byDate: !!(x.name && x.byDate), candidates: x.name ? [] : (x.candidates || []) });
+               byDate: !!(x.name && x.byDate), candidates: x.name ? [] : (x.candidates || []),
+               oldNamesakes: x.name ? [] : (x.oldNamesakes || []) });
   }
   return out;
 }

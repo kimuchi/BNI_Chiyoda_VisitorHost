@@ -978,7 +978,7 @@ function getPreMeetingPreview(dateStr) {
     // 熱烈歓迎のページ（新入会の方ごと）と、そのひな形
     var welcome = data.newMembers.map(function (m) {
       return { name: m.name, raw: m.raw, company: m.company, category: m.category, matched: m.matched, byCategory: !!m.byCategory,
-               byDate: !!m.byDate, candidates: m.candidates || [],
+               byDate: !!m.byDate, candidates: m.candidates || [], oldNamesakes: m.oldNamesakes || [],
                photo: !!findPhotoIdForName_(m.name) };
     });
     var wtpl = data.newMembers.length ? welcomeTemplateInfo_() : null, wchk = null;
@@ -1038,6 +1038,10 @@ function generatePreMeetingSlides(dateStr) {
     if (amb.length) msg += '\n熱烈歓迎のページ: ' + amb.map(function (m) { return '「' + m.raw + '」（' + m.candidates.join('・') + '）'; }).join('、')
       + ' は、同じ名字の方が名簿に2人以上いて決められなかったので、書いてあったお名前のまま作りました。'
       + '「新入会」の欄をフルネームで書くか、名簿の入会日を確かめて作り直してください。';
+    var oldS = data.newMembers.filter(function (m) { return !(m.candidates || []).length && (m.oldNamesakes || []).length; });
+    if (oldS.length) msg += '\n熱烈歓迎のページ: ' + oldS.map(function (m) { return '「' + m.raw + '」（' + m.oldNamesakes.join('・') + '）'; }).join('、')
+      + ' は、名簿の同じ名字の方が前からのメンバー（新入会に上がらない方）なので、名簿にまだ無い方として、書いてあったお名前で作りました。'
+      + '名簿に新しい方を入れてから作り直すと、会社名・写真も入ります。';
     var byCat = data.newMembers.filter(function (m) { return m.byCategory; });
     if (byCat.length) msg += '\n熱烈歓迎のページ: ' + byCat.map(function (m) { return '「' + m.raw + '」→ ' + m.name + 'さん'; }).join('、')
       + ' は、カテゴリーで名簿の方に合わせました。違うときは、「新入会」の欄のお名前を漢字で書くか、名簿のふりがなを確かめて作り直してください。';

@@ -614,35 +614,69 @@ function routineNameLike_(t) {
 }
 
 // 名字だけ（「見本さん」）の書き方で、名簿に同じ名字の方が2人以上いるとき、新入会・更新式の欄なら名簿の日付で決める。
-//   names … 候補の方の氏名。opts … { kind: 'new'|'renew', date: 開催日（Date か 'yyyy/MM/dd'）}。決まらなければ空
-//   新入会：入会日が開催日の120日より前の方（前からのメンバー）は、新入会の欄に上がらないので外す。
-//           残りのうち、入会日の入っている（最近入会した）方が1人ならその方。いなければ、入会日がまだ空の方が1人ならその方
-//           （名簿に入れたばかりの新メンバーは、入会日がまだ入っていないことが多い）
-//   更新式：更新期限日（開催日の90日前〜120日後）・更新日（120日前〜90日後）が開催日に近い方が1人ならその方。
-//           いなければ、入会から300日以上たっている方（入会日の入っている方）が1人ならその方（新しいメンバーは更新しない）
-var ROUTINE_NEW_DAYS_ = 120;
+//   names … 候補の方の氏名。opts … { kind: 'new'|'renew', date: 開催日（Date か 'yyyy/MM/dd'）}
+//   → { name（決まった方。決まらなければ空）, cands（決まらなかったときに画面に出す候補）, old（外した前からのメンバー）}
+//   新入会：入会日が開催日の45日より前の方（前からのメンバー）は、新入会に上がらないので外す。
+//           残りのうち、入会日がまだ空の方（名簿に入れたばかりの新メンバー）が1人ならその方、
+//           空の方がいなくて、最近入会した方が1人ならその方（読めない入会日の方がいるときは決めない）。候補も、外した方を除いた方だけ
+//   更新式：更新期限日が開催日の前後60日・更新日が前後45日・更新期限日が1年ほど先（更新したばかり）の方が1人ならその方。
+//           いなければ、入会から300日以上たっている方が1人ならその方（新しいメンバーは更新しない）
+var ROUTINE_NEW_DAYS_ = 45;
+// 名簿の日付 → 開催日から何日か（前ならマイナス）。空なら null、書いてあるのに読めなければ NaN。
+// 数だけのセル（「45021」のような表計算の通し番号）は日付に直す。1990〜2100年でない年は読めないものとする
+function routineDateDays_(v, d) {
+  var s = String(v == null ? '' : v).trim(), x = null;
+  if (!s) return null;
+  if (Object.prototype.toString.call(v) === '[object Date]') x = parseDate_(v);
+  else if (/^\d{5}(\.\d+)?$/.test(s)) {
+    var n = parseFloat(s);
+    if (n > 20000 && n < 80000) { x = new Date(1899, 11, 30); x.setDate(x.getDate() + Math.floor(n)); }
+  } else x = parseDate_(s);
+  if (!x || isNaN(x.getTime()) || x.getFullYear() < 1990 || x.getFullYear() > 2100) return NaN;
+  return Math.round((x.getTime() - d.getTime()) / 86400000);
+}
+function routineRosterOf_(roster, name) {
+  for (var i = 0; i < (roster || []).length; i++) if (normName_(roster[i].name) === normName_(name)) return roster[i];
+  return { name: name };
+}
+// 新入会の欄に上がらない、前からのメンバーか（入会日が開催日の45日より前。空・読めない入会日は違う）
+function routineOldMember_(m, d) {
+  var k = routineDateDays_(m.joinDate, d);
+  return k !== null && k < -ROUTINE_NEW_DAYS_;
+}
 function routinePickByDate_(names, roster, opts) {
   var d = opts && opts.date ? parseDate_(opts.date) : null;
-  if (!d) return '';
-  var by = {};
-  (roster || []).forEach(function (m) { by[normName_(m.name)] = m; });
-  var ms = names.map(function (n) { return by[normName_(n)] || { name: n }; });
-  var days = function (v) { var x = v ? parseDate_(v) : null; return x ? Math.round((x.getTime() - d.getTime()) / 86400000) : null; };
-  var only = function (list) { return list.length === 1 ? list[0].name : ''; };
+  if (!d) return { name: '', cands: names.slice(), old: [] };
+  var ms = names.map(function (n) { return routineRosterOf_(roster, n); });
+  var nm = function (list) { return list.map(function (m) { return m.name; }); };
   if (opts.kind === 'new') {
-    var notOld = ms.filter(function (m) { var k = days(m.joinDate); return k === null || k >= -ROUTINE_NEW_DAYS_; });
-    var recent = notOld.filter(function (m) { return days(m.joinDate) !== null; });
-    return recent.length ? only(recent) : only(notOld);
+    var fresh = ms.filter(function (m) { return !routineOldMember_(m, d); });
+    var old = nm(ms.filter(function (m) { return routineOldMember_(m, d); }));
+    var empty = fresh.filter(function (m) { return routineDateDays_(m.joinDate, d) === null; });
+    var unread = fresh.filter(function (m) { return isNaN(routineDateDays_(m.joinDate, d)); });
+    var recent = fresh.filter(function (m) { var k = routineDateDays_(m.joinDate, d); return k !== null && !isNaN(k); });
+    var pick = empty.length === 1 ? empty[0] : (!empty.length && !unread.length && recent.length === 1 ? recent[0] : null);
+    return pick ? { name: pick.name, cands: [], old: [] } : { name: '', cands: nm(fresh), old: old };
   }
   if (opts.kind === 'renew') {
+    var within = function (k, a, b) { return k !== null && k >= a && k <= b; };
     var near = ms.filter(function (m) {
-      var e = days(m.expireDate), r = days(m.renewDate);
-      return (e !== null && e >= -90 && e <= 120) || (r !== null && r >= -120 && r <= 90);
+      var e = routineDateDays_(m.expireDate, d), r = routineDateDays_(m.renewDate, d);
+      return within(e, -60, 60) || within(r, -45, 45) || within(e, 300, 400);
     });
-    if (near.length) return only(near);
-    return only(ms.filter(function (m) { var k = days(m.joinDate); return k !== null && k <= -300; }));
+    if (near.length === 1) return { name: near[0].name, cands: [], old: [] };
+    if (near.length > 1) return { name: '', cands: nm(near), old: [] };
+    var long = ms.filter(function (m) { var k = routineDateDays_(m.joinDate, d); return k !== null && k <= -300; });
+    return long.length === 1 ? { name: long[0].name, cands: [], old: [] } : { name: '', cands: nm(ms), old: [] };
   }
-  return '';
+  return { name: '', cands: names.slice(), old: [] };
+}
+// 書いてあるのが名字だけ（氏名・ふりがなの全部ではない）で、名簿のその方に合わせたか
+function routinePartialMatch_(text, full, roster) {
+  var a = routineFoldName_(text), f = routineFoldName_(full);
+  if (f && a.indexOf(f) >= 0) return false;
+  var m = routineRosterOf_(roster, full), kf = m.kana ? routineKana_(m.kana) : '';
+  return !(kf && routineKana_(text).indexOf(kf) >= 0);
 }
 
 // 「15 新入会」「16 更新式(更新メンバー)」の欄 → [{ raw, name, matched, years, category }]
@@ -667,10 +701,20 @@ function routineMemberList_(v, opts) {
     var nm = String(rawName).replace(/【[^】]*】/g, '').replace(/^[\s　、,，・･と]+|[\s　、,，・･]+$/g, '');
     if (!nm || routineIsBlank_(nm.replace(/[\s　]/g, ''))) return;
     var full = routineRosterName_(nm, roster, category), byCat = ROUTINE_MATCH_BY_ === 'category';
-    var cands = full ? [] : ROUTINE_MATCH_CANDS_.slice(), byDate = false;
+    var cands = full ? [] : ROUTINE_MATCH_CANDS_.slice(), byDate = false, oldSame = [];
     if (!full && cands.length >= 2 && opts && opts.kind) {
-      full = routinePickByDate_(cands, roster, opts);
+      var pk = routinePickByDate_(cands, roster, opts);
+      oldSame = pk.old;
+      full = pk.name;
       byDate = !!full;
+      cands = pk.cands;
+    }
+    // 新入会の欄で、名字だけの書き方が名簿の前からのメンバー（1人）に当たったときは、その方ではない（新入会に上がらない）。
+    // 名簿にまだ入っていない新しい方として、書いてあったお名前で作る
+    var nd = opts && opts.kind === 'new' ? parseDate_(opts.date) : null;
+    if (full && !byDate && nd && routinePartialMatch_(nm, full, roster) && routineOldMember_(routineRosterOf_(roster, full), nd)) {
+      oldSame = [full];
+      full = '';
     }
     if (!full) {
       // 名簿に無い方で、前にカテゴリーの付いたかなのお名前（「洋菓子製造販売　みほん たろうさん」）は、お名前とカテゴリーに分ける。
@@ -688,7 +732,7 @@ function routineMemberList_(v, opts) {
     if (seen[key]) return;
     seen[key] = true;
     out.push({ raw: shown, name: full, matched: !!full, years: years || 0, category: full ? '' : (category || ''), byCategory: byCat,
-               byDate: byDate, candidates: full ? [] : cands });
+               byDate: byDate, candidates: full ? [] : cands, oldNamesakes: full ? [] : oldSame });
   };
   var lines = s.split(/[\r\n]+/).map(function (l) { return l.replace(/[※＊].*$/, '').trim(); });
   var honor = /(さん|様|さま|氏)/;
