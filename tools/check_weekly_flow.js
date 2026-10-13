@@ -355,6 +355,51 @@ step('割り振り表', () => {
   ck(JSON.stringify(back.roomAlloc.V01) === '["6"]' && JSON.stringify(back.roomAlloc.V03) === '["7"]', '7) ルームメンバーが読み戻せない: ' + JSON.stringify(back.roomAlloc));
   ck(JSON.stringify(back.orienAlloc.V01) === '["7"]', '7) オリエンが読み戻せない: ' + JSON.stringify(back.orienAlloc));
   ck(back.connectReq.V01 === 'IT関係の方', '7) つなげたいメンバーが読み戻せない: ' + JSON.stringify(back.connectReq));
+  ck(JSON.stringify(back.stars) === '{}', '7) 入会確度を決めていないのに、☆が入った: ' + JSON.stringify(back.stars));
+
+  // 入会確度（☆1〜3。画面で決める）：「入会確度」の列（カテゴリーのあと）に ☆ で書く。PDFにも入る（I列のオリエンテーションまで）。読み戻せる
+  const stars = { V01: 3, V03: 1 }, nameOf = (no) => (d.pool.find((m) => m.no === no) || {}).name;
+  srv.saveAllocationSheet('2026/09/30', cand.display, d.visitors, d.pool, facil, orien, room, conn, {}, stars);
+  const HEADS = ['No.', 'お名前', 'カテゴリー', '入会確度', '招待者', 'つなげたいメンバー', 'ファシリテーター', 'ルームメンバー', 'オリエンテーション'];
+  const av = env.values('20260930割り振り表'), hi = av.findIndex((r) => r[0] === 'No.'), rowOf = (no) => av.find((r) => r[0] === no) || [];
+  ck(JSON.stringify(av[hi]) === JSON.stringify(HEADS), '7) 割り振り表の列の見出し: ' + JSON.stringify(av[hi]));
+  ck(rowOf('V01')[3] === '☆☆☆' && rowOf('V03')[3] === '☆' && rowOf('V02')[3] === '' && rowOf('V01')[4] === '試験 花子' && rowOf('V01')[8] === nameOf('7'),
+     '7) 入会確度の列・そのあとの列がずれた: ' + JSON.stringify([rowOf('V01'), rowOf('V02'), rowOf('V03')]));
+  ck(av.every((r) => r.length <= 9) && av.some((r) => r[0] === '【メンバー別 ルーム・オリエン担当表】'), '7) 割り振り表の列の数（9列）');
+  const pdfRow = (env.fileText(aid).split('\n').find((l) => l.indexOf('V01\t') === 0) || '').split('\t');
+  ck(pdfRow.length === 9 && pdfRow[3] === '☆☆☆' && pdfRow[8] === nameOf('7'), '7) 割り振り表のPDFに、入会確度・オリエンテーション（I列）まで入らない: ' + JSON.stringify(pdfRow));
+  const fmt = env.formatOf('20260930割り振り表'), widths = Object.keys(fmt.widths).map(Number).sort((x, y) => x - y).map((k) => fmt.widths[k]);
+  ck(widths.length === 9 && widths.reduce((x, y) => x + y, 0) <= 746 && widths[3] >= 56,
+     '7) 列幅（9列・A4縦の印字幅 746px 以内・入会確度が1行に入る幅）: ' + JSON.stringify(widths));
+  ck(fmt.bg['4,4'] === '#f3f3f3' && fmt.bg['4,7'] === '#fff2cc' && fmt.bg['4,8'] === '#e6f2ff' && fmt.bg['4,9'] === '#d9ead3',
+     '7) 見出しの色が列とずれた（ファシリテーター黄・ルームメンバー青・オリエンテーション緑）: ' + JSON.stringify(fmt.bg));
+  const merges = fmt.merges.map((m) => m.join(','));
+  const revAt = av.findIndex((r) => r[0] === 'No.' && r[1] === 'メンバー名') + 1;
+  ck(merges.includes('2,1,1,9') && merges.includes(revAt + ',3,1,7') && merges.every((m) => /,1,1,9$|,3,1,7$/.test(m)),
+     '7) 結合が I列まで届かない（集計の行・下の文・メンバー別の表）: ' + JSON.stringify(merges));
+  const back2 = srv.getAllocationData('2026/09/30');
+  ck(JSON.stringify(back2.stars) === JSON.stringify(stars) && JSON.stringify(back2.facilAlloc) === JSON.stringify(facil)
+     && back2.connectReq.V01 === 'IT関係の方' && JSON.stringify(back2.orienAlloc.V01) === '["7"]',
+     '7) 入会確度を入れた割り振り表から読み戻せない: ' + JSON.stringify({ stars: back2.stars, facil: back2.facilAlloc, orien: back2.orienAlloc }));
+  // CSVを取り込み直して番号がずれた・お名前の空白が変わった方も、☆はその方のまま
+  const part = env.sheet('20260930参加者'), partBefore = part._values.map((r) => (r || []).slice());
+  const pNo = part._values[0].indexOf('No.'), pName = part._values[0].indexOf('参加者氏名');
+  part._values.forEach((r, i) => {
+    if (!i) return;
+    if (r[pNo] === 'V01') { r[pNo] = 'V02'; r[pName] = '見本太郎'; } else if (r[pNo] === 'V02') r[pNo] = 'V01';
+  });
+  const moved = srv.getAllocationData('2026/09/30');
+  ck(JSON.stringify(moved.stars) === JSON.stringify({ V02: 3, V03: 1 }) && moved.facilAlloc.V02 === '5' && !moved.facilAlloc.V01,
+     '7) 番号・空白の変わった方の☆・ファシリテーターを読み戻せない: ' + JSON.stringify({ stars: moved.stars, facil: moved.facilAlloc }));
+  part._values = partBefore;
+  // 入会確度の列が無い、前の版の割り振り表（8列）も、これまでどおり読み戻せる
+  const allocSheet = env.sheet('20260930割り振り表'), nineCols = allocSheet._values.map((r) => (r || []).slice());
+  allocSheet._values = nineCols.map((r, i) => (i >= hi && i <= av.findIndex((x, k) => k > hi && !x[0]) ? r.slice(0, 3).concat(r.slice(4)) : r.slice(0, 8)));
+  const old = srv.getAllocationData('2026/09/30');
+  ck(JSON.stringify(old.stars) === '{}' && JSON.stringify(old.facilAlloc) === JSON.stringify(facil) && old.connectReq.V01 === 'IT関係の方'
+     && JSON.stringify(old.roomAlloc.V01) === '["6"]' && JSON.stringify(old.orienAlloc.V01) === '["7"]',
+     '7) 前の版（8列）の割り振り表を読み戻せない: ' + JSON.stringify({ stars: old.stars, facil: old.facilAlloc, room: old.roomAlloc, orien: old.orienAlloc }));
+  allocSheet._values = nineCols;
   // 名前が1字だけ違うメンバー（見本 一郎・見本 二郎）がいても、招待者を取り違えない。待機リストからは本当の招待者を除く
   env.sheet('メンバー名簿').appendRow(MEMBER_HEAD.map((h, i) => (i === 0 ? '9' : i === 2 ? '見本 二郎' : '')));
   env.ss.insertSheet('20261104参加者').getRange(1, 1, 2, 9).setValues([

@@ -297,10 +297,11 @@ function premtgAllocation_(target) {
 }
 
 // 列の幅（pt。合わせて 910pt）・寄せ方・見出しの色（割り振り表のシートと同じ色）。知らない見出しは幅を分け合う
+// （入会確度の列が無い、前の版の割り振り表のときは、残りの列で 910pt に広げる）
 var PREMTG_ALLOC_COLS_ = {
-  'No.': { w: 52, algn: 'ctr' }, 'お名前': { w: 100, algn: 'l' }, 'カテゴリー': { w: 150, algn: 'l' }, '招待者': { w: 96, algn: 'l' },
-  'つなげたいメンバー': { w: 128, algn: 'ctr' }, 'ファシリテーター': { w: 112, algn: 'ctr', fill: 'FFF2CC' },
-  'ルームメンバー': { w: 128, algn: 'ctr', fill: 'E6F2FF' }, 'オリエンテーション': { w: 144, algn: 'ctr', fill: 'D9EAD3' }
+  'No.': { w: 52, algn: 'ctr' }, 'お名前': { w: 100, algn: 'l' }, 'カテゴリー': { w: 132, algn: 'l' }, '入会確度': { w: 60, algn: 'ctr' },
+  '招待者': { w: 90, algn: 'l' }, 'つなげたいメンバー': { w: 118, algn: 'ctr' }, 'ファシリテーター': { w: 106, algn: 'ctr', fill: 'FFF2CC' },
+  'ルームメンバー': { w: 120, algn: 'ctr', fill: 'E6F2FF' }, 'オリエンテーション': { w: 132, algn: 'ctr', fill: 'D9EAD3' }
 };
 var PREMTG_ALLOC_HEAD_FILL_ = 'F3F3F3', PREMTG_ALLOC_PAD_PT_ = 3.6, PREMTG_ALLOC_LINE_ = 1.5;
 function premtgAllocCols_(heads, totalPt) {

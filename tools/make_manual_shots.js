@@ -437,6 +437,7 @@ const SHOTS = [
         state.facilAlloc = { V01: '10', V02: '29', V03: '4', V04: '34' };
         state.roomAlloc = { V01: ['23', '24'], V02: ['31'], V03: ['35', '36'], V04: ['22'] };
         state.orienAlloc = { V01: ['17'], V03: ['12'] };
+        state.stars = { V01: 3, V02: 2, V04: 1 };   // 入会確度（☆）
         render();
       });
       await p.waitForTimeout(200);

@@ -4,6 +4,7 @@
 //        待機メンバーでない方（招待者など）の情報は渡さない。AI参考資料はこれまでどおり添付する
 //   2. 名簿に一言・紹介・協業がまったく入っていないときだけ、これまでどおりメンバーブックのPDFも渡す
 //   3. 返ってきた割り振りの反映（同じ方を2つのルームに入れない・ファシリテーターはルームに入れない）
+//   4. 入会確度（☆1〜3。画面で決める）：☆の高いビジター（合同のルームはいちばん高い方）から優先のビジターホストを付け、AIにも渡す。☆はそのまま戻る
 //
 //   node tools/check_allocation_ai.js
 const fs = require('fs');
@@ -161,6 +162,38 @@ const ANSWER = J({ allocations: [{ visitorNo: 'V01', room: ['03', '04'] }, { vis
   ck(prompt.includes('内部メモ 相続に強い方とつながりたい') && !prompt.includes('undefined'), 'ビジターのメモが渡らない・undefined が入る');
 }
 
+// ---------- 入会確度（☆1〜3。画面で決める）：☆の高いビジターから優先のビジターホスト。AIにも渡す。☆はそのまま戻る ----------
+{
+  const { box, fetches } = makeServer(ROSTER, ANSWER);
+  const st = state();                                   // 参加者シートの確度は V01=3・V02=1（☆が無ければ V01 が先）
+  st.stars = { V02: 3, G01: 1 };
+  const res = box.callGeminiAutoAllocation(st, 5);
+  ck(res.facilAlloc.V02 === '01' && res.facilAlloc.G01 === '02' && !res.facilAlloc.V01,
+     '☆の高いビジター（V02・☆3、次に G01・☆1）から優先のビジターホストが付かない（参加者シートの確度より☆が先）: ' + J(res.facilAlloc));
+  ck(J(res.stars) === J({ V02: 3, G01: 1 }), 'AIに提案させたあと、☆が消えた・変わった: ' + J(res.stars));
+  const prompt = fetches[0].payload.contents[0].parts[0].text, vm1 = prompt.match(/ビジター: (\[.*\])\n/);
+  const sent = vm1 ? JSON.parse(vm1[1]) : [];
+  ck(J(sent.map((v) => v['入会確度'])) === J([0, 3, 1]) && /入会確度」（1〜3。3がいちばん入会しそうな方。0は未設定）/.test(prompt),
+     'AIに入会確度が渡らない: ' + J(sent.map((v) => [v.no, v['入会確度']])));
+}
+{
+  // 合同のルームは、いちばん☆の高い方の☆で順番を決める（V02 の部屋に ☆3 の G01 が合同）
+  const { box } = makeServer(ROSTER, ANSWER);
+  const st = state();
+  st.stars = { V01: 2, G01: 3 };
+  st.mergedWith = { G01: 'V02' };
+  const res = box.callGeminiAutoAllocation(st, 5);
+  ck(res.facilAlloc.V02 === '01' && res.facilAlloc.V01 === '02' && !res.facilAlloc.G01, '合同のルームの☆（いちばん高い方）で順番を決めない: ' + J(res.facilAlloc));
+}
+{
+  // ☆が同じ（決めていない）ときは、これまでどおり参加者シートの確度の順。☆の書き方が違っても（文字・☆）読む
+  const { box } = makeServer(ROSTER, ANSWER);
+  const res = box.callGeminiAutoAllocation(Object.assign(state(), { stars: {} }), 5);
+  ck(res.facilAlloc.V01 === '01' && res.facilAlloc.V02 === '02', '☆を決めていないときの順番（参加者シートの確度）: ' + J(res.facilAlloc));
+  ck(J([3, '2', '☆☆☆', '★☆☆', '３', '', 0, 4, 'x'].map(box.allocStarsOf_)) === J([3, 2, 3, 1, 3, 0, 0, 0, 0])
+     && box.allocStarsText_(2) === '☆☆' && box.allocStarsText_('') === '', '☆の読み方・書き方');
+}
+
 // ---------- 名簿に居ない方（古い「メンバーリスト」シートだけの方）は番号と氏名だけ ----------
 {
   const { box } = makeServer(ROSTER, ANSWER);
@@ -174,4 +207,4 @@ if (fails.length) {
   fails.forEach((f) => console.log('   ' + f));
   process.exit(1);
 }
-console.log('OK: 待機メンバーの情報はメンバー名簿から文字で渡す（PDFは名簿に一言・紹介・協業が無いときだけ）・送らない情報・返事の反映');
+console.log('OK: 待機メンバーの情報はメンバー名簿から文字で渡す（PDFは名簿に一言・紹介・協業が無いときだけ）・送らない情報・返事の反映・入会確度（☆）の順番とAIへの受け渡し');

@@ -50,6 +50,8 @@
     .chip-room { background: #e6f2ff; border: 1px solid #66b2ff; font-weight: bold; cursor: grab; }
     .chip-orien { background: #d9ead3; border: 1px solid #93c47d; font-weight: bold; cursor: grab; }
     
+    .star-sel { width: auto; font-size: 12px; color: #d35400; font-weight: bold; padding: 1px 2px; border: 1px solid #f0b27a; border-radius: 3px; background: #fff; }
+    .star-sel.unset { color: #999; font-weight: normal; border-color: #ccc; }
     .del-btn { cursor: pointer; color: #e74c3c; font-weight: bold; padding: 0 4px; border-radius: 50%; }
     .dropzone { min-height: 40px; border: 2px dashed transparent; border-radius: 4px; padding: 4px; transition: background 0.2s;}
     .dropzone.dragover { background: rgba(0, 85, 255, 0.1); border-color: #0055ff; }
@@ -83,7 +85,7 @@
       <div><span style="font-size:24px;">✨</span></div>
       <div style="flex:1;">
         <div style="font-weight:bold; color:#d35400;">Gemini AI 自動割り振り</div>
-        <div style="font-size:12px; color:#666;">※ファシリ・オリエンは確度・属性を考慮してホストから優先配置されます。「ルーム」は全体を均等に再配置します。</div>
+        <div style="font-size:12px; color:#666;">※ファシリ・オリエンは、入会確度（☆）の高いビジターから、ビジターホストを優先して付けます。「ルーム」は全体を均等に再配置します（☆の高い方のルームほど、つながりの合うメンバーを優先）。</div>
       </div>
       <div>
         <label style="font-size:13px; font-weight:bold; margin-right:10px;">
@@ -101,7 +103,7 @@
             <th width="3%">No.</th>
             <th width="10%">お名前</th>
             <th width="10%">カテゴリー</th>
-            <th width="16%">確度・特性・メモ</th>
+            <th width="16%">入会確度（☆）・特性・メモ</th>
             <th width="10%">つなげたい<br>メンバー</th>
             <th width="8%">招待者</th>
             <th width="13%" class="th-facil">ファシリテーター<br>(1名)</th>
@@ -122,7 +124,8 @@
   </div>
 
   <script>
-    var state = { visitors: [], pool: [], facilAlloc: {}, orienAlloc: {}, roomAlloc: {}, connectReq: {}, hosts: [], mergedWith: {}, priorities: {} };
+    // stars … 入会確度（{ ビジターの番号: 1〜3 }）。CSVには来ないので、この画面で決める。割り振り表の「入会確度」の列に ☆ で書く
+    var state = { visitors: [], pool: [], facilAlloc: {}, orienAlloc: {}, roomAlloc: {}, connectReq: {}, hosts: [], mergedWith: {}, priorities: {}, stars: {} };
 
     // Spreadingから来た文字（氏名・会社・メモ・URLなど）は、HTMLとして読ませない
     // （「<」や「"」で表示が崩れる・書かれたタグが画面の中で動いてしまうため）
@@ -172,6 +175,7 @@
         if(!state.mergedWith) state.mergedWith = {};
         if(!state.hosts) state.hosts = [];
         if(!state.priorities) state.priorities = {};
+        if(!state.stars) state.stars = {};
         render();
         document.getElementById('workspace').style.display = 'flex';
       }).withFailureHandler(function(err){
@@ -190,6 +194,7 @@
 
       google.script.run.withSuccessHandler(function(newState) {
         state = newState;
+        if(!state.stars) state.stars = {};
         render();
         document.getElementById('loading').style.display = 'none';
         document.getElementById('workspace').style.display = 'flex';
@@ -281,6 +286,7 @@
       var inRoomIds = getInRoomIds();
       if(!state.roomAlloc[visitorNo]) state.roomAlloc[visitorNo] = [];
       
+      var added = false;
       lines.forEach(function(line) {
         var nameClean = line.replace(/[\s　]/g, '');
         if(!nameClean) return;
@@ -288,9 +294,25 @@
         if(member && !inRoomIds.includes(String(member.no))) {
           state.roomAlloc[visitorNo].push(String(member.no));
           inRoomIds.push(String(member.no));
+          added = true;
         }
       });
-      render();
+      // 入れた方がいるときだけ描き直す（毎回描き直すと、入力欄から☆や合同の選択に移ったときの1回目のクリックが消える）
+      if (added) render();
+    }
+
+    // 入会確度（☆1〜3）。'' は「決めていない」
+    function setStars(visitorNo, value) {
+      var n = parseInt(value, 10) || 0;
+      if (n >= 1 && n <= 3) state.stars[visitorNo] = n; else delete state.stars[visitorNo];
+      var sel = document.getElementById('star_' + visitorNo);
+      if (sel) sel.className = 'star-sel' + (n ? '' : ' unset');
+    }
+    function starSelectHtml(visitorNo) {
+      var n = parseInt(state.stars[visitorNo], 10) || 0, labels = ['－', '☆', '☆☆', '☆☆☆'];
+      if (n < 0 || n > 3) n = 0;
+      return `<select id="star_${esc(visitorNo)}" class="star-sel${n ? '' : ' unset'}" title="入会確度（☆が多いほど入会しそう）" onchange="setStars('${esc(visitorNo)}', this.value)">`
+        + labels.map((t, k) => `<option value="${k || ''}"${k === n ? ' selected' : ''}>${t}</option>`).join('') + `</select>`;
     }
 
     // 合同先として選んだときのロジック（チェーン禁止・移動）
@@ -336,7 +358,7 @@
       for (var i = 0; i < state.visitors.length; i++) {
         var v = state.visitors[i];
         
-        var kakudo = detailOf(v.details, ['メンバーになる確度', '入会見込み']) || '-';
+        var kakudo = detailOf(v.details, ['メンバーになる確度', '入会見込み']);   // CSV（参加者シート）にあるときだけ、参考に出す
         var shincho = detailOf(v.details, ['慎重・即決など', '決裁スピード']) || '-';
         var memoHite = detailOf(v.details, ['メモ（非表示）', 'メモ（メンバー向け）']);
         var memoDisp = detailOf(v.details, ['メモ（ビジターリストに表示）', '備考']);
@@ -354,7 +376,8 @@
           </td>
           <td style="font-size:11px;">${esc(v.cat)}</td>
           <td class="info-col">
-            <span class="info-label">確度:</span> ${esc(kakudo)} / <span class="info-label">特性:</span> ${esc(shincho)}<br>
+            <span class="info-label">入会確度:</span> ${starSelectHtml(v.no)}${kakudo ? ` <span style="font-size:10px; color:#888;">（CSVの確度: ${esc(kakudo)}）</span>` : ''}<br>
+            <span class="info-label">特性:</span> ${esc(shincho)}<br>
             <span class="info-label">メモ:</span> <span style="font-size:10px;">${esc(shortMemo).replace(/\n/g, '<br>') || '-'}</span>
           </td>
           <td><textarea class="connect-input" rows="3" placeholder="名前を改行で入力" onblur="handleConnectInput('${esc(v.no)}', this.value)">${esc(state.connectReq[v.no] || '')}</textarea></td>
@@ -545,7 +568,7 @@
         alert("エラー: " + err.message);
         document.getElementById('workspace').style.display = 'flex';
         document.getElementById('loading').style.display = 'none';
-      }).saveAllocationSheet(m.dateValue, m.display, state.visitors, state.pool, state.facilAlloc, state.orienAlloc, state.roomAlloc, state.connectReq, state.mergedWith);
+      }).saveAllocationSheet(m.dateValue, m.display, state.visitors, state.pool, state.facilAlloc, state.orienAlloc, state.roomAlloc, state.connectReq, state.mergedWith, state.stars || {});
     }
   </script>
 </body>
