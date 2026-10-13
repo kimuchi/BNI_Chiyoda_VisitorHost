@@ -400,6 +400,21 @@ step('割り振り表', () => {
      && JSON.stringify(old.roomAlloc.V01) === '["6"]' && JSON.stringify(old.orienAlloc.V01) === '["7"]',
      '7) 前の版（8列）の割り振り表を読み戻せない: ' + JSON.stringify({ stars: old.stars, facil: old.facilAlloc, room: old.roomAlloc, orien: old.orienAlloc }));
   allocSheet._values = nineCols;
+  // 同じ方の古い行（空白だけ違う・割り振りは空）が残っていても、その方の割り振りを空にしない（行ごとに先に決めてから読む）
+  const v01At = nineCols.findIndex((r) => r[0] === 'V01');
+  allocSheet._values = nineCols.slice(0, v01At + 1).concat([['V09', '見本太郎', '', '', '', '', '', '', '']], nineCols.slice(v01At + 1));
+  const stale = srv.getAllocationData('2026/09/30');
+  ck(JSON.stringify(stale.roomAlloc.V01) === '["6"]' && JSON.stringify(stale.orienAlloc.V01) === '["7"]' && stale.connectReq.V01 === 'IT関係の方' && stale.stars.V01 === 3,
+     '7) 同じ方の古い行があると、その方の割り振りが空になる: ' + JSON.stringify({ room: stale.roomAlloc.V01, orien: stale.orienAlloc.V01, conn: stale.connectReq.V01, stars: stale.stars }));
+  allocSheet._values = nineCols;
+  // 合同先の方のお名前の空白が変わっても、合同のまま（合同先は、その方の行が決まった方）
+  srv.saveAllocationSheet('2026/09/30', cand.display, d.visitors, d.pool, { V01: '5' }, {}, { V01: ['6'] }, {}, { V03: 'V01' }, { V01: 2, V03: 3 });
+  part._values.forEach((r, i) => { if (i && r[pNo] === 'V01') r[pName] = '見本太郎'; });
+  const mg = srv.getAllocationData('2026/09/30');
+  ck(JSON.stringify(mg.mergedWith) === '{"V03":"V01"}' && mg.facilAlloc.V01 === '5' && JSON.stringify(mg.stars) === '{"V01":2,"V03":3}',
+     '7) 合同先のお名前の空白が変わったら、合同が外れた: ' + JSON.stringify({ merged: mg.mergedWith, facil: mg.facilAlloc, stars: mg.stars }));
+  part._values = partBefore;
+  srv.saveAllocationSheet('2026/09/30', cand.display, d.visitors, d.pool, facil, orien, room, conn, {}, stars);
   // 名前が1字だけ違うメンバー（見本 一郎・見本 二郎）がいても、招待者を取り違えない。待機リストからは本当の招待者を除く
   env.sheet('メンバー名簿').appendRow(MEMBER_HEAD.map((h, i) => (i === 0 ? '9' : i === 2 ? '見本 二郎' : '')));
   env.ss.insertSheet('20261104参加者').getRange(1, 1, 2, 9).setValues([

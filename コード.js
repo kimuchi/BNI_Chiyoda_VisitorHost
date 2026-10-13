@@ -1917,20 +1917,41 @@ function getAllocationData(meetingDateVal) {
          var facilIdx = aHeaders.indexOf("ファシリテーター"), roomIdx = aHeaders.indexOf("ルームメンバー"), orienIdx = aHeaders.indexOf("オリエンテーション"), connIdx = aHeaders.indexOf("つなげたいメンバー");
          var starIdx = aHeaders.indexOf(ALLOC_STAR_HEAD_);   // 入会確度の列が無い（前の版で作った）割り振り表は -1
          var bare = function (s) { return String(s == null ? '' : s).replace(/[\s\u3000\u00A0]+/g, ''); };
-         
+
+         // 割り振り表の行 → 参加者シートのビジター。行ごとに先に決めてから読む（あとの行が、もう決まった方の割り振りを空にしないように）。
+         //   1. 番号と名前がそろう方（同じ名前の方が2人いても取り違えない）
+         //   2. 名前が同じ方（CSVを取り込み直して番号がずれた方）
+         //   3. 空白を除いた名前が同じ方（1人だけのとき。取り込み直して空白の位置が変わった方）
+         // どの段でも、ほかの行にもう決まった方は選ばない
+         var aRows = [];
          for(var i = aHeaderIdx + 1; i < aData.length; i++) {
-             var row = aData[i];
-             if(!row[0] || String(row[0]).indexOf("※")===0) break; 
-             
-             var savedName = normalizeSpace(row[nameColIdx]), savedNo = String(row[0]).trim();
-             // 番号と名前がそろう方を先に（同じ名前の方が2人いても取り違えない）。無ければ名前で。
-             // それでも無ければ、空白を除いた名前が同じ方（1人だけのとき。CSVを取り込み直して空白の位置が変わった方）
-             var matchedVisitor = visitors.filter(function(v) { return String(v.no) === savedNo && normalizeSpace(v.name) === savedName; })[0]
-                               || visitors.filter(function(v) { return normalizeSpace(v.name) === savedName; })[0];
-             if (!matchedVisitor && bare(savedName)) {
-               var sameBare = visitors.filter(function(v) { return bare(v.name) === bare(savedName); });
-               if (sameBare.length === 1) matchedVisitor = sameBare[0];
-             }
+             if(!aData[i][0] || String(aData[i][0]).indexOf("※")===0) break;
+             aRows.push(aData[i]);
+         }
+         var rowVisitor = [], taken = [];
+         [function (row, v) { return String(v.no) === String(row[0]).trim() && normalizeSpace(v.name) === normalizeSpace(row[nameColIdx]); },
+          function (row, v) { return normalizeSpace(v.name) === normalizeSpace(row[nameColIdx]); },
+          function (row, v) { return bare(row[nameColIdx]) !== '' && bare(v.name) === bare(row[nameColIdx]); }].forEach(function (same, step) {
+             aRows.forEach(function (row, k) {
+                 if (rowVisitor[k]) return;
+                 var hit = [];
+                 visitors.forEach(function (v, vi) { if (!taken[vi] && same(row, v)) hit.push(vi); });
+                 if (hit.length && (step < 2 || hit.length === 1)) { rowVisitor[k] = visitors[hit[0]]; taken[hit[0]] = true; }
+             });
+         });
+         // 【合同】の合同先：その方の行が決まった方。無ければ名前が同じ方・空白を除いた名前が同じ方（1人だけのとき）
+         var visitorOfRowName = {};
+         aRows.forEach(function (row, k) { if (rowVisitor[k]) visitorOfRowName[normalizeSpace(row[nameColIdx])] = rowVisitor[k]; });
+         var mergeTarget = function (name) {
+             if (visitorOfRowName[name]) return visitorOfRowName[name];
+             var same = visitors.filter(function (v) { return normalizeSpace(v.name) === name; });
+             if (same.length) return same[0];
+             var sameBare = bare(name) ? visitors.filter(function (v) { return bare(v.name) === bare(name); }) : [];
+             return sameBare.length === 1 ? sameBare[0] : null;
+         };
+
+         for(var k = 0; k < aRows.length; k++) {
+             var row = aRows[k], matchedVisitor = rowVisitor[k];
              if (!matchedVisitor) continue; 
              
              var vNo = String(matchedVisitor.no);
@@ -1939,9 +1960,8 @@ function getAllocationData(meetingDateVal) {
              var fName = facilIdx !== -1 ? row[facilIdx] : ""; 
              
              if (fName && String(fName).indexOf("【合同】") === 0) {
-                 var targetName = normalizeSpace(String(fName).replace("【合同】", "").replace("と同室", ""));
-                 var targetV = visitors.filter(function(v) { return normalizeSpace(v.name) === targetName; })[0];
-                 if(targetV) mergedWith[vNo] = String(targetV.no);
+                 var targetV = mergeTarget(normalizeSpace(String(fName).replace("【合同】", "").replace("と同室", "")));
+                 if(targetV && String(targetV.no) !== vNo) mergedWith[vNo] = String(targetV.no);
              } else if(fName) { 
                  var fm = pool.filter(function(x){ return normalizeSpace(x.name) === normalizeSpace(fName); })[0]; 
                  if(fm) facilAlloc[vNo] = String(fm.no); 
@@ -2343,7 +2363,8 @@ function callGeminiAutoAllocation(currentState, maxRoomSize) {
   var maskedVisitors = currentState.visitors.map(function(v) {
     return {
       no: String(v.no), name: v.name, category: v.cat, inviter: v.inviter,
-      "入会確度": allocStarsOf_(stars[v.no]),
+      // 合同のルームは、合同先のビジターに、いちばん高い☆でまとめて渡す（ビジターホストの順番と同じ数え方）
+      "入会確度": currentState.mergedWith[v.no] ? allocStarsOf_(stars[v.no]) : roomStars(v),
       connectReq: currentState.connectReq[v.no] || "",
       memos: (visitorDetail_(v.details, 'memoMember') + " " + visitorDetail_(v.details, 'memoList')).trim(),
       mergedWith: currentState.mergedWith[v.no] || ""
@@ -2355,7 +2376,7 @@ function callGeminiAutoAllocation(currentState, maxRoomSize) {
     "【つながりの考え方】ビジターのカテゴリー・メモと、メンバーの「カテゴリー」「会社名」「一言」「紹介してほしい人」「協業したい人」を見比べ、" +
     "ビジターを紹介し合えそう・協業できそうなメンバーを、そのビジターのルームに入れてください。" +
     "ビジターの「入会確度」（1〜3。3がいちばん入会しそうな方。0は未設定）が高いビジターのルームほど、つながりの合うメンバーを優先して入れてください" +
-    "（下の人数の条件は守ること）。\n\n" +
+    "（合同ルームは、合同先のビジターの入会確度に、いちばん高いものでまとめてあります。下の人数の条件は守ること）。\n\n" +
     "【制約条件（厳格に守ること）】\n" +
     "1. 「ファシリテーター」と「オリエンテーション」はシステムで決定済みです。出力には「room」の配列のみを含めてください。\n" +
     "2. 各ルームの総人数がなるべく同じになるよう、各ルームの人数を【厳格に平均化】して「ルームメンバー(room)」を割り振ってください。\n" +

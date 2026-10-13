@@ -177,13 +177,16 @@ const ANSWER = J({ allocations: [{ visitorNo: 'V01', room: ['03', '04'] }, { vis
      'AIに入会確度が渡らない: ' + J(sent.map((v) => [v.no, v['入会確度']])));
 }
 {
-  // 合同のルームは、いちばん☆の高い方の☆で順番を決める（V02 の部屋に ☆3 の G01 が合同）
-  const { box } = makeServer(ROSTER, ANSWER);
+  // 合同のルームは、いちばん☆の高い方の☆で順番を決める（V02 の部屋に ☆3 の G01 が合同）。AIにも合同先の☆として渡す
+  const { box, fetches } = makeServer(ROSTER, ANSWER);
   const st = state();
   st.stars = { V01: 2, G01: 3 };
   st.mergedWith = { G01: 'V02' };
   const res = box.callGeminiAutoAllocation(st, 5);
   ck(res.facilAlloc.V02 === '01' && res.facilAlloc.V01 === '02' && !res.facilAlloc.G01, '合同のルームの☆（いちばん高い方）で順番を決めない: ' + J(res.facilAlloc));
+  const sent = JSON.parse((fetches[0].payload.contents[0].parts[0].text.match(/ビジター: (\[.*\])\n/) || ['', '[]'])[1]);
+  ck(J(sent.map((v) => [v.no, v['入会確度']])) === J([['V01', 2], ['V02', 3], ['G01', 3]]) && /合同ルームは、合同先のビジターの入会確度に/.test(fetches[0].payload.contents[0].parts[0].text),
+     '合同のルームの☆（いちばん高い方）を、合同先のビジターとしてAIに渡さない: ' + J(sent.map((v) => [v.no, v['入会確度']])));
 }
 {
   // ☆が同じ（決めていない）ときは、これまでどおり参加者シートの確度の順。☆の書き方が違っても（文字・☆）読む

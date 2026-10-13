@@ -301,17 +301,21 @@
       if (added) render();
     }
 
-    // 入会確度（☆1〜3）。'' は「決めていない」
+    // 入会確度（☆1〜3）。'' は「決めていない」。番号は data-no から読む（番号に ' や \ が入っていても動くように）。
+    // 同じ番号の方が2人いる（「代理??」など）ときは☆も同じになるので、その方たちの欄もそろえる
     function setStars(visitorNo, value) {
       var n = parseInt(value, 10) || 0;
       if (n >= 1 && n <= 3) state.stars[visitorNo] = n; else delete state.stars[visitorNo];
-      var sel = document.getElementById('star_' + visitorNo);
-      if (sel) sel.className = 'star-sel' + (n ? '' : ' unset');
+      document.querySelectorAll('select.star-sel').forEach(function (sel) {
+        if (sel.dataset.no !== visitorNo) return;
+        sel.value = n ? String(n) : '';
+        sel.className = 'star-sel' + (n ? '' : ' unset');
+      });
     }
     function starSelectHtml(visitorNo) {
       var n = parseInt(state.stars[visitorNo], 10) || 0, labels = ['－', '☆', '☆☆', '☆☆☆'];
       if (n < 0 || n > 3) n = 0;
-      return `<select id="star_${esc(visitorNo)}" class="star-sel${n ? '' : ' unset'}" title="入会確度（☆が多いほど入会しそう）" onchange="setStars('${esc(visitorNo)}', this.value)">`
+      return `<select id="star_${esc(visitorNo)}" data-no="${esc(visitorNo)}" class="star-sel${n ? '' : ' unset'}" title="入会確度（☆が多いほど入会しそう）" onchange="setStars(this.dataset.no, this.value)">`
         + labels.map((t, k) => `<option value="${k || ''}"${k === n ? ' selected' : ''}>${t}</option>`).join('') + `</select>`;
     }
 

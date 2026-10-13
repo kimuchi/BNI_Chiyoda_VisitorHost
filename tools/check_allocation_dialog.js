@@ -36,7 +36,11 @@ env.reset([
     ['V01', '<img src=x onerror="window.__xss=1">見本 太郎', 'みほん たろう', '税理士<b>', '見本商事', '見本 一郎', '備考のメモ', 'Visitor', '', '5', '内部メモ', 'javascript:window.__xss=2']]],
   ['20260930割り振り表', false, [['割り振り表（9/30）'], ['すでに共有した中身']]],
   ['20261007参加者', false, [HEAD,
-    ['V01', '翌週 来子', 'よくしゅう らいこ', 'デザイン', '翌週社', '試験 花子', '', 'Visitor', '', '3', '', 'https://example.com/"onmouseover="window.__xss=3']]],
+    ['V01', '翌週 来子', 'よくしゅう らいこ', 'デザイン', '翌週社', '試験 花子', '', 'Visitor', '', '3', '', 'https://example.com/"onmouseover="window.__xss=3'],
+    // 番号に「'」が入った方・同じ番号（代理??）の方が2人（招待者が名簿に見つからない代理など）
+    ["V'02", '引用 符子', 'いんよう ふこ', '見本', '', '', '', 'Visitor', '', '', '', ''],
+    ['代理??', '代理 一子', 'だいり いちこ', '', '', '', '', 'Substitute', '', '', '', ''],
+    ['代理??', '代理 二子', 'だいり にこ', '', '', '', '', 'Substitute', '', '', '', '']]],
 ], { 'ALLOC_PDF_ID_20260930割り振り': 'A30' });
 env.addFile('A30', new env.FakeBlob('%PDF-1.4\n9/30 の割り振り表（共有済み）', 'application/pdf', '9/30 割り振り表.pdf'));
 
@@ -62,6 +66,11 @@ env.addFile('A30', new env.FakeBlob('%PDF-1.4\n9/30 の割り振り表（共有�
     ck(await page.evaluate(() => document.getElementById('star_V01').__mark === 1), '4) 入力欄から移ったら、☆の欄を描き直した（クリックが消える）');
     await page.selectOption('#star_V01', '2');
     ck(await page.evaluate(() => !/unset/.test(document.getElementById('star_V01').className)), '4) ☆を選んでも色が変わらない');
+    // 番号に「'」が入った方でも選べる。同じ番号の方が2人いるときは、2人とも同じ☆になる（どちらの欄も、そうと分かる）
+    await page.selectOption('select[data-no="V\'02"]', '1');
+    await page.locator('select[data-no="代理??"]').nth(1).selectOption('3');
+    ck(await page.evaluate(() => Array.from(document.querySelectorAll('select[data-no="代理??"]')).map((e) => e.value + ':' + (/unset/.test(e.className) ? 'grey' : 'color')).join(',')) === '3:color,3:color',
+       '4) 同じ番号の方の☆の欄がそろわない（選んだ欄と違う欄の色が変わる）');
     // 読み込んだあとで、上の選択を 9/30 に変えてから作成する → 10/7 に書く（9/30 の割り振り表とPDFはそのまま）
     await page.selectOption('#meetingSelect', '2026/09/30');
     await page.click('button:has-text("この内容でシートとPDFを作成する")');
@@ -71,9 +80,11 @@ env.addFile('A30', new env.FakeBlob('%PDF-1.4\n9/30 の割り振り表（共有�
     ck(env.values('20260930割り振り表')[1][0] === 'すでに共有した中身' && env.fileText('A30').includes('共有済み'), '1) 9/30 の割り振り表・共有したPDFを上書きした');
     ck(env.sheet('20261007割り振り表') && env.values('20261007割り振り表').some((r) => r[1] === '翌週 来子'), '1) 10/7 の割り振り表ができていない');
     // 入会確度は「入会確度」の列（カテゴリーのあと）とPDFに ☆ で入る
-    ck(save && JSON.stringify(save.args[9]) === '{"V01":2}', '4) 入会確度がサーバーに渡らない: ' + JSON.stringify(save && save.args[9]));
+    ck(save && JSON.stringify(save.args[9]) === JSON.stringify({ V01: 2, "V'02": 1, '代理??': 3 }), '4) 入会確度がサーバーに渡らない: ' + JSON.stringify(save && save.args[9]));
     const a7 = env.values('20261007割り振り表') || [], h7 = a7.find((r) => r[0] === 'No.') || [], v7 = a7.find((r) => r[0] === 'V01') || [];
     ck(h7[3] === '入会確度' && v7[3] === '☆☆' && v7[5] === 'IT関係の方', '4) 割り振り表の入会確度の列: ' + JSON.stringify([h7, v7]));
+    ck(a7.filter((r) => r[0] === "V'02").map((r) => r[3]).join(',') === '☆' && a7.filter((r) => r[0] === '代理??').map((r) => r[3]).join(',') === '☆☆☆,☆☆☆',
+       "4) 番号に「'」が入った方・同じ番号の方の☆: " + JSON.stringify(a7.filter((r) => /V'02|代理/.test(r[0]))));
     ck(/V01\t翌週 来子\tデザイン\t☆☆\t/.test(env.fileText(env.props['ALLOC_PDF_ID_20261007割り振り']) || ''), '4) 割り振り表のPDFに ☆ が入らない');
     await page.close();
 
@@ -90,7 +101,7 @@ env.addFile('A30', new env.FakeBlob('%PDF-1.4\n9/30 の割り振り表（共有�
     await p3.page.waitForFunction(() => document.getElementById('workspace').style.display === 'flex', null, { timeout: 10000 });
     ck(await p3.page.evaluate(() => document.getElementById('star_V01').value) === '2', '4) 「AIに提案させる」のあと、☆が消えた');
     const ai = calls.filter((c) => c.name === 'callGeminiAutoAllocation').pop();
-    ck(ai && JSON.stringify(ai.args[0].stars) === '{"V01":2}', '4) AIに☆が渡らない: ' + JSON.stringify(ai && ai.args[0].stars));
+    ck(ai && JSON.stringify(ai.args[0].stars) === JSON.stringify({ V01: 2, "V'02": 1, '代理??': 3 }), '4) AIに☆が渡らない・読み込み直した☆と違う: ' + JSON.stringify(ai && ai.args[0].stars));
     await p3.page.selectOption('#star_V01', '');
     await p3.page.click('button:has-text("この内容でシートとPDFを作成する")');
     await p3.page.waitForFunction(() => /作成完了/.test(document.getElementById('loading').textContent), null, { timeout: 10000 });
