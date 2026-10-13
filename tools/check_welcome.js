@@ -88,8 +88,8 @@ F.saveRoleHolders({ president: '見本 一郎', vice: '試験 二郎' }, 24, DAT
 // ===== 1) 新入会の方 =====
 const data = F.premtgData_(new Date(2026, 9, 7));
 ck(J(data.newMembers) === J([
-  { name: '新入 花子', raw: '新入 花子さん', matched: true, company: '株式会社新入リーガルサービス', category: '行政書士（建設業許可・外国人ビザ）', kana: 'しんにゅう はなこ', byCategory: false },
-  { name: '新規 太郎', raw: '新規 太郎さん', matched: false, company: '', category: 'エステサロン', kana: '', byCategory: false }]),
+  { name: '新入 花子', raw: '新入 花子さん', matched: true, company: '株式会社新入リーガルサービス', category: '行政書士（建設業許可・外国人ビザ）', kana: 'しんにゅう はなこ', byCategory: false, byDate: false, candidates: [] },
+  { name: '新規 太郎', raw: '新規 太郎さん', matched: false, company: '', category: 'エステサロン', kana: '', byCategory: false, byDate: false, candidates: [] }]),
    '1) 新入会の方（名簿の方は名簿から・名簿に無い方は書いてあったとおり）: ' + J(data.newMembers));
 ck(data.newMembersUnread === '', '1) 読み取れたのに「読み取れなかった」になる: ' + J(data.newMembersUnread));
 {
@@ -100,8 +100,8 @@ ck(data.newMembersUnread === '', '1) 読み取れたのに「読み取れなか�
 {
   const kd = F.premtgData_(new Date(2026, 9, 21));
   ck(J(kd.newMembers) === J([
-    { name: '試験 二郎', raw: 'しけん じろう', matched: true, company: '試験工務店', category: '工務店', kana: 'しけん じろう', byCategory: false },
-    { name: 'しんき たろう', raw: 'しんき たろう', matched: false, company: '', category: '洋菓子製造販売', kana: '', byCategory: false }])
+    { name: '試験 二郎', raw: 'しけん じろう', matched: true, company: '試験工務店', category: '工務店', kana: 'しけん じろう', byCategory: false, byDate: false, candidates: [] },
+    { name: 'しんき たろう', raw: 'しんき たろう', matched: false, company: '', category: '洋菓子製造販売', kana: '', byCategory: false, byDate: false, candidates: [] }])
      && kd.newMembersUnread === '', '1) かなのお名前とカテゴリーの書き方: ' + J(kd.newMembers) + ' / ' + J(kd.newMembersUnread));
   // 書いてあるのに読み取れない：いないことにせず、その記載を返す
   const ud = F.premtgData_(new Date(2026, 9, 28));
