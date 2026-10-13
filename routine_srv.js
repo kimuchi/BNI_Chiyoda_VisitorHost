@@ -283,7 +283,8 @@ function routinePolicyNo_(v) {
 //           リージョンのディレクター・アンバサダー。名簿の方ではないので name は空。guest に役職を外した呼び名）
 //   「②なし」「②ー」のような、いない印の欄は数えない（1人の週。以前は「なし」という方として数えていた）。
 //   「見本さんのみ」「見本さん（1名）」の「のみ」「1名」は外す
-var ROUTINE_DIRECTOR_RE_ = /(ＥＤ|ED|ＡＤ|AD)(さん|様)?$|ディレクター|アンバサダー|リージョン|エグゼクティブ|エクゼクティブ|エクゼティブ/i;
+//   役職は名前のうしろ（「見本ED」「見本 ディレクター」「見本 太郎（エグゼクティブディレクター）」）でも前（「ED 見本さん」）でもよい
+var ROUTINE_DIRECTOR_RE_ = /(ＥＤ|ED|ＡＤ|AD)(さん|様)?[)）]?$|^[(（]?(ＥＤ|ED|ＡＤ|AD)(?=[\s　)）])|ディレクター|アンバサダー|リージョン|エグゼクティブ|エクゼクティブ|エクゼティブ/i;
 function routineMainPresenters_(v) {
   var s = String(v == null ? '' : v).replace(/[\r\n]+/g, ' ').trim();
   if (routineIsBlank_(s.replace(/[\s　]/g, ''))) return [];
@@ -299,8 +300,8 @@ function routineMainPresenters_(v) {
       .replace(/[（(]\s*[1１一]\s*名\s*[）)]|\s*[1１一]名$|のみ$/g, '').trim();
     if (!raw || routineIsBlank_(raw.replace(/[\s　]/g, ''))) continue;
     if (ROUTINE_DIRECTOR_RE_.test(raw)) {
-      var guest = raw.replace(/(さん|様)$/, '').replace(new RegExp(ROUTINE_DIRECTOR_RE_.source, 'gi'), '')
-        .replace(/(さん|様)$/, '').replace(/[\s　・]+$/, '').trim();
+      var guest = raw.replace(new RegExp(ROUTINE_DIRECTOR_RE_.source, 'gi'), '')
+        .replace(/[()（）]/g, ' ').replace(/(さん|様)/g, '').replace(/^[\s　・]+|[\s　・]+$/g, '').replace(/[\s　]{2,}/g, ' ').trim();
       out.push({ raw: raw, name: '', matched: false, kind: 'director', guest: guest });
       continue;
     }
