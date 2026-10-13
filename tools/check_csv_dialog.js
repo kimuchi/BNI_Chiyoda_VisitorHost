@@ -28,7 +28,7 @@ function ck(ok, msg) { checks++; if (!ok) fails.push(msg); }
 const env = makeEnv({ now: new Date(2026, 9, 1, 10, 0, 0) });
 const srv = Object.assign({}, env.globals);
 vm.createContext(srv);
-for (const f of ['コード.js', 'chapter_srv.js', 'webapp_srv.js']) vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), srv, { filename: f });
+for (const f of ['コード.js', 'chapter_srv.js', 'webapp_srv.js', 'company_break.js']) vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), srv, { filename: f });
 
 const MEMBER_HEAD = ['No', '業種区分', '氏名', 'ふりがな', 'カテゴリー', '会社名', '役職', 'メモ', '写真ファイル名', '一言コメント',
   '紹介してほしい人', '協業したい人', '入会日', '更新日', '更新期限日', '会社での役職'];

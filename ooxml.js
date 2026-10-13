@@ -216,7 +216,8 @@ var LINE_HEIGHT_ = 1.4;
 //
 //   上の枠（会社名）と、そのすぐ下の枠（【カテゴリー】）を一緒に決める。
 //   余地は、下の枠の下から、その下にある図形（カウントダウンなど）まで（roomBelowShape_）。
-//   top / bottom … { id, text, pt, minPt }。top は2行にするとき自分で2段落に分ける（split: true）
+//   top / bottom … { id, text, pt, minPt }。top（会社名）は split: true … 行の分け方と大きさを、どの出力でも同じ
+//   会社名の改行の決め方（company_break.js の CB_.layout）で決め、2行にするときは自分で段落に分ける
 var FIXED_WIDTH_MARGIN_ = 1.05;     // 文字の幅の見積もりの余裕（英字の大文字など、見積もりより広い字のため）
 
 // 枠の文字が今（テンプレートのまま）使っている高さ（pt）。枠の内側の高さか、元の大きさ1行ぶんの大きい方
@@ -229,63 +230,47 @@ function shapeTextHeightPt_(xml, shapeId, box) {
   return Math.max(box.heightPt - ins / 12700, (box.basePt || 0) * LINE_HEIGHT_);
 }
 
-// 2行に分ける。「社名／株式会社」「株式会社／社名」で分けられればそこで、無ければ空白か字の種類の変わり目
-// （漢字とカタカナなど）の、真ん中に近いところで。どちらの行も1行に入らなければ null。
-// strict でないときは、語の途中（カタカナ・漢字・英単語の続き）でも切る
-var CORP_WORDS_ = ['特定非営利活動法人', '一般社団法人', '一般財団法人', '公益社団法人', '公益財団法人', '社会福祉法人',
-                   '社会保険労務士法人', '税理士法人', '弁護士法人', '司法書士法人', '行政書士法人', '医療法人',
-                   '株式会社', '有限会社', '合同会社', '合資会社', '合名会社'];
-function charScript_(ch) {
-  return /[\s　]/.test(ch) ? 'space' : /[一-鿿々〆ヶ]/.test(ch) ? 'kanji' : /[゠-ヿ]/.test(ch) ? 'kata'
-       : /[぀-ゟ]/.test(ch) ? 'hira' : /[A-Za-z0-9ａ-ｚＡ-Ｚ０-９]/.test(ch) ? 'latin' : 'other';
-}
-function splitTwoLines_(text, pt, widthPt, strict) {
-  var s = String(text == null ? '' : text).replace(/^[\s　]+|[\s　]+$/g, '');
-  var fits = function (a) { return a && textWidthUnits_(a) * pt * FIXED_WIDTH_MARGIN_ <= widthPt; };
-  var ok = function (a, b) { return a.length > 1 && b.length > 1 && fits(a) && fits(b) ? [a, b] : null; };
-  var i, w, got;
-  for (i = 0; i < CORP_WORDS_.length; i++) {
-    w = CORP_WORDS_[i];
-    if (s.length > w.length && s.slice(-w.length) === w && (got = ok(s.slice(0, -w.length).replace(/[\s　]+$/, ''), w))) return got;
-    if (s.length > w.length && s.slice(0, w.length) === w && (got = ok(w, s.slice(w.length).replace(/^[\s　]+/, '')))) return got;
-  }
-  // 切れ目の良さ：0 空白 → 1 字の種類の変わり目 → 2 語の途中・行の頭に来てはいけない字（ー・っ・）など）の前
-  var half = textWidthUnits_(s) / 2, cuts = [], acc = 0;
-  for (i = 1; i < s.length; i++) {
-    acc += textWidthUnits_(s.charAt(i - 1));
-    var a = s.charAt(i - 1), b = s.charAt(i), sa = charScript_(a), sb = charScript_(b), rank;
-    if (sa === 'space' || sb === 'space') rank = 0;
-    else if (/[ーっゃゅょぁぃぅぇぉッャュョァィゥェォ々、。，．・：）)」』】〕,.:;!?！？]/.test(b) || /[（(「『【〔]/.test(a)) rank = 2;
-    else rank = sa !== sb ? 1 : 2;
-    if (strict && rank > 1) continue;
-    cuts.push({ at: i, rank: rank, off: Math.abs(acc - half) });
-  }
-  cuts.sort(function (x, y) { return x.rank - y.rank || x.off - y.off; });
-  for (i = 0; i < cuts.length; i++) {
-    got = ok(s.slice(0, cuts[i].at).replace(/[\s　]+$/, ''), s.slice(cuts[i].at).replace(/^[\s　]+/, ''));
-    if (got) return got;
-  }
-  return null;
-}
-
-// 1つの枠の大きさを決める。{ pt, lines（split のときの2行の中身）, count（行数）, grow（伸ばす高さ pt）}。
+// 1つの枠の大きさを決める。{ pt, lines（split のときの行の中身）, count（行数）, grow（伸ばす高さ pt）}。
 // room に収まる大きさが minPt まで無ければ null
 function planFixedSize_(xml, spec, room) {
   var box = readShapeTextBox_(xml, spec.id);
   if (!box || box.widthPt <= 0) return null;
-  var nowH = shapeTextHeightPt_(xml, spec.id, box), w = textWidthUnits_(spec.text) * FIXED_WIDTH_MARGIN_;
+  var nowH = shapeTextHeightPt_(xml, spec.id, box);
+  if (spec.split) return planCompanyLines_(spec, box, nowH, room);
+  var w = textWidthUnits_(spec.text) * FIXED_WIDTH_MARGIN_;
   for (var pt = spec.pt; pt >= (spec.minPt || spec.pt); pt -= 2) {
-    var count = w > 0 ? Math.max(1, Math.ceil(w * pt / box.widthPt)) : 1, lines = null;
+    var count = w > 0 ? Math.max(1, Math.ceil(w * pt / box.widthPt)) : 1;
     if (count > 2) continue;
-    if (count === 2 && spec.split) {
-      // 大きさが元の8割より大きいうちは、語の切れ目でしか分けない（語の途中で切るより、少し小さくする）
-      lines = splitTwoLines_(spec.text, pt, box.widthPt, pt > spec.pt * 0.8);
-      if (!lines) continue;
-    }
     var grow = w > 0 ? Math.max(0, Math.ceil(count * pt * LINE_HEIGHT_ - nowH)) : 0;   // 空の枠は伸ばさない
-    if (grow <= room) return { pt: pt, lines: lines, count: count, grow: grow };
+    if (grow <= room) return { pt: pt, lines: null, count: count, grow: grow };
   }
   return null;
+}
+
+// 会社名（split）の行の分け方と大きさ。メンバーのページ・リファーラル発表などと同じ CB_.layout で、
+// 枠の内側の幅（readShapeTextBox_ の widthPt。左右の余白は除いてある）に、いつもの大きさのまま2行まで。
+// 以前はここだけ別の決め方（splitTwoLines_：字の種類の変わり目の、真ん中に近いところ）で、
+// 「見本／コンサルティングオフィス」のように、ほかの出力と違う所・不自然な所で折れていた。
+// 字の幅も CB_ の見積もり（英字は字ごとの幅。以前は半角を一律0.5字）で測るので、1行のときも PowerPoint が折り返さない。
+//   ・まず、ほかの出力と同じ決め方（下の図形までの余地を見ない）。それで余地に入れば、そのまま使う
+//   ・入らないときだけ、余地に入る分け方・大きさの中でいちばん良いもの（1行のまま小さくするのも含めて。
+//     短い会社名を、余地のために小さな2行に分けないように）
+//   ・それでも入らない（とても長い）：詰めて折った行が枠と余地に入れば使う。入らなければ null（呼ぶ側で1行に縮める）
+function planCompanyLines_(spec, box, nowH, room) {
+  var growOf = function (count, pt) { return spec.text ? Math.max(0, Math.ceil(count * pt * LINE_HEIGHT_ - nowH)) : 0; };
+  var inRoom = function (lines, pt) { return growOf(lines.length, pt) <= room; };
+  var o = { width: box.widthPt, pt: spec.pt, minPt: spec.minPt || spec.pt, maxLines: 2, shrinkFirst: false };
+  var r = CB_.layout(spec.text, o);
+  if (r.fallback || !inRoom(r.lines, r.pt)) {
+    o.accept = inRoom;
+    o.shrinkFirst = true;
+    r = CB_.layout(spec.text, o);
+    var fit = r.lines.length <= 2 && inRoom(r.lines, r.pt)
+           && r.lines.every(function (line) { return CB_.fits(line, r.pt, box.widthPt); });
+    if (r.fallback && !fit) return null;
+  }
+  // 1行のときも、測った文字（CB_.normalize でそろえたもの）を段落にして入れ直す（測った文字と入っている文字を同じにする）
+  return { pt: r.pt, lines: spec.text ? r.lines : null, count: r.lines.length, grow: growOf(r.lines.length, r.pt) };
 }
 
 // 決めた大きさを入れる。grow ぶん枠を下へ伸ばし、belowId の枠を同じだけ下げる
@@ -306,6 +291,17 @@ function applyFixedSize_(xml, spec, plan, belowId) {
   return xml;
 }
 
+// どの大きさでも入らない（とても長い・下の図形まで余地が無い）とき：以前と同じく1行に縮める（minPt まで）。
+// 会社名は CB_ の見積もりで測る（半角を一律0.5字と数えると、英字の多い会社名は縮め足りず、PowerPoint が折り返す）
+function fitOneLineFixed_(xml, spec) {
+  if (!spec.split) return fitFontToShape_(xml, spec.id, spec.text, spec.minPt);
+  var box = readShapeTextBox_(xml, spec.id), per = CB_.lineWidthPt(CB_.normalize(spec.text), 1);
+  if (!box || !box.basePt || box.widthPt <= 0 || per <= 0) return xml;
+  var size = Math.floor(box.widthPt / per * 2) / 2;
+  if (size >= box.basePt) return xml;
+  return setFontSizeInShape_(xml, spec.id, Math.max(size, spec.minPt || 10));
+}
+
 function fitStackFixed_(xml, top, bottom) {
   var room = roomBelowShape_(xml, bottom.id, 72);
   // 下の枠をそろえた大きさで入れるのに要る高さを、先に取っておく（上の枠が余地を使い切って、下の枠だけ小さくならないように）。
@@ -314,10 +310,10 @@ function fitStackFixed_(xml, top, bottom) {
   var want = at(bottom.pt), least = at(bottom.minPt || bottom.pt);
   var tp = planFixedSize_(xml, top, room - (want ? want.grow : 0)) || planFixedSize_(xml, top, room - (least ? least.grow : 0));
   if (tp) xml = applyFixedSize_(xml, top, tp, bottom.id);
-  else xml = fitFontToShape_(xml, top.id, top.text, top.minPt);        // どの大きさでも入らない（とても長い）：以前と同じく1行に縮める
+  else xml = fitOneLineFixed_(xml, top);                     // どの大きさでも入らない（とても長い）：以前と同じく1行に縮める
   var bp = planFixedSize_(xml, bottom, room - (tp ? tp.grow : 0));
   if (bp) return applyFixedSize_(xml, bottom, bp, null);
-  return fitFontToShape_(xml, bottom.id, bottom.text, bottom.minPt);
+  return fitOneLineFixed_(xml, bottom);
 }
 
 // 置き換える文字は関数で返す。文字列で渡すと、お名前・会社名の「$&」「$'」「$1」を置き換えの記号として読み、

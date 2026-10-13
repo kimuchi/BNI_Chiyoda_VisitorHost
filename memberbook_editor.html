@@ -626,6 +626,8 @@
    });
  }
 </script>
+<!-- 会社名の改行の決め方（company_break.js の CB_）。カードの会社名を2行にするときの切れ目を、スライドなどと同じ決め方にする -->
+<?!= include('company_break') ?>
 <?!= HtmlService.createHtmlOutputFromFile('memberbook_render').getContent(); ?>
 <?!= HtmlService.createHtmlOutputFromFile('memberbook_pdf').getContent(); ?>
 </body></html>

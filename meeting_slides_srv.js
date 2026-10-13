@@ -404,20 +404,38 @@ function setTwoPersonPhotos_(parts, path, prefix, names, cache) {
 // 収まらないときだけ文字を小さくする（氏名・会社名は1行、カテゴリーは2行まで）。
 // 文字の幅は全角1文字＝1em・半角スペース＝0.3em・ほかの半角＝0.55em で見積もり、
 // 太字や代わりのフォント（Meiryo UI が無い環境）でも収まるよう、幅は5%ほどゆとりをみる。
+// 会社名（company）は、ほかの出力と同じ会社名の見積もり（company_break.js の CB_.lineWidthPt。英字は字ごとの幅・余裕こみ）で、
+// 枠の内側の幅に1行で入る大きさにする（英字の多い会社名は 0.55em では縮め足りず、PowerPoint が2行に折り返して下の段に重なった）。
+// 測る会社名は名簿の書き方にそろえたもの（CB_.normalize）。入れる値も同じにそろえておくこと（twoPersonCompanies_）。
 // 差し込み口 {{○○1会社名}} などがまだ残っている状態で呼ぶこと。
 var TWO_PERSON_FIT_ = [
   { field: '氏名', lines: 1, min: 20 },
-  { field: '会社名', lines: 1, min: 8 },           // 支社・営業所まで入る長い会社名もあるので、小さめまで許す
+  { field: '会社名', lines: 1, min: 8, company: true },   // 支社・営業所まで入る長い会社名もあるので、小さめまで許す
   { field: 'カテゴリー', lines: 2, min: 9 }
 ];
 function fitTwoPersonText_(xml, prefix, values) {
   for (var k = 1; k <= 2; k++) {
     for (var f = 0; f < TWO_PERSON_FIT_.length; f++) {
       var t = TWO_PERSON_FIT_[f], key = prefix + k + t.field;
-      if (values[key]) xml = fitTokenBox_(xml, '{{' + key + '}}', String(values[key]), t.lines, t.min);
+      if (!values[key]) continue;
+      var text = t.company ? CB_.normalize(values[key]) : String(values[key]);
+      xml = fitTokenBox_(xml, '{{' + key + '}}', text, t.lines, t.min, t.company);
     }
   }
   return xml;
+}
+// お2人のページ（prefixes）の会社名を、名簿の書き方にそろえた値の写し（CB_.normalize：セルの中の改行を外す・㈱を「株式会社」に）。
+// 画面から改行の残った会社名が来ても、測った文字と入れる文字を同じにする（改行が残ると、1行の枠で2行になり下の段に重なる）
+function twoPersonCompanies_(values, prefixes) {
+  var out = {}, k;
+  for (k in values) out[k] = values[k];
+  for (var p = 0; p < prefixes.length; p++) {
+    for (var n = 1; n <= 2; n++) {
+      k = prefixes[p] + n + '会社名';
+      if (out[k]) out[k] = CB_.normalize(out[k]);
+    }
+  }
+  return out;
 }
 function fitTwoPersonPage_(parts, prefix, values) {
   for (var path in parts) {
@@ -436,7 +454,8 @@ function textBoxEm_(s) {
   }
   return em;
 }
-function fitTokenBox_(xml, token, text, maxLines, minPt) {
+// company … 会社名。CB_.lineWidthPt（余裕こみ）で、枠の内側の幅（左右の余白を除く）に入る大きさを 0.5pt 刻みで
+function fitTokenBox_(xml, token, text, maxLines, minPt, company) {
   var sps = findTagRanges_(xml, 'p:sp');
   for (var i = 0; i < sps.length; i++) {
     var seg = xml.substring(sps[i].start, sps[i].end);
@@ -448,11 +467,20 @@ function fitTokenBox_(xml, token, text, maxLines, minPt) {
       var m = bp.match(new RegExp('\\s' + k + '="(\\d+)"'));
       return m ? parseInt(m[1], 10) : 91440;
     };
-    var widthPt = (parseInt(ext[1], 10) - ins('lIns') - ins('rIns')) / 12700 * 0.95;
+    var innerPt = (parseInt(ext[1], 10) - ins('lIns') - ins('rIns')) / 12700, widthPt = innerPt * 0.95;
     var pt = parseInt((seg.match(/<a:rPr\b[^>]*\ssz="(\d+)"/) || [0, 1800])[1], 10) / 100;
-    var em = textBoxEm_(text);
-    if (em * pt <= widthPt * maxLines) return xml;
-    var size = Math.max(minPt || 10, Math.floor(widthPt * maxLines / em * 2) / 2);
+    var size;
+    if (company) {
+      var per = CB_.lineWidthPt(text, 1);                      // 1pt あたりの幅（余裕こみ）
+      if (per <= 0 || per * pt <= innerPt * maxLines + 1e-6) return xml;
+      size = Math.floor(innerPt * maxLines / per * 2) / 2;
+      if (per * size > innerPt * maxLines + 1e-6) size -= 0.5; // 割り算の端数で、わずかに超えないように
+      size = Math.max(minPt || 10, size);
+    } else {
+      var em = textBoxEm_(text);
+      if (em * pt <= widthPt * maxLines) return xml;
+      size = Math.max(minPt || 10, Math.floor(widthPt * maxLines / em * 2) / 2);
+    }
     seg = seg.replace(/(<a:(?:rPr|endParaRPr)\b[^>]*?\ssz=")\d+(")/g, '$1' + Math.round(size * 100) + '$2');
     return xml.substring(0, sps[i].start) + seg + xml.substring(sps[i].end);
   }
@@ -607,10 +635,11 @@ function expandRecommendations_(parts, pairs, cache) {
     var g = pair.giver || {}, r = pair.receiver || {};
     var ph = setTwoPersonPhotos_(parts, path, RECO_PREFIX_, [g.name || '', r.name || ''], cache);
     missing = missing.concat(ph.missing);
+    // 会社名は名簿の書き方にそろえる（画面から改行の残った会社名が来ても、測った文字と入れる文字を同じに。twoPersonCompanies_ と同じ）
     var vals = {};
-    vals[RECO_PREFIX_ + '1氏名'] = g.name || ''; vals[RECO_PREFIX_ + '1会社名'] = g.company || '';
+    vals[RECO_PREFIX_ + '1氏名'] = g.name || ''; vals[RECO_PREFIX_ + '1会社名'] = CB_.normalize(g.company);
     vals[RECO_PREFIX_ + '1カテゴリー'] = g.category || '';
-    vals[RECO_PREFIX_ + '2氏名'] = r.name || ''; vals[RECO_PREFIX_ + '2会社名'] = r.company || '';
+    vals[RECO_PREFIX_ + '2氏名'] = r.name || ''; vals[RECO_PREFIX_ + '2会社名'] = CB_.normalize(r.company);
     vals[RECO_PREFIX_ + '2カテゴリー'] = r.category || '';
     putXml_(parts, path, replaceTokensInXml_(fitTwoPersonText_(xmlOf_(parts, path), RECO_PREFIX_, vals), vals));
   };
@@ -1242,6 +1271,8 @@ function editMeetingSlides_(parts, map, rules, o) {
     { prefix: '推薦のことば',   names: reco ? null : o.recommenders },
     { prefix: '抽選',           names: o.lottery }
   ];
+  // お2人のページの会社名は、名簿の書き方にそろえてから測り、同じ文字を入れる（後半の1枚目のメインプレゼンのページも）
+  map = twoPersonCompanies_(map || {}, TWO.map(function (t) { return t.prefix; }));
   for (var w = 0; w < TWO.length; w++) {
     var ph = applyTwoPersonPhotos_(parts, TWO[w].prefix, TWO[w].names || [], photoCache);
     if (ph && ph.message) photoMsgs.push(ph.message);

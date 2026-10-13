@@ -1,9 +1,12 @@
 <!-- 会社名・カテゴリーの組版。メンバープレゼンとリファーラル発表で共通に使う。
-     文字幅はブラウザのcanvasで実測する（GASには文字を測る手段が無いため）。 -->
+     会社名の行の分け方は company_break.js の CB_ で決める（読み込むページで、この部品より前に include('company_break')）。
+     カテゴリーの文字幅はブラウザのcanvasで実測する（GASには文字を測る手段が無いため）。 -->
 <script>
 // ===== 組版（元の生成ツールと同じ計算をここで行う）=====
-// 文字幅はブラウザのcanvasで実測する。サーバー（GAS）には文字を測る手段が無いため、
 // 折り返し位置・文字の大きさ・枠の寸法はここで決め、結果だけをサーバーへ渡す。
+//  ・会社名 … company_break.js の CB_（PCの書体によらない字の幅の見積もり）。ビジタープレゼン・新メンバーなど
+//             会社名を入れるほかの出力と同じ決め方なので、同じ会社は同じところで折れ、どのPCで作っても同じになる
+//  ・カテゴリー … ブラウザのcanvasで実測する（サーバー（GAS）には文字を測る手段が無いため）
 
 // 枠の位置（EMU）。メンバープレゼンのテンプレートから採った実測値を既定にし、
 // 別のテンプレート（リファーラル発表など）では setLayoutBoxes() で差し替える。
@@ -57,7 +60,8 @@ var LINE_EMU = 12700 * 1.213, PAD_EMU = 91440;
 var GAP_EMU = 151507;          // 会社名の枠の下端と【カテゴリー】の上端の差
 var BASE_PT = 44, MIN_PT = 28, HARD_MIN_PT = 20;
 
-function widthPt(g){ return g.cx / 12700; }
+// 会社名の枠の内側の幅（pt）。左右の余白（既定の 91440EMU＝7.2pt ずつ）を除く
+function companyInnerPt(g){ return g.cx / 12700 - 14.4; }
 
 function measurePt(text, sizePt, bold){
   if(!measurePt._c){ measurePt._c = document.createElement('canvas').getContext('2d'); }
@@ -101,39 +105,20 @@ function mergeOrphan(lines){
 }
 function normParens(s){ return String(s==null?'':s).replace(/（/g,'(').replace(/）/g,')'); }
 // 名簿の文字の中の改行・タブなどを外して1行にする（英数字どうしのあいだの改行だけ空白に）。
-// 改行が残っていると、ここで決めた行数よりスライドの行が増え、枠の外にはみ出して見えなくなることがあった
+// 改行が残っていると、ここで決めた行数よりスライドの行が増え、枠の外にはみ出して見えなくなることがあった。
+// 会社名は CB_.normalize（同じ外し方に、㈱などを開く・空白をまとめるを足したもの）を使う
 function oneLine(s){
   var t=String(s==null?'':s);
   return t.replace(/[ \t\u3000]*[\r\n\u000B\u000C\u0085\u2028\u2029]+[ \t\u3000]*/g, function(m, at){
     return /[A-Za-z0-9]/.test(t.charAt(at-1)) && /[A-Za-z0-9]/.test(t.charAt(at+m.length)) ? ' ' : '';
   }).replace(/\t/g,' ').trim();
 }
-function expandCorp(s){ return String(s==null?'':s).replace(/㈱/g,'株式会社').replace(/㈲/g,'有限会社').replace(/㈾/g,'合資会社'); }
-var CORP_SUFFIXES=['株式会社','有限会社','合同会社','合資会社'];
-function splitCorp(text){
-  for(var i=0;i<CORP_SUFFIXES.length;i++){
-    var s=CORP_SUFFIXES[i];
-    if(text.length>s.length && text.slice(-s.length)===s) return { main:text.slice(0,-s.length), suffix:s };
-  }
-  return null;
-}
 
 // 文字の大きさは、いつも書いて渡す（テンプレートの大きさのままにすると、そろわないため）
 function companyFit(lines, pt, geom, catTop){
   return { lines:lines, fontPt:pt, geom:geom, categoryTop:catTop };
 }
-function fitsOneLine(text, pt, wPt){ return wrapKinsoku(text, pt, true, wPt).length <= 1; }
-// 「社名／株式会社」「株式会社／社名」の2行。どちらの行も1行に入るときだけ（無ければ null）
-function corpLines(text, pt, wPt){
-  var sp=splitCorp(text);
-  if(sp && fitsOneLine(sp.main, pt, wPt)) return [sp.main, sp.suffix];
-  for(var i=0;i<CORP_SUFFIXES.length;i++){
-    var s=CORP_SUFFIXES[i], rest=text.slice(s.length).replace(/^[\s　]+/,'');
-    if(text.slice(0,s.length)===s && rest && fitsOneLine(rest, pt, wPt)) return [s, rest];
-  }
-  return null;
-}
-// 2行に折ったとき、2行目が1〜2文字だけにならないよう、切れ目を少し前へ（語の途中では切らない）
+// 2行に折ったとき、2行目が1〜2文字だけにならないよう、切れ目を少し前へ（語の途中では切らない。カテゴリー用）
 function rebalance2(lines){
   if(lines.length!==2 || lines[1].length>2) return lines;
   var s=lines[0]+lines[1], c=Math.max(1, s.length-3);
@@ -147,32 +132,36 @@ function companyCalc(lines, pt){
   return companyFit(lines, pt, g, Math.round(g.y + g.cy - GAP_EMU));
 }
 
-// 会社名の収め方（44pt）。上から順に試し、収まったところで決める。
-//  ① ㈱などの略記があれば、元ツールと同じく展開して「社名／株式会社」で折る（2行・44pt）
-//  ② 1行に入れば、そのまま（44pt）… ほとんどの方はここ
-//  ③ 同じ大きさのまま2行：「社名／株式会社」「株式会社／社名」で折れればそこで、無理なら語の切れ目で（44pt）
-//  ④ 2行にも入らないほど長いときだけ、小さくする（2行で28ptまで → 3行で20ptまで）
-// ④では枠の高さと【カテゴリー】の位置を実際の行数から出し直す。
+// 会社名の収め方（44pt）。行の分け方と大きさは company_break.js の CB_.layout で決める。
+//  ① 1行に入れば、そのまま（44pt）… ほとんどの方はここ
+//  ② 同じ大きさのまま2行（44pt）：法人の種類の前後（「株式会社／見本コンサルティング」）・空白・かっこ・
+//     よく使う語の切れ目で折る。語の途中・英単語の途中・「ー」「）」の前では折らない
+//  ③ 2行にも入らないほど長いとき・44ptでは語の途中でしか折れないときだけ、小さくする（2行で28ptまで → 3行で20ptまで）。
+//     「コン／サルティング」のように折るより、少し小さくして語の切れ目で入れる。3行にするより2行のまま小さくする方を選ぶ（linePenalty）
+// 以前はここで canvas で字を測って行の幅いっぱいに詰めて折っていたため、「一般社団法人日本見／本協会」のように
+// 語の途中で折れ、PCの書体によっても、ほかの出力（ビジタープレゼンなど）とも折れ方が違っていた。
+// 1行か2行かは、1行の枠と2行の枠の狭い方の幅で決める（メンバーのページとリファーラル発表で同じ行数・同じ切れ目に）。
+// ③では枠の高さと【カテゴリー】の位置を実際の行数から出し直す。
 // 2行決め打ちのままだと、3行になったときに【カテゴリー】と文字が重なる。
 function layoutCompany(raw){
-  raw=oneLine(raw);
-  var wasAbbrev=/[㈱㈲㈾]/.test(raw||''), text=expandCorp(raw);
-  var base=COMPANY_PT, min=minPtOf(base), hard=hardMinPtOf(base);
+  var text=CB_.normalize(raw), base=COMPANY_PT, min=minPtOf(base);
   if(!text) return companyFit([''], base, COMPANY_DEFAULT, CATEGORY_TOP);
-  var w1=widthPt(COMPANY_DEFAULT), w2=widthPt(COMPANY_TALL), sp=splitCorp(text);
-  if(wasAbbrev && sp && fitsOneLine(sp.main, base, w2)) return companyFit([sp.main,sp.suffix], base, COMPANY_TALL, CATEGORY_TOP_LOW);
-  var lines=wrapKinsoku(text,base,true,w1);
-  if(lines.length<=1) return companyFit(lines, base, COMPANY_DEFAULT, CATEGORY_TOP);
-  var two=corpLines(text, base, w2);
-  if(two) return companyFit(two, base, COMPANY_TALL, CATEGORY_TOP_LOW);
-  lines=rebalance2(wrapKinsoku(text,base,true,w2));
-  if(lines.length<=2) return companyFit(lines, base, COMPANY_TALL, CATEGORY_TOP_LOW);
-
-  var pt=base;
-  while(lines.length>2 && pt>min){ pt-=2; lines=wrapKinsoku(text,pt,true,w2); }
-  while(lines.length>3 && pt>hard){ pt-=2; lines=wrapKinsoku(text,pt,true,w2); }
-  lines=mergeOrphan(lines);
-  return companyCalc(lines, pt);
+  var w2=companyInnerPt(COMPANY_TALL);
+  // 3行にするのは、2行で下限（28pt）まで小さくしても入らないときだけ（元ツールと同じ）。
+  // 大きいまま3行にすると、会社名の枠が下へ伸び、【カテゴリー】が下のカウントダウンにかかる
+  var o={ width:w2, width1:Math.min(companyInnerPt(COMPANY_DEFAULT), w2), pt:base,
+          minPt:min, hardMinPt:hardMinPtOf(base), maxLines:3, linePenalty:10,
+          accept:function(lines, pt){ return lines.length<=2 || pt<=min; } };
+  var r=CB_.layout(text, o);
+  // 折れるところの無い長い1語（英字だけの長い名前など）は、語の途中で折るより、1行のまま入る大きさまで小さくする
+  if(r.fallback){
+    o.shrinkFirst=true;
+    var one=CB_.layout(text, o);
+    if(!one.fallback) r=one;
+  }
+  if(r.lines.length<=1) return companyFit(r.lines, r.pt, COMPANY_DEFAULT, CATEGORY_TOP);
+  if(r.lines.length===2 && r.pt===base) return companyFit(r.lines, base, COMPANY_TALL, CATEGORY_TOP_LOW);
+  return companyCalc(r.lines, r.pt);
 }
 
 // カテゴリー（32pt）：【】で囲む。1行に入らなければ、同じ大きさのまま2行（行間を少し詰める）。

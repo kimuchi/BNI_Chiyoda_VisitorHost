@@ -2,7 +2,7 @@
 
 // 反映されたか確かめるための版。変更したら日付を更新する。
 // clasp push / デプロイが効いているかは、これを画面で見れば分かる。
-var SYSTEM_VERSION_ = '2026-10-07b';
+var SYSTEM_VERSION_ = '2026-10-13a';
 
 function getSystemVersion() { return SYSTEM_VERSION_; }
 
@@ -771,6 +771,20 @@ function meetingDisplayOf_(d) {
   return Utilities.formatDate(d, "Asia/Tokyo", "yyyy/M/d") + "(" + CHAPTER_WEEK_[d.getDay()] + ")" + (n ? " 第" + n + "回" : "");
 }
 
+// ビジター様リスト（印刷用シート → PDF）の会社名の欄の行の分け方。
+// シートの折り返しに任せると「株式会社見本コン／サルティング」のように語の途中で折れ、スライドやメンバーブックとも切れ目が違ったため、
+// company_break.js（CB_）で切れ目を決めて、改行（\n）で分けて入れる（折り返しありのセルは、改行をそのまま行の切れ目にする）。
+// 欄の内側の幅：列の幅 160px ＝ 120pt（1px＝0.75pt）から、セルの左右の余白（約3pxずつ）と罫線（1px）を除いて約115pt。
+// 字の大きさはシートの既定の 10pt（このシートでは変えていない）。PDFは幅に合わせて縮めるが、列も字も同じ割合なので切れ目は変わらない。
+// 字の幅の見積もりには余裕がある（CB_.MARGIN。全角は1行10字まで。実際は11字ほど入る）ので、シートの側でさらに折り返すことはない。
+// 小さくはしない（ほかの欄と同じ大きさ）。行の高さは中身に合わせて伸びる（下の setRowHeight は、中身が多ければ伸びる。
+// 高さを固定する setRowHeightsForced ではない）ので、4行まで使う
+var VISITOR_COMPANY_BOX_ = { width: 115, pt: 10, minPt: 10, maxLines: 4 };
+function visitorListCompany_(company) {
+  var s = CB_.normalize(company);
+  return s ? CB_.layout(s, VISITOR_COMPANY_BOX_).lines.join('\n') : '';
+}
+
 function createFinalSheet(meetingDateVal, meetingDisplay, finalRows, originalHeader) {
   var ss = getSS_(), dateObj = new Date(meetingDateVal), dateKey = sheetKeyOf_(dateObj), baseSheetName = dateKey + "参加者";
   // 前にアーカイブ（非表示）した開催日を作り直すときは、その開催日のシートを表示に戻す
@@ -797,7 +811,10 @@ function createFinalSheet(meetingDateVal, meetingDisplay, finalRows, originalHea
   ];
   for (var i = 0; i < finalRows.length; i++) {
     var r = finalRows[i], baseRow = [ r["_No"]||"", r["参加者氏名"]||"", r["ふりがな"]||"", r["カテゴリー"]||"", r["会社名"]||"", r["招待者"]||"", r["メモ（ビジターリストに表示）"]||"" ];
-    printOutput.push(baseRow);
+    // 印刷用は会社名だけ、決めた切れ目で行を分けたものにする（名簿のシートは元の書き方のまま。再編集で読み戻すため）
+    var printRow = baseRow.slice();
+    printRow[4] = visitorListCompany_(baseRow[4]);
+    printOutput.push(printRow);
     var fullRow = baseRow.slice();
     for (var k = 0; k < otherKeys.length; k++) fullRow.push(r[otherKeys[k]] || "");
     dataOutput.push(fullRow);

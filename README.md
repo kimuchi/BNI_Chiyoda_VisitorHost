@@ -92,6 +92,7 @@ BNI_Chiyoda_VisitorHost/
 │   └ talk_script_default.js  #   既定のひな形（docs/samples/トークスクリプトのひな形.tsv と同じ内容）
 ├── zoom_guide.html           # Zoom入室案内
 ├── ooxml.js                  # pptx(OOXML)を文字列で書き換える共通処理
+├── company_break.js          # 会社名の改行の決め方（どの出力でも同じ切れ目。画面には include('company_break') で同じ中身を渡す）
 │
 │  ── 名簿・素材 ──
 ├── member_master_srv.js      # メンバー名簿マスタ（全機能の正本）
@@ -165,6 +166,12 @@ BNI_Chiyoda_VisitorHost/
     ├── check_welcome.js      #   事前MTGの熱烈歓迎のページ（新入会の方ごとに1枚・まとめのあと・名簿に無い方・写真・
     │                         #     土台の違うひな形はマスター・テーマごと写す（番号が重ならない・pptxとして壊れていない）・作る前の確かめ・
     │                         #     画像から作ったひな形（「お名前」「お写真」の四角・大きさを合わせる・縦横の比が違う）・ひな形を確かめる）
+    ├── check_company_break.js #  会社名の改行の決め方（company_break.js：法人の種類・空白・語の切れ目で折る・語や英単語の途中で折らない・
+    │                         #     行頭禁則・枠に入る・画面に渡す中身がサーバーと同じ計算・文字の中の改行を <a:br> に）
+    ├── check_company_lines_client.js # 会社名の改行：メンバーのページ・リファーラル発表（どのパソコンでも同じ・両方のページで同じ折れ方）
+    ├── check_company_lines_server_slides.js # 会社名の改行：ビジタープレゼン・2人のページ（メインプレゼン・推薦のことば・抽選）
+    ├── check_company_lines_server_pages.js # 会社名の改行：新メンバー・ネットワーキングリーダー（まとめも）・役職のメンバー紹介・熱烈歓迎
+    ├── check_company_lines_html_pdf.js # 会社名の改行：メンバーブック（2行のときの切れ目）・ビジター様リストのPDF（印刷用のシート）
     ├── check_routine_names.js #  ルーティンチェックシートの名前の照合（同じ名字・似た氏名の方を取り違えない・名字だけで2人なら決めない・名簿に無い新メンバー・
     │                         #     かなのお名前を名簿のふりがなで・「カテゴリー　○○　お名前」の書き方・読み取れなかった記載）
     ├── check_member_master_dialog.js # 「メンバー名簿」の画面を Chromium で（読み込めていないまま追加・保存して名簿を上書きしない・
@@ -474,7 +481,7 @@ clasp deployments
 
 ### 更新が反映されたかの確かめ方
 
-`コード.js` の `SYSTEM_VERSION_`（例: `2026-10-07b`）が、ウェブアプリのトップページの下と
+`コード.js` の `SYSTEM_VERSION_`（例: `2026-10-13a`）が、ウェブアプリのトップページの下と
 「定例会スライド（前半）」「定例会スライド（後半）」の画面の右上に **「版 …」** として出ます。
 機能を変えたらこの値を変え、`clasp push`・`clasp version`・`clasp deploy` のあとに画面で確かめてください。
 

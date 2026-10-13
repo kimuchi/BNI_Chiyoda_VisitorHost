@@ -15,6 +15,8 @@
 // そのときは、お名前が替わった枠だけ書き換える（同じ方のままの枠は、写真の切り抜きやローマ字もそのまま残す）。
 // 担当者の居ない役職の1人のページ（プレジデントのページなど）は非表示にする。
 // 担当者・チームが登録されていない期は、差し込み口の無いページには触らない（テンプレートのまま）。
+// 会社名は、会社名の改行の決め方（company_break.js）で、枠に1行で入ればそのまま、入らなければ自然な切れ目の2行にして
+// 書く（PowerPoint に折らせない。riCompanyTokens_）。
 
 // ページの文字から役職を見分ける書き方（全角半角・空白・大文字小文字は無視。長いものから当てる）
 var RI_ROLE_WORDS_ = [
@@ -174,7 +176,8 @@ function riValues_(data) {
   var put = function (base, p, usable) {
     if (usable) persons[base] = p;
     var c = p ? p.category : '', inner = c.replace(/[（(]/g, '「').replace(/[）)]/g, '」');
-    map[base + '氏名'] = p ? p.name : ''; map[base + '会社名'] = p ? p.company : '';
+    // 会社名は名簿の文字をそろえて入れる（セルの中の改行・㈱など。company_break.js）。行の分け方は riCompanyTokens_
+    map[base + '氏名'] = p ? p.name : ''; map[base + '会社名'] = p && p.company ? CB_.normalize(p.company) : '';
     map[base + 'カテゴリー'] = c; map[base + 'ローマ字'] = p ? p.romaji : '';
     map[base + 'カテゴリー（）'] = c ? '（' + inner + '）' : '';
     map[base + 'カテゴリー()'] = c ? '(' + inner + ')' : '';
@@ -539,6 +542,88 @@ function riFitShape_(xml, id, lines, wEmu, hEmu) {
   return xml.substring(0, r.start) + seg + xml.substring(r.end);
 }
 
+// --- 会社名の段落（役職のメンバー紹介・新メンバー／更新メンバー・ネットワーキングリーダー・熱烈歓迎で使う）---
+// どこも、行の分け方は会社名の改行の決め方（company_break.js の CB_）で決め、決めた行を書く（PowerPoint に折らせない）。
+// 以前は会社名をそのまま入れて PowerPoint の折り返しに任せたり、出力ごとに別の見積もりで縮めたりしていたため、
+// 「株式会社見本コン／サルティング」のように語の途中で折れ、同じ会社でもページごとに折れ方が違った。
+// 枠の内側の幅（pt）：図形の幅から左右の余白（bodyPr の lIns・rIns。無ければ PowerPoint の既定の 0.1インチ）を引く
+function riInnerPt_(seg, wEmu) {
+  var bp = (String(seg).match(/<a:bodyPr\b[^>]*>/) || [''])[0];
+  var ins = function (k) { var m = bp.match(new RegExp('\\s' + k + '="(\\d+)"')); return m ? +m[1] : 91440; };
+  return Math.max(1, (wEmu || 0) - ins('lIns') - ins('rIns')) / 12700;
+}
+// 段落の字の大きさ（pt）：ランの大きさ（いちばん大きいもの）→ 段落の終わりの大きさ → 図形の lstStyle の1段目。
+// どれにも無ければ、ふつうの文字の枠は PowerPoint の既定の 18pt。差し込み口の枠（p:ph）はレイアウト・マスターから
+// 受け継ぐので、わからない（0）
+function riParaPt_(seg, pXml) {
+  var sz = 0, m, re = /<a:rPr\b[^>]*\ssz="(\d+)"/g;
+  while ((m = re.exec(pXml)) !== null) sz = Math.max(sz, +m[1]);
+  if (!sz) sz = +((String(pXml).match(/<a:endParaRPr\b[^>]*\ssz="(\d+)"/) || [])[1] || 0);
+  if (!sz) sz = +((String(seg).match(/<a:lvl1pPr\b[^>]*>(?:(?!<\/a:lvl1pPr>)[\s\S])*?<a:defRPr\b[^>]*\ssz="(\d+)"/) || [])[1] || 0);
+  return sz ? sz / 100 : (/<p:ph\b/.test(seg) ? 0 : 18);
+}
+// 段落の字の大きさをそろえる（sz の無い書式には足す。書式の無いランには書式を足す）
+function riParaSize_(pXml, pt) {
+  var sz = String(Math.round(pt * 100));
+  return String(pXml).replace(/<a:(rPr|endParaRPr)\b([^>]*?)(\/?)>/g, function (all, tag, attrs, close) {
+    return '<a:' + tag + (/\ssz="/.test(attrs) ? attrs.replace(/\ssz="\d+"/, ' sz="' + sz + '"') : attrs + ' sz="' + sz + '"') + close + '>';
+  }).replace(/<a:r>(\s*)<a:t(?=[\s>\/])/g, '<a:r>$1<a:rPr lang="ja-JP" sz="' + sz + '"/><a:t');
+}
+// 段落の文字を、決めた行と大きさ（pt。元の大きさ base と同じなら変えない）にする。2行目からは同じ段落の中の改行
+// （<a:br>。前の行と同じ書式）で区切るので、段落の数は変わらない（下の【カテゴリー】の段落の位置もそのまま）
+function riParaLines_(pXml, lines, pt, base) {
+  var p = oneRunParagraph_(pXml, lines.join('\n'));
+  if (Math.abs(pt - base) > 1e-6) p = riParaSize_(p, pt);
+  return lfToLineBreaks_(p);
+}
+// 1行で入れる枠（1人1枚のページなど）の会社名：いつもの1行のまま、枠の内側に入る大きさ（0.5pt刻み・minPt まで）にする。
+// 見積もりは CB_.lineWidthPt（どこでも同じ字の幅。少し広めに見るので、PowerPoint が勝手に折り返さない）。
+// minPt でも1行に入らないときだけ、twoPt（minPt 以上。元の大きさの半分くらい）から minPt までの大きさで、
+// 自然な切れ目の2行にする（CB_.layout）。半分の大きさの2行は、元の大きさの1行とほぼ同じ高さなので、枠からはみ出さない
+//   → { lines: [...], pt }
+function riCompanyOneLine_(text, widthPt, pt, minPt, twoPt) {
+  if (CB_.fits(text, pt, widthPt)) return { lines: [text], pt: pt };
+  var fit = Math.floor(widthPt / CB_.lineWidthPt(text, 1) * 2) / 2;
+  if (fit >= minPt) return { lines: [text], pt: fit };
+  return CB_.layout(text, { width: widthPt, pt: Math.max(minPt, twoPt || minPt), minPt: minPt, maxLines: 2 });
+}
+// 2行まで書ける枠（役職のメンバー紹介の差し込み口・ネットワーキングリーダーのまとめのページの列）の会社名：
+// 元の大きさ pt で1行に入ればそのまま、入らなければ自然な切れ目の2行（minPt まで小さく。CB_.layout）。
+// とても長い・とても狭くて、minPt の2行では語の途中でしか折れないとき（CB_.layout の natural が false）は、
+// 元の大きさの2行ぶんの高さに収まる3行で、自然な切れ目になるならそちらにする（ならなければ2行のまま）
+//   → { lines: [...], pt }
+function riCompanyTwoLines_(text, widthPt, pt, minPt) {
+  var lay = CB_.layout(text, { width: widthPt, pt: pt, minPt: minPt, maxLines: 2 });
+  if (lay.natural) return lay;
+  var three = CB_.layout(text, { width: widthPt, pt: pt, minPt: minPt, maxLines: 3,
+                                 accept: function (lines, q) { return lines.length * q <= 2 * pt + 1e-6; } });
+  return three.natural ? three : lay;
+}
+// 会社名の差し込み口（{{プレジデント会社名}}・{{メンバーシップ委員会1会社名}} など）を、会社名の改行の決め方で入れる。
+// 差し込み口だけの段落は、枠の内側の幅とその段落の字の大きさで、1行に入ればそのまま1行、入らなければ自然な切れ目の
+// 2行にする（同じ段落の中の改行。2行でも入らなければ、半分の大きさまで小さく。riCompanyTwoLines_）。1人のページ（riDetectSingle_）の
+// 会社名の行も、差し込み口を書いてからここを通る。
+// ほかの字と同じ段落にある差し込み口・表のマス目の差し込み口・字の大きさがわからない差し込み口の枠（p:ph）は、
+// ここでは触らない（このあとの置き換えで、名簿の文字をそろえた1行の会社名がそのまま入る）
+function riCompanyTokens_(xml, map) {
+  if (!/会社名\}\}/.test(slideText_(xml))) return xml;
+  riShapes_(xml).forEach(function (s) {
+    if (s.tag !== 'p:sp' || s.text.indexOf('会社名}}') < 0) return;
+    var r = findShapeRange_(xml, s.id);
+    if (!r) return;
+    var seg = xml.substring(r.start, r.end), ps = findTagRanges_(seg, 'a:p');
+    for (var i = ps.length - 1; i >= 0; i--) {
+      var p = seg.substring(ps[i].start, ps[i].end), m = slideText_(p).trim().match(/^\{\{([^{}]{1,60}会社名)\}\}$/);
+      var text = m && Object.prototype.hasOwnProperty.call(map, m[1]) ? map[m[1]] : '', pt = text ? riParaPt_(seg, p) : 0;
+      if (!pt) continue;
+      var lay = riCompanyTwoLines_(text, riInnerPt_(seg, s.acx), pt, pt / 2);
+      seg = seg.substring(0, ps[i].start) + riParaLines_(p, lay.lines, lay.pt, pt) + seg.substring(ps[i].end);
+    }
+    xml = xml.substring(0, r.start) + seg + xml.substring(r.end);
+  });
+  return xml;
+}
+
 // 写真の枠 {{○○写真}}：その方の写真に替える。居ない方・写真の無い方の枠は消す（前の方の写真を残さない）
 function riFillPhotos_(parts, path, xml, persons, cache, res) {
   var want = [];
@@ -713,6 +798,7 @@ function applyRoleIntro_(parts, data, cache) {
       while ((tm = tre.exec(txt)) !== null) {
         if (Object.prototype.hasOwnProperty.call(vals.map, tm[1] + 'の一覧')) res.filled.push({ path: path, base: tm[1] + 'の一覧', name: vals.map[tm[1] + 'の一覧'] });
       }
+      xml = riCompanyTokens_(xml, vals.map);           // 会社名の差し込み口だけの段落は、決めた行で（PowerPoint に折らせない）
       xml = replaceTokensInXml_(xml, vals.map);
       fits.forEach(function (f) { xml = riFitShape_(xml, f.id, f.lines, f.w, f.h); });
       if (data) xml = riFillPhotos_(parts, path, xml, vals.persons, cache, res);

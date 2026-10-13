@@ -29,7 +29,7 @@ const J = (x) => JSON.stringify(x);
 
 const sb = { console };
 vm.createContext(sb);
-for (const f of ['ooxml.js', 'member_presen_srv.js', 'slides_visitor_srv.js']) {
+for (const f of ['ooxml.js', 'company_break.js', 'member_presen_srv.js', 'slides_visitor_srv.js']) {
   vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), sb, { filename: f });
 }
 

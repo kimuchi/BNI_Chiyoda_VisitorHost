@@ -235,7 +235,9 @@ function evalTemplate(file, vars) {
     i = re.lastIndex;
   }
   code += '__o.push(' + J(src.slice(i)) + ');}return __o.join("");';
-  const include = (n) => fs.readFileSync(path.join(ROOT, n + '.html'), 'utf8');
+  // include('company_break') は、本番（webapp_srv.js の include）と同じく company_break.js の中身を <script> で渡す
+  const include = (n) => (n === 'company_break' ? '<script>\n' + fs.readFileSync(path.join(ROOT, 'company_break.js'), 'utf8') + '\n</script>'
+    : fs.readFileSync(path.join(ROOT, n + '.html'), 'utf8'));
   return new Function('__v', '__e', code)(Object.assign({ include }, vars), esc);
 }
 const MEMBERS = ['見本 一郎', '試験 花子', '架空 三郎', '仮名 四郎'].map((n, i) => ({ no: String(i + 1), name: n, company: n + '商事', title: 'カテゴリー', hasPhoto: true }));

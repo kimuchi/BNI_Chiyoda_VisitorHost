@@ -190,11 +190,18 @@ async function routeFonts(ctx) {
   });
 }
 
-// 編集画面のHTML（テンプレートの include を中身に置き換える）
+// 編集画面のHTML（テンプレートの include を中身に置き換える。include('company_break') は、本番（webapp_srv.js）と同じく
+// company_break.js の中身を <script> で渡す）
 function editorHtml() {
   return fs.readFileSync(path.join(ROOT, 'memberbook_editor.html'), 'utf8')
+    .replace(/<\?!=\s*include\('company_break'\)\s*\?>/g, () => '<script>\n' + fs.readFileSync(path.join(ROOT, 'company_break.js'), 'utf8') + '\n</script>')
     .replace(/<\?!=\s*HtmlService\.createHtmlOutputFromFile\('([\w]+)'\)\.getContent\(\);\s*\?>/g,
       (m, name) => fs.readFileSync(path.join(ROOT, name + '.html'), 'utf8'));
+}
+// 組版の部品（編集画面と同じく、会社名の改行の決め方 company_break.js を先に読む）
+function renderJs() {
+  return fs.readFileSync(path.join(ROOT, 'company_break.js'), 'utf8') + '\n'
+    + fs.readFileSync(path.join(ROOT, 'memberbook_render.html'), 'utf8').replace(/^<script>|<\/script>\s*$/g, '');
 }
 // 期ごとのプレジデント設定（サーバーの coverPresidentList_ と同じ形）。24期が、いまの期
 const PRESIDENTS = [
@@ -259,7 +266,7 @@ const STUB = (members, cats, cover, drive) => `
   {
     const page = await ctx.newPage();
     await page.setContent('<html><body></body></html>');
-    const render = fs.readFileSync(path.join(ROOT, 'memberbook_render.html'), 'utf8').replace(/^<script>|<\/script>\s*$/g, '');
+    const render = renderJs();
     const html = await page.evaluate(({ render, members, cats, cover }) => {
       window.members = members; window.cats = cats; window.cover = cover; window.photosB64 = {};
       window.catOf = (k) => cats.find((c) => c.key === k) || null;
@@ -342,7 +349,7 @@ const STUB = (members, cats, cover, drive) => `
   {
     const page = await ctx.newPage();
     await page.setContent('<html><body></body></html>');
-    const render = fs.readFileSync(path.join(ROOT, 'memberbook_render.html'), 'utf8').replace(/^<script>|<\/script>\s*$/g, '');
+    const render = renderJs();
     const cats11 = CATS.concat([['暮らしサービス', '#255e5e'], ['士業・コンサルティング・その他の専門サービス', '#7030a0']].map(([key, bg]) => ({ key, label: key, bg })));
     const mem = cats11.map((c, i) => Object.assign({}, MEMBERS[0], { no: String(i + 1), name: '見本 ' + (i + 1), cat: c.key,
       comment: i === 0 ? '一行目の一言\n二行目の一言' : '見本の一言です' }));
