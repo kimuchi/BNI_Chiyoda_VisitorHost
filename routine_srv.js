@@ -278,6 +278,12 @@ function routinePolicyNo_(v) {
 
 // 「22 メインプレゼン」の欄。「①山内さん　②金井さん」「①北川‗②若松」など。
 // 番号の丸数字で切り、無ければ読点で切る。それぞれをメンバー名簿の氏名に合わせる。
+//   → [{ raw, name, matched, kind }]
+//   kind … 'member'（メンバー）か 'director'（「見本ED」「見本ディレクター」「見本アンバサダー」のように役職を添えた、
+//           リージョンのディレクター・アンバサダー。名簿の方ではないので name は空。guest に役職を外した呼び名）
+//   「②なし」「②ー」のような、いない印の欄は数えない（1人の週。以前は「なし」という方として数えていた）。
+//   「見本さんのみ」「見本さん（1名）」の「のみ」「1名」は外す
+var ROUTINE_DIRECTOR_RE_ = /(ＥＤ|ED|ＡＤ|AD)(さん|様)?$|ディレクター|アンバサダー|リージョン|エグゼクティブ|エクゼクティブ|エクゼティブ/i;
 function routineMainPresenters_(v) {
   var s = String(v == null ? '' : v).replace(/[\r\n]+/g, ' ').trim();
   if (routineIsBlank_(s.replace(/[\s　]/g, ''))) return [];
@@ -289,10 +295,17 @@ function routineMainPresenters_(v) {
   }
   var out = [];
   for (var i = 0; i < parts.length && out.length < 2; i++) {
-    var raw = String(parts[i]).replace(/[‗_＿\-－―]/g, ' ').trim();
-    if (!raw) continue;
+    var raw = String(parts[i]).replace(/[‗_＿\-－―]/g, ' ').trim()
+      .replace(/[（(]\s*[1１一]\s*名\s*[）)]|\s*[1１一]名$|のみ$/g, '').trim();
+    if (!raw || routineIsBlank_(raw.replace(/[\s　]/g, ''))) continue;
+    if (ROUTINE_DIRECTOR_RE_.test(raw)) {
+      var guest = raw.replace(/(さん|様)$/, '').replace(new RegExp(ROUTINE_DIRECTOR_RE_.source, 'gi'), '')
+        .replace(/(さん|様)$/, '').replace(/[\s　・]+$/, '').trim();
+      out.push({ raw: raw, name: '', matched: false, kind: 'director', guest: guest });
+      continue;
+    }
     var hit = routineMemberName_(raw);
-    out.push({ raw: raw, name: hit.name, matched: hit.matched });
+    out.push({ raw: raw, name: hit.name, matched: hit.matched, kind: 'member' });
   }
   return out;
 }

@@ -1074,10 +1074,38 @@ function weeklyGuestPages_(parts) {
     var sh = presenterShapes_(xml, slideW), name = shapeTextOf_(xml, sh.nameBox);
     // 「苗字　名前」「〇〇　〇〇」のままの下書き（スタートアッププレゼンのページなど）は人のページではない
     if (!name || /苗字|名前|氏名/.test(name) || /^[〇○◯\s　]+$/.test(name)) continue;
+    // role … カテゴリーの枠の文字（「エグゼクティブディレクター」「BNI東京千代田リージョン」など、テンプレートに書いてあるとおり）。
+    // company … 会社名の枠の文字。photo … 写真の画像（ppt/media/…）。メインプレゼンをディレクターが担当する週に使う
     out.push({ key: order[i].replace(/^.*\//, ''), path: order[i], name: name,
-               role: shapeTextOf_(xml, sh.category), hidden: /<p:sld\b[^>]*\sshow="0"/.test(xml) });
+               role: shapeTextOf_(xml, sh.category), company: shapeTextOf_(xml, sh.company),
+               photo: sh.photo ? picMediaPath_(parts, order[i], xml, sh.photo) : '',
+               hidden: /<p:sld\b[^>]*\sshow="0"/.test(xml) });
   }
   return out;
+}
+
+// 画像の図形が使っている画像（ppt/media/…）。見つからなければ空
+function picMediaPath_(parts, slidePath, xml, picId) {
+  var r = findShapeRange_(xml, picId);
+  if (!r) return '';
+  var rid = (xml.substring(r.start, r.end).match(/<a:blip[^>]*r:embed="([^"]+)"/) || [])[1];
+  var rels = rid ? xmlOf_(parts, relsPathOf_(slidePath)) || '' : '';
+  var m = rels.match(new RegExp('<Relationship\\b[^>]*\\bId="' + rid + '"[^>]*>'));
+  var t = m ? (m[0].match(/Target="([^"]+)"/) || [])[1] : '';
+  if (!t || /TargetMode="External"/.test(m[0])) return '';
+  var media = t.replace(/^\.\.\//, 'ppt/').replace(/^\/+/, '');
+  return parts[media] ? media : '';
+}
+
+// アンバサダー・ディレクターのうち、その書き方（「見本 太郎」「見本」＝名字だけ、「見本ED」は guest に名字だけ）に当たる方。
+// 氏名がそのまま同じ方 → 名字（氏名の頭）が同じ方が1人だけ のとき。当たらなければ null
+function guestByName_(guests, text) {
+  var t = normName_(String(text || '').replace(/(さん|様)$/, ''));
+  if (!t) return null;
+  var same = (guests || []).filter(function (g) { return normName_(g.name) === t; });
+  if (same.length) return same[0];
+  var head = (guests || []).filter(function (g) { return normName_(g.name).indexOf(t) === 0; });
+  return head.length === 1 ? head[0] : null;
 }
 
 // 同じ方のウィークリープレゼンのページが、氏名の枠では見分けられない作りになっていても拾う：
@@ -1177,11 +1205,12 @@ function applyWeeklyGuests_(parts, names, auto) {
 // 27MBほどのファイルを開くので、テンプレートが同じ間は結果を覚えておく。
 function getWeeklyGuests() {
   try {
-    var guests = templateMemo_('meetingFirst', 'guests2', function (parts) {
+    var guests = templateMemo_('meetingFirst', 'guests3', function (parts) {
       var pages = weeklyGuestPages_(parts), intro = {};
       weeklyGuestIntroPages_(parts, pages).forEach(function (p) { intro[normName_(p.name)] = true; });
       return pages.map(function (g) {
-        return { name: g.name, role: g.role, hidden: g.hidden, intro: !!intro[normName_(g.name)] };
+        return { name: g.name, role: g.role, company: g.company || '', hasPhoto: !!g.photo,
+                 hidden: g.hidden, intro: !!intro[normName_(g.name)] };
       });
     });
     return { ok: true, guests: guests };
@@ -1189,6 +1218,24 @@ function getWeeklyGuests() {
     console.error('[MEETING] ' + (e && e.stack ? e.stack : e));
     return { ok: false, message: 'アンバサダー・ディレクターのページを調べられませんでした: '
              + (e && e.message ? e.message : e), guests: [] };
+  }
+}
+
+// アンバサダー・ディレクターの写真（前半テンプレートのその方のページの写真）→ { ok, photos: { 氏名: 'data:image/…;base64,…' } }。
+// メインプレゼンターの画像（書記兼会計の画面）を、ディレクターが担当する週に作るため
+function getWeeklyGuestPhotos() {
+  try {
+    var parts = unzipToMap_(getBigTemplateFile_('meetingFirst').getBlob()), photos = {};
+    weeklyGuestPages_(parts).forEach(function (g) {
+      if (!g.photo || photos[g.name]) return;
+      var b = parts[g.photo], ext = g.photo.replace(/^.*\./, '').toLowerCase();
+      var type = ext === 'png' ? 'image/png' : ext === 'gif' ? 'image/gif' : 'image/jpeg';
+      photos[g.name] = 'data:' + type + ';base64,' + Utilities.base64Encode(b.getBytes());
+    });
+    return { ok: true, photos: photos };
+  } catch (e) {
+    console.error('[MEETING] ' + (e && e.stack ? e.stack : e));
+    return { ok: false, message: 'アンバサダー・ディレクターの写真を読めませんでした: ' + (e && e.message ? e.message : e), photos: {} };
   }
 }
 
