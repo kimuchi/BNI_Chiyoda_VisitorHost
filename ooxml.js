@@ -692,6 +692,18 @@ function setParagraphsInShape_(xml, shapeId, lines) {
        + xml.substring(r.end);
 }
 
+// 文字の中の改行（\n）を、PowerPoint の行の区切り（<a:br>）にする。区切りの前後は同じ書式のランにする。
+// 会社名を決めた位置で折るとき（差し込み口に「行1\n行2」を入れたあと）に使う（company_break.js）。
+// 改行のまま <a:t> に残すと、PowerPoint・LibreOffice で見え方が違い、行の数の見積もりも合わなくなる
+function lfToLineBreaks_(xml) {
+  return String(xml).replace(/<a:r>((?:(?!<\/a:r>)[\s\S])*?)<a:t(\s[^>]*)?>([^<]*\n[^<]*)<\/a:t>(\s*)<\/a:r>/g, function (all, pre, attr, text) {
+    var rpr = (pre.match(/<a:rPr\b[^>]*\/>|<a:rPr\b[^>]*>[\s\S]*?<\/a:rPr>/) || [''])[0];
+    var parts = text.replace(/\r/g, '').split('\n');
+    return parts.map(function (t) { return '<a:r>' + pre + '<a:t' + (attr || '') + '>' + t + '</a:t></a:r>'; })
+      .join('<a:br>' + rpr + '</a:br>');
+  });
+}
+
 // 図形の位置・大きさ（EMU）。指定した項目だけ変える
 function setShapeGeomEmu_(xml, shapeId, geom) {
   var r = findShapeRange_(xml, shapeId);

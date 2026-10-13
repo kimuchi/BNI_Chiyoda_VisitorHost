@@ -124,8 +124,10 @@ function loadPage(file, opts) {
   // HTMLを読む（<?!= include('…') ?> はここで展開する）。
   // ほかのスクリプトレット（サーバーから渡す値）は、o.preprocess で本番の結果に置き換えてから渡す
   let page = fs.readFileSync(path.join(ROOT, file), 'utf8');
+  // include('company_break') は、本番（webapp_srv.js の include）と同じく company_break.js の中身を <script> で渡す
   page = page.replace(/<\?!=\s*include\('([^']+)'\)\s*\?>/g,
-    (_, n) => fs.readFileSync(path.join(ROOT, n + '.html'), 'utf8'));
+    (_, n) => (n === 'company_break' ? '<script>\n' + fs.readFileSync(path.join(ROOT, 'company_break.js'), 'utf8') + '\n</script>'
+      : fs.readFileSync(path.join(ROOT, n + '.html'), 'utf8')));
   if (o.preprocess) page = o.preprocess(page);
   if (/<\?/.test(page)) fails.push(file + ': スクリプトレットが残っている');
   scan(page.replace(/<script[^>]*>[\s\S]*?<\/script>/g, ''));
