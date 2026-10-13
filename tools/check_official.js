@@ -65,7 +65,7 @@ const sb = Object.assign({}, gas.globals, {
   getBigTemplateFile_: (kind) => ({ getBlob: () => mpBlob, getName: () => kind, getId: () => kind }),
 });
 vm.createContext(sb);
-for (const f of ['ooxml.js', 'chapter_srv.js', 'assets.js', 'big_templates_srv.js', 'member_presen_srv.js', 'referral_srv.js',
+for (const f of ['ooxml.js', 'company_break.js', 'chapter_srv.js', 'assets.js', 'big_templates_srv.js', 'member_presen_srv.js', 'referral_srv.js',
                  'splice_srv.js', 'meeting_slides_srv.js', 'speaker_rotation_srv.js', 'slides_visitor_srv.js',
                  'role_input_srv.js', 'role_intro_srv.js', 'official_srv.js', 'official_build_srv.js', 'routine_srv.js', 'meeting_pages_srv.js']) {
   vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), sb, { filename: f });
@@ -73,7 +73,8 @@ for (const f of ['ooxml.js', 'chapter_srv.js', 'assets.js', 'big_templates_srv.j
 sb.getBigTemplateFile_ = (kind) => ({ getBlob: () => mpBlob, getName: () => kind, getId: () => kind });
 sb.findPhotoIdForName_ = (n) => PHOTOS[String(n || '').replace(/[\s　]/g, '')] || '';
 
-// 画面の組版（slides_layout.html）。canvas の代わりに、全角1文字・半角0.5文字で測る
+// 画面の組版（slides_layout.html）。canvas の代わりに、全角1文字・半角0.5文字で測る（カテゴリーだけが使う）。
+// 会社名の改行の決め方（company_break.js の CB_）は、画面と同じく先に読む
 const layout = (() => {
   const html = fs.readFileSync(path.join(ROOT, 'slides_layout.html'), 'utf8');
   const js = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]).join('\n');
@@ -81,6 +82,7 @@ const layout = (() => {
     measureText(t) { let w = 0; for (const ch of String(t)) w += ch.charCodeAt(0) < 128 ? 0.5 : 1; return { width: w * size }; } }; };
   const L = { console, document: { createElement: () => ({ getContext: ctx }) } };
   vm.createContext(L);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'company_break.js'), 'utf8'), L, { filename: 'company_break.js' });
   vm.runInContext(js, L, { filename: 'slides_layout.html' });
   return L;
 })();

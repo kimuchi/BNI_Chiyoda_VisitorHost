@@ -58,6 +58,11 @@ run "推薦のことばの受け取ったスライド（ブラウザ：pptx・pd
 run "後半の音楽を推薦のことばで止める（前のサウンドを停止・鳴らす枚数を直す・非表示のページは数えない）" node tools/check_music_stop.js
 run "後半の1枚目のメインプレゼンのページ（前半のテンプレートから見た目ごと写す・お名前・会社名・カテゴリー）" node tools/check_second_main_page.js
 run "新メンバー・更新メンバーのページ" node tools/check_member_pages.js
+run "会社名の改行の決め方（法人の種類・空白・語の切れ目で折る・語の途中で折らない・画面とサーバーが同じ計算）" node tools/check_company_break.js
+run "会社名の改行：メンバーのページ・リファーラル発表（どのパソコンでも同じ・両方のページで同じ）" node tools/check_company_lines_client.js
+run "会社名の改行：ビジタープレゼン・2人のページ（メインプレゼン・推薦のことば・抽選）" node tools/check_company_lines_server_slides.js
+run "会社名の改行：新メンバー・ネットワーキングリーダー・役職のメンバー紹介・熱烈歓迎" node tools/check_company_lines_server_pages.js
+run "会社名の改行：メンバーブック・ビジター様リストのPDF" node tools/check_company_lines_html_pdf.js
 run "ウィークリープレゼンの送り方（業種区分の扉ページは1秒で次へ・前半の「保存済みのタイミングを使用」）" node tools/check_weekly_timing.js
 run "ネットワーキングリーダーのページ（見出しをお名前の枠と取り違えない・お2人の部門・まとめのページで該当者のいない部門は見出しも出さない）" node tools/check_networking_leaders.js
 run "役職のメンバー紹介（学習コーナーのお名前の大きさも）" node tools/check_role_intro.js

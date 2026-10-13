@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html><head><base target="_top">
 <?!= include('slides_meeting_common') ?>
+<?!= include('company_break') ?>
 <?!= include('slides_layout') ?>
 </head>
 <body>
@@ -290,9 +291,11 @@
  }
  function addPair(w){ syncPairs(); pairs[w].push({ g:'', r:'' }); renderPairs(); }
  function delPair(w,i){ syncPairs(); pairs[w].splice(i,1); renderPairs(); }
+ // 会社名は CB_.normalize で名簿の書き方をそろえて渡す（セルの中の改行を外す・㈱を開く・空白をまとめる）。
+ // メンバーのページ・リファーラル発表（layoutCompany）と同じ文字にするため。1行に収めるのはサーバー
  function personValue(name){
    var who=memberOf(name);
-   return { name:name||'', company:who.company||'', category:who.title?('【'+who.title+'】'):'' };
+   return { name:name||'', company:CB_.normalize(who.company||''), category:who.title?('【'+who.title+'】'):'' };
  }
  // 作成に渡す組（2人とも空の組は入れない）。受け取ったスライドはドライブのファイルのIDで渡す
  function collectPairs(){

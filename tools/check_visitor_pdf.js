@@ -157,7 +157,8 @@ const folder = { createFile: (blob) => {
   return { getId: () => id, getUrl: () => 'https://drive.example/' + id, setSharing: () => {} };
 } };
 vm.createContext(srv);
-vm.runInContext(fs.readFileSync(path.join(ROOT, 'コード.js'), 'utf8'), srv, { filename: 'コード.js' });
+// 印刷用シートの会社名は、会社名の改行の決め方（company_break.js の CB_）で行を分ける（本番では同じ場所にある）
+for (const f of ['コード.js', 'company_break.js']) vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), srv, { filename: f });
 srv.getSS_ = () => ss;
 srv.chapterLabel_ = () => 'BNI 見本チャプター';
 srv.getAllocationNote = () => '注意書き';

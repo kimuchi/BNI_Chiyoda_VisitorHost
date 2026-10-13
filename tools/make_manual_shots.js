@@ -201,7 +201,9 @@ function evalTemplate(file, vars) {
     i = re.lastIndex;
   }
   code += '__o.push(' + JSON.stringify(src.slice(i)) + ');}return __o.join("");';
-  const include = (n) => fs.readFileSync(path.join(ROOT, n + '.html'), 'utf8');
+  // include('company_break') は、本番（webapp_srv.js の include）と同じく company_break.js の中身を <script> で渡す
+  const include = (n) => (n === 'company_break' ? '<script>\n' + fs.readFileSync(path.join(ROOT, 'company_break.js'), 'utf8') + '\n</script>'
+    : fs.readFileSync(path.join(ROOT, n + '.html'), 'utf8'));
   return new Function('__v', '__e', code)(Object.assign({ include }, vars), esc);
 }
 function writePage(name, html, answers) {
@@ -344,6 +346,7 @@ const answersBook = {
   getMemberPhotoThumbs: { any: { ok: true, map: Object.fromEntries(bookMembers.map((m, i) => [m.name, avatar(i)])) } },
 };
 const bookPage = () => readHtml('memberbook_editor.html')
+  .replace(/<\?!=\s*include\('company_break'\)\s*\?>/g, () => '<script>\n' + fs.readFileSync(path.join(ROOT, 'company_break.js'), 'utf8') + '\n</script>')
   .replace(/<\?!=\s*HtmlService\.createHtmlOutputFromFile\('(\w+)'\)\.getContent\(\);\s*\?>/g, (m, name) => readHtml(name + '.html'));
 // プレビュー（iframe）の文字を収め終わるまで待つ
 const bookReady = async (p) => {

@@ -26,8 +26,9 @@ function fpRoster_() {
 function fpPerson_(p, by) {
   if (!p) return null;
   var m = by[normName_(p.name || '')];
-  // 名簿の文字の中の改行は外す（残っていると、行が増えて枠の外にはみ出し、見えなくなることがある）
-  if (m) return { name: m.name, company: slideOneLine_(m.company), category: slideOneLine_(m.title), matched: true };
+  // 名簿の文字の中の改行は外す（残っていると、行が増えて枠の外にはみ出し、見えなくなることがある）。
+  // 会社名は、どの出力でも同じそろえ方（㈱ → 株式会社 など。company_break.js の CB_.normalize）
+  if (m) return { name: m.name, company: CB_.normalize(m.company), category: slideOneLine_(m.title), matched: true };
   var nm = String(p.name || p.raw || '').replace(/(さん|様)$/, '').trim();
   return nm ? { name: nm, company: '', category: slideOneLine_(p.category), matched: false } : null;
 }
@@ -76,6 +77,27 @@ function fpFitPara_(xml, id, idx, wEmu, lines) {
   var to = Math.max(Math.floor(sz / 2 / 50) * 50, Math.floor(sz * avail / need / 50) * 50);
   p = p.replace(/(<a:(?:rPr|endParaRPr)\b[^>]*\ssz=")\d+(")/g, '$1' + to + '$2');
   seg = seg.substring(0, ps[idx].start) + p + seg.substring(ps[idx].end);
+  return xml.substring(0, r.start) + seg + xml.substring(r.end);
+}
+// 会社名の段落：行の分け方と大きさを、会社名の改行の決め方（company_break.js の CB_）で決めて書く（PowerPoint に折らせない）。
+// 枠の幅は、図形の左右の余白（lIns・rIns）を引いた内側。小さくするのは、ほかの段落と同じく元の大きさの半分まで。
+//   lines が 1（1人1枚のページ・部門のページ）… いつもの1行のまま、内側に入る大きさまで小さくする。半分でも1行に
+//     入らないときだけ、半分の大きさで自然な切れ目の2行にする（2行目は同じ段落の中の改行 <a:br>。半分の字の2行は、
+//     元の大きさの1行とほぼ同じ高さなので、枠からはみ出さず、下の【カテゴリー】も下がらない）
+//   lines が 2（まとめのページの狭い列）… 元の大きさで、自然な切れ目の2行まで（入らなければ半分まで小さく。
+//     とても長い会社名は、2行ぶんの高さの3行。riCompanyTwoLines_）
+// 以前は字の数の見積もりだけで小さくし、2行の列はどこで折るかを PowerPoint に任せていた（語の途中で折れた）
+function fpFitCompany_(xml, id, idx, wEmu, lines) {
+  var r = findShapeRange_(xml, id);
+  if (!r) return xml;
+  var seg = xml.substring(r.start, r.end), ps = findTagRanges_(seg, 'a:p');
+  if (!ps[idx]) return xml;
+  var p = seg.substring(ps[idx].start, ps[idx].end), text = slideText_(p).trim(), pt = text ? riParaPt_(seg, p) : 0;
+  if (!pt) return xml;
+  var width = riInnerPt_(seg, wEmu), half = Math.floor(pt * 100 / 2 / 50) * 50 / 100;
+  var lay = (lines || 1) > 1 ? riCompanyTwoLines_(text, width, pt, half) : riCompanyOneLine_(text, width, pt, half, half);
+  if (lay.lines.length === 1 && lay.pt === pt) return xml;
+  seg = seg.substring(0, ps[idx].start) + riParaLines_(p, lay.lines, lay.pt, pt) + seg.substring(ps[idx].end);
   return xml.substring(0, r.start) + seg + xml.substring(r.end);
 }
 // 図形の段落がそれぞれ1行に収まるよう、図形の字をそろえて小さくする（元の大きさの半分まで）
@@ -157,28 +179,34 @@ function fpUnits_(xml, W, H, skip) {
   return { shapes: shapes, pics: pics, title: title, units: units };
 }
 // 会社名と【カテゴリー】を入れる。【 】のある行がカテゴリー、ほかの行の1つ目が会社名（残りは空にする）。
-// 空になった行は外す（2行の枠で会社名が無いときに、カテゴリーが1行下がらないように）
+// 空になった行は外す（2行の枠で会社名が無いときに、カテゴリーが1行下がらないように）。
+// 会社名の段落は fpFitCompany_（会社名の改行の決め方）、ほかの段落は fpFitPara_ で枠に収める
 function fpWriteInfo_(xml, info, p, lines) {
   var company = p ? p.company : '', cat = p && p.category ? '【' + p.category + '】' : '', usedCompany = false;
   info.forEach(function (s) {
     // 【 】が2行にまたがっていたら（「【デジタル広告制作」「(ホームページ・動画)】」）、1行目に入れて残りは外す
-    var inCat = false;
-    var plan = s.paras.map(function (t) {
+    var inCat = false, at = -1;                        // at … 会社名の段落の番号（外した段落のぶん詰める）
+    var plan = s.paras.map(function (t, i) {
       if (!t.trim()) return null;
       if (inCat) { if (/】/.test(t)) inCat = false; return ''; }
       if (/【/.test(t)) { inCat = !/】/.test(t); return cat; }
       if (/】/.test(t)) return cat;
-      if (!usedCompany) { usedCompany = true; return company; }
+      if (!usedCompany) { usedCompany = true; at = i; return company; }
       return '';
     });
     for (var i = plan.length - 1; i >= 0; i--) {
       if (plan[i] === null) continue;
       var others = plan.filter(function (x, k) { return k !== i && x; }).length;
-      if (!plan[i] && others) xml = fpDropPara_(xml, s.id, i);
-      else xml = riSetPara_(xml, s.id, i, plan[i]);
+      if (!plan[i] && others) {
+        xml = fpDropPara_(xml, s.id, i);
+        if (i < at) at--;
+        else if (i === at) at = -1;
+      } else xml = riSetPara_(xml, s.id, i, plan[i]);
     }
     var r = findShapeRange_(xml, s.id), count = r ? findTagRanges_(xml.substring(r.start, r.end), 'a:p').length : 0;
-    for (var k = 0; k < count; k++) xml = fpFitPara_(xml, s.id, k, s.acx, lines || 1);
+    for (var k = 0; k < count; k++) {
+      xml = k === at ? fpFitCompany_(xml, s.id, k, s.acx, lines || 1) : fpFitPara_(xml, s.id, k, s.acx, lines || 1);
+    }
   });
   return xml;
 }
@@ -761,7 +789,7 @@ function fpNlSummary_(parts, path, items, sz, cache, res) {
     (c.units || [{ name: c.name, info: c.info || [], photo: c.photo }]).forEach(function (u, i) {
       var p = peopleOf(c)[i] || null;
       if (!p && i > 0) return;
-      u.infoLines = 2;                                   // 狭い列なので、会社名・カテゴリーは2行まで折り返してよい
+      u.infoLines = 2;                                   // 狭い列なので、会社名・カテゴリーは2行まで（会社名は決めた切れ目で）
       var f = fpFillUnit_(parts, xml, rels, u, p, cache, res);
       xml = f.xml; rels = f.rels;
       if (p) res.filled.push({ path: path, kind: c.kind, name: p.name, summary: true });

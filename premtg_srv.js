@@ -650,6 +650,25 @@ function premtgFitLine_(xml, id, minPt) {
   return premtgSetSize_(xml, id, Math.max(minPt, Math.floor(m.widthPt * 0.95 / em * 2) / 2));
 }
 
+// 会社名の枠（熱烈歓迎の {{会社名}}）：会社名だけの段落を、会社名の改行の決め方（company_break.js の CB_）で入れる。
+// いつもの1行のまま、枠の内側（左右の余白を引いた幅）に入る大きさまで小さくする（minPt まで。見積もりは CB_.lineWidthPt で、
+// PowerPoint が勝手に折り返さない）。minPt でも1行に入らないときだけ、元の大きさの半分（minPt より小さくはしない）から
+// minPt までの大きさで、自然な切れ目の2行にする（2行目は同じ段落の中の改行 <a:br>。半分の字の2行は元の1行とほぼ同じ高さ
+// なので、枠からはみ出さない）。会社名が、ほかの字と同じ段落にあるひな形は、これまでどおり枠ごと1行に収める（premtgFitLine_）
+function premtgFitCompany_(xml, id, company, minPt) {
+  var r = id ? findShapeRange_(xml, id) : null, m = r ? premtgBoxMetrics_(xml, id) : null, text = String(company || '').trim();
+  if (!m || !text) return premtgFitLine_(xml, id, minPt);
+  var seg = xml.substring(r.start, r.end), ps = findTagRanges_(seg, 'a:p'), done = 0;
+  for (var i = ps.length - 1; i >= 0; i--) {
+    var p = seg.substring(ps[i].start, ps[i].end), pt = slideText_(p).trim() === text ? riParaPt_(seg, p) : 0;
+    if (!pt) continue;
+    var lay = riCompanyOneLine_(text, m.widthPt, pt, minPt, pt / 2);
+    seg = seg.substring(0, ps[i].start) + riParaLines_(p, lay.lines, lay.pt, pt) + seg.substring(ps[i].end);
+    done++;
+  }
+  return done ? xml.substring(0, r.start) + seg + xml.substring(r.end) : premtgFitLine_(xml, id, minPt);
+}
+
 // 枠の高さに収まる大きさにする（共有事項など）。収まらなければ下限の大きさ
 function premtgFitBody_(xml, id, minPt) {
   var m = id ? premtgBoxMetrics_(xml, id) : null;

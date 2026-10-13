@@ -10,8 +10,9 @@
 // （meeting_slides_srv.js の insertMemberPresen_）。
 //
 // 【役割を2つに分けている理由】
-//  ・会社名の折り返しや文字の縮小には文字幅の実測が要るが、GASには文字を測る手段が無い。
+//  ・カテゴリーの折り返しや文字の縮小には文字幅の実測が要るが、GASには文字を測る手段が無い。
 //    そこで組版はブラウザ側（canvasで実測）で行い、決まった結果だけを送ってもらう。
+//    会社名の行の分け方も画面で決める（company_break.js の CB_。PCの書体によらない見積もりで、ほかの出力と同じ切れ目）。
 //  ・テンプレートは15MB近くある。画面に送ると重いので、サーバーがDriveから直接読む。
 //    → 画面とサーバーの間を行き来するのは小さなJSONだけになる。
 //
@@ -371,10 +372,16 @@ function mpIndividualSlide_(tplXml, tplRels, item, photo, size) {
   xml = setParagraphsInShape_(xml, MP_INDIVIDUAL_.nameBox, [item.name || '']);
 
   // 会社名：行の分け方・文字の大きさ・枠の大きさは、すべて画面側で決めてある
-  // （文字幅を実測できるのは画面側だけなので、寸法もそこで出した方が確実）。
+  // （slides_layout.html の layoutCompany。行の分け方は company_break.js の CB_ で、ほかの出力と同じ切れ目）。
+  // 1行を1段落にして、そのまま入れる。
+  // 自動調整は切る：雛形に「はみ出すときは縮小」（normAutofit の fontScale）が残っていると、PowerPoint はその割合で
+  // 決めた大きさをさらに縮め、LibreOffice などは自分で縮め直す。枠の高さは画面が行数から出しているので、切っても文字は収まる。
+  // 折り返し（wrap）は雛形のまま：行の幅は少し広めに見積もってあるので折り返さない。万一ほかの書体で入りきらなくても、
+  // 枠の外へ字が出るより、折り返して見える方がよいため
   xml = setParagraphsInShape_(xml, MP_INDIVIDUAL_.company, item.companyLines || ['']);
   xml = setShapeGeomEmu_(xml, MP_INDIVIDUAL_.company,
     item.companyGeom || (item.companyTall ? MP_COMPANY_TALL_ : MP_COMPANY_DEFAULT_));
+  xml = noAutofitInShape_(xml, MP_INDIVIDUAL_.company);
   if (item.companyPt) xml = setFontSizeInShape_(xml, MP_INDIVIDUAL_.company, item.companyPt);
 
   // カテゴリー：会社名の枠の真下に置く。

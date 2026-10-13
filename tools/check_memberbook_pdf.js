@@ -312,6 +312,8 @@ async function routeFonts(ctx) {
   });
 }
 const strip = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8').replace(/^<script>|<\/script>\s*$/g, '');
+// 組版の部品（編集画面と同じく、会社名の改行の決め方 company_break.js を先に読む）
+const renderJs = () => fs.readFileSync(path.join(ROOT, 'company_break.js'), 'utf8') + '\n' + strip('memberbook_render.html');
 
 (async () => {
   // 文字の色つきのにじみ（LCD）は、ふつうの画面にだけ付き、SVG の画像には付かない。比べるときに差にならないよう、はじめから外す
@@ -372,7 +374,7 @@ const strip = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8').replace(/^<scri
     return { pdf, ms, steps, sizes, alpha, pngKind, bad: sr.bad, sameAgain: Object.keys(small).every((n) => again[n] === small[n]), small: Object.keys(small).length,
              unchangedSmall: small[members[4].name] === photos[members[4].name], loaded, css: css.length, cssRules: (css.match(/@font-face/g) || []).length,
              clipLines, pdf2: { base64: pdf2.base64, bytes: pdf2.bytes }, steps2, html };
-  }, { render: strip('memberbook_render.html'), pdfjs: strip('memberbook_pdf.html'), members: MEMBERS, cats: CATS, cover: COVER });
+  }, { render: renderJs(), pdfjs: strip('memberbook_pdf.html'), members: MEMBERS, cats: CATS, cover: COVER });
 
   // 写真を縮める（短い辺 360px まで。小さな写真はそのまま。2回目は覚えたものを使う）。透明な PNG は透明のまま
   ck(R.small === 17 && J(R.bad) === J([MEMBERS[5].name]), '写真の数・開けない写真: ' + R.small + ' ' + J(R.bad));
@@ -499,7 +501,7 @@ const strip = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8').replace(/^<scri
         (0, eval)(render); (0, eval)(pdfjs);
         try { const r = await mbpBuildPdf(bookHtml({ photos: {} }), cover.title, () => {}); return { ok: true, base64: r.base64 }; }
         catch (e) { return { ok: false, message: String(e && e.message || e) }; }
-      }, { render: strip('memberbook_render.html'), pdfjs: strip('memberbook_pdf.html'), members: MEMBERS.slice(0, 18), cats: CATS, cover: COVER })]);
+      }, { render: renderJs(), pdfjs: strip('memberbook_pdf.html'), members: MEMBERS.slice(0, 18), cats: CATS, cover: COVER })]);
       const sec = (Date.now() - t0) / 1000;
       ck(F3.ok && sec < 40, `書体のファイルが${mode}とき: PDFを作れない・時間がかかりすぎる（${sec.toFixed(1)}秒）: ` + (F3.message || ''));
       if (F3.ok && mode === '404') {

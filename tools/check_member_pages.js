@@ -41,7 +41,7 @@ const sb = {
   findPhotoIdForName_: () => '',
 };
 vm.createContext(sb);
-for (const f of ['ooxml.js', 'chapter_srv.js', 'member_presen_srv.js', 'referral_srv.js', 'splice_srv.js', 'meeting_slides_srv.js',
+for (const f of ['ooxml.js', 'company_break.js', 'chapter_srv.js', 'member_presen_srv.js', 'referral_srv.js', 'splice_srv.js', 'meeting_slides_srv.js',
                  'role_input_srv.js', 'role_intro_srv.js', 'meeting_pages_srv.js']) {
   vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), sb, { filename: f });
 }

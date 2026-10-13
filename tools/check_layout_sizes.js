@@ -6,14 +6,16 @@
 // 確かめること
 //   ・会社名44pt・カテゴリー32ptにそろえる（以前は1行に入るまで1人ずつ小さくしていて、大きさがバラバラだった）
 //   ・1行に入らなければ、同じ大きさのまま2行（「社名／株式会社」「株式会社／社名」で分けられればそこで）。
-//     2行にも入らないほど長いときだけ小さくする
+//     2行にも入らないほど長いときだけ小さくする。会社名の行の分け方は company_break.js の CB_
+//     （語の切れ目で折ること・どの出力でも同じ切れ目になることは tools/check_company_lines_client.js で確かめる）
+//   ・㈱の略記は開いてから決める（「見本生命保険㈱」も「見本生命保険株式会社」と同じ。以前は略記のときだけ2行にしていた）
 //   ・2行目が1〜2文字だけにならない。語の途中（「ホームページ」）で折らず、「・」のあとで折る。「・」「）」を行の頭にしない
 //   ・公式ファイルから作った雛形でも、雛形の字の大きさ（companyPt・categoryPt）には合わせない。
 //     雛形の会社名の枠が44ptの1行より低いときは、枠を伸ばしてカテゴリーもそのぶん下げる
 //   ・サーバーへ渡す大きさはいつも書いてある（0 だとテンプレートの大きさのままになり、そろわない）
 //   ・名簿の文字の中の改行（「デジタル広告制作」⏎「(ホームページ・動画)」）は外してから組む。英数字のあいだだけ空白に
 //     （改行が残ると、ここで決めた行数よりスライドの行が増え、枠の外にはみ出して見えなくなる）
-// canvas の代わりに、全角1文字・半角0.5文字で測る（tools/mp_plan.js と同じ）
+// canvas の代わりに、全角1文字・半角0.5文字で測る（tools/mp_plan.js と同じ。会社名は canvas を使わない）
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -29,6 +31,8 @@ const ctx = () => { let size = 44; return { set font(v) { const m = /(\d+(?:\.\d
   measureText(t) { let w = 0; for (const ch of String(t)) w += ch.charCodeAt(0) < 128 ? 0.5 : 1; return { width: w * size }; } }; };
 const L = { console, document: { createElement: () => ({ getContext: ctx }) } };
 vm.createContext(L);
+// 画面と同じく、会社名の改行の決め方（include('company_break')）を先に読む
+vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'company_break.js'), 'utf8'), L, { filename: 'company_break.js' });
 vm.runInContext(js, L, { filename: 'slides_layout.html' });
 const co = (s) => { const r = L.layoutCompany(s); return { lines: r.lines, pt: r.fontPt, tall: r.geom !== L.COMPANY_DEFAULT }; };
 const ca = (s) => { const r = L.layoutCategory(s); return { lines: r.lines, pt: r.fontPt, tight: r.tight }; };
@@ -44,8 +48,10 @@ ck(J(co('見本コンサルティング株式会社')) === J({ lines: ['見本�
    '1) 「社名／株式会社」の2行（44pt）: ' + J(co('見本コンサルティング株式会社')));
 ck(J(co('株式会社見本コンサルティング')) === J({ lines: ['株式会社', '見本コンサルティング'], pt: 44, tall: true }),
    '1) 「株式会社／社名」の2行（44pt）: ' + J(co('株式会社見本コンサルティング')));
-// ㈱の略記は展開して2行（元ツールと同じ）
-ck(J(co('見本生命保険㈱')) === J({ lines: ['見本生命保険', '株式会社'], pt: 44, tall: true }), '1) ㈱の略記: ' + J(co('見本生命保険㈱')));
+// ㈱の略記は開いてから決める（「見本生命保険株式会社」と書いた方と同じ。1行に入れば1行）
+ck(J(co('見本生命保険㈱')) === J({ lines: ['見本生命保険株式会社'], pt: 44, tall: false })
+   && J(co('見本生命保険㈱')) === J(co('見本生命保険株式会社')), '1) ㈱の略記: ' + J(co('見本生命保険㈱')));
+ck(J(co('見本コンサルティング㈱')) === J({ lines: ['見本コンサルティング', '株式会社'], pt: 44, tall: true }), '1) ㈱の略記（2行）: ' + J(co('見本コンサルティング㈱')));
 // 法人の言葉が無くても、44ptのまま2行
 const noCorp = co('見本ホールディングスグループ東京');
 ck(noCorp.pt === 44 && noCorp.lines.length === 2 && noCorp.tall, '1) 法人の言葉の無い長い会社名: ' + J(noCorp));

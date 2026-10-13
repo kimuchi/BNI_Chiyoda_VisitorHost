@@ -125,7 +125,7 @@ const sandbox = {
 sandbox.global = sandbox;
 vm.createContext(sandbox);
 // member_presen_srv.js は写真の取り込み（mpAddPhoto_）を使うため読み込む
-for (const f of ['ooxml.js', 'chapter_srv.js', 'routine_srv.js', 'member_presen_srv.js', 'referral_srv.js',
+for (const f of ['ooxml.js', 'company_break.js', 'chapter_srv.js', 'routine_srv.js', 'member_presen_srv.js', 'referral_srv.js',
                  'splice_srv.js', 'meeting_slides_srv.js', 'speaker_rotation_srv.js', 'role_input_srv.js', 'role_intro_srv.js',
                  'meeting_pages_srv.js']) {
   vm.runInContext(fs.readFileSync(path.join(__dirname, '..', f), 'utf8'), sandbox, { filename: f });
@@ -170,7 +170,8 @@ sandbox.getBigTemplateFile_ = (kind) => ({ getBlob: () => ({ __dir: MP_DIR }) })
 sandbox.unzipToMap_ = (blob) => dirToMap(blob.__dir);
 
 // 画面側の組版（slides_layout.html）も読み込む。canvasはNodeに無いので、
-// 全角1文字ぶん・半角0.5文字ぶんで測る簡易版に差し替える。
+// 全角1文字ぶん・半角0.5文字ぶんで測る簡易版に差し替える（カテゴリーだけが使う）。
+// 会社名の改行の決め方（company_break.js の CB_）は、画面と同じく先に読む
 function fakeCtx() {
   let size = 44, bold = false;
   return {
@@ -187,6 +188,7 @@ const layoutBox = { console, document: { createElement: () => ({ getContext: () 
 layoutBox.global = layoutBox;
 vm.createContext(layoutBox);
 {
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'company_break.js'), 'utf8'), layoutBox, { filename: 'company_break.js' });
   const html = fs.readFileSync(path.join(__dirname, '..', 'slides_layout.html'), 'utf8');
   const js = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]).join('\n');
   vm.runInContext(js, layoutBox, { filename: 'slides_layout.html' });
@@ -223,7 +225,7 @@ map['審査中カテゴリー'] = R.reviewCategory || '';
 //   例: MTG_RECO='d:0-1,d:2-3,a:4-x'   MTG_RECO='' … 組なし
 const personOf = (nm) => {
   const who = byName[nm] || {};
-  return { name: nm || '', company: who.company || '', category: who.title ? `【${who.title}】` : '' };
+  return { name: nm || '', company: layoutBox.CB_.normalize(who.company || ''), category: who.title ? `【${who.title}】` : '' };
 };
 let recoPairs;
 if (process.env.MTG_RECO !== undefined) {
