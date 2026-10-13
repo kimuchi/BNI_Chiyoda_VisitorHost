@@ -811,7 +811,12 @@
        +p.welcome.map(function(w){
          return '<span class="pmrole" style="border-left-color:#C8102E;">'+esc(w.name+'さん')
            +' <span class="muted">'+esc([w.category, w.company].filter(function(x){ return x; }).join('・')||'カテゴリー・会社名なし')
-           +(w.matched?'':'・名簿にありません')+(w.byCategory?'・記載「'+esc(w.raw||'')+'」をカテゴリーで名簿の方に合わせました':'')
+           +(w.matched?'':((w.candidates||[]).length?'・同じ名字の方が名簿に'+w.candidates.length+'人（'+esc(w.candidates.join('・'))
+              +'）。「新入会」の欄をフルネームで書いてください':'・名簿にありません'))
+           +(!w.matched&&(w.oldNamesakes||[]).length?'・名簿の同じ名字の方（'+esc(w.oldNamesakes.join('・'))+'）は前からのメンバーなので、'
+              +((w.candidates||[]).length?'候補から外しました':'新しく入会した方ではないものとしました'):'')
+           +(w.byCategory?'・記載「'+esc(w.raw||'')+'」をカテゴリーで名簿の方に合わせました':'')
+           +(w.byDate?'・記載「'+esc(w.raw||'')+'」：同じ名字の方がいるので、入会日から新しく入会した方にしました':'')
            +(w.photo?'':'・写真なし')+'</span></span>';
        }).join(' ')+'</div>'
        +'<div class="hint">熱烈歓迎のひな形：'+(wt.registered?'登録したもの（'+esc(wt.name)+'）':'既定のもの')
