@@ -61,13 +61,16 @@
          <span style="font-size:11px;color:#888;">選んだ番号のページだけを表示にします</span></td></tr>
    </table>
    <div id="mpNote" style="font-size:11px;color:#888;margin-top:6px;"></div>
+   <div style="font-size:11px;color:#888;line-height:1.7;">1人の週は、もう1人を<b>（なし）</b>にすると、その方をページのまん中に置きます。
+     ディレクターが担当する週は、欄の下の<b>「アンバサダー・ディレクター」</b>から選んでください
+     （会社名・カテゴリー（リージョンの名前）・写真は、前半テンプレートのその方のページから入れます）。</div>
    <div class="mk">
      <h5>スピーカーローテーション（78枚目の表）</h5>
      <label><input type="checkbox" id="rotOn" checked>
        書記兼会計の画像の代わりに、<b>5回分の表</b>を作る</label>
      <div id="rotPreview" style="font-size:11.5px;margin-top:4px;line-height:1.7;"></div>
      <div style="font-size:11px;color:#888;">並び順は「役職ごとの入力」＞ 書記兼会計 ＞ スピーカーローテーションの管理 で直せます。
-       1回目は上のメインプレゼン①②のお2人です。</div>
+       1回目は上のメインプレゼン①②の方です（1人の週は1人。ディレクターはその方のページのカテゴリーの文字で）。</div>
    </div>
    <div class="mk" id="roleBox">
      <h5>役職のメンバー紹介（リーダーシップチーム・コーディネーター・チームのページ）</h5>
@@ -172,7 +175,7 @@
    var ch='<option value="">（指定しない）</option>';
    (c.coreValues||[]).forEach(function(v){ ch+='<option value="'+esc(v)+'">'+esc(v)+'</option>'; });
    document.getElementById('core').innerHTML=ch;
-   var mh=memberOptions();
+   var mh=memberOptions(true);                       // アンバサダー・ディレクターは、一覧が届いたら足す（loadGuests）
    ['mp1','mp2'].forEach(function(id){ document.getElementById(id).innerHTML=mh; });
    var gh='<option value="">（指定しない）</option>';
    for(var g=1; g<=12; g++) gh+='<option value="'+g+'">'+g+'番</option>';
@@ -204,7 +207,7 @@
    nmFromRoutine(F); vpFromRoutine(F); nlFromRoutine(F);
    if(!R || !R.ok || !R.found){
      // その日の列が無い：前に選んでいた開催日の値を残さない（別の日のメインプレゼン・コアバリューなどで作らないように）
-     document.getElementById('core').value=''; val('mp1',''); val('mp2','');
+     document.getElementById('core').value=''; val('mp1',''); val('mp2',''); mpAuto=null;
      val('t_求める専門分野',''); val('t_開放カテゴリー',''); val('t_審査中カテゴリー','');
      document.getElementById('gp').value=''; document.getElementById('mpNote').innerHTML='';
      mpFromRotation();
@@ -214,20 +217,16 @@
    }
    if(R.meetingNo) val('no', R.meetingNo);
    document.getElementById('core').value = R.coreValue || '';
-   var mp=R.mainPresenters||[];
-   document.getElementById('mp1').value = (mp[0] && mp[0].name) || '';
-   document.getElementById('mp2').value = (mp[1] && mp[1].name) || '';
+   // メインプレゼン①②（1人の週は②を（なし）、ディレクターはアンバサダー・ディレクターのその方）。
+   // 書いていなければ、スピーカーローテーションのその回の方（mpFromRotation）
+   mpAuto = (R.mainPresenters||[]).length ? { routine:R } : null;
+   if(mpAuto) mpFill(mpAuto, false);
+   else { val('mp1',''); val('mp2',''); document.getElementById('mpNote').innerHTML = R.mainPresentersRaw ? '記載：'+esc(R.mainPresentersRaw) : ''; }
    mpFromRotation();
    val('t_求める専門分野', (R.wantedCategories||[]).join('、'));
    val('t_開放カテゴリー', R.openCategory||'');
    val('t_審査中カテゴリー', R.reviewCategory||'');
    document.getElementById('gp').value = R.generalPolicy ? String(R.generalPolicy) : '';
-   var un=mp.filter(function(x){ return x.raw && !x.name; });
-   document.getElementById('mpNote').innerHTML = un.length
-     ? '<span style="color:#c60;">ルーティンチェックシートの「'+esc(R.mainPresentersRaw)
-       +'」から、'+esc(un.map(function(x){return x.raw;}).join('・'))
-       +' は名簿の氏名と一致しませんでした。手で選んでください。</span>'
-     : (R.mainPresentersRaw ? '記載：'+esc(R.mainPresentersRaw) : '');
    var t = R.sheetName + ' から読み込みました';
    if(R.coreValueRaw && !R.coreValue) t += '／コアバリュー「'+R.coreValueRaw+'」は見分けられませんでした';
    note.innerText=t; note.style.color='#188038';
@@ -369,11 +368,15 @@
  // 前半テンプレートに非表示で入っているページを、来られる日だけ表示にする。
  // 初期値は、ルーティンチェックシートの「リージョン参加者」に名字が書いてあるかどうか
  // （「大庭ED・坂上アンバサダー」「なし」など）。空欄の日はテンプレートのまま。
- var guests=null, guestRaw='';
+ // （guests は slides_meeting_common.html。メインプレゼン①②でも選べる）
+ var guestRaw='';
  function loadGuests(){
    loadFrom('guests','前半テンプレート（アンバサダー・ディレクターのページ）','getWeeklyGuests',[],function(r){
-     if(!r.ok){ document.getElementById('gsList').innerHTML='<span style="color:#c60;">'+esc(r.message)+'</span>'; return; }
+     if(!r || !r.ok){ document.getElementById('gsList').innerHTML='<span style="color:#c60;">'+esc((r&&r.message)||'')+'</span>'; return; }
      guests=r.guests||[]; renderGuests();
+     // メインプレゼン①②にもアンバサダー・ディレクターを足し、ルーティンチェックシート・ローテーションのディレクターを入れる
+     presenterOptions(['mp1','mp2']);
+     if(mpAuto) mpFill(mpAuto, true);
    });
  }
  // 名字で探す（「大庭ED」「坂上アンバサダー」のように名字＋役職で書かれるため）。
@@ -566,6 +569,8 @@
    loadFrom('rot','スピーカーローテーション','getSpeakerRotationWeeks',[d],function(r){
      rotData = (r && r.ok) ? r : null;
      renderRotation(r);
+     // ローテーションから入れた欄は、届いたその日の予定で入れ直す（前に読んだ予定のまま残さない）
+     if(mpAuto && mpAuto.week){ val('mp1',''); val('mp2',''); mpAuto=null; }
      mpFromRotation();
    });
  }
@@ -573,7 +578,9 @@
    var el=document.getElementById('rotPreview');
    if(!r || !r.ok){ el.innerHTML='<span style="color:#c60;">'+esc((r&&r.message)||'スピーカーローテーションを読めませんでした。')+'</span>'; return; }
    el.innerHTML = r.weeks.map(function(w){
-     return (w.no?'第'+esc(w.no)+'回 ':'')+esc(w.md)+'：'+esc(w.people.map(function(p){ return p.name; }).join('・'))
+     // ディレクターは「（BNI東京千代田リージョン）」のように、その方のページのカテゴリーの枠の文字を添える
+     return (w.no?'第'+esc(w.no)+'回 ':'')+esc(w.md)+'：'+esc((w.people||[]).map(function(p){
+         return p.name+(p.kind==='director' ? '（'+(p.role||'ディレクター')+'）' : ''); }).join('・'))
        +(w.source==='routine'?' <span style="color:#188038;">（ルーティンチェックシート）</span>':'');
    }).join('<br>')
      + (r.provisional ? '<br><span style="color:#c60;">スピーカーローテーションの並び順がまだ保存されていません（メンバー名簿の順の仮の並びです）。'
@@ -601,24 +608,70 @@
      +(r.teamsOk ? '<br>チーム … '+r.teams.map(function(t){ return esc(t.name)+' '+t.count+'名'; }).join('、')
        : '<br><span style="color:#888;">チームのメンバーは未登録です（チームのページはテンプレートのまま）。</span>');
  }
- // ルーティンチェックシートにメインプレゼンが無い日は、スピーカーローテーションのお2人を入れる
+ // --- メインプレゼン①②を自動で入れる（ルーティンチェックシート、書いていなければスピーカーローテーション）---
+ // mpAuto … 入れたもとの記載 { routine: R } か { week: ローテーションの回 }。アンバサダー・ディレクターの一覧があとから届いたら、
+ // ディレクターの欄をそれで入れ直す（keep … 選んである欄はそのまま）
+ var mpAuto=null;
+ function mpFill(a, keep){
+   var p=a.routine ? mainPresenterPlan(a.routine.mainPresenters) : rotationPlan(a.week);
+   ['mp1','mp2'].forEach(function(id,i){ if(!keep || (!get(id) && p.names[i])) val(id, p.names[i]); });
+   document.getElementById('mpNote').innerHTML = a.routine ? mainPresenterNote(a.routine, p) : rotationNote(p);
+ }
+ // スピーカーローテーションのその回（people は1人か2人。ディレクターは kind 'director'・name はその方の氏名）
+ function rotationPlan(w){
+   var p={ names:['',''], members:[], directors:[], unknown:[], missingDir:[], waiting:false, count:0 };
+   ((w&&w.people)||[]).slice(0,2).forEach(function(x,i){
+     p.count++;
+     if(x.kind==='director'){
+       var g=guestByText(x.name);
+       if(g){ p.names[i]=g.name; p.directors.push(g.name); }
+       else if(!guests) p.waiting=true;
+       else p.missingDir.push(x.name);
+       return;
+     }
+     p.names[i]=x.name||'';
+     if(x.name) p.members.push(x.name);
+   });
+   return p;
+ }
+ function rotationNote(p){
+   var head='ルーティンチェックシートにメインプレゼンが無いので、スピーカーローテーションの';
+   if(p.missingDir.length) return '<span style="color:#c60;">'+head+'この回のディレクター（'+esc(p.missingDir.join('・'))
+     +'）は、前半テンプレートのアンバサダー・ディレクターのページに見つかりませんでした。手で選んでください。</span>';
+   var who=p.directors.map(function(n){ return 'ディレクターの'+n+'さん'; }).concat(p.members.map(function(n){ return n+'さん'; }));
+   var wait=p.waiting ? 'ディレクターの方は、アンバサダー・ディレクターのページを読み込んでから入れます。' : '';
+   if(p.count===1) return head+'この回は1人の週です'+(who.length ? '（'+esc(who.join(''))+'を入れました）' : '')+'。'+wait;
+   return head+'お2人'+(p.directors.length ? '（'+esc(who.join('と'))+'）' : '')+'を入れました。'+wait;
+ }
+ // ルーティンチェックシートにメインプレゼンが無い日は、スピーカーローテーションのその回の方（1人の週は1人）を入れる
  function mpFromRotation(){
+   // ルーティンチェックシートに書いてある日は入れない（ディレクターの欄が、一覧の届くまで空のこともある）
+   if(mpAuto && mpAuto.routine) return;
    if(!rotData || !rotData.weeks.length || get('mp1') || get('mp2')) return;
    var w=rotData.weeks[0];
    if(w.source!=='rotation' || w.date!==get('meeting')) return;
-   val('mp1', (w.people[0]||{}).name||''); val('mp2', (w.people[1]||{}).name||'');
-   document.getElementById('mpNote').innerHTML='ルーティンチェックシートにメインプレゼンが無いので、スピーカーローテーションのお2人を入れました。';
+   mpAuto={ week:w };
+   mpFill(mpAuto, false);
  }
- // 表のデータ（1回目は画面で選んだメインプレゼンのお2人）
+ // 表のデータ（1回目は画面で選んだメインプレゼンの方。1人の週は1人だけ。ディレクターは先に）
+ // 形は getSpeakerRotationWeeks の people と同じ { name, title, collab, company, inMaster, kind, role }
  function rotationForSlides(){
    if(!document.getElementById('rotOn').checked || !rotData) return null;
-   var r=JSON.parse(JSON.stringify(rotData)), sel=[get('mp1'), get('mp2')];
-   if(r.weeks.length && (sel[0]||sel[1])){
-     r.weeks[0].people = sel.map(function(n){
-       var who=memberOf(n); return { name:n||'', title:who.title||'', collab:who.collab||'' };
-     });
+   var r=JSON.parse(JSON.stringify(rotData)), sel=[get('mp1'), get('mp2')].filter(function(n){ return n; });
+   if(r.weeks.length && sel.length){
+     var people=sel.map(rotationPerson), dirs=people.filter(function(p){ return p.kind==='director'; });
+     people=dirs.concat(people.filter(function(p){ return p.kind!=='director'; }));
+     r.weeks[0].people=people;
+     r.weeks[0].kind = dirs.length ? (people.length>1 ? 'director1' : 'director') : (people.length>1 ? 'two' : 'one');
    }
    return { weeks:r.weeks, header:r.header, notes:r.notes };
+ }
+ function rotationPerson(n){
+   var g=guestOf(n);
+   if(g) return { name:n, title:flatCell(g.role), collab:'', company:CB_.normalize(g.company||''), inMaster:false,
+                  kind:'director', role:flatCell(g.role) };
+   var who=memberOf(n);
+   return { name:n, title:who.title||'', collab:who.collab||'', company:who.company||'', inMaster:!!who.name, kind:'member' };
  }
  function gen(){
    if(document.getElementById('mpOn').checked && !buildMP().length){

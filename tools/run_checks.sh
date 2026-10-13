@@ -63,6 +63,8 @@ run "会社名の改行：メンバーのページ・リファーラル発表（
 run "会社名の改行：ビジタープレゼン・2人のページ（メインプレゼン・推薦のことば・抽選）" node tools/check_company_lines_server_slides.js
 run "会社名の改行：新メンバー・ネットワーキングリーダー・役職のメンバー紹介・熱烈歓迎" node tools/check_company_lines_server_pages.js
 run "会社名の改行：メンバーブック・ビジター様リストのPDF" node tools/check_company_lines_html_pdf.js
+run "メインプレゼンの1人の回・ディレクターの回（ローテーション・表・Facebookの文・画像・トークスクリプト）" node tools/check_main_presen_rotation.js
+run "メインプレゼンの1人の週・ディレクターの週のスライド（1人をまん中に・ディレクターの写真とリージョンの名前）" node tools/check_main_presen_slides.js
 run "ウィークリープレゼンの送り方（業種区分の扉ページは1秒で次へ・前半の「保存済みのタイミングを使用」）" node tools/check_weekly_timing.js
 run "ネットワーキングリーダーのページ（見出しをお名前の枠と取り違えない・お2人の部門・まとめのページで該当者のいない部門は見出しも出さない）" node tools/check_networking_leaders.js
 run "役職のメンバー紹介（学習コーナーのお名前の大きさも）" node tools/check_role_intro.js

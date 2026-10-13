@@ -165,7 +165,11 @@
      <b>確定</b>として、そちらを出します。定例会スライド（前半）の「スピーカーローテーション」の表もここから作られます。</div>
    <div class="box">
      <div style="font-weight:bold;font-size:12.5px;">これからの予定</div>
+     <div class="muted" style="line-height:1.6;">メインプレゼンが1人の回・ディレクターが担当する回は、「人数」で選んでください（「並び順を保存」で一緒に保存します）。
+       その回は、そのメンバーの人数だけ並びを進めます（ほかの方の番は飛ばしません）。ディレクターのカテゴリー（リージョン名など）と写真は、
+       前半テンプレートのその方のページのものを使います。</div>
      <div id="rotWeeks"></div>
+     <div id="rotGuestNote" class="muted" style="font-size:11.5px;"></div>
    </div>
    <div class="box">
      <div style="font-weight:bold;font-size:12.5px;">次回のメインプレゼンターのご案内（Facebookに投稿する文）</div>
@@ -173,8 +177,9 @@
        <span class="muted" id="rotFbWeekNote"></span></div>
      <textarea id="rotFb" rows="12" style="width:100%;font-family:inherit;font-size:12.5px;margin-top:5px;"></textarea>
      <button onclick="copyFb()">📋 コピーする</button> <span class="muted" id="rotFbMsg"></span>
-     <div style="font-weight:bold;font-size:12px;margin-top:12px;">添付する画像①　メインプレゼンターの画像（ご案内する回のお2人）</div>
+     <div style="font-weight:bold;font-size:12px;margin-top:12px;">添付する画像①　メインプレゼンターの画像（ご案内する回のメインプレゼンター）</div>
      <div class="muted" style="line-height:1.6;">写真（⚙️ 設定 &gt; メンバー写真）・お名前・ご紹介して欲しいカテゴリー（メンバー名簿の「協業したい人」）で作ります。
+       1人の回は、まん中に1人だけ描きます。ディレクターは、前半テンプレートのその方のページの写真と、カテゴリーの枠の文字（リージョン名など）で描きます。
        下の欄で直すと、すぐ描き直します（名簿は変わりません）。</div>
      <div id="mpEdit" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px;"></div>
      <div style="font-size:12px;margin-top:6px;">見出し：<input type="text" id="mpTitle" value="今週のメインプレゼンテーション" style="width:55%;" oninput="mpRedraw()"></div>
@@ -861,6 +866,9 @@
  }
 
  var rot=null, rOrder=[], rExcluded=[], rAnchor=null, rDirty=false, rotOpened=false, rotBack=false;
+ // 回ごとの指定（1名・ディレクター）：{ 'yyyy/MM/dd': { kind, members, guest } }（保存すると { members, guest } で送る）。
+ // rGuests … アンバサダー・ディレクターのページの方（null はまだ読んでいない）。rWeekFree … ディレクターを手で入れる回
+ var rWeeks={}, rWeekFree={}, rGuests=null, rGuestsBusy=false, rGuestMsg='';
  function nm(s){ return String(s==null?'':s).replace(/[\s　]+/g,''); }
  function rotShown(){ var e=el('rotView'); return !!e && e.style.display!=='none'; }
  function openRotation(){
@@ -921,6 +929,13 @@
  function setRot(r, msg){
    rot=r; rOrder=r.order.slice(); rExcluded=r.excluded.slice(); rAnchor={ date:r.anchor.date, pointer:r.anchor.pointer };
    rDirty=false;
+   rWeeks={}; rWeekFree={};
+   var wsv=r.weekSettings||{};
+   Object.keys(wsv).forEach(function(d){
+     var o=wsv[d]||{}, m=o.members===0?0:1, g=String(o.guest||'');
+     rWeeks[d]={ kind:m===0?'director':(g?'director1':'one'), members:m, guest:g };
+   });
+   if(r.guests) rGuests=r.guests;                        // サーバーで読んだ一覧（読んでいなければ、ディレクターを選ぶときに読む）
    el('rotHeader').value = r.header||'';
    el('rotNotes').value = (r.notes||[]).join('\n');
    el('rotFb').value = r.fbText||'';
@@ -936,22 +951,36 @@
    el('rotMsg').innerHTML = msg ? '<span style="color:#188038;">'+esc(msg)+'</span>' : '';
  }
  function isEx(n){ return rExcluded.some(function(x){ return nm(x)===nm(n); }); }
- // 並びの start 番目から count 組（対象外は飛ばす）
- function rPairs(start, count){
+ // 並びの start 番目から count 回ぶん（対象外は飛ばす）。sizes … 回ごとのメンバーの人数（無ければ2名ずつ）。
+ // サーバーの rotPairsFrom_ と同じ計算（直すときは両方とも）
+ function rPairs(start, count, sizes){
    var n=rOrder.length, pairs=[]; if(!n) return { pairs:[], next:0 };
-   var idx=((start%n)+n)%n, guard=0, limit=n*4+10;
-   while(pairs.length<count && guard<limit){
-     var picked=[];
-     while(picked.length<2 && guard<limit){ if(!isEx(rOrder[idx])) picked.push(rOrder[idx]); idx=(idx+1)%n; guard++; }
-     if(picked.length===2) pairs.push(picked); else break;
+   var idx=((start%n)+n)%n;
+   for(var k=0;k<count;k++){
+     var size=(sizes && sizes[k]!=null) ? sizes[k] : 2, picked=[];
+     while(picked.length<size){
+       for(var t=0;t<n && isEx(rOrder[idx]);t++) idx=(idx+1)%n;
+       if(t>=n) break;
+       picked.push(rOrder[idx]); idx=(idx+1)%n;
+     }
+     if(picked.length<size) break;
+     pairs.push(picked);
    }
    return { pairs:pairs, next:idx };
  }
- function rPrev(p){
-   var n=rOrder.length; if(!n) return p;
+ // size 名ぶん（無ければ2名）さかのぼった位置（サーバーの rotPrevPointer_ と同じ）
+ function rPrev(p, size){
+   var n=rOrder.length, want=(size==null)?2:size; if(!n || !want) return p;
    var idx=((p%n)+n)%n, found=[], guard=0;
-   while(found.length<2 && guard<n*4+10){ idx=(idx-1+n)%n; if(!isEx(rOrder[idx])) found.push(idx); guard++; }
-   return found.length===2 ? found[1] : p;
+   while(found.length<want && guard<n*4+10){ idx=(idx-1+n)%n; if(!isEx(rOrder[idx])) found.push(idx); guard++; }
+   return found.length===want ? found[want-1] : p;
+ }
+ // その回に並びから使うメンバーの人数（サーバーの rotSlotsAt_ と同じ）：
+ // 回ごとの指定 → ルーティンチェックシートで確定した回は、書いてあるメンバーの人数 → ふだんは2名
+ function rSize(dateStr){
+   var o=rWeeks[dateStr]; if(o) return o.members;
+   var rs=(rot && rot.routineSlots)||{};
+   return rs[dateStr]!=null ? rs[dateStr] : 2;
  }
  function dOf(s){ var p=String(s).split('/'); return new Date(+p[0], +p[1]-1, +p[2]); }
  function ymd(d){ return d.getFullYear()+'/'+('0'+(d.getMonth()+1)).slice(-2)+'/'+('0'+d.getDate()).slice(-2); }
@@ -961,29 +990,124 @@
    for(var i=0;i<520;i++){ cur.setDate(cur.getDate()+7); if(cur.getTime()>b.getTime()) break; if(hol.indexOf(ymd(cur))<0) n++; }
    return n;
  }
+ // from（その日を含む）から、休会日を除いた開催日を count 回ぶん（サーバーの rotMeetingDates_ と同じ）
+ function meetings(from, count){
+   var out=[], d=new Date(from.getTime()), hol=rot.holidays||[];
+   for(var i=0;i<400 && out.length<count;i++){ if(hol.indexOf(ymd(d))<0) out.push(ymd(d)); d.setDate(d.getDate()+7); }
+   return out;
+ }
+ // その回の方が並びの何番目から始まるか（サーバーの rotPointerAt_ と同じ。回ごとに使う人数だけ進める・戻す）
  function rPointerAt(dateStr){
-   var a=dOf(rAnchor.date), hol=rot.holidays||[], p=rAnchor.pointer, d=dOf(dateStr), k, i;
+   var a=dOf(rAnchor.date), hol=rot.holidays||[], p=rAnchor.pointer, d=dOf(dateStr), k, i, ds;
    for(i=0;i<60 && hol.indexOf(ymd(a))>=0;i++) a.setDate(a.getDate()+7);
-   if(d.getTime()>=a.getTime()){ k=between(a,d); return k ? rPairs(p,k).next : p; }
-   k=between(d,a); for(i=0;i<k;i++) p=rPrev(p); return p;
+   if(d.getTime()>=a.getTime()){ k=between(a,d); return k ? rPairs(p,k,meetings(a,k).map(function(x){ return rSize(x); })).next : p; }
+   k=between(d,a); ds=meetings(d,k); for(i=ds.length-1;i>=0;i--) p=rPrev(p, rSize(ds[i])); return p;
+ }
+ // --- 回ごとの指定（1名・ディレクター）---
+ var ROT_KINDS=[['two','2名（いつもどおり）'],['one','1名'],['director1','ディレクター＋1名'],['director','ディレクターのみ']];
+ function isDirKind(k){ return k==='director' || k==='director1'; }
+ // サーバーの normName_ / guestByName_ と同じ照合（氏名がそのまま同じ方 → 名字（氏名の頭）が同じ方が1人だけ）
+ function gNorm(s){ return String(s==null?'':s).normalize('NFKC').replace(/[\s　]/g,'').trim(); }
+ function guestOf(text){
+   var t=gNorm(String(text||'').replace(/(さん|様)$/,'')); if(!t) return null;
+   var gs=rGuests||[], same=gs.filter(function(g){ return gNorm(g.name)===t; });
+   if(same.length) return same[0];
+   var head=gs.filter(function(g){ return gNorm(g.name).indexOf(t)===0; });
+   return head.length===1 ? head[0] : null;
+ }
+ function bareName(s){ return String(s==null?'':s).trim().replace(/(さん|様|さま)$/,'').trim(); }
+ // ディレクターの1人分（サーバーの rotDirectorPerson_ と同じ。ページの方に当たらなければ書いたまま）
+ function guestPerson(text){
+   var g=guestOf(text);
+   if(g) return { name:g.name, title:g.role||'', role:g.role||'', collab:'', company:g.company||'', kind:'director' };
+   return { name:bareName(text), title:'', role:'', collab:'', company:'', kind:'director' };
+ }
+ // アンバサダー・ディレクターのページの方を読む（ディレクターの回を選んだときに1回だけ）
+ function loadGuests(){
+   if(rGuestsBusy || rGuests!==null) return;
+   rGuestsBusy=true;
+   var done=function(list, msg){ rGuestsBusy=false; rGuests=list||[]; rGuestMsg=msg||''; if(rot) renderRot(); };
+   google.script.run.withSuccessHandler(function(r){ done(r&&r.guests, r&&r.message); })
+     .withFailureHandler(function(){ done([], 'アンバサダー・ディレクターのページを読めませんでした（お名前を手で入れてください）。'); })
+     .getRotationGuests();
+ }
+ // 人数の欄（確定の回は、シートに書いてあるとおり。以前の指定が残っていれば直せるように出す）
+ function weekKindCell(w, i, people){
+   var o=rWeeks[w.date]||null, k=o?o.kind:(w.source==='routine'?'':'two');
+   if(w.source==='routine' && !o) return '<span class="muted" style="font-size:11px;">シートのとおり（'+esc(kindLabel(people))+'）</span>';
+   var opts=w.source==='routine' ? [['','シートのとおり']].concat(ROT_KINDS.slice(1)) : ROT_KINDS;
+   var h='<select id="rwk_'+i+'" onchange="rotWeekKind('+i+')">'+opts.map(function(x){
+     return '<option value="'+x[0]+'"'+(x[0]===k?' selected':'')+'>'+x[1]+'</option>'; }).join('')+'</select>';
+   if(isDirKind(k)) h+=' '+guestPicker(w, i, o);
+   return h;
+ }
+ function kindLabel(people){
+   var d=people.filter(function(p){ return p.kind==='director'; }).length, m=people.length-d;
+   return d ? (m ? 'ディレクター＋1名' : 'ディレクター') : (m+'名');
+ }
+ // ディレクターを選ぶ欄：前半テンプレートのページの方から選ぶ（一覧が無い・ほかの方は、お名前を手で入れる）
+ function guestPicker(w, i, o){
+   var g=(o&&o.guest)||'';
+   if(rGuests===null) loadGuests();
+   var list=rGuests||[];
+   if(list.length && !rWeekFree[w.date]){
+     var known=list.some(function(x){ return x.name===g; });
+     return '<select id="rwg_'+i+'" onchange="rotWeekGuest('+i+')"><option value="">（ディレクターを選ぶ）</option>'
+       + list.map(function(x){ return '<option value="'+esc(x.name)+'"'+(x.name===g?' selected':'')+'>'+esc(x.name)+(x.role?'（'+esc(x.role)+'）':'')+'</option>'; }).join('')
+       + (g && !known ? '<option value="'+esc(g)+'" selected>'+esc(g)+'</option>' : '')
+       + '<option value="__other__">ほかの方（お名前を入れる）</option></select>';
+   }
+   return '<input type="text" id="rwg_'+i+'" value="'+esc(g)+'" placeholder="ディレクターの氏名" style="width:9em;" onchange="rotWeekGuest('+i+')">'
+     + (rGuestsBusy ? ' <span class="muted">（ディレクターの一覧を読み込み中…）</span>' : '');
+ }
+ function rotWeekKind(i){
+   var w=(rot.weeks||[])[i]; if(!w) return;
+   var k=el('rwk_'+i).value, old=rWeeks[w.date]||null;
+   if(!k || k==='two') delete rWeeks[w.date];            // 2名（いつもどおり）・シートのとおりは、指定を持たない
+   else rWeeks[w.date]={ kind:k, members:k==='director'?0:1, guest:isDirKind(k)&&old ? (old.guest||'') : '' };
+   if(isDirKind(k) && rGuests===null) loadGuests();
+   rChanged();
+ }
+ function rotWeekGuest(i){
+   var w=(rot.weeks||[])[i], o=w && rWeeks[w.date]; if(!o) return;
+   var v=String(el('rwg_'+i).value||'');
+   if(v==='__other__'){ rWeekFree[w.date]=true; o.guest=''; rChanged(); return; }
+   o.guest=v.replace(/[\s　]+/g,' ').trim();
+   rChanged();
+ }
+ // 保存する回ごとの指定 → { settings, missing }（missing … ディレクターのお名前が無い回）
+ function rotWeekSettingsOut(){
+   var out={}, missing=[];
+   Object.keys(rWeeks).forEach(function(d){
+     var o=rWeeks[d]; if(!o || o.members===2) return;
+     if(isDirKind(o.kind) && !o.guest){ missing.push(d); return; }
+     out[d]=isDirKind(o.kind) ? { members:o.members, guest:o.guest } : { members:o.members };
+   });
+   return { settings:out, missing:missing };
  }
  function renderRot(){
    var byName={};
    (rot.members||[]).forEach(function(m){ byName[nm(m.name)]=m; });
-   // これからの予定（確定の回はルーティンチェックシートのまま。予定の回は、いまの並び順で計算し直す）
-   el('rotWeeks').innerHTML = '<table class="holders"><tr><td class="muted">回</td><td class="muted">日付</td><td class="muted">1人目</td><td class="muted">2人目</td><td></td></tr>'
+   var who=function(p){
+     if(!p) return '';
+     if(p.kind==='director') return (p.name ? esc(p.name) : '<span class="muted">（お名前を選んでください）</span>')
+       + ' <span class="badge">ディレクター</span>' + (p.role ? ' <span class="muted" style="font-size:10.5px;">'+esc(p.role)+'</span>' : '');
+     var m=byName[nm(p.name)]; return p.name ? esc(p.name)+(m?'':' <span style="color:#b3261e;font-size:10.5px;">名簿にいない</span>') : '';
+   };
+   // これからの予定（確定の回はルーティンチェックシートのまま。予定の回は、いまの並び順と回ごとの指定で計算し直す）
+   el('rotWeeks').innerHTML = '<table class="holders"><tr><td class="muted">回</td><td class="muted">日付</td><td class="muted">1人目</td><td class="muted">2人目</td><td class="muted">人数</td><td></td></tr>'
      + (rot.weeks||[]).map(function(w, i){
-         var names = w.source==='routine' ? w.people.map(function(p){ return p.name; }) : (rPairs(rPointerAt(w.date),1).pairs[0]||[]);
-         var cell=function(n){ var m=byName[nm(n)]; return n ? esc(n)+(m?'':' <span style="color:#b3261e;font-size:10.5px;">名簿にいない</span>') : ''; };
+         var ps=weekPeople(w);
          return '<tr'+(i===0?' style="background:#eef4ff;"':'')+'><td>'+(w.no?'第'+esc(w.no)+'回':'')+'</td><td>'+esc(w.md)+(i===0?' <b>次回</b>':'')+'</td>'
-           +'<td>'+cell(names[0])+'</td><td>'+cell(names[1])+'</td>'
+           +'<td>'+who(ps[0])+'</td><td>'+who(ps[1])+'</td><td>'+weekKindCell(w, i, ps)+'</td>'
            +'<td>'+(w.source==='routine'?'<span class="badge saved">確定</span>':'<span class="badge">予定</span>')+'</td></tr>';
        }).join('') + '</table>';
-   var ad=dOf(rAnchor.date), first=rPairs(rAnchor.pointer,1).pairs[0]||[];
+   el('rotGuestNote').innerText = Object.keys(rWeeks).some(function(d){ return isDirKind(rWeeks[d].kind); }) ? rGuestMsg : '';
+   var ad=dOf(rAnchor.date), first=rPairs(rAnchor.pointer,1,[rSize(ymd(ad))]).pairs[0]||[];
    el('rotAnchorNote').innerHTML = (rot.provisional ? '<div class="warn" style="margin:0 0 6px;">まだ並び順を保存していません。いまは'
        + '<b>メンバー名簿の順の仮の並び</b>です。「ツールから取り込む」か、並び順を直して保存してください。</div>' : '')
      + (ad.getMonth()+1)+'/'+ad.getDate()+' の回から、この並び順どおりに割り当てます（その回は '
-     + esc(first.join('さん・'))+(first.length?'さん':'')+'）。これより前の回と「確定」の回は、並び順を直しても変わりません。'
+     + (first.length ? esc(first.join('さん・'))+'さん' : 'ディレクターの回')+'）。これより前の回と「確定」の回は、並び順を直しても変わりません。'
      + (rot.rebased ? '<br><span style="color:#0047d6;">ルーティンチェックシートで確定した回のあとへ、起点を進めました（保存すると記録されます）。</span>' : '');
    el('rotMissing').innerHTML = ((rot.holidayHints||[]).length
        ? '<div class="warn" style="margin:6px 0;">ルーティンチェックシートで開催回が空欄の日（'+esc(rot.holidayHints.join('、'))
@@ -992,8 +1116,9 @@
      ? '<div class="warn" style="margin:6px 0;">メンバー名簿にいない方が並びに入っています：'+esc(rot.missing.join('、'))
        + '（退会された方なら「外す」で並びから外してください。名簿の登録漏れなら名簿に登録してください）</div>' : '');
    var weekOf={}, k=0, seen={};
-   // 起点から数えて何回目に当たるか（入れ替えの選択肢に出す）
-   var res=rPairs(rAnchor.pointer, rOrder.length);
+   // 起点から数えて何回目に当たるか（入れ替えの選択肢に出す）。1名・ディレクターの回は、その人数だけ進む
+   var nMeet=rOrder.length+Object.keys(rWeeks).length;
+   var res=rPairs(rAnchor.pointer, nMeet, meetings(ad, nMeet).map(function(x){ return rSize(x); }));
    res.pairs.forEach(function(pr){ k++; pr.forEach(function(n){ if(!seen[nm(n)]){ seen[nm(n)]=1; weekOf[nm(n)]=k; } }); });
    // 起点の回の1人目の位置（対象外の方は飛ばす）
    var startIdx=((rAnchor.pointer%rOrder.length)+rOrder.length)%rOrder.length;
@@ -1060,6 +1185,12 @@
  }
  function rotSave(){
    if(busy) return;
+   var wk=rotWeekSettingsOut();
+   if(wk.missing.length){
+     el('rotMsg').innerHTML='<span style="color:#d00;">ディレクターの回（'+esc(wk.missing.map(function(d){ var x=dOf(d); return (x.getMonth()+1)+'/'+x.getDate(); }).join('、'))
+       +'）のお名前を選ぶか、入れてください。</span>';
+     return;
+   }
    busy=true; el('rotSaveBtn').disabled=true;
    el('rotMsg').innerHTML='<span style="color:#0055ff;">保存しています…</span>';
    google.script.run.withSuccessHandler(function(r){
@@ -1069,32 +1200,60 @@
      rotAfter();
    }).withFailureHandler(function(e){ busy=false; el('rotSaveBtn').disabled=false; el('rotMsg').innerHTML='<span style="color:#d00;">'+esc((e&&e.message)?e.message:e)+'</span>'; rotAfter(); })
      .saveSpeakerRotation({ order:rOrder, excluded:rExcluded, anchor:rAnchor, base:rot.updated,
-                            header:el('rotHeader').value, notes:el('rotNotes').value.split('\n') });
+                            header:el('rotHeader').value, notes:el('rotNotes').value.split('\n'), weekSettings:wk.settings });
  }
  // --- Facebookの投稿文と、添付する画像 ---
  var ROT_IMG_WEEKS=5, rotImgData='', rotImgName='';
  var ROT_IMG_FONT='"Meiryo UI","Meiryo","Hiragino Kaku Gothic ProN","Hiragino Sans","Yu Gothic","Noto Sans JP","Noto Sans CJK JP",sans-serif';
- // その回のお2人（確定の回はルーティンチェックシートのまま。予定の回は、いまの並び順で計算）と、名簿のカテゴリー・つながりたい人
+ // その回のメインプレゼンター（確定の回はルーティンチェックシートのまま。予定の回は、いまの並び順と回ごとの指定で計算）と、
+ // 名簿のカテゴリー・つながりたい人。1名の回は1人だけ。ディレクターは先頭で、そのページのカテゴリーの枠の文字（リージョン名など）
  function weekPeople(w){
    var byName={};
    (rot.members||[]).forEach(function(m){ byName[nm(m.name)]=m; });
-   var names = w.source==='routine' ? w.people.map(function(p){ return p.name; }) : (rPairs(rPointerAt(w.date),1).pairs[0]||[]);
    // お名前は名簿の書き方で（並び順の名前は、姓と名の間の空白が無いことがある）
-   return names.map(function(n){ var m=byName[nm(n)]||{}; return { name:m.name||n||'', title:m.title||'', collab:m.collab||'' }; });
+   var mem=function(n){ var m=byName[nm(n)]||{}; return { name:m.name||n||'', title:m.title||'', collab:m.collab||'', kind:'member' }; };
+   if(w.source==='routine'){
+     return (w.people||[]).map(function(p){
+       return p.kind==='director' ? { name:p.name||'', title:p.role||p.title||'', role:p.role||p.title||'', collab:'', company:p.company||'', kind:'director' }
+         : mem(p.name);
+     });
+   }
+   var o=rWeeks[w.date]||null;
+   var people=(rPairs(rPointerAt(w.date),1,[o?o.members:2]).pairs[0]||[]).map(mem);
+   if(o && isDirKind(o.kind)) people.unshift(guestPerson(o.guest));
+   return people;
  }
- // 投稿文（サーバーの rotFbText_ と同じ文面）
+ // 表・投稿文・画像に出す方（空の欄・「なし」の書き方は出さない。サーバーの rotShownPeople_ と同じ）
+ var ROT_NONE=/^(?:なし|無し|ナシ|未定|[-ー―－—‐−・]+)$/;
+ function shownPeople(ps){
+   return (ps||[]).filter(function(p){
+     if(!p) return false;
+     if(p.kind==='director') return true;
+     var n=String(p.name||'').replace(/[\s　]/g,''); return !!n && !ROT_NONE.test(n);
+   });
+ }
+ function honor(n){ n=bareName(n); return n ? n+'さん' : ''; }
+ // カテゴリーの行（ディレクターはそのページのカテゴリーの枠の文字）・つながりたい人の行（ディレクターには無い）
+ function catOf(p){ return p.kind==='director' ? (p.role||p.title||'ディレクター') : (p.title||''); }
+ function collabOf(p){ return p.kind==='director' ? '' : (p.collab||''); }
+ // 投稿文（サーバーの rotFbText_ と同じ文面。直すときは両方とも）。1人の回は（１）だけ。
+ // ディレクターは「氏名さん/カテゴリーの枠の文字」で、つながりたい人の行は無い
  function fbTextOf(w, people){
-   if(!w || people.length<2) return '（次回のメインプレゼンターが決まっていないため作れません）';
-   var p1=people[0], p2=people[1];
+   people=shownPeople(people);
+   if(!w || !people.length) return '（次回のメインプレゼンターが決まっていないため作れません）';
+   var NUM=['（１）','（２）','（３）'], lines=[], members=0;
+   people.forEach(function(p, i){
+     if(p.kind==='director'){ lines.push((NUM[i]||'')+(honor(p.name)||'ディレクター')+'/'+(p.role||p.title||'')); return; }
+     members++;
+     lines.push((NUM[i]||'')+honor(p.name)+'/'+(p.title||''));
+     lines.push('　　　→つながりたい人：'+(p.collab||''));
+   });
    return '＜【'+w.label+'定例会】メインプレゼンターのご案内＞\n'
      +'本日も、定例会お疲れ様でした。\n'
      +'次回の定例会は'+w.label+'になります。\n\n'
      +'➊次回のメインプレゼンターをご紹介致します。\n'
-     +'（１）'+p1.name+'さん/'+(p1.title||'')+'\n'
-     +'　　　→つながりたい人：'+(p1.collab||'')+'\n'
-     +'（２）'+p2.name+'さん/'+(p2.title||'')+'\n'
-     +'　　　→つながりたい人：'+(p2.collab||'')+'\n'
-     +'スピーカーの繋がりたい方を、是非ビジターとしてお呼びしましょう！\n'
+     +lines.join('\n')+'\n'
+     +(members ? 'スピーカーの繋がりたい方を、是非ビジターとしてお呼びしましょう！\n' : '')
      +'➋今後4週間のメイン・プレゼンターは添付画像の通りです。\n'
      +'➌推薦のことばをお待ちしています。（特にメインプレゼンター宛！）\n'
      +'毎週月曜日の正午までに、PDFにて書記兼会計の'+(w.secretary||rot.secretary||'（書記兼会計）')+'までご提出下さい';
@@ -1148,18 +1307,27 @@
    cell(x1, y, colW[1]+colW[2], hHead, header, { fill:'#FF0000', size:20, bold:true });
    y+=hHead;
    ws.forEach(function(w){
-     var a=w.people[0]||{}, b=w.people[1]||{};
+     var ps=shownPeople(w.people), a=ps[0]||{}, b=ps[1]||{};
      cell(x0, y, colW[0], hCat, w.no?'第'+w.no+'回':'', { size:14, bold:true });
-     cell(x1, y, colW[1], hCat, a.title||'', { size:17, bold:true });
-     cell(x2, y, colW[2], hCat, b.title||'', { size:17, bold:true });
+     cell(x0, y+hCat, colW[0], hName, w.label||'', { size:21, bold:true });
+     cell(x0, y+hCat+hName, colW[0], hCol, '', { fill:'#FCD5B4', size:12 });
+     if(ps.length===1){
+       // 1人の回：2つの列を1つにまとめて、まん中に（前半スライドの表と同じ。右の列を空のまま残さない）
+       var wide=colW[1]+colW[2];
+       cell(x1, y, wide, hCat, catOf(a), { size:17, bold:true });
+       cell(x1, y+hCat, wide, hName, a.name||'', { size:24, bold:true, color:'#C00000' });
+       cell(x1, y+hCat+hName, wide, hCol, collabOf(a), { fill:'#FCD5B4', size:12, bold:true, min:7 });
+       y+=hCat+hName+hCol;
+       return;
+     }
+     cell(x1, y, colW[1], hCat, catOf(a), { size:17, bold:true });
+     cell(x2, y, colW[2], hCat, catOf(b), { size:17, bold:true });
      y+=hCat;
-     cell(x0, y, colW[0], hName, w.label||'', { size:21, bold:true });
      cell(x1, y, colW[1], hName, a.name||'', { size:24, bold:true, color:'#C00000' });
      cell(x2, y, colW[2], hName, b.name||'', { size:24, bold:true, color:'#C00000' });
      y+=hName;
-     cell(x0, y, colW[0], hCol, '', { fill:'#FCD5B4', size:12 });
-     cell(x1, y, colW[1], hCol, a.collab||'', { fill:'#FCD5B4', size:12, bold:true, min:7 });
-     cell(x2, y, colW[2], hCol, b.collab||'', { fill:'#FCD5B4', size:12, bold:true, min:7 });
+     cell(x1, y, colW[1], hCol, collabOf(a), { fill:'#FCD5B4', size:12, bold:true, min:7 });
+     cell(x2, y, colW[2], hCol, collabOf(b), { fill:'#FCD5B4', size:12, bold:true, min:7 });
      y+=hCol;
    });
    y+=12;
@@ -1208,33 +1376,61 @@
  }
 
  // --- メインプレゼンターの画像（「今週のメインプレゼンテーション」。書記兼会計のデザインと同じ並び・色）---
- // 1920×1080。左右にお1人ずつ：写真・お名前・ご紹介して欲しいカテゴリー（3つまで）。下に赤い帯と標語
+ // 1920×1080。左右にお1人ずつ：写真・お名前・ご紹介して欲しいカテゴリー（3つまで）。下に赤い帯と標語。
+ // 1人の回は、まん中にパネル1つ（PRESENTER②・仕切りの線は描かない）。
+ // ディレクターは、前半テンプレートのその方のページの写真と、カテゴリーの枠の文字（リージョン名など）を、カテゴリーの所に描く
  var MP_FONT=ROT_IMG_FONT;                     // 書体は Meiryo UI（スピーカーローテーションの表の画像と同じ。無いパソコン・スマホでは似た書体）
- var MP_PANEL=['#FFEFF9','#F2F2F2'], MP_DX=950;
+ var MP_PANEL=['#FFEFF9','#F2F2F2'], MP_DX=950, MP_DX_ONE=475;   // MP_DX_ONE … 1人の回のパネルをまん中に置くずらし（(1920-865)/2-52）
  var mpData='', mpName='', mpKey='', mpWeek=null, mpPhotos={}, mpPending={}, mpPics={}, mpOwn=[null,null], mpTimer=null;
+ // mpCount … パネルの数（1か2）。mpPeople … パネルごとの方（kind:'director' ならディレクター）
+ // mpGuestPhotos … ディレクターの写真（getWeeklyGuestPhotos の { 氏名: dataURL }。null はまだ読んでいない）
+ var mpCount=2, mpPeople=[], mpGuestPhotos=null, mpGuestBusy=false;
  // 「協業したい人」→ ご紹介して欲しいカテゴリー（「・」「、」などで分ける。4つ以上は3つ目にまとめる）
  function mpCats(collab){
    var a=String(collab||'').split(/[・、,，\/／\n]+/).map(function(s){ return s.trim(); }).filter(function(s){ return s; });
    return a.length>3 ? [a[0], a[1], a.slice(2).join('・')] : a;
  }
- // ご案内する回が替わったら、お2人の欄を作り直す（同じ回のままなら、直した中身を残す）
+ function mpIsDir(i){ return !!(mpPeople[i] && mpPeople[i].kind==='director'); }
+ // ご案内する回が替わったら、欄を作り直す（同じ回のままなら、直した中身を残す）。
+ // 欄は、その回の方の数（1人の回は1つ。まだ決まっていない回は、これまでどおり空の欄を2つ）
  function mpUpdate(w, people){
-   var key=(w?w.date:'')+'|'+people.map(function(p){ return p.name; }).join('|');
+   var ps=shownPeople(people), n=ps.length===1 ? 1 : 2;
+   var key=(w?w.date:'')+'|'+n+'|'+ps.map(function(p){ return (p.kind==='director'?'D:':'')+p.name; }).join('|');
    if(key===mpKey) return;
-   mpKey=key; mpWeek=w; mpOwn=[null,null];
-   el('mpEdit').innerHTML=[0,1].map(function(i){
-     var p=people[i]||{}, cats=mpCats(p.collab);
+   mpKey=key; mpWeek=w; mpOwn=[null,null]; mpCount=n; mpPeople=ps.slice(0, n);
+   el('mpEdit').innerHTML=(n===1?[0]:[0,1]).map(function(i){
+     var p=ps[i]||{}, dir=p.kind==='director', cats=mpCats(p.collab);
      return '<div class="box" style="flex:1;min-width:250px;margin:0;font-size:12px;line-height:1.9;">'
-       +'<b>PRESENTER'+(i?'②':'①')+'</b><br>'
+       +'<b>PRESENTER'+(n===1?'':(i?'②':'①'))+(dir?'（ディレクター）':'')+'</b><br>'
        +'お名前：<input type="text" id="mpName'+i+'" value="'+esc(p.name||'')+'" style="width:65%;" oninput="mpRedraw()"><br>'
-       +[0,1,2].map(function(k){ return 'カテゴリー'+(k+1)+'：<input type="text" id="mpCat'+i+'_'+k+'" value="'+esc(cats[k]||'')+'" style="width:58%;" oninput="mpRedraw()">'; }).join('<br>')
+       +(dir ? 'カテゴリー（リージョン名など）：<input type="text" id="mpRole'+i+'" value="'+esc(p.role||p.title||'')+'" style="width:50%;" oninput="mpRedraw()">'
+         : [0,1,2].map(function(k){ return 'カテゴリー'+(k+1)+'：<input type="text" id="mpCat'+i+'_'+k+'" value="'+esc(cats[k]||'')+'" style="width:58%;" oninput="mpRedraw()">'; }).join('<br>'))
        +'<br><span class="muted" id="mpPhotoNote'+i+'"></span><br>'
        +'<label style="font-size:11.5px;">写真を選ぶ（パソコンの写真を使う）：<input type="file" accept="image/*" id="mpFile'+i+'" onchange="mpPickPhoto('+i+', this)"></label>'
        +'</div>';
    }).join('');
    mpName=(w?String(w.date).replace(/\//g,''):'')+'_メインプレゼンター.png';
-   mpLoadPhotos(people.map(function(p){ return p.name; }).filter(function(n){ return n; }));
+   // メンバーの写真は ⚙️ 設定 > メンバー写真、ディレクターの写真は前半テンプレートのその方のページから
+   mpLoadPhotos(ps.filter(function(p){ return p.kind!=='director'; }).map(function(p){ return p.name; }).filter(function(x){ return x; }));
+   if(ps.some(function(p){ return p.kind==='director'; })) mpLoadGuestPhotos();
    mpDraw();
+ }
+ // ディレクターの写真（前半テンプレートのアンバサダー・ディレクターのページ。1回だけ取りに行く）
+ function mpLoadGuestPhotos(){
+   if(mpGuestPhotos!==null || mpGuestBusy) return;
+   mpGuestBusy=true; mpPhotoNotes();
+   var done=function(map){
+     mpGuestBusy=false; mpGuestPhotos=map||{};
+     Object.keys(mpGuestPhotos).forEach(function(k){ if(mpGuestPhotos[k]) mpPic('guest:'+gNorm(k), mpGuestPhotos[k]); });
+     mpPhotoNotes(); mpDraw();
+   };
+   google.script.run.withSuccessHandler(function(r){ done(r&&r.photos); })
+     .withFailureHandler(function(){ done(null); }).getWeeklyGuestPhotos();
+ }
+ // ディレクターの写真があるか（そのページの氏名で引く。欄のお名前を直しても、写真はそのまま）
+ function mpGuestPhotoOf(i){
+   var key=gNorm((mpPeople[i]||{}).name);
+   return !!key && Object.keys(mpGuestPhotos||{}).some(function(k){ return gNorm(k)===key && mpGuestPhotos[k]; });
  }
  // メンバー写真（⚙️ 設定 > メンバー写真）。氏名ごとに1回だけ取りに行く
  function mpLoadPhotos(names){
@@ -1261,8 +1457,15 @@
    r.readAsDataURL(f);
  }
  function mpPhotoNotes(){
-   [0,1].forEach(function(i){
+   (mpCount===1?[0]:[0,1]).forEach(function(i){
      var n=(el('mpName'+i)||{}).value||'', note=el('mpPhotoNote'+i); if(!note) return;
+     if(mpIsDir(i)){
+       note.innerText = mpOwn[i] ? '写真：選んだ写真を使います'
+         : mpGuestBusy ? '写真：読み込み中…（ディレクターのページから）'
+         : mpGuestPhotoOf(i) ? '写真：前半テンプレートのディレクターのページから'
+         : mpGuestPhotos!==null ? '写真が見つかりません（前半テンプレートのその方のページに写真がありません。下で選んでください）' : '';
+       return;
+     }
      note.innerText = mpOwn[i] ? '写真：選んだ写真を使います'
        : mpPending[n] ? '写真：読み込み中…'
        : mpPhotos[n] ? '写真：メンバー写真から'
@@ -1305,19 +1508,20 @@
      line(200, 80, Math.max(220, W/2-tw/2-34), 80, '#FF3131', 4);
      line(Math.min(W-220, W/2+tw/2+34), 80, 1720, 80, '#FF3131', 4);
    }
-   // 真ん中の仕切り
-   line(960, 170, 960, 948, '#737373', 4);
-   [0,1].forEach(function(i){
-     var dx=i*MP_DX, panel=MP_PANEL[i];
+   // 真ん中の仕切り（1人の回は描かない）
+   var one=mpCount===1;
+   if(!one) line(960, 170, 960, 948, '#737373', 4);
+   (one?[0]:[0,1]).forEach(function(i){
+     var dx=one ? MP_DX_ONE : i*MP_DX, panel=MP_PANEL[i], dir=mpIsDir(i);
      var name=String((el('mpName'+i)||{}).value||'').trim();
-     var cats=[0,1,2].map(function(k){ return String((el('mpCat'+i+'_'+k)||{}).value||'').trim(); }).filter(function(s){ return s; });
+     var cats=dir ? [] : [0,1,2].map(function(k){ return String((el('mpCat'+i+'_'+k)||{}).value||'').trim(); }).filter(function(s){ return s; });
      g.fillStyle=panel; g.fillRect(52+dx, 170, 865, 744);
-     // PRESENTER①②
+     // PRESENTER①②（1人の回は番号なし）
      g.fillStyle='#FB3431';
      g.beginPath(); g.moveTo(52+dx,170); g.lineTo(452+dx,170); g.lineTo(416+dx,228); g.lineTo(52+dx,228); g.closePath(); g.fill();
-     font(400, 40); g.fillStyle='#FFFFFF'; g.textAlign='left'; g.fillText('PRESENTER'+(i?'②':'①'), 106+dx, 201);
-     // 写真（角の丸い枠いっぱいに。顔が切れないよう上寄せで切り抜く）
-     var pic=mpOwn[i] ? mpPics['own'+i+':'+mpKey] : mpPics[name];
+     font(400, 40); g.fillStyle='#FFFFFF'; g.textAlign='left'; g.fillText('PRESENTER'+(one?'':(i?'②':'①')), 106+dx, 201);
+     // 写真（角の丸い枠いっぱいに。顔が切れないよう上寄せで切り抜く）。ディレクターはそのページの写真
+     var pic=mpOwn[i] ? mpPics['own'+i+':'+mpKey] : dir ? mpPics['guest:'+gNorm((mpPeople[i]||{}).name)] : mpPics[name];
      g.save(); rr(82+dx, 306, 367, 552, 30); g.clip();
      if(pic && pic.width && pic.height){
        var s=Math.max(367/pic.width, 552/pic.height), sw=367/s, sh=552/s;
@@ -1333,6 +1537,7 @@
        g.fillStyle='#111111'; g.textAlign='center'; g.fillText(name, 681+dx, 314);
      }
      line(485+dx, 356.5, 878+dx, 356.5, '#EF3538', 4);
+     if(dir){ mpDrawRole(g, String((el('mpRole'+i)||{}).value||'').trim(), dx, fit, font); return; }
      if(!cats.length) return;
      // 📣 ご紹介して欲しいカテゴリー（拡声器の絵は線で描く）
      g.fillStyle='#FF3131';
@@ -1374,6 +1579,23 @@
    var ch=String(rot && rot.chapter || '').trim();
    if(ch){ fit('BNI '+ch, 900, 44, 600, 26); g.textAlign='center'; g.fillText('BNI '+ch, 960, 1014); }
    try { return cv.toDataURL('image/png'); } catch(e){ return ''; }
+ }
+ // ディレクターのカテゴリー（そのページのカテゴリーの枠の文字。リージョン名など）を、カテゴリーの所に枠1つで描く。
+ // 「ご紹介して欲しいカテゴリー」の見出しとチェックの丸は描かない（ご紹介をお願いするカテゴリーではないため）
+ function mpDrawRole(g, text, dx, fit, font){
+   if(!text) return;
+   var top=491, x1=485+dx, x2=878+dx, cx=(x1+x2)/2, maxW=x2-x1-44;
+   g.beginPath(); g.moveTo(x1,top); g.lineTo(x2-27,top); g.lineTo(x2,top+30); g.lineTo(x2,top+101); g.lineTo(x1,top+101); g.closePath();
+   g.strokeStyle='#AB555E'; g.lineWidth=1.5; g.stroke();
+   g.fillStyle='#111111'; g.textAlign='center';
+   var s=fit(text, 700, 40, maxW, 28);
+   if(g.measureText(text).width<=maxW){ g.fillText(text, cx, top+51); return; }
+   // 長いもの（「BNI東京見本リージョン　エグゼクティブディレクター」など）は2行に（空白か、真ん中あたりで分ける）
+   var cut=text.search(/[\s　]/);
+   if(cut<=0) cut=Math.ceil(text.length/2);
+   var l1=text.slice(0,cut).trim(), l2=text.slice(cut).trim();
+   s=Math.min(fit(l1, 700, 32, maxW, 18), fit(l2, 700, 32, maxW, 18));
+   font(700, s); g.fillText(l1, cx, top+51-s*0.62); g.fillText(l2, cx, top+51+s*0.62);
  }
  function mpImgDownload(){
    if(!mpData) return;
