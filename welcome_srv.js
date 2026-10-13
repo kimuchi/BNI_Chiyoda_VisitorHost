@@ -69,8 +69,9 @@ function exportWelcomeTemplate() {
 // 新入会の方（ルーティンチェックシートの「新入会」の欄）→ [{ name, raw, matched, company, category, kana, byCategory }]
 // 名簿の方は名簿の会社名・カテゴリー・よみがな。名簿に無い方は、書いてあったお名前とかっこの中（「カテゴリー」のうしろ）のカテゴリー。
 // byCategory … かなで書かれたお名前を、カテゴリーで名簿の方に合わせた（routineRosterKana_）
-function welcomeMembers_(raw) {
-  var list = routineMemberList_(raw), roster = [];
+// date … 開催日（名字だけの書き方で同じ名字の方が2人以上いるとき、入会日で新しいメンバーに決めるため）
+function welcomeMembers_(raw, date) {
+  var list = routineMemberList_(raw, date ? { kind: 'new', date: date } : null), roster = [];
   if (!list.length) return [];
   try { roster = getMemberMaster({ membersOnly: true }).members || []; } catch (e) {}
   var out = [], seen = {};
@@ -87,7 +88,8 @@ function welcomeMembers_(raw) {
     out.push({ name: name, raw: x.raw || '', matched: !!x.name,
                company: m && m.company ? CB_.normalize(m.company) : '',
                category: m ? String(m.title || '').trim() : String(x.category || '').trim(),
-               kana: m ? String(m.kana || '').trim() : '', byCategory: !!(x.name && x.byCategory) });
+               kana: m ? String(m.kana || '').trim() : '', byCategory: !!(x.name && x.byCategory),
+               byDate: !!(x.name && x.byDate), candidates: x.name ? [] : (x.candidates || []) });
   }
   return out;
 }

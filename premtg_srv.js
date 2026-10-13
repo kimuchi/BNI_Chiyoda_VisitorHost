@@ -217,7 +217,7 @@ function premtgData_(target) {
 
   // 新入会の方（熱烈歓迎のページを作る。welcome_srv.js）
   var newText = sheet(/^新入会$/, null, '');
-  out.newMembers = welcomeMembers_(newText);
+  out.newMembers = welcomeMembers_(newText, target);
   if (routineUnread_(newText, out.newMembers)) out.newMembersUnread = newText.replace(/\n+/g, '　');
   // 割り振り表（ビジターホストコーディネーターのページのあと）
   out.allocation = premtgAllocation_(target);
@@ -978,6 +978,7 @@ function getPreMeetingPreview(dateStr) {
     // 熱烈歓迎のページ（新入会の方ごと）と、そのひな形
     var welcome = data.newMembers.map(function (m) {
       return { name: m.name, raw: m.raw, company: m.company, category: m.category, matched: m.matched, byCategory: !!m.byCategory,
+               byDate: !!m.byDate, candidates: m.candidates || [],
                photo: !!findPhotoIdForName_(m.name) };
     });
     var wtpl = data.newMembers.length ? welcomeTemplateInfo_() : null, wchk = null;
@@ -1030,6 +1031,13 @@ function generatePreMeetingSlides(dateStr) {
     if (welcomeErr) msg += '\n熱烈歓迎のひな形を開けませんでした: ' + welcomeErr;
     if (data.newMembersUnread) msg += '\n熱烈歓迎のページ: ルーティンチェックシートの「新入会」の欄（' + data.newMembersUnread
       + '）からお名前を読み取れなかったので、作っていません。お名前（漢字かふりがな）を「、」で区切って書き直すと入ります。';
+    var byDate = data.newMembers.filter(function (m) { return m.byDate; });
+    if (byDate.length) msg += '\n熱烈歓迎のページ: ' + byDate.map(function (m) { return '「' + m.raw + '」→ ' + m.name + 'さん'; }).join('、')
+      + ' は、同じ名字の方が名簿にいるので、入会日から新しく入会した方にしました。違うときは「新入会」の欄をフルネームで書いてください。';
+    var amb = data.newMembers.filter(function (m) { return (m.candidates || []).length; });
+    if (amb.length) msg += '\n熱烈歓迎のページ: ' + amb.map(function (m) { return '「' + m.raw + '」（' + m.candidates.join('・') + '）'; }).join('、')
+      + ' は、同じ名字の方が名簿に2人以上いて決められなかったので、書いてあったお名前のまま作りました。'
+      + '「新入会」の欄をフルネームで書くか、名簿の入会日を確かめて作り直してください。';
     var byCat = data.newMembers.filter(function (m) { return m.byCategory; });
     if (byCat.length) msg += '\n熱烈歓迎のページ: ' + byCat.map(function (m) { return '「' + m.raw + '」→ ' + m.name + 'さん'; }).join('、')
       + ' は、カテゴリーで名簿の方に合わせました。違うときは、「新入会」の欄のお名前を漢字で書くか、名簿のふりがなを確かめて作り直してください。';

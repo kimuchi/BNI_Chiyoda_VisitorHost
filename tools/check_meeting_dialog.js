@@ -285,6 +285,21 @@ const shown = (el) => !!el && el.style.display !== 'none' && el.style.display !=
     step('名簿の方を選び直す', () => run("nmSet('renew',0,'" + NM(3) + "')"));
     ck(!/カテゴリーで名簿の方に合わせました/.test(els.nm_renew.innerHTML), '選び直したのに「カテゴリーで合わせました」が残る');
   }
+  // 同じ名字の方が名簿に2人以上いて、名字だけで書いてあるとき：入会日で決めた方はその旨を、決められなければ候補を出す
+  // （以前は「名簿にありません」とだけ出ていた）
+  {
+    step('前半：同じ名字の方の記載を出す', () => run('nmFromRoutine(' + J({
+      newMembers: [{ raw: '見本さん', name: NM(20), matched: true, years: 0, category: '', byDate: true },
+                   { raw: '試験さん', name: '', matched: false, years: 0, category: '', candidates: [NM(1), NM(21)] }],
+      newMembersRaw: '見本さん、試験さん', renewMembers: [], renewMembersRaw: '' }) + ')'));
+    ck(/記載「見本さん」：同じ名字の方が名簿にいるので、入会日から（新しく入会した方）この方にしました/.test(els.nm_new.innerHTML),
+       '入会日で決めたことが出ない: ' + els.nm_new.innerHTML.slice(0, 300));
+    ck(new RegExp('同じ名字の方が名簿に2人います（' + NM(1) + '・' + NM(21) + '）。どなたか選んでください').test(els.nm_new.innerHTML)
+       && /「試験さん」（どなたか決まっていません）/.test(els.nm_new.innerHTML) && !/名簿に無い方：このお名前/.test(els.nm_new.innerHTML),
+       '同じ名字で決められないときの案内: ' + els.nm_new.innerHTML.slice(0, 400));
+    step('候補から選ぶ', () => run("nmSet('new',1,'" + NM(21) + "')"));
+    ck(!/どなたか選んでください/.test(els.nm_new.innerHTML), '選んだのに候補の案内が残る');
+  }
 
   // ルーティンチェックシートにその日の列が無い開催日に選び直すと、前の日のメインプレゼン・コアバリュー・一般規定・カテゴリーを残さない
   // （以前は前の日の値のまま、その日のスライドを作っていた。メインプレゼンは、その日のスピーカーローテーションのお2人にする）
