@@ -42,6 +42,9 @@ function fakeCtx(texts) {
     },
     fillText(t, x, y) { if (texts) texts.push({ text: String(t), size, x, y, color: this.fillStyle }); },
     scale: noop, fillRect: noop, strokeRect: noop, save: noop, restore: noop, beginPath: noop, rect: noop, clip: noop,
+    // 線・円・画像（メインプレゼンターの画像などを描く画面で使う）
+    moveTo: noop, lineTo: noop, stroke: noop, fill: noop, arc: noop, closePath: noop, drawImage: noop, translate: noop,
+    setLineDash: noop, quadraticCurveTo: noop, bezierCurveTo: noop, arcTo: noop, roundRect: noop,
     fillStyle: '', strokeStyle: '', lineWidth: 1, textAlign: '', textBaseline: '',
   };
 }

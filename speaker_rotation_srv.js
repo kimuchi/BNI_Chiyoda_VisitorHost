@@ -5,10 +5,16 @@
 //   並び順（order）… ローテーションの順番に並べたメンバー
 //   対象外（excluded）… 並びにはいるが、いまは発表しない方（三役など）
 //   起点（anchor）… { date, pointer }。date の開催日は、並びの pointer 番目（0から）から2名
+//   回ごとの指定（weeks）… { 'yyyy/MM/dd': { members: 0|1, guest: 'ディレクターの氏名' } }。いつもの2名と違う回だけ持つ
+//       1名 … { members: 1 }　ディレクター＋1名 … { members: 1, guest }　ディレクターのみ … { members: 0, guest }
 //
 // 開催ごとに、並びの次の2名を割り当てる。対象外の方と、メンバー名簿にいない方は飛ばす。
 // 休会日（⚙️ 設定 > 休会日）の週は飛ばす。並びの最後まで行ったら最初に戻る。
 // ルーティンチェックシートに「メインプレゼン」が書いてある回は、そちらを優先して表示する（確定した回）。
+// メインプレゼンが1人の回・ディレクター（リージョンのディレクター・アンバサダー。名簿の方ではない）が担当する回は、
+// その回が使うメンバーの人数だけ並びを進める（以前は必ず2名ずつ進めたので、その回の相方などが黙って番を飛ばされていた）。
+//   回ごとの指定があればその人数 → ルーティンチェックシートに書いてある回は、書いてあるメンバーの人数 → ふだんは2名
+// ディレクターのお名前・カテゴリー（リージョン名など）・会社名は、前半テンプレートのその方のページから取る（getWeeklyGuests）。
 //
 // 並び順を直すと、起点の日から先の割り当てが変わる。画面を開くときに、起点を
 // 「ルーティンチェックシートのメインプレゼンがまだ空の、いちばん近い開催日」まで進めておくので、
@@ -56,6 +62,7 @@ function rotLoad_() {
     }
   }
   st.anchor.pointer = parseInt(st.anchor.pointer, 10) || 0;
+  st.weeks = rotWeekSettings_(st.weeks);                        // 以前の保存（回ごとの指定が無い）は {}（どの回も2名）
   if (typeof st.header !== 'string') st.header = d.header;
   if (!Array.isArray(st.notes)) st.notes = d.notes;
   st.updated = st.updated || '';
@@ -72,10 +79,37 @@ function rotRosterOrder_() {
 
 function rotSave_(st) {
   st.updated = new Date().toISOString();
-  PropertiesService.getScriptProperties().setProperty(ROT_KEY_, JSON.stringify({
-    order: st.order, excluded: st.excluded, anchor: st.anchor, header: st.header, notes: st.notes, updated: st.updated
-  }));
+  // 回ごとの指定は、過ぎた回のものを捨てる（起点はいつも次の開催日より先なので、割り当ては変わらない。
+  // 過ぎた回はルーティンチェックシートに書いてあるので、さかのぼって数えるときもそちらの人数で数えられる）
+  var today = new Date(); today.setHours(0, 0, 0, 0);
+  st.weeks = rotWeekSettings_(st.weeks, fmtDate_(today));
+  var save = { order: st.order, excluded: st.excluded, anchor: st.anchor, header: st.header, notes: st.notes, updated: st.updated };
+  if (Object.keys(st.weeks).length) save.weeks = st.weeks;
+  PropertiesService.getScriptProperties().setProperty(ROT_KEY_, JSON.stringify(save));
   return st;
+}
+
+// 回ごとの指定をそろえる → { 'yyyy/MM/dd': { members: 0|1, guest? } }。2名（いつもどおり）の回は持たない。
+//   fromKey … この日より前の回は捨てる
+function rotWeekSettings_(w, fromKey) {
+  var out = {};
+  if (!w || typeof w !== 'object') return out;
+  Object.keys(w).forEach(function (k) {
+    var d = parseDate_(String(k).replace(/-/g, '/')), o = w[k] || {};
+    if (!d) return;
+    var key = fmtDate_(d), m = parseInt(o.members, 10);
+    var g = String(o.guest == null ? '' : o.guest).replace(/[\s　]+/g, ' ').trim();
+    if ((fromKey && key < fromKey) || !(m === 0 || m === 1)) return;
+    out[key] = g ? { members: m, guest: g } : { members: m };
+  });
+  return out;
+}
+
+// 指定の種類：'two'（2名）・'one'（1名）・'director1'（ディレクター＋1名）・'director'（ディレクターのみ）
+function rotSettingKind_(o) {
+  if (!o) return 'two';
+  if (o.members === 0) return 'director';
+  return o.guest ? 'director1' : 'one';
 }
 
 // 飛ばす方：対象外の方。
@@ -99,33 +133,51 @@ function rotSkip_(st) {
   return skip;
 }
 
-// 並びの start 番目から、count 組ぶん2名ずつ取る → { pairs, next }（next は続きの位置）
-function rotPairsFrom_(st, skip, start, count) {
+// 並びの start 番目から、count 回ぶん取る → { pairs, next }（next は続きの位置）。
+//   sizes … 回ごとのメンバーの人数（[2, 1, 0, …]。無ければどの回も2名）。0名の回（ディレクターのみ）は [] の組
+// 画面（role_input.html の rPairs）も同じ計算をする。直すときは両方とも
+function rotPairsFrom_(st, skip, start, count, sizes) {
   var order = st.order, n = order.length, pairs = [];
   if (!n) return { pairs: [], next: 0 };
-  var idx = ((start % n) + n) % n, guard = 0, limit = n * 4 + 10;
-  while (pairs.length < count && guard < limit) {
-    var picked = [];
-    while (picked.length < 2 && guard < limit) {
-      if (!skip[rotNorm_(order[idx])]) picked.push(order[idx]);
-      idx = (idx + 1) % n; guard++;
+  var idx = ((start % n) + n) % n;
+  for (var k = 0; k < count; k++) {
+    var size = sizes && sizes[k] != null ? sizes[k] : 2, picked = [];
+    while (picked.length < size) {
+      // 対象外の方は飛ばす（ひと回りしても見つからなければ、全員が対象外）
+      for (var t = 0; t < n && skip[rotNorm_(order[idx])]; t++) idx = (idx + 1) % n;
+      if (t >= n) break;
+      picked.push(order[idx]); idx = (idx + 1) % n;
     }
-    if (picked.length === 2) pairs.push(picked); else break;
+    if (picked.length < size) break;
+    pairs.push(picked);
   }
   return { pairs: pairs, next: idx };
 }
 
-// 1組さかのぼった位置（ツールの「前の週へ」と同じ）
-function rotPrevPointer_(st, skip, pointer) {
-  var order = st.order, n = order.length;
-  if (!n) return pointer;
+// size 名ぶん（無ければ2名＝1組）さかのぼった位置（ツールの「前の週へ」と同じ）
+function rotPrevPointer_(st, skip, pointer, size) {
+  var order = st.order, n = order.length, want = size == null ? 2 : size;
+  if (!n || !want) return pointer;
   var idx = ((pointer % n) + n) % n, found = [], guard = 0;
-  while (found.length < 2 && guard < n * 4 + 10) {
+  while (found.length < want && guard < n * 4 + 10) {
     idx = (idx - 1 + n) % n;
     if (!skip[rotNorm_(order[idx])]) found.push(idx);
     guard++;
   }
-  return found.length === 2 ? found[1] : pointer;
+  return found.length === want ? found[want - 1] : pointer;
+}
+
+// その開催日に、並びから使うメンバーの人数（0〜2）。
+//   回ごとの指定 → ルーティンチェックシートに書いてある回は、書いてあるメンバー（ディレクターでない方）の人数 → ふだんは2名
+function rotSlotsAt_(st, key, mains) {
+  var o = (st.weeks || {})[key];
+  if (o) return o.members;
+  var ps = (mains || {})[key];
+  if (ps && ps.length) return Math.min(2, ps.filter(function (p) { return p.kind !== 'director'; }).length);
+  return 2;
+}
+function rotSizes_(st, dates, mains) {
+  return dates.map(function (d) { return rotSlotsAt_(st, fmtDate_(d), mains); });
 }
 
 // 起点の日そのものが休会日なら、その次の開催日を起点とみなす
@@ -135,15 +187,18 @@ function rotAnchorDate_(st, holidays) {
   return a;
 }
 
-// 開催日 d の2名が並びの何番目から始まるか
-function rotPointerAt_(st, skip, d, holidays) {
-  var a = rotAnchorDate_(st, holidays), p = st.anchor.pointer || 0, k, i;
+// 開催日 d の方が並びの何番目から始まるか。
+// 起点の日から d の前の回まで（d が起点より前なら、d から起点の前の回まで）、回ごとに使うメンバーの人数だけ進める（戻す）。
+//   mains … ルーティンチェックシートの「メインプレゼン」（rotRoutineMains_）。書いてある回は、書いてあるメンバーの人数で数える
+function rotPointerAt_(st, skip, d, holidays, mains) {
+  var a = rotAnchorDate_(st, holidays), p = st.anchor.pointer || 0, k, i, ds;
   if (d.getTime() >= a.getTime()) {
     k = mpMeetingsBetween_(a, d, holidays);
-    return k ? rotPairsFrom_(st, skip, p, k).next : p;
+    return k ? rotPairsFrom_(st, skip, p, k, rotSizes_(st, rotMeetingDates_(a, k, holidays), mains)).next : p;
   }
   k = mpMeetingsBetween_(d, a, holidays);
-  for (i = 0; i < k; i++) p = rotPrevPointer_(st, skip, p);
+  ds = rotMeetingDates_(d, k, holidays);
+  for (i = ds.length - 1; i >= 0; i--) p = rotPrevPointer_(st, skip, p, rotSlotsAt_(st, fmtDate_(ds[i]), mains));
   return p;
 }
 
@@ -171,15 +226,28 @@ function rotNextMeeting_(holidays) {
   return rotMeetingDates_(d, 1, holidays)[0];
 }
 
-// ルーティンチェックシートの「メインプレゼン」→ { 'yyyy/MM/dd': [氏名, 氏名] }（書いてある回＝確定）
+// ルーティンチェックシートの「メインプレゼン」→ { 'yyyy/MM/dd': [{ name, raw, kind, guest }] }（書いてある回＝確定）。
+//   kind … 'member'（name は名簿の氏名。名簿に当たらなければ空）・'director'（guest に役職を外した呼び名）。
+//   「②なし」のような、いない印の欄は入らない（1人の週）
 //   fromKey … この日より前の回しか載っていないシート（昔の期）は読まない
 function rotRoutineMains_(fromKey) {
   var out = {}, rows = {};
   try { rows = routineRowValues_(['メインプレゼン'], fromKey); } catch (e) { rows = {}; }
   for (var k in rows) {
-    var ps = routineMainPresenters_(rows[k]);
-    if (ps.length) out[k] = ps.map(function (p) { return p.name || p.raw; });
+    var ps = [];
+    try { ps = routineMainPresenters_(rows[k]); } catch (e) { ps = []; }
+    if (ps.length) {
+      out[k] = ps.map(function (p) {
+        return { name: p.name || '', raw: String(p.raw || ''), kind: p.kind === 'director' ? 'director' : 'member', guest: p.guest || '' };
+      });
+    }
   }
+  return out;
+}
+// 各回の、ルーティンチェックシートに書いてあるメンバーの人数 → { 'yyyy/MM/dd': 0〜2 }（画面で並びを数え直すため）
+function rotRoutineSlots_(mains) {
+  var out = {};
+  for (var k in mains) out[k] = rotSlotsAt_({ weeks: {} }, k, mains);
   return out;
 }
 function rotRoutineNumbers_(fromKey) {
@@ -199,7 +267,7 @@ function rotRebase_(st, skip, holidays, mains, next) {
   for (var i = 0; i < dates.length; i++) { if (!mains[fmtDate_(dates[i])]) { open = dates[i]; break; } }
   var a = rotAnchorDate_(st, holidays);
   if (open.getTime() <= a.getTime()) return { rebased: false, open: open };
-  st.anchor = { date: fmtDate_(open), pointer: rotFirstActive_(st, skip, rotPointerAt_(st, skip, open, holidays)) };
+  st.anchor = { date: fmtDate_(open), pointer: rotFirstActive_(st, skip, rotPointerAt_(st, skip, open, holidays, mains)) };
   return { rebased: true, open: open };
 }
 
@@ -213,62 +281,151 @@ function rotFirstActive_(st, skip, p) {
   return p;
 }
 
-// 開催日ごとの2名（count 回ぶん）。ルーティンに書いてある回はそちらを優先する
+// 開催日ごとのメインプレゼン（count 回ぶん）。ルーティンに書いてある回はそちらを優先する。
+//   → [{ date, no, md, label, source: 'routine'|'rotation', kind, people }]
+//   kind … 'two'（2名）・'one'（1名）・'director'（ディレクターのみ）・'director1'（ディレクター＋1名）
+//   people … [{ name, title, collab, company, inMaster, kind: 'member'|'director', role? }]。1人の回は1人だけ（空の2人目は入れない）。
+//     ディレクターは先頭。name はアンバサダー・ディレクターのページの氏名（当たらなければ書いたまま）、
+//     title と role はそのページのカテゴリーの枠の文字（「BNI東京見本リージョン」のようなリージョン名など）、company は会社名の枠の文字
 function rotWeeks_(st, from, count, env) {
   var dates = rotMeetingDates_(from, count, env.holidays), out = [];
-  var byName = {};
-  for (var i = 0; i < env.members.length; i++) byName[rotNorm_(env.members[i].name)] = env.members[i];
+  var byName = rotByName_(env.members);
   var w = ['日', '月', '火', '水', '木', '金', '土'];
   // 開催回：最初の回はルーティンチェックシートの「定例会回数」（無ければ数える）。あとは休会日を除いて1つずつ
   // （ルーティンチェックシートの先の回の数字は、書き間違いが残っていることがあるため使わない）
   var base = dates.length ? parseInt(String(env.numbers[fmtDate_(dates[0])] || '').replace(/\.0$/, ''), 10) : 0;
   if (!(base > 0) && dates.length) base = meetingCountOf_(dates[0]) || 0;
   for (var j = 0; j < dates.length; j++) {
-    var d = dates[j], key = fmtDate_(d), names, source;
-    if (env.mains[key]) { names = env.mains[key].slice(0, 2); source = 'routine'; }
-    else {
-      var p = rotPairsFrom_(st, env.skip, rotPointerAt_(st, env.skip, d, env.holidays), 1).pairs[0];
-      names = p ? p.slice() : []; source = 'rotation';
-    }
+    var d = dates[j], key = fmtDate_(d), wk, source;
+    if (env.mains[key]) { wk = rotRoutineWeek_(env.mains[key], env, byName); source = 'routine'; }
+    else { wk = rotRotationWeek_(st, env, d, byName); source = 'rotation'; }
     var no = base > 0 ? String(base + j) : '';
     out.push({
       date: key, no: no, md: (d.getMonth() + 1) + '/' + d.getDate() + '(' + w[d.getDay()] + ')',
-      label: (d.getMonth() + 1) + '月' + d.getDate() + '日', source: source,
-      people: names.map(function (nm) {
-        var m = byName[rotNorm_(nm)] || null;
-        return { name: m ? m.name : nm, title: m ? (m.title || '') : '', collab: m ? (m.collab || '') : '',
-                 company: m ? (m.company || '') : '', inMaster: !!m };
-      })
+      label: (d.getMonth() + 1) + '月' + d.getDate() + '日', source: source, kind: wk.kind, people: wk.people
     });
   }
   return out;
 }
 
+function rotByName_(members) {
+  var byName = {};
+  for (var i = 0; i < (members || []).length; i++) byName[rotNorm_(members[i].name)] = members[i];
+  return byName;
+}
+
+// 名簿の方の1人分（名簿に当たらなければ書いたまま。カテゴリーなどは空）
+function rotMemberPerson_(nm, byName) {
+  var m = byName[rotNorm_(nm)] || null;
+  return { name: m ? m.name : nm, title: m ? (m.title || '') : '', collab: m ? (m.collab || '') : '',
+           company: m ? (m.company || '') : '', inMaster: !!m, kind: 'member' };
+}
+
+// アンバサダー・ディレクターのページの方（前半テンプレート）。1回の呼び出しの中で1回だけ読む（27MBほどのファイルのため。
+// 中身は templateMemo_ で覚えている）。ディレクターの回があるときだけ読み、読めなくても（テンプレート未登録など）
+// ローテーションは出す（そのときお名前は書いたまま）
+function rotGuests_(env) {
+  if (!env.guests) env.guests = rotGuestList_();
+  return env.guests;
+}
+function rotGuestList_() {
+  var r = null;
+  try { r = getWeeklyGuests(); } catch (e) { r = null; }
+  // カテゴリー・会社名の枠の文字は、名簿の会社名と同じそろえ方（枠の中の改行を外す。company_break.js）
+  var tidy = function (s) {
+    return typeof CB_ !== 'undefined' ? CB_.normalize(s || '') : String(s || '').replace(/[\s　]+/g, ' ').trim();
+  };
+  return ((r && r.guests) || []).map(function (g) {
+    return { name: String(g.name || '').trim(), role: tidy(g.role), company: tidy(g.company) };
+  }).filter(function (g) { return !!g.name; });
+}
+
+// ルーティンチェックシートに書いたディレクター（routineMainPresenters_ の kind: 'director'）のお名前：
+// アンバサダー・ディレクターのページの氏名（当たらなければ書いたまま。うしろの「さん」は外す）。
+//   guests … rotGuestList_() の結果（呼ぶ側で1回だけ読む）。役職ごとの入力・トークスクリプトで使う
+function rotDirectorName_(p, guests) {
+  var g = p && p.guest ? guestByName_(guests || [], p.guest) : null;
+  return g ? g.name : rotBareName_(p ? p.raw : '');
+}
+
+// ディレクターの1人分。text … 選んだ氏名・ルーティンチェックシートの呼び名（「空想」）。
+// アンバサダー・ディレクターのページの方に当たれば、そのページの氏名・カテゴリーの枠の文字（リージョン名など）・会社名。
+// 当たらなければ書いたまま（fallback。「空想ED」など。うしろの「さん」は外す）
+function rotDirectorPerson_(text, fallback, env) {
+  var g = String(text || '').trim() ? guestByName_(rotGuests_(env), text) : null;
+  var role = g ? g.role : '';
+  return { name: g ? g.name : rotBareName_(fallback != null ? fallback : text), title: role, collab: '',
+           company: g ? g.company : '', inMaster: false, kind: 'director', role: role };
+}
+function rotBareName_(s) { return String(s == null ? '' : s).trim().replace(/(さん|様|さま)$/, '').trim(); }
+
+// ルーティンチェックシートに書いてある回（ディレクターを先に）
+function rotRoutineWeek_(entries, env, byName) {
+  var ps = entries.slice(0, 2), people = [];
+  ps.forEach(function (p) { if (p.kind === 'director') people.push(rotDirectorPerson_(p.guest, p.raw, env)); });
+  ps.forEach(function (p) { if (p.kind !== 'director') people.push(rotMemberPerson_(p.name || rotBareName_(p.raw), byName)); });
+  var dn = people.filter(function (p) { return p.kind === 'director'; }).length, mn = people.length - dn;
+  return { kind: dn ? (mn ? 'director1' : 'director') : (mn === 1 ? 'one' : 'two'), people: people };
+}
+
+// 並び順で割り当てる回（回ごとの指定の人数。ディレクターを先に）
+function rotRotationWeek_(st, env, d, byName) {
+  var o = (st.weeks || {})[fmtDate_(d)] || null, kind = rotSettingKind_(o);
+  var p = rotPairsFrom_(st, env.skip, rotPointerAt_(st, env.skip, d, env.holidays, env.mains), 1, [o ? o.members : 2]).pairs[0] || [];
+  var people = p.map(function (nm) { return rotMemberPerson_(nm, byName); });
+  if (kind === 'director' || kind === 'director1') people.unshift(rotDirectorPerson_(o.guest || '', o.guest || '', env));
+  return { kind: kind, people: people };
+}
+
 // 割り当てに要るもの。ルーティンチェックシートは from（その日）以降の回が載っているシートだけ読む。
-//   from … Date。無ければ次の開催日
-function rotEnv_(from) {
+// 起点の日がその日より前なら、起点の日からの回が載っているシートも読む（その間に確定した回の人数で並びを数えるため）
+//   from … Date。無ければ次の開催日。st … rotLoad_ の結果
+function rotEnv_(from, st) {
   var members = [];
   try { members = getMemberMaster({ membersOnly: true }).members || []; } catch (e) {}
   var holidays = [];
   try { holidays = getHolidays(); } catch (e) {}
   var start = from || rotNextMeeting_(holidays), key = fmtDate_(start);
+  var ad = st && st.anchor ? parseDate_(st.anchor.date) : null, mk = ad && fmtDate_(ad) < key ? fmtDate_(ad) : key;
   return { members: members, holidays: holidays, start: start,
-           mains: rotRoutineMains_(key), numbers: rotRoutineNumbers_(key) };
+           mains: rotRoutineMains_(mk), numbers: rotRoutineNumbers_(key) };
 }
 
-// 次回のメインプレゼンターのご案内（Facebookに投稿する文。ツールと同じ文面）
+// 表・投稿文に出す方（空の欄・「なし」の書き方は出さない。ディレクターはお名前が未定でも出す）
+var ROT_NONE_RE_ = /^(?:なし|無し|ナシ|未定|[-ー―－—‐−・]+)$/;
+function rotShownPeople_(people) {
+  return (people || []).filter(function (p) {
+    if (!p) return false;
+    if (p.kind === 'director') return true;
+    var n = String(p.name || '').replace(/[\s　]/g, '');
+    return !!n && !ROT_NONE_RE_.test(n);
+  });
+}
+// お名前＋「さん」（書いたままのお名前に「さん」が付いていても、さんさんにしない）
+function rotHonor_(name) { var n = rotBareName_(name); return n ? n + 'さん' : ''; }
+
+// 次回のメインプレゼンターのご案内（Facebookに投稿する文。ツールと同じ文面）。
+// 1人の回は（１）だけ。ディレクターは「氏名さん/カテゴリーの枠の文字（リージョン名など）」で、つながりたい人の行は無い。
+// 画面（role_input.html の fbTextOf）も同じ文面を作る。直すときは両方とも
 function rotFbText_(week, secretary) {
-  if (!week || week.people.length < 2) return '（次回のメインプレゼンターが決まっていないため作れません）';
-  var p1 = week.people[0], p2 = week.people[1];
+  var people = rotShownPeople_(week && week.people);
+  if (!week || !people.length) return '（次回のメインプレゼンターが決まっていないため作れません）';
+  var NUM = ['（１）', '（２）', '（３）'], lines = [], members = 0;
+  people.forEach(function (p, i) {
+    if (p.kind === 'director') {
+      lines.push((NUM[i] || '') + (rotHonor_(p.name) || 'ディレクター') + '/' + (p.role || p.title || ''));
+    } else {
+      members++;
+      lines.push((NUM[i] || '') + rotHonor_(p.name) + '/' + (p.title || ''));
+      lines.push('　　　→つながりたい人：' + (p.collab || ''));
+    }
+  });
   return '＜【' + week.label + '定例会】メインプレゼンターのご案内＞\n'
     + '本日も、定例会お疲れ様でした。\n'
     + '次回の定例会は' + week.label + 'になります。\n\n'
     + '➊次回のメインプレゼンターをご紹介致します。\n'
-    + '（１）' + p1.name + 'さん/' + (p1.title || '') + '\n'
-    + '　　　→つながりたい人：' + (p1.collab || '') + '\n'
-    + '（２）' + p2.name + 'さん/' + (p2.title || '') + '\n'
-    + '　　　→つながりたい人：' + (p2.collab || '') + '\n'
-    + 'スピーカーの繋がりたい方を、是非ビジターとしてお呼びしましょう！\n'
+    + lines.join('\n') + '\n'
+    + (members ? 'スピーカーの繋がりたい方を、是非ビジターとしてお呼びしましょう！\n' : '')
     + '➋今後4週間のメイン・プレゼンターは添付画像の通りです。\n'
     + '➌推薦のことばをお待ちしています。（特にメインプレゼンター宛！）\n'
     + '毎週月曜日の正午までに、PDFにて書記兼会計の' + (secretary || '（書記兼会計）') + 'までご提出下さい';
@@ -279,7 +436,7 @@ function rotFbText_(week, secretary) {
 function getSpeakerRotation() {
   try {
     routineResetCache_();
-    var st = rotLoad_(), env = rotEnv_();
+    var st = rotLoad_(), env = rotEnv_(null, st);
     rotUseRosterNames_(st, env.members);
     env.skip = rotSkip_(st);
     var next = env.start;
@@ -310,7 +467,10 @@ function getSpeakerRotation() {
       members: env.members.map(function (m) {
         return { name: m.name, title: m.title || '', collab: m.collab || '', inOrder: !!inOrder[rotNorm_(m.name)] };
       }),
-      holidays: env.holidays
+      holidays: env.holidays,
+      // 回ごとの指定（1名・ディレクター）と、ルーティンチェックシートで確定した回のメンバーの人数（画面で並びを数え直すため）。
+      // guests … アンバサダー・ディレクターのページの方（ディレクターの回があって読んだときだけ。読んでいなければ null）
+      weekSettings: st.weeks, routineSlots: rotRoutineSlots_(env.mains), guests: env.guests || null
     };
   } catch (e) {
     console.error('[ROT] ' + (e && e.stack ? e.stack : e));
@@ -318,7 +478,16 @@ function getSpeakerRotation() {
   }
 }
 
+// 管理画面の「これからの予定」でディレクターを選ぶとき：アンバサダー・ディレクターのページの方（氏名・カテゴリー・会社名）。
+// 画面の表示（Facebookの文・画像）がサーバーと同じ文字になるよう、ここでそろえた文字を渡す
+function getRotationGuests() {
+  var guests = rotGuestList_();
+  return { ok: true, guests: guests,
+           message: guests.length ? '' : '前半テンプレートにアンバサダー・ディレクターのページが見つかりません（お名前を手で入れてください）。' };
+}
+
 // 画面で直した並び順などを保存する。base は画面を開いたときの updated（ほかの方が先に保存していたら止める）
+//   weekSettings … 回ごとの指定（{ 'yyyy/MM/dd': { members: 0|1, guest } }。過ぎた回のものは捨てる）
 function saveSpeakerRotation(data) {
   var lock = LockService.getScriptLock();
   try { lock.waitLock(20000); } catch (e) { return { ok: false, message: 'ほかの方が保存中です。少し待ってからもう一度お試しください。' }; }
@@ -341,7 +510,9 @@ function saveSpeakerRotation(data) {
     pointer = pointer % order.length;
     var st = { order: order, excluded: excluded, anchor: { date: fmtDate_(date), pointer: pointer },
                header: typeof d.header === 'string' ? d.header.trim() : cur.header,
-               notes: Array.isArray(d.notes) ? d.notes.map(function (s) { return String(s).trim(); }).filter(function (s) { return s; }) : cur.notes };
+               notes: Array.isArray(d.notes) ? d.notes.map(function (s) { return String(s).trim(); }).filter(function (s) { return s; }) : cur.notes,
+               // 回ごとの指定（1名・ディレクター）。送られてこなければ（以前の画面）、いまの指定のまま
+               weeks: d.weekSettings && typeof d.weekSettings === 'object' ? d.weekSettings : cur.weeks };
     rotSave_(st);
     var res = getSpeakerRotation();
     res.message = 'スピーカーローテーションを保存しました。';
@@ -365,7 +536,7 @@ function importSpeakerRotation(json) {
     var cur = rotLoad_();
     var st = { order: t.order.map(String), excluded: (t.excluded || []).map(String),
                anchor: { date: fmtDate_(date), pointer: parseInt(t.pointer, 10) || 0 },
-               header: cur.header, notes: cur.notes };
+               header: cur.header, notes: cur.notes, weeks: cur.weeks };   // 回ごとの指定（ツールには無い）はそのまま
     rotSave_(st);
     // ツールで休みにしていた日のうち、休会日に無いもの（お知らせだけ。休会日は ⚙️ 設定 で登録）
     var hol = [];
@@ -390,7 +561,7 @@ function getSpeakerRotationWeeks(dateStr) {
     var d = parseDate_(dateStr);
     if (!d) return { ok: false, message: '開催日が分かりません。' };
     routineResetCache_();
-    var st = rotLoad_(), env = rotEnv_(d);
+    var st = rotLoad_(), env = rotEnv_(d, st);
     env.skip = rotSkip_(st);
     return { ok: true, weeks: rotWeeks_(st, d, ROT_SLIDE_WEEKS_, env), header: st.header, notes: st.notes, provisional: !st.updated };
   } catch (e) {
@@ -398,16 +569,25 @@ function getSpeakerRotationWeeks(dateStr) {
   }
 }
 
-// 役職ごとの入力（書記兼会計のメインプレゼンの初期値）：その開催日のローテーションの2名
-// （ルーティンチェックシートは読まない。役職の画面を開く時間を延ばさないように）
+// 役職ごとの入力（書記兼会計のメインプレゼンの初期値・挨拶）：その開催日のローテーションの回 → { kind, people }
+// （rotWeeks_ と同じ形。回ごとの指定のとおり、1名・ディレクターの回もある。休会日は people が空）。
+// その回のお名前にはルーティンチェックシートを使わない（初期値は、その回がまだ書いていないときに入れるもの）。
+// ただし並びを数えるのに、起点からその回までに確定した回のメンバーの人数を使う（画面・スライドの表と同じ割り当てにするため）
+function rotWeekFor_(d) {
+  var st = rotLoad_(), env = { members: [], holidays: [], mains: {} };
+  try { env.members = getMemberMaster({ membersOnly: true }).members || []; } catch (e) {}
+  rotUseRosterNames_(st, env.members);
+  env.skip = rotSkip_(st);
+  try { env.holidays = getHolidays(); } catch (e) {}
+  var key = fmtDate_(d);
+  if (env.holidays.indexOf(key) >= 0) return { kind: 'two', people: [] };
+  var ad = parseDate_(st.anchor.date), mk = ad && fmtDate_(ad) < key ? fmtDate_(ad) : key;
+  env.mains = rotRoutineMains_(mk);
+  return rotRotationWeek_(st, env, d, rotByName_(env.members));
+}
+// その開催日のローテーションのメンバー（名簿の氏名。2名・1名の回は1名・ディレクターのみの回は空）
 function rotPairFor_(d) {
-  var st = rotLoad_(), holidays = [];
-  try { rotUseRosterNames_(st, getMemberMaster({ membersOnly: true }).members); } catch (e) {}
-  var skip = rotSkip_(st);
-  try { holidays = getHolidays(); } catch (e) {}
-  if (holidays.indexOf(fmtDate_(d)) >= 0) return [];
-  var p = rotPairsFrom_(st, skip, rotPointerAt_(st, skip, d, holidays), 1).pairs[0];
-  return p || [];
+  return rotWeekFor_(d).people.filter(function (p) { return p.kind !== 'director'; }).map(function (p) { return p.name; });
 }
 
 // Facebookに添付する表の画像（画面で描いたPNG）を 03_生成物 に保存する。
@@ -482,7 +662,8 @@ function applySpeakerRotation_(parts, rot) {
              + rot.weeks[0].label + '〜' + rot.weeks[rot.weeks.length - 1].label + '）。', path: path, names: names };
 }
 
-// 表：見出しの行＋1回につき3行（第N回／カテゴリー、日付／氏名、つながりたい人）
+// 表：見出しの行＋1回につき3行（第N回／カテゴリー、日付／氏名、つながりたい人）。
+// 1人の回は、2つの列を1つにまとめてまん中に。ディレクターは、カテゴリーの行にそのページのカテゴリーの枠の文字（リージョン名など）
 var ROT_FONT_ = 'Meiryo UI';
 function rotTableXml_(id, x, y, cx, maxH, rot) {
   var weeks = rot.weeks, n = weeks.length;
@@ -501,24 +682,35 @@ function rotTableXml_(id, x, y, cx, maxH, rot) {
   rows.push(rotTr_(hHead, [
     rotTc_('日　程', szHead, { b: true, fill: 'FF0000', w: colW[0] }),
     rotTc_(rot.header || '', szHead, { b: true, fill: 'FF0000', w: colW[1] + colW[2], span: 2 }),
-    '<a:tc hMerge="1"><a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:endParaRPr lang="ja-JP"/></a:p></a:txBody><a:tcPr/></a:tc>'
+    ROT_HMERGE_TC_
   ]));
   for (var i = 0; i < n; i++) {
-    var w = weeks[i], a = w.people[0] || {}, b = w.people[1] || {};
+    var w = weeks[i], ps = rotShownPeople_(w.people), a = ps[0] || {}, b = ps[1] || {};
+    var head = [rotTc_(w.no ? '第' + w.no + '回' : '', szNo, { b: true, w: colW[0] }),
+                rotTc_(w.label || '', szDate, { b: true, w: colW[0] }),
+                rotTc_('', szCol, { fill: 'FCD5B4', w: colW[0] })];
+    if (ps.length === 1) {
+      // 1人の回：2つの列を1つにまとめて、まん中に出す（見出しの行と同じ gridSpan。右の列を空のまま残さない）
+      var wide = colW[1] + colW[2];
+      rows.push(rotTr_(hCat, [head[0], rotTc_(rotCatOf_(a), szCat, { b: true, w: wide, span: 2 }), ROT_HMERGE_TC_]));
+      rows.push(rotTr_(hName, [head[1], rotTc_(a.name || '', szName, { b: true, color: 'C00000', w: wide, span: 2 }), ROT_HMERGE_TC_]));
+      rows.push(rotTr_(hCol, [head[2], rotTc_(rotCollabOf_(a), szCol, { b: true, fill: 'FCD5B4', w: wide, span: 2 }), ROT_HMERGE_TC_]));
+      continue;
+    }
     rows.push(rotTr_(hCat, [
-      rotTc_(w.no ? '第' + w.no + '回' : '', szNo, { b: true, w: colW[0] }),
-      rotTc_(a.title || '', szCat, { b: true, w: colW[1] }),
-      rotTc_(b.title || '', szCat, { b: true, w: colW[2] })
+      head[0],
+      rotTc_(rotCatOf_(a), szCat, { b: true, w: colW[1] }),
+      rotTc_(rotCatOf_(b), szCat, { b: true, w: colW[2] })
     ]));
     rows.push(rotTr_(hName, [
-      rotTc_(w.label || '', szDate, { b: true, w: colW[0] }),
+      head[1],
       rotTc_(a.name || '', szName, { b: true, color: 'C00000', w: colW[1] }),
       rotTc_(b.name || '', szName, { b: true, color: 'C00000', w: colW[2] })
     ]));
     rows.push(rotTr_(hCol, [
-      rotTc_('', szCol, { fill: 'FCD5B4', w: colW[0] }),
-      rotTc_(a.collab || '', szCol, { b: true, fill: 'FCD5B4', w: colW[1] }),
-      rotTc_(b.collab || '', szCol, { b: true, fill: 'FCD5B4', w: colW[2] })
+      head[2],
+      rotTc_(rotCollabOf_(a), szCol, { b: true, fill: 'FCD5B4', w: colW[1] }),
+      rotTc_(rotCollabOf_(b), szCol, { b: true, fill: 'FCD5B4', w: colW[2] })
     ]));
   }
   var height = hHead + n * (hCat + hName + hCol);
@@ -532,6 +724,12 @@ function rotTableXml_(id, x, y, cx, maxH, rot) {
 }
 
 function rotTr_(h, cells) { return '<a:tr h="' + h + '">' + cells.join('') + '</a:tr>'; }
+// 左のセルにまとめた（gridSpan）セルの、隠れる側
+var ROT_HMERGE_TC_ = '<a:tc hMerge="1"><a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:endParaRPr lang="ja-JP"/></a:p></a:txBody><a:tcPr/></a:tc>';
+// カテゴリーの行：メンバーは名簿のカテゴリー、ディレクターはそのページのカテゴリーの枠の文字（リージョン名など）
+function rotCatOf_(p) { return p.kind === 'director' ? (p.role || p.title || 'ディレクター') : (p.title || ''); }
+// つながりたい人の行（ディレクターには無い）
+function rotCollabOf_(p) { return p.kind === 'director' ? '' : (p.collab || ''); }
 
 // セル。長い文字は1行に収まるまで小さくする（全角1em・半角0.55em・空白0.3emで見積もり、5%のゆとり）
 function rotTc_(text, size, o) {

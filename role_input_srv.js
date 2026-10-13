@@ -960,8 +960,19 @@ function roleEstimateEnv_(target, prevDates, ctx) {
       });
     },
     routineInfo: function () { return once('routineInfo', function () { return getRoutineInfo(fmtDate_(target)); }); },
-    rotation: function () { return once('rotation', function () { return rotPairFor_(target); }); }
+    // その回のスピーカーローテーション → { kind, people }（1名の回・ディレクターの回もある。speaker_rotation_srv.js）
+    rotation: function () { return once('rotation', function () { return rotWeekFor_(target); }); },
+    // アンバサダー・ディレクターのページの方（ルーティンチェックシートにディレクターが書いてあるときだけ読む）
+    guests: function () { return once('guests', function () { return rotGuestList_(); }) || []; }
   };
+}
+
+// メインプレゼンの欄（書記兼会計）に書く1人分：メンバーは「名字さん」、ディレクターは「氏名ディレクター」
+// （お名前が未定なら「ディレクター」。アンバサダーなら「氏名アンバサダー」）
+function roleMainPresenterText_(p, members) {
+  if (p.kind !== 'director') return roleShortName_(p.name, members);
+  var role = /アンバサダー/.test(String(p.role || p.title || '')) ? 'アンバサダー' : 'ディレクター';
+  return rotBareName_(p.name) + role;
 }
 
 // 氏名 → 「名字さん」（同じ名字の方がいれば「田村秀二さん」）
@@ -1111,28 +1122,39 @@ function roleEstimate_(it, env) {
         : rv.split(/[、,，・\/／\s　]+/).filter(function (s) { return s.trim(); }).length;
       return { value: String(cntR), source: '「リージョン参加者」の欄（' + rv + '）から', mode: 'prefill' };
     }
-    case 'greeting': {                                      // その日のメインプレゼンのお2人
+    case 'greeting': {                                      // その日のメインプレゼンの方（1人の回・ディレクターの回もある）
       var ri = env.routineInfo();
       members = env.members() || [];
-      var ns = [], gsrc = 'メインプレゼンのお2人';
+      var ns = [], gsrc = 'メインプレゼン';
       if (ri && ri.found && (ri.mainPresenters || []).length) {
-        ns = ri.mainPresenters.map(function (x) {
-          return x.name ? roleShortName_(x.name, members) : String(x.raw || '').replace(/(さん)?$/, 'さん');
-        });
+        // 「②なし」「ー」のような、いない印は入れない（「なしさん」にしない）。
+        // ディレクターは、アンバサダー・ディレクターのページの氏名（当たらなければ書いたまま）＋「さん」
+        ns = ri.mainPresenters.filter(function (x) { return !ROT_NONE_RE_.test(String(x.raw || x.name || '').replace(/[\s　]/g, '')); })
+          .map(function (x) {
+            if (x.kind === 'director') return rotHonor_(rotDirectorName_(x, env.guests()));
+            return x.name ? roleShortName_(x.name, members) : rotHonor_(x.raw);
+          });
       } else {
-        ns = (env.rotation() || []).map(function (n) { return roleShortName_(n, members); });
-        gsrc = 'スピーカーローテーションのお2人';
+        ns = ((env.rotation() || {}).people || []).map(function (p) {
+          return p.kind === 'director' ? rotHonor_(p.name) : roleShortName_(p.name, members);
+        });
+        gsrc = 'スピーカーローテーション';
       }
       ns = ns.filter(function (s) { return s && s !== 'さん'; });
       if (!ns.length) return null;
-      return { value: ns.join('　'), source: gsrc, mode: 'prefill' };
+      return { value: ns.join('　'), source: gsrc + (ns.length === 2 ? 'のお2人' : 'の方'), mode: 'prefill' };
     }
-    case 'mainRotation': {                                  // スピーカーローテーション（書記兼会計が管理）の2名
-      var pair = env.rotation() || [];
-      if (pair.length < 2) return null;
+    case 'mainRotation': {                                  // スピーカーローテーション（書記兼会計が管理）の回
+      // 2名の回は「①見本さん　②試験さん」、1名の回は「①見本さん」。ディレクターは「空想 太郎ディレクター」のように
+      // 氏名のうしろに役職を付ける（ルーティンチェックシートの「メインプレゼン」の欄として読み直したとき、
+      // ディレクターと分かり、氏名でそのページの方に当たる書き方。「空想 太郎さん（ディレクター）」は、かっこが残って当たらない）
+      var wk = env.rotation() || { kind: 'two', people: [] }, ps = wk.people || [];
+      if (!ps.length || (wk.kind === 'two' && ps.length < 2)) return null;
       members = env.members() || [];
-      return { value: '①' + roleShortName_(pair[0], members) + '　②' + roleShortName_(pair[1], members),
-               source: 'スピーカーローテーションから', mode: 'prefill' };
+      var circ = ['①', '②', '③'];
+      return { value: ps.map(function (p, i) { return circ[i] + roleMainPresenterText_(p, members); }).join('　'),
+               source: 'スピーカーローテーションから' + ({ one: '（1名の回）', director: '（ディレクターの回）', director1: '（ディレクター＋1名の回）' }[wk.kind] || ''),
+               mode: 'prefill' };
     }
     case 'ecNext': case 'coreNext': {                       // ECの前回の共有事項「次週のエデュケーション：○○さん（コアバリュー）」
       var ec = env.itemByTitle('今週の共有事項（エデュケーションコーディネーター）');
