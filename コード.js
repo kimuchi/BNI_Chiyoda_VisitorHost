@@ -2,7 +2,7 @@
 
 // 反映されたか確かめるための版。変更したら日付を更新する。
 // clasp push / デプロイが効いているかは、これを画面で見れば分かる。
-var SYSTEM_VERSION_ = '2026-10-13c';
+var SYSTEM_VERSION_ = '2026-10-13d';
 
 function getSystemVersion() { return SYSTEM_VERSION_; }
 
@@ -479,6 +479,19 @@ function visitorDetail_(details, kind) {
   }
   return '';
 }
+
+// 入会確度（☆1〜3）。CSVには来ないので、割り振り表の画面で決める（参加者シートの「入会見込み」とは別のもの）。
+// 画面とサーバーでは数（1〜3。決めていなければ無し）で持ち、割り振り表のシート・PDF・事前MTGのパワポには ☆ の数で書く
+var ALLOC_STAR_HEAD_ = '入会確度';
+// 数・「☆☆」「★★☆」（★があれば★の数）・「2」「２」 → 0〜3（0 は決めていない）
+function allocStarsOf_(v) {
+  var s = String(v == null ? '' : v).replace(/[０-９]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); }).trim(), n = 0;
+  if (/★/.test(s)) n = s.match(/★/g).length;
+  else if (/☆/.test(s)) n = s.match(/☆/g).length;
+  else if (/^\d+(\.0+)?$/.test(s)) n = parseInt(s, 10);
+  return n >= 1 && n <= 3 ? n : 0;
+}
+function allocStarsText_(v) { var n = allocStarsOf_(v); return n ? new Array(n + 1).join('☆') : ''; }
 
 function analyzeCsvData(csvText) {
   var data = Utilities.parseCsv(csvText);
@@ -1892,7 +1905,7 @@ function getAllocationData(meetingDateVal) {
      if(!inviters[normalizeSpace(membersList[i].name)]) pool.push(membersList[i]);
   }
 
-  var facilAlloc = {}, orienAlloc = {}, roomAlloc = {}, connectReq = {}, mergedWith = {};
+  var facilAlloc = {}, orienAlloc = {}, roomAlloc = {}, connectReq = {}, mergedWith = {}, stars = {};
   var allocSheet = ss.getSheetByName(allocSheetName);
   
   if(allocSheet) {
@@ -1902,25 +1915,53 @@ function getAllocationData(meetingDateVal) {
          var aHeaders = aData[aHeaderIdx];
          var nameColIdx = aHeaders.indexOf("お名前") !== -1 ? aHeaders.indexOf("お名前") : 1;
          var facilIdx = aHeaders.indexOf("ファシリテーター"), roomIdx = aHeaders.indexOf("ルームメンバー"), orienIdx = aHeaders.indexOf("オリエンテーション"), connIdx = aHeaders.indexOf("つなげたいメンバー");
-         
+         var starIdx = aHeaders.indexOf(ALLOC_STAR_HEAD_);   // 入会確度の列が無い（前の版で作った）割り振り表は -1
+         var bare = function (s) { return String(s == null ? '' : s).replace(/[\s\u3000\u00A0]+/g, ''); };
+
+         // 割り振り表の行 → 参加者シートのビジター。行ごとに先に決めてから読む（あとの行が、もう決まった方の割り振りを空にしないように）。
+         //   1. 番号と名前がそろう方（同じ名前の方が2人いても取り違えない）
+         //   2. 名前が同じ方（CSVを取り込み直して番号がずれた方）
+         //   3. 空白を除いた名前が同じ方（1人だけのとき。取り込み直して空白の位置が変わった方）
+         // どの段でも、ほかの行にもう決まった方は選ばない
+         var aRows = [];
          for(var i = aHeaderIdx + 1; i < aData.length; i++) {
-             var row = aData[i];
-             if(!row[0] || String(row[0]).indexOf("※")===0) break; 
-             
-             var savedName = normalizeSpace(row[nameColIdx]), savedNo = String(row[0]).trim();
-             // 番号と名前がそろう方を先に（同じ名前の方が2人いても取り違えない）。無ければ名前で
-             var matchedVisitor = visitors.filter(function(v) { return String(v.no) === savedNo && normalizeSpace(v.name) === savedName; })[0]
-                               || visitors.filter(function(v) { return normalizeSpace(v.name) === savedName; })[0];
+             if(!aData[i][0] || String(aData[i][0]).indexOf("※")===0) break;
+             aRows.push(aData[i]);
+         }
+         var rowVisitor = [], taken = [];
+         [function (row, v) { return String(v.no) === String(row[0]).trim() && normalizeSpace(v.name) === normalizeSpace(row[nameColIdx]); },
+          function (row, v) { return normalizeSpace(v.name) === normalizeSpace(row[nameColIdx]); },
+          function (row, v) { return bare(row[nameColIdx]) !== '' && bare(v.name) === bare(row[nameColIdx]); }].forEach(function (same, step) {
+             aRows.forEach(function (row, k) {
+                 if (rowVisitor[k]) return;
+                 var hit = [];
+                 visitors.forEach(function (v, vi) { if (!taken[vi] && same(row, v)) hit.push(vi); });
+                 if (hit.length && (step < 2 || hit.length === 1)) { rowVisitor[k] = visitors[hit[0]]; taken[hit[0]] = true; }
+             });
+         });
+         // 【合同】の合同先：その方の行が決まった方。無ければ名前が同じ方・空白を除いた名前が同じ方（1人だけのとき）
+         var visitorOfRowName = {};
+         aRows.forEach(function (row, k) { if (rowVisitor[k]) visitorOfRowName[normalizeSpace(row[nameColIdx])] = rowVisitor[k]; });
+         var mergeTarget = function (name) {
+             if (visitorOfRowName[name]) return visitorOfRowName[name];
+             var same = visitors.filter(function (v) { return normalizeSpace(v.name) === name; });
+             if (same.length) return same[0];
+             var sameBare = bare(name) ? visitors.filter(function (v) { return bare(v.name) === bare(name); }) : [];
+             return sameBare.length === 1 ? sameBare[0] : null;
+         };
+
+         for(var k = 0; k < aRows.length; k++) {
+             var row = aRows[k], matchedVisitor = rowVisitor[k];
              if (!matchedVisitor) continue; 
              
              var vNo = String(matchedVisitor.no);
              connectReq[vNo] = connIdx !== -1 ? row[connIdx] : "";
+             if (starIdx !== -1 && allocStarsOf_(row[starIdx])) stars[vNo] = allocStarsOf_(row[starIdx]);
              var fName = facilIdx !== -1 ? row[facilIdx] : ""; 
              
              if (fName && String(fName).indexOf("【合同】") === 0) {
-                 var targetName = normalizeSpace(String(fName).replace("【合同】", "").replace("と同室", ""));
-                 var targetV = visitors.filter(function(v) { return normalizeSpace(v.name) === targetName; })[0];
-                 if(targetV) mergedWith[vNo] = String(targetV.no);
+                 var targetV = mergeTarget(normalizeSpace(String(fName).replace("【合同】", "").replace("と同室", "")));
+                 if(targetV && String(targetV.no) !== vNo) mergedWith[vNo] = String(targetV.no);
              } else if(fName) { 
                  var fm = pool.filter(function(x){ return normalizeSpace(x.name) === normalizeSpace(fName); })[0]; 
                  if(fm) facilAlloc[vNo] = String(fm.no); 
@@ -1959,11 +2000,16 @@ function getAllocationData(meetingDateVal) {
          }
      }
   }
-  return { visitors: visitors, pool: pool, facilAlloc: facilAlloc, orienAlloc: orienAlloc, roomAlloc: roomAlloc, connectReq: connectReq, hosts: getVisitorHosts(), mergedWith: mergedWith, priorities: getMemberPriorities() };
+  return { visitors: visitors, pool: pool, facilAlloc: facilAlloc, orienAlloc: orienAlloc, roomAlloc: roomAlloc, connectReq: connectReq, hosts: getVisitorHosts(), mergedWith: mergedWith, priorities: getMemberPriorities(), stars: stars };
 }
 
-function saveAllocationSheet(meetingDateVal, displayVal, visitors, pool, facilAlloc, orienAlloc, roomAlloc, connectReq, mergedWith) {
+// 割り振り表のシートの列の数（No.・お名前・カテゴリー・入会確度・招待者・つなげたいメンバー・ファシリテーター・ルームメンバー・オリエンテーション）
+var ALLOC_SHEET_COLS_ = 9;
+// stars … 入会確度（{ ビジターの番号: 1〜3 }。画面で決めたもの）。前の版の呼び方（stars なし）でも作れる
+function saveAllocationSheet(meetingDateVal, displayVal, visitors, pool, facilAlloc, orienAlloc, roomAlloc, connectReq, mergedWith, stars) {
   var ss = getSS_(), dateObj = new Date(meetingDateVal), mmdd = sheetKeyOf_(dateObj);
+  var COLS = ALLOC_SHEET_COLS_, pad = function (row) { while (row.length < COLS) row.push(""); return row; };
+  connectReq = connectReq || {}; mergedWith = mergedWith || {}; stars = stars || {};
   showDateSheets_(ss, mmdd);   // アーカイブ（非表示）した開催日を作り直すときは、表示に戻す（隠れたままだとPDFが真っ白になる）
   var sheetName = mmdd + "割り振り表", sheet = ss.getSheetByName(sheetName);
   if (!sheet) sheet = ss.insertSheet(sheetName); else sheet.clear();
@@ -1998,10 +2044,10 @@ function saveAllocationSheet(meetingDateVal, displayVal, visitors, pool, facilAl
   var avgMembers = roomCount > 0 ? (totalPeopleInRooms / roomCount).toFixed(1) : "0.0";
 
   var outputData = [
-    [chapterLabel_() + " " + displayVal + " 定例会 ビジター・見学者・代理様 割り振り表", "", "", "", "", "", "", ""],
-    ["【ダッシュボード】 ビジター: " + visCount + "名 / ゲスト: " + guestCount + "名 / 代理: " + subCount + "名 / ルーム数: " + roomCount + " / 1ルーム平均総人数: " + avgMembers + "名", "", "", "", "", "", "", ""],
-    ["", "", "", "", "", "", "", ""],
-    ["No.", "お名前", "カテゴリー", "招待者", "つなげたいメンバー", "ファシリテーター", "ルームメンバー", "オリエンテーション"]
+    pad([chapterLabel_() + " " + displayVal + " 定例会 ビジター・見学者・代理様 割り振り表"]),
+    pad(["【ダッシュボード】 ビジター: " + visCount + "名 / ゲスト: " + guestCount + "名 / 代理: " + subCount + "名 / ルーム数: " + roomCount + " / 1ルーム平均総人数: " + avgMembers + "名"]),
+    pad([]),
+    ["No.", "お名前", "カテゴリー", ALLOC_STAR_HEAD_, "招待者", "つなげたいメンバー", "ファシリテーター", "ルームメンバー", "オリエンテーション"]
   ];
   
   var borRows = [];   // ブレイクアウトルーム表(BOR)の元データ
@@ -2024,19 +2070,19 @@ function saveAllocationSheet(meetingDateVal, displayVal, visitors, pool, facilAl
     borRows.push({ room: v.no + v.name + "(" + v.cat + ")様ルーム",
                    inviter: v.inviter || "", facil: fName,
                    members: rNames.join("\n"), orien: oNames.join("\n") });
-    outputData.push([ v.no, v.name, v.cat, v.inviter, connectReq[v.no] || "", fName, rNames.join("\n"), oNames.join("\n") ]);
+    outputData.push([ v.no, v.name, v.cat, allocStarsText_(stars[v.no]), v.inviter, connectReq[v.no] || "", fName, rNames.join("\n"), oNames.join("\n") ]);
   }
   var lastDataRow = outputData.length;
   
-  outputData.push(["", "", "", "", "", "", "", ""]);
+  outputData.push(pad([]));
   
   var noteText = getAllocationNote();
   var noteLines = noteText.split('\n');
   for (var n = 0; n < noteLines.length; n++) {
-     outputData.push([noteLines[n], "", "", "", "", "", "", ""]);
+     outputData.push(pad([noteLines[n]]));
   }
 
-  outputData.push(["", "", "", "", "", "", "", ""]);
+  outputData.push(pad([]));
   
   var fullMembersList = getMembersList();
   var allMemberRoles = [];
@@ -2052,36 +2098,40 @@ function saveAllocationSheet(meetingDateVal, displayVal, visitors, pool, facilAl
       if (orienAlloc[v.no] && orienAlloc[v.no].map(String).indexOf(mNoStr) !== -1) roles.push(v.name + " 様 (オリエン)");
     });
     if (roles.length > 0) {
-      allMemberRoles.push([m.no, m.name, roles.join("\n"), "", "", "", "", ""]);
+      allMemberRoles.push(pad([m.no, m.name, roles.join("\n")]));
     }
   });
 
-  outputData.push(["【メンバー別 ルーム・オリエン担当表】", "", "", "", "", "", "", ""]);
-  outputData.push(["No.", "メンバー名", "担当ビジター・役割", "", "", "", "", ""]);
+  outputData.push(pad(["【メンバー別 ルーム・オリエン担当表】"]));
+  outputData.push(pad(["No.", "メンバー名", "担当ビジター・役割"]));
   var reverseTableStart = outputData.length;
   allMemberRoles.forEach(function(row) { outputData.push(row); });
 
-  sheet.getRange(1, 1, outputData.length, 8).setValues(outputData);
+  sheet.getRange(1, 1, outputData.length, COLS).setValues(outputData);
   sheet.getRange("A1").setFontSize(14).setFontWeight("bold");
-  sheet.getRange("A2:H2").mergeAcross().setFontSize(11).setFontColor("#333").setFontWeight("bold");
+  sheet.getRange(2, 1, 1, COLS).mergeAcross().setFontSize(11).setFontColor("#333").setFontWeight("bold");
   
-  sheet.getRange(4, 1, lastDataRow - 3, 8).setWrap(true).setVerticalAlignment("middle").setBorder(true, true, true, true, true, true);
-  sheet.getRange("A4:E4").setBackground("#f3f3f3").setFontWeight("bold").setHorizontalAlignment("center");
-  sheet.getRange("F4").setBackground("#fff2cc").setFontWeight("bold").setHorizontalAlignment("center");
-  sheet.getRange("G4").setBackground("#e6f2ff").setFontWeight("bold").setHorizontalAlignment("center");
-  sheet.getRange("H4").setBackground("#d9ead3").setFontWeight("bold").setHorizontalAlignment("center");
+  // 列：A No.・B お名前・C カテゴリー・D 入会確度・E 招待者・F つなげたいメンバー・G ファシリテーター・H ルームメンバー・I オリエンテーション
+  sheet.getRange(4, 1, lastDataRow - 3, COLS).setWrap(true).setVerticalAlignment("middle").setBorder(true, true, true, true, true, true);
+  sheet.getRange("A4:F4").setBackground("#f3f3f3").setFontWeight("bold").setHorizontalAlignment("center");
+  sheet.getRange("D4").setFontSize(9);   // 「入会確度」を1行に（細い列）
+  sheet.getRange("G4").setBackground("#fff2cc").setFontWeight("bold").setHorizontalAlignment("center");
+  sheet.getRange("H4").setBackground("#e6f2ff").setFontWeight("bold").setHorizontalAlignment("center");
+  sheet.getRange("I4").setBackground("#d9ead3").setFontWeight("bold").setHorizontalAlignment("center");
   
   if(lastDataRow > 4) {
     sheet.getRange(5, 1, lastDataRow - 4, 1).setHorizontalAlignment("center"); 
-    sheet.getRange(5, 2, lastDataRow - 4, 4).setHorizontalAlignment("left"); 
-    sheet.getRange(5, 6, lastDataRow - 4, 3).setHorizontalAlignment("center"); 
+    sheet.getRange(5, 2, lastDataRow - 4, 2).setHorizontalAlignment("left"); 
+    sheet.getRange(5, 4, lastDataRow - 4, 1).setHorizontalAlignment("center").setFontColor("#d35400"); 
+    sheet.getRange(5, 5, lastDataRow - 4, 2).setHorizontalAlignment("left"); 
+    sheet.getRange(5, 7, lastDataRow - 4, 3).setHorizontalAlignment("center"); 
   }
   
   var noteStartRow = lastDataRow + 2;
   if (noteLines.length > 0) {
     for (var n = 0; n < noteLines.length; n++) {
-      // A〜H列を結合したうえで折り返す。結合しないと長い行が用紙の右端で切れてしまう
-      var row = sheet.getRange(noteStartRow + n, 1, 1, 8);
+      // A〜I列を結合したうえで折り返す。結合しないと長い行が用紙の右端で切れてしまう
+      var row = sheet.getRange(noteStartRow + n, 1, 1, COLS);
       row.mergeAcross();
       var cell = sheet.getRange(noteStartRow + n, 1);
       cell.setWrap(true).setVerticalAlignment("top").setFontSize(11);
@@ -2095,20 +2145,21 @@ function saveAllocationSheet(meetingDateVal, displayVal, visitors, pool, facilAl
   }
   
   if (allMemberRoles.length > 0) {
-    sheet.getRange(reverseTableStart, 1, 1, 8).setBackground("#f3f3f3").setFontWeight("bold");
-    sheet.getRange(reverseTableStart + 1, 1, allMemberRoles.length, 8).setBorder(true, true, true, true, true, true).setWrap(true).setVerticalAlignment("middle");
+    sheet.getRange(reverseTableStart, 1, 1, COLS).setBackground("#f3f3f3").setFontWeight("bold");
+    sheet.getRange(reverseTableStart + 1, 1, allMemberRoles.length, COLS).setBorder(true, true, true, true, true, true).setWrap(true).setVerticalAlignment("middle");
     for (var i = 0; i <= allMemberRoles.length; i++) {
-       sheet.getRange(reverseTableStart + i, 3, 1, 6).mergeAcross();
+       sheet.getRange(reverseTableStart + i, 3, 1, COLS - 2).mergeAcross();
     }
-    // C〜H列を結合しているため自動調整が効かない。役割の行数から高さを明示する。
+    // C〜I列を結合しているため自動調整が効かない。役割の行数から高さを明示する。
     for (var i = 0; i < allMemberRoles.length; i++) {
        sheet.setRowHeight(reverseTableStart + 1 + i, estimateRowHeight_(allMemberRoles[i][2], 40, 17));
     }
   }
 
-  // 列幅(px)。A4縦・余白0.25インチの印字幅(約197mm=746px)に収まるようにしてある。
+  // 列幅(px)。A4縦・余白0.25インチの印字幅(約197mm=746px)に収まるようにしてある（合わせて740px）。
   // 幅が収まっていれば文字を縮小せずに出力できる（収まらないと全体が縮小されて読みにくくなる）。
-  var widths = [36, 89, 107, 80, 107, 98, 107, 116];
+  // 入会確度（D）は ☆☆☆ と見出しが1行に入る幅。A・B は前と同じ（C〜I の結合の幅も前と同じ 615px。上の行の高さの見積もりがそのまま使える）
+  var widths = [36, 89, 92, 60, 76, 92, 95, 100, 100];
   for(var w=0; w<widths.length; w++) sheet.setColumnWidth(w+1, widths[w]);
   var borSheets = saveBreakoutRoomSheets_(ss, mmdd, borRows);   // PDFを作れなかったときも、ルームの表は最新にしておく
   SpreadsheetApp.flush();
@@ -2177,13 +2228,13 @@ function exportAllocationSheetToPdf(sheet, fileName, fileIdPropKey, out) {
   var ss = getSS_(), spreadsheetId = ss.getId(), sheetId = sheet.getSheetId(), lastRow = sheet.getLastRow();
   // A4縦。fitw=true（幅を1ページに合わせる）は必須。
   // これを外すと、幅が印字領域をわずかでも超えたときに表が左右に分断され、
-  // 「A〜G列のページ」と「H列だけのページ」に分かれてしまう。
+  // 「A〜H列のページ」と「I列だけのページ」に分かれてしまう。書き出す列は A〜I（ALLOC_SHEET_COLS_）
   // 縮小率を小さく保つため、余白を詰めて印字幅を広げ、列幅の合計も抑えてある。
   // 縦に入りきらない分は2ページ目以降へ流す（1ページに詰め込む指定はしない）。
   var url = "https://docs.google.com/spreadsheets/d/" + spreadsheetId + "/export?exportFormat=pdf&format=pdf&size=A4&portrait=true&fitw=true"
           + "&top_margin=0.30&bottom_margin=0.30&left_margin=0.25&right_margin=0.25"
           + "&sheetnames=false&printtitle=false&pagenumbers=false&gridlines=false&fzr=false&gid=" + sheetId
-          + "&r1=0&c1=0&r2=" + lastRow + "&c2=8";
+          + "&r1=0&c1=0&r2=" + lastRow + "&c2=" + ALLOC_SHEET_COLS_;
   var blob = fetchSheetPdf_(sheet, url, fileName), props = PropertiesService.getScriptProperties();
   var existingId = fileIdPropKey ? props.getProperty(fileIdPropKey) : null;
   if (existingId && replacePdfFile_(existingId, blob, fileName)) return DriveApp.getFileById(existingId).getUrl();
@@ -2245,14 +2296,26 @@ function callGeminiAutoAllocation(currentState, maxRoomSize) {
     return pA - pB;
   });
 
+  // ビジターホストを付ける順番：画面で決めた入会確度（☆）の高い方から（合同のルームは、いちばん高い方の☆）。
+  // ☆が同じなら、参加者シートの「入会見込み」（CSVにあるとき）、次にビジター・ゲスト・代理の順
+  var stars = currentState.stars || {};
+  if (!currentState.mergedWith) currentState.mergedWith = {};
+  if (!currentState.connectReq) currentState.connectReq = {};
+  var roomStars = function (v) {
+    var n = allocStarsOf_(stars[v.no]);
+    currentState.visitors.forEach(function (c) { if (currentState.mergedWith[c.no] === v.no) n = Math.max(n, allocStarsOf_(stars[c.no])); });
+    return n;
+  };
   var sortedVisitors = currentState.visitors.filter(function(v) { return !currentState.mergedWith[v.no]; }).sort(function(a, b) {
+    var sA = roomStars(a), sB = roomStars(b);
+    if (sA !== sB) return sB - sA;
     var kA = parseInt(String(visitorDetail_(a.details, 'kakudo') || "0").replace(/[Ａ-Ｚａ-ｚ０-９]/g, function(s) { return String.fromCharCode(s.charCodeAt(0) - 0xFEE0); })) || 0;
     var kB = parseInt(String(visitorDetail_(b.details, 'kakudo') || "0").replace(/[Ａ-Ｚａ-ｚ０-９]/g, function(s) { return String.fromCharCode(s.charCodeAt(0) - 0xFEE0); })) || 0;
     if (kA !== kB) return kB - kA; 
     
     var typePriority = { "Visitor": 3, "Guest": 2, "Substitute": 1 };
-    var tA = typePriority[a.details['種別']] || 0;
-    var tB = typePriority[b.details['種別']] || 0;
+    var tA = typePriority[(a.details || {})['種別']] || 0;
+    var tB = typePriority[(b.details || {})['種別']] || 0;
     return tB - tA; 
   });
 
@@ -2300,6 +2363,8 @@ function callGeminiAutoAllocation(currentState, maxRoomSize) {
   var maskedVisitors = currentState.visitors.map(function(v) {
     return {
       no: String(v.no), name: v.name, category: v.cat, inviter: v.inviter,
+      // 合同のルームは、合同先のビジターに、いちばん高い☆でまとめて渡す（ビジターホストの順番と同じ数え方）
+      "入会確度": currentState.mergedWith[v.no] ? allocStarsOf_(stars[v.no]) : roomStars(v),
       connectReq: currentState.connectReq[v.no] || "",
       memos: (visitorDetail_(v.details, 'memoMember') + " " + visitorDetail_(v.details, 'memoList')).trim(),
       mergedWith: currentState.mergedWith[v.no] || ""
@@ -2309,7 +2374,9 @@ function callGeminiAutoAllocation(currentState, maxRoomSize) {
   var promptText = "あなたはプロのビジネス交流会コーディネーターです。\n" +
     "以下のビジター情報と、" + sources.join("・") + "を総合的に参考にして、最適な「ルームメンバー」を決定してください。\n\n" +
     "【つながりの考え方】ビジターのカテゴリー・メモと、メンバーの「カテゴリー」「会社名」「一言」「紹介してほしい人」「協業したい人」を見比べ、" +
-    "ビジターを紹介し合えそう・協業できそうなメンバーを、そのビジターのルームに入れてください。\n\n" +
+    "ビジターを紹介し合えそう・協業できそうなメンバーを、そのビジターのルームに入れてください。" +
+    "ビジターの「入会確度」（1〜3。3がいちばん入会しそうな方。0は未設定）が高いビジターのルームほど、つながりの合うメンバーを優先して入れてください" +
+    "（合同ルームは、合同先のビジターの入会確度に、いちばん高いものでまとめてあります。下の人数の条件は守ること）。\n\n" +
     "【制約条件（厳格に守ること）】\n" +
     "1. 「ファシリテーター」と「オリエンテーション」はシステムで決定済みです。出力には「room」の配列のみを含めてください。\n" +
     "2. 各ルームの総人数がなるべく同じになるよう、各ルームの人数を【厳格に平均化】して「ルームメンバー(room)」を割り振ってください。\n" +
