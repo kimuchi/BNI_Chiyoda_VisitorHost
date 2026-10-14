@@ -91,17 +91,19 @@ var PRESEN_PT_ = { company: 44, category: 32 };
 // 会社名・【カテゴリー】は、1人ずつ小さくすると大きさがバラバラになるので、決まった大きさ（PRESEN_PT_）で入れる。
 // 1行に入らなければ同じ大きさで2行にし、増えた高さのぶん【カテゴリー】を下げる。
 // 下の図形（カウントダウンなど）まで余地が足りないときだけ、足りる大きさまで小さくする。枠の幅はテンプレートから読む。
+// 会社名は、名簿の書き方にそろえ（CB_.normalize：セルの中の改行を外す・㈱を「株式会社」に。メンバーのページと同じ）、
+// 2行にするときの切れ目は、メンバーのページ・リファーラル発表などと同じ決め方（company_break.js。ooxml.js の fitStackFixed_）
 // sec … カウントダウンの秒数（チャプターの設定のビジタープレゼン）。テンプレートと違うときだけ作り直す
 //       （始め方はテンプレートのまま。最後に鳴るベルの音も残る）
 // カウントダウンが終わっても、次の方のページへは自動で進めない（クリックで次へ）。
 // テンプレートに「○秒後に次へ」が入っていても外す
 function buildPresenXml_(xml, v, sec) {
-  var nm = v.name + ' 様', cat = '【' + v.category + '】';
+  var nm = v.name + ' 様', cat = '【' + v.category + '】', co = CB_.normalize(v.company);
   xml = setTextInShape_(xml, 25, nm);
-  xml = setTextInShape_(xml, 27, v.company);
+  xml = setTextInShape_(xml, 27, co);
   xml = setCategoryInShape_(xml, 29, v.category);
   xml = fitFontToShape_(xml, 25, nm, FIT_MIN_.presenName);
-  xml = fitStackFixed_(xml, { id: 27, text: v.company, pt: PRESEN_PT_.company, minPt: FIT_MIN_.presenCompany, split: true },
+  xml = fitStackFixed_(xml, { id: 27, text: co, pt: PRESEN_PT_.company, minPt: FIT_MIN_.presenCompany, split: true },
                             { id: 29, text: cat, pt: PRESEN_PT_.category, minPt: FIT_MIN_.presenCategory });
   var now = sec ? mpCountdownSeconds_(xml) : 0;
   if (now && sec !== now) xml = mpSetCountdown_(xml, sec);

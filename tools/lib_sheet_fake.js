@@ -79,8 +79,12 @@ function makeEnv(opt) {
       getDisplayValue: () => rg.getDisplayValues()[0][0],
       clearContent: () => { for (let i = 0; i < nr; i++) for (let j = 0; j < nc; j++) if (sh._values[r - 1 + i]) sh._values[r - 1 + i][c - 1 + j] = ''; return proxy; },
       getSheet: () => sh._proxy,
+      // 書式のうち、結合・背景の色・文字の大きさは控えておく（env.formatOf で確かめられる）。ほかの書式は何もしない
+      mergeAcross: () => { sh._fmt.merges.push([r, c, nr, nc]); return proxy; },
+      setBackground: (col) => { for (let i = 0; i < nr; i++) for (let j = 0; j < nc; j++) sh._fmt.bg[(r + i) + ',' + (c + j)] = col; return proxy; },
+      setFontSize: (pt) => { for (let i = 0; i < nr; i++) for (let j = 0; j < nc; j++) sh._fmt.size[(r + i) + ',' + (c + j)] = pt; return proxy; },
     };
-    const proxy = new Proxy(rg, { get: (t, k) => (k in t ? t[k] : () => proxy) });   // 書式の指定などは何もしない
+    const proxy = new Proxy(rg, { get: (t, k) => (k in t ? t[k] : () => proxy) });   // そのほかの書式の指定などは何もしない
     return proxy;
   }
   const colNo = (s) => s.split('').reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0);
@@ -93,6 +97,7 @@ function makeEnv(opt) {
   function makeSheet(ss, name, hidden, rows) {
     const sh = {
       _name: name, _id: env.nextSheetId++, _hidden: !!hidden, _saved: !!hidden, _values: (rows || []).map((r) => r.slice()), _maxCols: 26,
+      _fmt: { widths: {}, merges: [], bg: {}, size: {} },
       getName: () => sh._name,
       setName: (n) => { sh._name = n; return sh._proxy; },
       getSheetId: () => sh._id,
@@ -106,7 +111,8 @@ function makeEnv(opt) {
         sh._hidden = true; return sh._proxy;
       },
       activate: () => { ss._active = sh; sh._hidden = false; return sh._proxy; },
-      clear: () => { sh._values = []; return sh._proxy; },
+      clear: () => { sh._values = []; sh._fmt = { widths: sh._fmt.widths, merges: [], bg: {}, size: {} }; return sh._proxy; },
+      setColumnWidth: (col, w) => { sh._fmt.widths[col] = w; return sh._proxy; },
       clearContents: () => { sh._values = []; return sh._proxy; },
       getLastRow: () => lastRowOf(sh),
       getLastColumn: () => lastColOf(sh),
@@ -160,6 +166,8 @@ function makeEnv(opt) {
   env.visibleNames = () => env.ss._sheets.filter((s) => !s._hidden).map((s) => s._name);
   env.hiddenNames = () => env.ss._sheets.filter((s) => s._hidden).map((s) => s._name);
   env.values = (n) => { const s = env.sheet(n); return s ? s._values.map((r) => (r || []).slice()) : null; };
+  // 控えた書式：{ widths: {列番号: px}, merges: [[行, 列, 行数, 列数]], bg: {'行,列': 色}, size: {'行,列': pt} }
+  env.formatOf = (n) => { const s = env.sheet(n); return s ? JSON.parse(JSON.stringify(s._fmt)) : null; };
   env.addFile = (id, blob, name) => { env.drive.files[id] = { id, blob, name: name || '', trashed: false }; return env.drive.files[id]; };
   env.pdfText = (blob) => String(blob && blob.getDataAsString ? blob.getDataAsString() : blob).replace(/^%PDF-1\.4\n/, '');
   env.fileText = (id) => env.pdfText(env.drive.files[id] && env.drive.files[id].blob);

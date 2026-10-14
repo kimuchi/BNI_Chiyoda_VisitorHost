@@ -136,8 +136,10 @@ function findWebAppPage_(key) {
   return null;
 }
 
-// テンプレートから他のHTMLを読み込むための決まり文句
+// テンプレートから他のHTMLを読み込むための決まり文句。
+// include('company_break') は、会社名の改行の決め方（company_break.js）を、サーバーと同じ中身のまま画面に渡す
 function include(name) {
+  if (name === 'company_break') return '<script>\n' + companyBreakLib_.toString() + '\nvar CB_ = companyBreakLib_();\n</script>';
   return HtmlService.createHtmlOutputFromFile(name).getContent();
 }
 

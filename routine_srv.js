@@ -278,6 +278,13 @@ function routinePolicyNo_(v) {
 
 // 「22 メインプレゼン」の欄。「①山内さん　②金井さん」「①北川‗②若松」など。
 // 番号の丸数字で切り、無ければ読点で切る。それぞれをメンバー名簿の氏名に合わせる。
+//   → [{ raw, name, matched, kind }]
+//   kind … 'member'（メンバー）か 'director'（「見本ED」「見本ディレクター」「見本アンバサダー」のように役職を添えた、
+//           リージョンのディレクター・アンバサダー。名簿の方ではないので name は空。guest に役職を外した呼び名）
+//   「②なし」「②ー」のような、いない印の欄は数えない（1人の週。以前は「なし」という方として数えていた）。
+//   「見本さんのみ」「見本さん（1名）」の「のみ」「1名」は外す
+//   役職は名前のうしろ（「見本ED」「見本 ディレクター」「見本 太郎（エグゼクティブディレクター）」）でも前（「ED 見本さん」）でもよい
+var ROUTINE_DIRECTOR_RE_ = /(ＥＤ|ED|ＡＤ|AD)(さん|様)?[)）]?$|^[(（]?(ＥＤ|ED|ＡＤ|AD)(?=[\s　)）])|ディレクター|アンバサダー|リージョン|エグゼクティブ|エクゼクティブ|エクゼティブ/i;
 function routineMainPresenters_(v) {
   var s = String(v == null ? '' : v).replace(/[\r\n]+/g, ' ').trim();
   if (routineIsBlank_(s.replace(/[\s　]/g, ''))) return [];
@@ -289,10 +296,17 @@ function routineMainPresenters_(v) {
   }
   var out = [];
   for (var i = 0; i < parts.length && out.length < 2; i++) {
-    var raw = String(parts[i]).replace(/[‗_＿\-－―]/g, ' ').trim();
-    if (!raw) continue;
+    var raw = String(parts[i]).replace(/[‗_＿\-－―]/g, ' ').trim()
+      .replace(/[（(]\s*[1１一]\s*名\s*[）)]|\s*[1１一]名$|のみ$/g, '').trim();
+    if (!raw || routineIsBlank_(raw.replace(/[\s　]/g, ''))) continue;
+    if (ROUTINE_DIRECTOR_RE_.test(raw)) {
+      var guest = raw.replace(new RegExp(ROUTINE_DIRECTOR_RE_.source, 'gi'), '')
+        .replace(/[()（）]/g, ' ').replace(/(さん|様)/g, '').replace(/^[\s　・]+|[\s　・]+$/g, '').replace(/[\s　]{2,}/g, ' ').trim();
+      out.push({ raw: raw, name: '', matched: false, kind: 'director', guest: guest });
+      continue;
+    }
     var hit = routineMemberName_(raw);
-    out.push({ raw: raw, name: hit.name, matched: hit.matched });
+    out.push({ raw: raw, name: hit.name, matched: hit.matched, kind: 'member' });
   }
   return out;
 }
@@ -428,10 +442,13 @@ function routineParenSegs_(s) {
 // うしろが名字・氏名に一致する方を採る（2文字以上）。
 // 同じ名字の方が2人以上いるときは、書き添えてあるカテゴリー（hint）が名簿のカテゴリーに合う方に決める。決まらなければ空。
 // ひらがな・カタカナで書いたお名前（「みほん たろう」「ミホン」）は、名簿のふりがなと比べる（routineRosterKana_）。
-// カテゴリーで決めたときは ROUTINE_MATCH_BY_ を 'category' にする（画面で「カテゴリーで合わせました」と出すため）
-var ROUTINE_MATCH_BY_ = '';
+// カテゴリーで決めたときは ROUTINE_MATCH_BY_ を 'category' にする（画面で「カテゴリーで合わせました」と出すため）。
+// 同じ名字の方などが2人以上いて決められなかったときは、その方たちの氏名を ROUTINE_MATCH_CANDS_ に残す
+// （新入会・更新式の欄では、名簿の日付で決める。決まらなければ画面に候補を出す）
+var ROUTINE_MATCH_BY_ = '', ROUTINE_MATCH_CANDS_ = [];
 function routineRosterName_(text, roster, hint) {
   ROUTINE_MATCH_BY_ = '';
+  ROUTINE_MATCH_CANDS_ = [];
   var t = routineFoldName_(String(text).replace(/【[^】]*】/g, ''));
   if (!t) return '';
   var keys = roster.map(function (m) {
@@ -444,12 +461,13 @@ function routineRosterName_(text, roster, hint) {
   var h = routineFoldName_(String(hint || '').replace(/[()（）【】「」]/g, ''));
   var one = function (list) {
     if (list.length === 1) return list[0].name;
-    if (!h || list.length < 2) return '';
-    var byCat = list.filter(function (k) {
+    var byCat = !h || list.length < 2 ? [] : list.filter(function (k) {
       var ti = k.title.replace(/[()（）【】「」]/g, '');
       return ti && (ti.indexOf(h) >= 0 || h.indexOf(ti) >= 0);
     });
-    return byCat.length === 1 ? byCat[0].name : '';
+    if (byCat.length === 1) return byCat[0].name;
+    if (list.length >= 2 && !ROUTINE_MATCH_CANDS_.length) ROUTINE_MATCH_CANDS_ = list.map(function (k) { return k.name; });
+    return '';
   };
   var exact = keys.filter(function (k) { return k.full === t; });
   if (exact.length) return one(exact);
@@ -569,7 +587,8 @@ function routineRoster_() {
   var list = [];
   try {
     list = (getMemberMaster({ membersOnly: true }).members || []).map(function (m) {
-      return { name: m.name, title: m.title || '', kana: m.kana || '' };
+      return { name: m.name, title: m.title || '', kana: m.kana || '',
+               joinDate: m.joinDate || '', renewDate: m.renewDate || '', expireDate: m.expireDate || '' };
     });
   } catch (e) {}
   if (!list.length) {
@@ -594,6 +613,72 @@ function routineNameLike_(t) {
       && !/該当|なし|無し|受賞|以上|次は|最後|お二人|おふたり|ふたり|招待|部門|ビジター|連続|初の|抑え|予定|休会|カテゴリー/.test(s);
 }
 
+// 名字だけ（「見本さん」）の書き方で、名簿に同じ名字の方が2人以上いるとき、新入会・更新式の欄なら名簿の日付で決める。
+//   names … 候補の方の氏名。opts … { kind: 'new'|'renew', date: 開催日（Date か 'yyyy/MM/dd'）}
+//   → { name（決まった方。決まらなければ空）, cands（決まらなかったときに画面に出す候補）, old（外した前からのメンバー）}
+//   新入会：入会日が開催日の45日より前の方（前からのメンバー）は、新入会に上がらないので外す。
+//           残りのうち、入会日がまだ空の方（名簿に入れたばかりの新メンバー）が1人ならその方、
+//           空の方がいなくて、最近入会した方が1人ならその方（読めない入会日の方がいるときは決めない）。候補も、外した方を除いた方だけ
+//   更新式：更新期限日が開催日の前後60日・更新日が前後45日・更新期限日が1年ほど先（更新したばかり）の方が1人ならその方。
+//           いなければ、入会から300日以上たっている方が1人ならその方（新しいメンバーは更新しない）
+var ROUTINE_NEW_DAYS_ = 45;
+// 名簿の日付 → 開催日から何日か（前ならマイナス）。空なら null、書いてあるのに読めなければ NaN。
+// 数だけのセル（「45021」のような表計算の通し番号）は日付に直す。1990〜2100年でない年は読めないものとする
+function routineDateDays_(v, d) {
+  var s = String(v == null ? '' : v).trim(), x = null;
+  if (!s) return null;
+  if (Object.prototype.toString.call(v) === '[object Date]') x = parseDate_(v);
+  else if (/^\d{5}(\.\d+)?$/.test(s)) {
+    var n = parseFloat(s);
+    if (n > 20000 && n < 80000) { x = new Date(1899, 11, 30); x.setDate(x.getDate() + Math.floor(n)); }
+  } else x = parseDate_(s);
+  if (!x || isNaN(x.getTime()) || x.getFullYear() < 1990 || x.getFullYear() > 2100) return NaN;
+  return Math.round((x.getTime() - d.getTime()) / 86400000);
+}
+function routineRosterOf_(roster, name) {
+  for (var i = 0; i < (roster || []).length; i++) if (normName_(roster[i].name) === normName_(name)) return roster[i];
+  return { name: name };
+}
+// 新入会の欄に上がらない、前からのメンバーか（入会日が開催日の45日より前。空・読めない入会日は違う）
+function routineOldMember_(m, d) {
+  var k = routineDateDays_(m.joinDate, d);
+  return k !== null && k < -ROUTINE_NEW_DAYS_;
+}
+function routinePickByDate_(names, roster, opts) {
+  var d = opts && opts.date ? parseDate_(opts.date) : null;
+  if (!d) return { name: '', cands: names.slice(), old: [] };
+  var ms = names.map(function (n) { return routineRosterOf_(roster, n); });
+  var nm = function (list) { return list.map(function (m) { return m.name; }); };
+  if (opts.kind === 'new') {
+    var fresh = ms.filter(function (m) { return !routineOldMember_(m, d); });
+    var old = nm(ms.filter(function (m) { return routineOldMember_(m, d); }));
+    var empty = fresh.filter(function (m) { return routineDateDays_(m.joinDate, d) === null; });
+    var unread = fresh.filter(function (m) { return isNaN(routineDateDays_(m.joinDate, d)); });
+    var recent = fresh.filter(function (m) { var k = routineDateDays_(m.joinDate, d); return k !== null && !isNaN(k); });
+    var pick = empty.length === 1 ? empty[0] : (!empty.length && !unread.length && recent.length === 1 ? recent[0] : null);
+    return pick ? { name: pick.name, cands: [], old: [] } : { name: '', cands: nm(fresh), old: old };
+  }
+  if (opts.kind === 'renew') {
+    var within = function (k, a, b) { return k !== null && k >= a && k <= b; };
+    var near = ms.filter(function (m) {
+      var e = routineDateDays_(m.expireDate, d), r = routineDateDays_(m.renewDate, d);
+      return within(e, -60, 60) || within(r, -45, 45) || within(e, 300, 400);
+    });
+    if (near.length === 1) return { name: near[0].name, cands: [], old: [] };
+    if (near.length > 1) return { name: '', cands: nm(near), old: [] };
+    var long = ms.filter(function (m) { var k = routineDateDays_(m.joinDate, d); return k !== null && k <= -300; });
+    return long.length === 1 ? { name: long[0].name, cands: [], old: [] } : { name: '', cands: nm(ms), old: [] };
+  }
+  return { name: '', cands: names.slice(), old: [] };
+}
+// 書いてあるのが名字だけ（氏名・ふりがなの全部ではない）で、名簿のその方に合わせたか
+function routinePartialMatch_(text, full, roster) {
+  var a = routineFoldName_(text), f = routineFoldName_(full);
+  if (f && a.indexOf(f) >= 0) return false;
+  var m = routineRosterOf_(roster, full), kf = m.kana ? routineKana_(m.kana) : '';
+  return !(kf && routineKana_(text).indexOf(kf) >= 0);
+}
+
 // 「15 新入会」「16 更新式(更新メンバー)」の欄 → [{ raw, name, matched, years, category }]
 //   本間さん、平松さん、谷口さん
 //   徳永京平さん（飲食店（ホルモン焼肉））メンバーリスト53番
@@ -605,8 +690,10 @@ function routineNameLike_(t) {
 //   青木周一さん（…） ⏎ 遠藤さんのあと、31番に入ります … 「○○さんのあと」のような文の中のお名前も数えない
 //   深井 宗二郎（ふかた そういちろう）（法人コスト削減） … どこにも「さん」が無ければ、括弧の外をお名前とみなす
 //   カテゴリー　洋菓子製造販売　みほん たろう          … 「カテゴリー」のうしろはカテゴリー。かなのお名前は名簿のふりがなと比べる
-// category は、名簿に無い方（まだ名簿に入っていない新メンバー）のときに使う
-function routineMemberList_(v) {
+// category は、名簿に無い方（まだ名簿に入っていない新メンバー）のときに使う。
+// opts … { kind: 'new'（新入会）|'renew'（更新式）, date: 開催日 }。名字だけの書き方で同じ名字の方が2人以上いるとき、
+//   名簿の日付で決める（routinePickByDate_。byDate: true）。決まらなければ candidates にその方たちの氏名を入れる
+function routineMemberList_(v, opts) {
   var s = String(v == null ? '' : v);
   if (routineIsBlank_(s.replace(/[\s　]/g, ''))) return [];
   var roster = routineRoster_(), out = [], seen = {};
@@ -614,6 +701,21 @@ function routineMemberList_(v) {
     var nm = String(rawName).replace(/【[^】]*】/g, '').replace(/^[\s　、,，・･と]+|[\s　、,，・･]+$/g, '');
     if (!nm || routineIsBlank_(nm.replace(/[\s　]/g, ''))) return;
     var full = routineRosterName_(nm, roster, category), byCat = ROUTINE_MATCH_BY_ === 'category';
+    var cands = full ? [] : ROUTINE_MATCH_CANDS_.slice(), byDate = false, oldSame = [];
+    if (!full && cands.length >= 2 && opts && opts.kind) {
+      var pk = routinePickByDate_(cands, roster, opts);
+      oldSame = pk.old;
+      full = pk.name;
+      byDate = !!full;
+      cands = pk.cands;
+    }
+    // 新入会の欄で、名字だけの書き方が名簿の前からのメンバー（1人）に当たったときは、その方ではない（新入会に上がらない）。
+    // 名簿にまだ入っていない新しい方として、書いてあったお名前で作る
+    var nd = opts && opts.kind === 'new' ? parseDate_(opts.date) : null;
+    if (full && !byDate && nd && routinePartialMatch_(nm, full, roster) && routineOldMember_(routineRosterOf_(roster, full), nd)) {
+      oldSame = [full];
+      full = '';
+    }
     if (!full) {
       // 名簿に無い方で、前にカテゴリーの付いたかなのお名前（「洋菓子製造販売　みほん たろうさん」）は、お名前とカテゴリーに分ける。
       // 「見本 たろう」（漢字の名字とかなのお名前）は分けない（かなが2語以上か、前の言葉が4字以上のときだけ）
@@ -629,7 +731,8 @@ function routineMemberList_(v) {
     if (!full && !routineNameLike_(nm.replace(/^.*[\s　]/, ''))) return;
     if (seen[key]) return;
     seen[key] = true;
-    out.push({ raw: shown, name: full, matched: !!full, years: years || 0, category: full ? '' : (category || ''), byCategory: byCat });
+    out.push({ raw: shown, name: full, matched: !!full, years: years || 0, category: full ? '' : (category || ''), byCategory: byCat,
+               byDate: byDate, candidates: full ? [] : cands, oldNamesakes: full ? [] : oldSame });
   };
   var lines = s.split(/[\r\n]+/).map(function (l) { return l.replace(/[※＊].*$/, '').trim(); });
   var honor = /(さん|様|さま|氏)/;
@@ -974,7 +1077,7 @@ function routineFirstHalf_(t, pick) {
       it.winners.forEach(function (w) { if (w.self && !w.matched && vice) { w.name = vice; w.matched = true; } });
     });
   }
-  var nwList = routineMemberList_(nw.value), rnList = routineMemberList_(rn.value);
+  var nwList = routineMemberList_(nw.value, { kind: 'new', date: t }), rnList = routineMemberList_(rn.value, { kind: 'renew', date: t });
   // newMembersUnread … 欄に書いてあるのに、お名前を読み取れなかった（画面で「いません」とだけ出さず、知らせる）
   return { newMembers: nwList, newMembersRaw: routineText_(nw.value), newMembersUnread: routineUnread_(nw.value, nwList),
            renewMembers: rnList, renewMembersRaw: routineText_(rn.value), renewMembersUnread: routineUnread_(rn.value, rnList),

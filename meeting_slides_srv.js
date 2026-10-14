@@ -334,7 +334,12 @@ function applyGeneralPolicy_(parts, no) {
 // 写真の枠は「その方の氏名の差し込み口の真上にある枠」で決める。大きさだけで選ぶと、
 // 抽選コーナーの中央下にある飾りの画像（写真と同じくらいの大きさ）を枠と取り違えるため。
 // 名前が空・写真が無い方の枠は、テンプレートの元の写真が残らないよう枠ごと消す。
-function applyTwoPersonPhotos_(parts, prefix, names, cache) {
+//
+// メインプレゼン・抽選は、1人の週がある（opt.single）。そのときは、もう1人の文字箱も消し、残る方の写真の枠と
+// 文字箱を左右のまん中に動かす（twoPersonSinglePlan_）。①②のどちらの欄に入れても同じ。推薦のことばは、いつも2人。
+// ディレクター（名簿に無く、前半テンプレートにアンバサダー・ディレクターのページがある方）がメインプレゼンを担当する週は、
+// 写真をそのページの写真にする（opt.photoOf。twoPersonDirectors_・twoPersonGuestPhoto_）。
+function applyTwoPersonPhotos_(parts, prefix, names, cache, opt) {
   if (!names || !names.length) return null;
   var path = null, p;
   for (p in parts) {
@@ -343,20 +348,35 @@ function applyTwoPersonPhotos_(parts, prefix, names, cache) {
     if (x && x.indexOf(prefix + '1氏名') >= 0) { path = p; break; }
   }
   if (!path) return { message: '' };
-  var r = setTwoPersonPhotos_(parts, path, prefix, names, cache);
+  var r = setTwoPersonPhotos_(parts, path, prefix, names, cache, opt);
   var msg = r.done.length ? (prefix + 'の写真を差し替えました: ' + r.done.join('、')) : '';
-  if (r.missing.length) msg += (msg ? '／' : '') + '写真が見つからない方（写真なし）: ' + r.missing.join('、');
+  // どのページの方かが分かるように、ページの名前を付ける（後半は、メインプレゼンと抽選の両方に同じ方が出ることがある）
+  if (r.missing.length) msg += (msg ? '／' : '') + prefix + 'で写真が見つからない方（写真なし）: ' + r.missing.join('、');
   if (r.noFrame) msg = prefix + 'のページで写真の枠が見つかりませんでした。';
-  return { message: msg, replaced: r.done.length };
+  r.guests.forEach(function (n) {
+    msg += (msg ? '\n' : '') + (prefix === 'メインプレゼン' ? '' : prefix + 'の') + 'ディレクター（' + n
+      + 'さん）の写真は、前半テンプレートのその方のページから入れました';
+  });
+  if (r.single && (r.single.moved || r.single.removed)) {
+    msg += (msg ? '\n' : '') + prefix + 'は1人なので、' + (r.single.moved ? 'まん中に置きました'
+      : 'もう1人の欄を消しました' + (r.single.blocked ? '（まん中に動かすと飾りの画像に重なるので、位置はテンプレートのままです）' : ''));
+  }
+  return { message: msg, replaced: r.done.length, single: r.single };
 }
 
 // 1枚のページの写真を差し替える（差し込み口 {{○○1氏名}} がまだ残っている状態で呼ぶこと）。
-// 戻り値 { done: [差し替えた方], missing: [写真が無かった方], noFrame: 枠が無かったか }
-function setTwoPersonPhotos_(parts, path, prefix, names, cache) {
-  var xml = xmlOf_(parts, path), res = { done: [], missing: [], noFrame: false };
+//   opt.single  … 1人だけのとき、もう1人の欄を消し、残る方をまん中に置く（メインプレゼン・抽選）
+//   opt.photoOf … 氏名 → 名簿の写真より先に使う写真 { path, width, height }（ディレクターのページの写真）。無ければ null
+// 戻り値 { done: [差し替えた方], missing: [写真が無かった方], noFrame: 枠が無かったか,
+//          guests: [ディレクターのページの写真を入れた方], single: { name, moved, blocked, removed }（1人のとき） }
+function setTwoPersonPhotos_(parts, path, prefix, names, cache, opt) {
+  opt = opt || {};
+  var xml = xmlOf_(parts, path), res = { done: [], missing: [], noFrame: false, guests: [], single: null };
   var prs = xmlOf_(parts, 'ppt/presentation.xml') || '';
   var sz = prs.match(/<p:sldSz\s+cx="(\d+)"/);
   var slideW = sz ? parseInt(sz[1], 10) : 12192000;
+  // いつも2人ぶん（1人ぶんだけ渡されても、2人目の枠にテンプレートの元の写真を残さない）
+  var two = [String(names[0] || ''), String(names[1] || '')];
 
   // 写真の枠の候補（背景いっぱいの画像と、小さな飾りは除く）
   var pics = [], ranges = findTagRanges_(xml, 'p:pic');
@@ -372,31 +392,220 @@ function setTwoPersonPhotos_(parts, path, prefix, names, cache) {
     pics.push({ id: id, x: parseInt(off[1], 10), y: parseInt(off[2], 10), cx: cx, cy: cy,
                 center: parseInt(off[1], 10) + cx / 2, area: cx * cy });
   }
-  if (!pics.length) { res.noFrame = true; return res; }
-  var slots = pickPhotoFrames_(xml, prefix, Math.min(names.length, 2), pics);
+  res.noFrame = !pics.length;
+  var slots = pics.length ? pickPhotoFrames_(xml, prefix, 2, pics) : [];
+  // 1人だけのときの置き方は、写真の枠を消す前に決める（写真の無い方も、枠のある形でまん中を決める）
+  var one = two[0] ? (two[1] ? -1 : 0) : (two[1] ? 1 : -1);
+  var plan = (opt.single && one >= 0) ? twoPersonSinglePlan_(xml, prefix, one, slots, slideW) : null;
 
   var rp = relsPathOf_(path), rels = xmlOf_(parts, rp);
   cache = cache || { by: {}, seq: 0 };
   for (var k = 0; k < slots.length; k++) {
     var pic = slots[k];
     if (!pic) continue;
-    var photo = names[k] ? mpAddPhoto_(parts, cache, names[k]) : null;
+    var own = (two[k] && opt.photoOf) ? opt.photoOf(two[k]) : null;
+    var photo = own || (two[k] ? mpAddPhoto_(parts, cache, two[k]) : null);
     if (!photo) {
       xml = removeShape_(xml, pic.id);
-      if (names[k]) res.missing.push(names[k]);
+      if (two[k]) res.missing.push(two[k]);
       continue;
     }
     var box = readShapeGeomEmu_(xml, pic.id);
     if (box && photo.width && photo.height) {
       xml = setSrcRectInPic_(xml, pic.id, coverCrop_(photo.width, photo.height, box.cx, box.cy));
     }
-    var set = setPicImage_(xml, rels, pic.id, '../media/' + photo.path.replace('ppt/media/', ''));
+    var set = setPicImage_(xml, rels, pic.id, relPathFrom_(posixDir_(path), photo.path));
     xml = set.xml; rels = set.rels;
-    res.done.push(names[k]);
+    res.done.push(two[k]);
+    if (own) res.guests.push(two[k]);
+  }
+  if (plan) {
+    xml = twoPersonSingleApply_(xml, plan);
+    res.single = { name: two[one], moved: plan.moved, blocked: plan.blocked, removed: plan.remove.length };
   }
   putXml_(parts, path, xml);
   if (rels) putXml_(parts, rp, rels);
   return res;
+}
+
+// --- 1人だけの週（メインプレゼン・抽選）---
+// k … 残る方（0＝1人目の欄・1＝2人目の欄）。残る方の文字箱（{{○○N氏名}}・会社名・カテゴリー）と写真の枠をひとまとまりにして、
+// 左右のまん中に来る動かし量（dx）を決め、もう1人の文字箱を消す。上下の位置はそのまま。ほかの飾り（題名・動画など）は動かさない。
+// 動かした先が、ほかの画像（抽選コーナーの中央下のプレゼントの絵など）に新しく重なるときは、動かさない（blocked）。
+// 位置の書いていない文字箱（レイアウトから受け継ぐもの）があるときも、動かさない。
+var TWO_PERSON_FIELDS_ = ['氏名', '会社名', 'カテゴリー'];
+function twoPersonSinglePlan_(xml, prefix, k, slots, slideW) {
+  var geo = shapeBoxes_(xml);
+  var move = twoPersonSlotShapes_(xml, prefix, k + 1, 2 - k);
+  if (slots[k]) move.push(slots[k].id);
+  var plan = { remove: twoPersonSlotShapes_(xml, prefix, 2 - k, k + 1), move: move, dx: 0, sx: {}, moved: false, blocked: false };
+  if (!move.length) return plan;
+  var lo = Infinity, hi = -Infinity, i, j;
+  for (i = 0; i < move.length; i++) {
+    var b = geo[move[i]];
+    if (!b) return plan;
+    lo = Math.min(lo, b.x); hi = Math.max(hi, b.x + b.cx);
+    plan.sx[move[i]] = b.sx;
+  }
+  plan.dx = Math.round(slideW / 2 - (lo + hi) / 2);
+  if (!plan.dx) return plan;
+  // ほかの画像（2人の写真の枠でないもの）に、動かしたら新しく重なるか（もともと重なっている背景などは数えない）
+  var skip = {};
+  move.forEach(function (id) { skip[id] = true; });
+  slots.forEach(function (s) { if (s) skip[s.id] = true; });
+  var hit = function (a, dx, c) { return a.x + dx < c.x + c.cx && c.x < a.x + dx + a.cx && a.y < c.y + c.cy && c.y < a.y + a.cy; };
+  for (var id in geo) {
+    if (skip[id] || !geo[id].pic) continue;
+    for (j = 0; j < move.length; j++) {
+      if (hit(geo[move[j]], plan.dx, geo[id]) && !hit(geo[move[j]], 0, geo[id])) { plan.blocked = true; return plan; }
+    }
+  }
+  plan.moved = true;
+  return plan;
+}
+// n 人目の欄の文字箱（その方の差し込み口があり、もう1人＝m 人目の差し込み口の無い文字箱）の図形ID
+function twoPersonSlotShapes_(xml, prefix, n, m) {
+  var out = [], ranges = findTagRanges_(xml, 'p:sp');
+  var has = function (t, no) {
+    return TWO_PERSON_FIELDS_.some(function (f) { return t.indexOf('{{' + prefix + no + f + '}}') >= 0; });
+  };
+  for (var i = 0; i < ranges.length; i++) {
+    var seg = xml.substring(ranges[i].start, ranges[i].end), t = slideText_(seg);
+    var id = (seg.match(/<p:cNvPr[^>]*\sid="(\d+)"/) || [])[1];
+    if (id && has(t, n) && !has(t, m) && out.indexOf(id) < 0) out.push(id);
+  }
+  return out;
+}
+function twoPersonSingleApply_(xml, plan) {
+  plan.remove.forEach(function (id) { xml = removeShape_(xml, id); });
+  if (!plan.moved) return xml;
+  plan.move.forEach(function (id) {
+    var r = findShapeRange_(xml, id);
+    if (!r) return;                                   // 写真が見つからず、枠を消した方
+    // グループの中の図形は、グループの子の座標で動かす（グループが縮めていれば、そのぶん大きく）
+    var d = Math.round(plan.dx / (plan.sx[id] || 1));
+    var seg = xml.substring(r.start, r.end).replace(/(<a:off\s+x=")(-?\d+)(")/, function (all, a, x, b) {
+      return a + (parseInt(x, 10) + d) + b;
+    });
+    xml = xml.substring(0, r.start) + seg + xml.substring(r.end);
+  });
+  return xml;
+}
+// ページの上での図形（文字箱・画像）の位置（EMU）→ { 図形ID: { x, y, cx, cy, sx, pic } }。
+// グループの中の図形は、グループの子の座標（chOff・chExt）をページの座標に直す（sx … 横の倍率）。位置の書いていない図形は入れない
+function shapeBoxes_(xml) {
+  var groups = [], out = {};
+  var nums = function (s, re) { var m = s.match(re); return m ? [parseInt(m[1], 10), parseInt(m[2], 10)] : null; };
+  var walk = function (from, to) {
+    findTagRanges_(xml.substring(from, to), 'p:grpSp').forEach(function (r) {
+      var s = from + r.start, e = from + r.end;
+      var pr = (xml.substring(s, e).match(/<p:grpSpPr\b[^>]*>([\s\S]*?)<\/p:grpSpPr>/) || [])[1] || '';
+      groups.push({ start: s, end: e, off: nums(pr, /<a:off\s+x="(-?\d+)"\s+y="(-?\d+)"/), ext: nums(pr, /<a:ext\s+cx="(\d+)"\s+cy="(\d+)"/),
+                    choff: nums(pr, /<a:chOff\s+x="(-?\d+)"\s+y="(-?\d+)"/), chext: nums(pr, /<a:chExt\s+cx="(\d+)"\s+cy="(\d+)"/) });
+      walk(xml.indexOf('>', s) + 1, e);                // 入れ子のグループ
+    });
+  };
+  walk(0, xml.length);
+  ['p:sp', 'p:pic'].forEach(function (tag) {
+    findTagRanges_(xml, tag).forEach(function (r) {
+      var seg = xml.substring(r.start, r.end);
+      var id = (seg.match(/<p:cNvPr[^>]*\sid="(\d+)"/) || [])[1];
+      var off = nums(seg, /<a:off\s+x="(-?\d+)"\s+y="(-?\d+)"/), ext = nums(seg, /<a:ext\s+cx="(\d+)"\s+cy="(\d+)"/);
+      if (!id || !off || !ext) return;
+      var b = { x: off[0], y: off[1], cx: ext[0], cy: ext[1], sx: 1, pic: tag === 'p:pic' };
+      groups.filter(function (g) { return g.start < r.start && r.end <= g.end; })
+        .sort(function (a, c) { return c.start - a.start; })          // 内側のグループから
+        .forEach(function (g) {
+          if (!g.off || !g.ext || !g.choff || !g.chext) return;
+          var fx = g.chext[0] ? g.ext[0] / g.chext[0] : 1, fy = g.chext[1] ? g.ext[1] / g.chext[1] : 1;
+          b = { x: g.off[0] + (b.x - g.choff[0]) * fx, y: g.off[1] + (b.y - g.choff[1]) * fy,
+                cx: b.cx * fx, cy: b.cy * fy, sx: b.sx * fx, pic: b.pic };
+        });
+      out[id] = b;
+    });
+  });
+  return out;
+}
+
+// --- ディレクターがメインプレゼンを担当する週 ---
+// 画面は、ディレクターを前半テンプレートのアンバサダー・ディレクターのページの氏名で送ってくる（名簿の方と同じ欄）。
+// 名簿に無く、そのページがある方をディレクターとみなし、写真（と、画面から来なければ会社名・カテゴリー）をそのページから入れる。
+// 前半はこのファイルのそのページ、後半は前半のテンプレート（o.mainPageSource。抽選だけのときは o.guestSource）のページ。
+// メンバーのページを差し込む前に呼ぶこと（差し込んだメンバーのページも、同じ WEEKLY PRESENTATION の作りのため）。
+//   戻り値 { normName_(送られた氏名): { name, role, company, photo: 'ppt/media/…', src } }
+function twoPersonDirectors_(parts, o) {
+  var names = [].concat(o.mainPresenters || [], o.lottery || []).filter(function (n) { return n; }), out = {};
+  if (!names.length) return out;
+  var keys = o.rosterKeys || (o.rosterKeys = rosterNameKeys_());
+  var others = names.filter(function (n) { return !keys[normName_(n)]; });
+  if (!others.length) return out;
+  var src = o.mainPageSource || o.guestSource || parts, pages = [];
+  try { pages = weeklyGuestPages_(src); }
+  catch (e) { console.warn('[MEETING] アンバサダー・ディレクターのページを調べられませんでした: ' + (e && e.message ? e.message : e)); }
+  others.forEach(function (n) {
+    var g = guestByName_(pages, n);
+    if (g) out[normName_(n)] = { name: g.name, role: g.role || '', company: g.company || '', photo: g.photo || '', src: src };
+  });
+  return out;
+}
+// 名簿の方の氏名（normName_）→ true。読めなければ空（そのときは、どの方もアンバサダー・ディレクターのページで探す）
+function rosterNameKeys_() {
+  var keys = {};
+  try { (getMemberMaster({ membersOnly: true }).members || []).forEach(function (m) { keys[normName_(m.name)] = true; }); }
+  catch (e) { console.warn('[MEETING] メンバー名簿を読めませんでした: ' + (e && e.message ? e.message : e)); }
+  return keys;
+}
+// 名簿に無い方（後半で、抽選だけにディレクターを選んだとき、前半のテンプレートを開くかどうか）
+function twoPersonNonMembers_(names, o) {
+  var list = (names || []).filter(function (n) { return n; });
+  if (!list.length) return [];
+  var keys = o.rosterKeys || (o.rosterKeys = rosterNameKeys_());
+  return list.filter(function (n) { return !keys[normName_(n)]; });
+}
+// ディレクターの写真 → { path, width, height }（ページに写真の無い方は null）。
+// 前半は同じファイルの画像をそのまま使う。後半は前半のテンプレートから画像を写す（種類も [Content_Types].xml に足す）。1人1回だけ
+function twoPersonGuestPhoto_(parts, g) {
+  if (!g || !g.photo) return null;
+  if (g.got !== undefined) return g.got;
+  g.got = null;
+  try {
+    var path = g.photo;
+    if (g.src !== parts) {
+      var ext = (path.match(/\.([^.\/]+)$/) || [])[1] || 'png', n = 1, dst, b = g.src[path];
+      if (!b) return null;
+      do { dst = 'ppt/media/guestphoto' + (n++) + '.' + ext; } while (parts[dst]);
+      parts[dst] = b.copyBlob ? b.copyBlob().setName(dst) : b.setName(dst);
+      ctPartType_(parts, g.src, path, dst);
+      path = dst;
+    }
+    var size = null;
+    try { size = imageSizeOf_(parts[path].getBytes()); } catch (e) {}
+    g.got = { path: path, width: size ? size.width : 0, height: size ? size.height : 0 };
+  } catch (e) {
+    console.warn('[MEETING] ' + g.name + 'さんのページの写真を使えませんでした: ' + (e && e.message ? e.message : e));
+  }
+  return g.got;
+}
+// ディレクターの氏名・会社名・カテゴリーが画面から来なければ（サーバーから直接呼んだときなど）、その方のページの文字で埋める。
+// カテゴリーは、そのページのカテゴリーの枠の文字（「BNI東京千代田リージョン」など）を【】で囲む（もう囲んであればそのまま）
+function twoPersonDirectorValues_(values, two, directors) {
+  var out = {}, k;
+  for (k in values) out[k] = values[k];
+  two.forEach(function (t) {
+    if (t.prefix === RECO_PREFIX_) return;
+    (t.names || []).slice(0, 2).forEach(function (n, i) {
+      var g = n ? directors[normName_(n)] : null, p = t.prefix + (i + 1);
+      if (!g) return;
+      if (!out[p + '氏名']) out[p + '氏名'] = n;
+      if (!out[p + '会社名'] && g.company) out[p + '会社名'] = CB_.normalize(g.company);
+      if (!out[p + 'カテゴリー'] && g.role) out[p + 'カテゴリー'] = roleInBrackets_(g.role);
+    });
+  });
+  return out;
+}
+function roleInBrackets_(role) {
+  var r = CB_.normalize(role);
+  return !r ? '' : (/^【[\s\S]*】$/.test(r) ? r : '【' + r + '】');
 }
 
 // お2人が並ぶページ（メインプレゼン・推薦のことば・抽選）の氏名・会社名・カテゴリーの文字箱は、
@@ -404,26 +613,45 @@ function setTwoPersonPhotos_(parts, path, prefix, names, cache) {
 // 収まらないときだけ文字を小さくする（氏名・会社名は1行、カテゴリーは2行まで）。
 // 文字の幅は全角1文字＝1em・半角スペース＝0.3em・ほかの半角＝0.55em で見積もり、
 // 太字や代わりのフォント（Meiryo UI が無い環境）でも収まるよう、幅は5%ほどゆとりをみる。
+// 会社名（company）は、ほかの出力と同じ会社名の見積もり（company_break.js の CB_.lineWidthPt。英字は字ごとの幅・余裕こみ）で、
+// 枠の内側の幅に1行で入る大きさにする（英字の多い会社名は 0.55em では縮め足りず、PowerPoint が2行に折り返して下の段に重なった）。
+// 測る会社名は名簿の書き方にそろえたもの（CB_.normalize）。入れる値も同じにそろえておくこと（twoPersonCompanies_）。
 // 差し込み口 {{○○1会社名}} などがまだ残っている状態で呼ぶこと。
 var TWO_PERSON_FIT_ = [
   { field: '氏名', lines: 1, min: 20 },
-  { field: '会社名', lines: 1, min: 8 },           // 支社・営業所まで入る長い会社名もあるので、小さめまで許す
+  { field: '会社名', lines: 1, min: 8, company: true },   // 支社・営業所まで入る長い会社名もあるので、小さめまで許す
   { field: 'カテゴリー', lines: 2, min: 9 }
 ];
 function fitTwoPersonText_(xml, prefix, values) {
   for (var k = 1; k <= 2; k++) {
     for (var f = 0; f < TWO_PERSON_FIT_.length; f++) {
       var t = TWO_PERSON_FIT_[f], key = prefix + k + t.field;
-      if (values[key]) xml = fitTokenBox_(xml, '{{' + key + '}}', String(values[key]), t.lines, t.min);
+      if (!values[key]) continue;
+      var text = t.company ? CB_.normalize(values[key]) : String(values[key]);
+      xml = fitTokenBox_(xml, '{{' + key + '}}', text, t.lines, t.min, t.company);
     }
   }
   return xml;
 }
+// お2人のページ（prefixes）の会社名を、名簿の書き方にそろえた値の写し（CB_.normalize：セルの中の改行を外す・㈱を「株式会社」に）。
+// 画面から改行の残った会社名が来ても、測った文字と入れる文字を同じにする（改行が残ると、1行の枠で2行になり下の段に重なる）
+function twoPersonCompanies_(values, prefixes) {
+  var out = {}, k;
+  for (k in values) out[k] = values[k];
+  for (var p = 0; p < prefixes.length; p++) {
+    for (var n = 1; n <= 2; n++) {
+      k = prefixes[p] + n + '会社名';
+      if (out[k]) out[k] = CB_.normalize(out[k]);
+    }
+  }
+  return out;
+}
+// 1人の週は、1人目の欄を消して2人目の欄だけが残ることもある（twoPersonSinglePlan_）ので、どちらかの差し込み口のあるページ
 function fitTwoPersonPage_(parts, prefix, values) {
   for (var path in parts) {
     if (!/^ppt\/slides\/slide\d+\.xml$/.test(path)) continue;
     var xml = xmlOf_(parts, path);
-    if (!xml || xml.indexOf(prefix + '1氏名') < 0) continue;
+    if (!xml || (xml.indexOf(prefix + '1氏名') < 0 && xml.indexOf(prefix + '2氏名') < 0)) continue;
     var out = fitTwoPersonText_(xml, prefix, values);
     if (out !== xml) putXml_(parts, path, out);
   }
@@ -436,7 +664,8 @@ function textBoxEm_(s) {
   }
   return em;
 }
-function fitTokenBox_(xml, token, text, maxLines, minPt) {
+// company … 会社名。CB_.lineWidthPt（余裕こみ）で、枠の内側の幅（左右の余白を除く）に入る大きさを 0.5pt 刻みで
+function fitTokenBox_(xml, token, text, maxLines, minPt, company) {
   var sps = findTagRanges_(xml, 'p:sp');
   for (var i = 0; i < sps.length; i++) {
     var seg = xml.substring(sps[i].start, sps[i].end);
@@ -448,11 +677,20 @@ function fitTokenBox_(xml, token, text, maxLines, minPt) {
       var m = bp.match(new RegExp('\\s' + k + '="(\\d+)"'));
       return m ? parseInt(m[1], 10) : 91440;
     };
-    var widthPt = (parseInt(ext[1], 10) - ins('lIns') - ins('rIns')) / 12700 * 0.95;
+    var innerPt = (parseInt(ext[1], 10) - ins('lIns') - ins('rIns')) / 12700, widthPt = innerPt * 0.95;
     var pt = parseInt((seg.match(/<a:rPr\b[^>]*\ssz="(\d+)"/) || [0, 1800])[1], 10) / 100;
-    var em = textBoxEm_(text);
-    if (em * pt <= widthPt * maxLines) return xml;
-    var size = Math.max(minPt || 10, Math.floor(widthPt * maxLines / em * 2) / 2);
+    var size;
+    if (company) {
+      var per = CB_.lineWidthPt(text, 1);                      // 1pt あたりの幅（余裕こみ）
+      if (per <= 0 || per * pt <= innerPt * maxLines + 1e-6) return xml;
+      size = Math.floor(innerPt * maxLines / per * 2) / 2;
+      if (per * size > innerPt * maxLines + 1e-6) size -= 0.5; // 割り算の端数で、わずかに超えないように
+      size = Math.max(minPt || 10, size);
+    } else {
+      var em = textBoxEm_(text);
+      if (em * pt <= widthPt * maxLines) return xml;
+      size = Math.max(minPt || 10, Math.floor(widthPt * maxLines / em * 2) / 2);
+    }
     seg = seg.replace(/(<a:(?:rPr|endParaRPr)\b[^>]*?\ssz=")\d+(")/g, '$1' + Math.round(size * 100) + '$2');
     return xml.substring(0, sps[i].start) + seg + xml.substring(sps[i].end);
   }
@@ -607,10 +845,11 @@ function expandRecommendations_(parts, pairs, cache) {
     var g = pair.giver || {}, r = pair.receiver || {};
     var ph = setTwoPersonPhotos_(parts, path, RECO_PREFIX_, [g.name || '', r.name || ''], cache);
     missing = missing.concat(ph.missing);
+    // 会社名は名簿の書き方にそろえる（画面から改行の残った会社名が来ても、測った文字と入れる文字を同じに。twoPersonCompanies_ と同じ）
     var vals = {};
-    vals[RECO_PREFIX_ + '1氏名'] = g.name || ''; vals[RECO_PREFIX_ + '1会社名'] = g.company || '';
+    vals[RECO_PREFIX_ + '1氏名'] = g.name || ''; vals[RECO_PREFIX_ + '1会社名'] = CB_.normalize(g.company);
     vals[RECO_PREFIX_ + '1カテゴリー'] = g.category || '';
-    vals[RECO_PREFIX_ + '2氏名'] = r.name || ''; vals[RECO_PREFIX_ + '2会社名'] = r.company || '';
+    vals[RECO_PREFIX_ + '2氏名'] = r.name || ''; vals[RECO_PREFIX_ + '2会社名'] = CB_.normalize(r.company);
     vals[RECO_PREFIX_ + '2カテゴリー'] = r.category || '';
     putXml_(parts, path, replaceTokensInXml_(fitTwoPersonText_(xmlOf_(parts, path), RECO_PREFIX_, vals), vals));
   };
@@ -1045,10 +1284,38 @@ function weeklyGuestPages_(parts) {
     var sh = presenterShapes_(xml, slideW), name = shapeTextOf_(xml, sh.nameBox);
     // 「苗字　名前」「〇〇　〇〇」のままの下書き（スタートアッププレゼンのページなど）は人のページではない
     if (!name || /苗字|名前|氏名/.test(name) || /^[〇○◯\s　]+$/.test(name)) continue;
+    // role … カテゴリーの枠の文字（「エグゼクティブディレクター」「BNI東京千代田リージョン」など、テンプレートに書いてあるとおり）。
+    // company … 会社名の枠の文字。photo … 写真の画像（ppt/media/…）。メインプレゼンをディレクターが担当する週に使う
     out.push({ key: order[i].replace(/^.*\//, ''), path: order[i], name: name,
-               role: shapeTextOf_(xml, sh.category), hidden: /<p:sld\b[^>]*\sshow="0"/.test(xml) });
+               role: shapeTextOf_(xml, sh.category), company: shapeTextOf_(xml, sh.company),
+               photo: sh.photo ? picMediaPath_(parts, order[i], xml, sh.photo) : '',
+               hidden: /<p:sld\b[^>]*\sshow="0"/.test(xml) });
   }
   return out;
+}
+
+// 画像の図形が使っている画像（ppt/media/…）。見つからなければ空
+function picMediaPath_(parts, slidePath, xml, picId) {
+  var r = findShapeRange_(xml, picId);
+  if (!r) return '';
+  var rid = (xml.substring(r.start, r.end).match(/<a:blip[^>]*r:embed="([^"]+)"/) || [])[1];
+  var rels = rid ? xmlOf_(parts, relsPathOf_(slidePath)) || '' : '';
+  var m = rels.match(new RegExp('<Relationship\\b[^>]*\\bId="' + rid + '"[^>]*>'));
+  var t = m ? (m[0].match(/Target="([^"]+)"/) || [])[1] : '';
+  if (!t || /TargetMode="External"/.test(m[0])) return '';
+  var media = t.replace(/^\.\.\//, 'ppt/').replace(/^\/+/, '');
+  return parts[media] ? media : '';
+}
+
+// アンバサダー・ディレクターのうち、その書き方（「見本 太郎」「見本」＝名字だけ、「見本ED」は guest に名字だけ）に当たる方。
+// 氏名がそのまま同じ方 → 名字（氏名の頭）が同じ方が1人だけ のとき。当たらなければ null
+function guestByName_(guests, text) {
+  var t = normName_(String(text || '').replace(/(さん|様)$/, ''));
+  if (!t) return null;
+  var same = (guests || []).filter(function (g) { return normName_(g.name) === t; });
+  if (same.length) return same[0];
+  var head = (guests || []).filter(function (g) { return normName_(g.name).indexOf(t) === 0; });
+  return head.length === 1 ? head[0] : null;
 }
 
 // 同じ方のウィークリープレゼンのページが、氏名の枠では見分けられない作りになっていても拾う：
@@ -1148,11 +1415,12 @@ function applyWeeklyGuests_(parts, names, auto) {
 // 27MBほどのファイルを開くので、テンプレートが同じ間は結果を覚えておく。
 function getWeeklyGuests() {
   try {
-    var guests = templateMemo_('meetingFirst', 'guests2', function (parts) {
+    var guests = templateMemo_('meetingFirst', 'guests3', function (parts) {
       var pages = weeklyGuestPages_(parts), intro = {};
       weeklyGuestIntroPages_(parts, pages).forEach(function (p) { intro[normName_(p.name)] = true; });
       return pages.map(function (g) {
-        return { name: g.name, role: g.role, hidden: g.hidden, intro: !!intro[normName_(g.name)] };
+        return { name: g.name, role: g.role, company: g.company || '', hasPhoto: !!g.photo,
+                 hidden: g.hidden, intro: !!intro[normName_(g.name)] };
       });
     });
     return { ok: true, guests: guests };
@@ -1160,6 +1428,24 @@ function getWeeklyGuests() {
     console.error('[MEETING] ' + (e && e.stack ? e.stack : e));
     return { ok: false, message: 'アンバサダー・ディレクターのページを調べられませんでした: '
              + (e && e.message ? e.message : e), guests: [] };
+  }
+}
+
+// アンバサダー・ディレクターの写真（前半テンプレートのその方のページの写真）→ { ok, photos: { 氏名: 'data:image/…;base64,…' } }。
+// メインプレゼンターの画像（書記兼会計の画面）を、ディレクターが担当する週に作るため
+function getWeeklyGuestPhotos() {
+  try {
+    var parts = unzipToMap_(getBigTemplateFile_('meetingFirst').getBlob()), photos = {};
+    weeklyGuestPages_(parts).forEach(function (g) {
+      if (!g.photo || photos[g.name]) return;
+      var b = parts[g.photo], ext = g.photo.replace(/^.*\./, '').toLowerCase();
+      var type = ext === 'png' ? 'image/png' : ext === 'gif' ? 'image/gif' : 'image/jpeg';
+      photos[g.name] = 'data:' + type + ';base64,' + Utilities.base64Encode(b.getBytes());
+    });
+    return { ok: true, photos: photos };
+  } catch (e) {
+    console.error('[MEETING] ' + (e && e.stack ? e.stack : e));
+    return { ok: false, message: 'アンバサダー・ディレクターの写真を読めませんでした: ' + (e && e.message ? e.message : e), photos: {} };
   }
 }
 
@@ -1196,6 +1482,9 @@ function editMeetingSlides_(parts, map, rules, o) {
   // 写真は1つの控えで取り込む。同じ方の写真は1枚だけ入れて使い回し、
   // 別の処理が同じ名前の画像を作って上書きし合うこと（写真の取り違い）も起きない。
   var photoCache = { by: {}, seq: 0 };
+  // メインプレゼン・抽選のディレクター（名簿に無く、前半テンプレートにアンバサダー・ディレクターのページがある方）。
+  // ページを差し込む・写す前に探す（差し込んだメンバーのページも同じ作りのため）
+  var directors = twoPersonDirectors_(parts, o);
   // 後半：1枚目に、前半の最後のページ（メインプレゼンテーション）を入れる（前半のテンプレートから写す）。
   // お名前・会社名・カテゴリーは差し込み口 {{メインプレゼン1氏名}} など、写真はあとのお2人の写真の処理で入る
   var mainPage = o.mainPageSource ? insertMainPresenPage_(parts, o.mainPageSource)
@@ -1242,8 +1531,16 @@ function editMeetingSlides_(parts, map, rules, o) {
     { prefix: '推薦のことば',   names: reco ? null : o.recommenders },
     { prefix: '抽選',           names: o.lottery }
   ];
+  // ディレクター：会社名・カテゴリーが画面から来なければ、その方のページの文字で埋める
+  map = twoPersonDirectorValues_(map || {}, TWO, directors);
+  // お2人のページの会社名は、名簿の書き方にそろえてから測り、同じ文字を入れる（後半の1枚目のメインプレゼンのページも）
+  map = twoPersonCompanies_(map, TWO.map(function (t) { return t.prefix; }));
+  // ディレクターの写真は、名簿の写真より先に、その方のページの写真を使う
+  var guestPhotoOf = function (name) { return twoPersonGuestPhoto_(parts, directors[normName_(name)]); };
   for (var w = 0; w < TWO.length; w++) {
-    var ph = applyTwoPersonPhotos_(parts, TWO[w].prefix, TWO[w].names || [], photoCache);
+    // メインプレゼン・抽選は1人の週がある（もう1人の欄を消し、まん中に置く）。推薦のことばはいつも2人
+    var ph = applyTwoPersonPhotos_(parts, TWO[w].prefix, TWO[w].names || [], photoCache,
+                                   { single: TWO[w].prefix !== RECO_PREFIX_, photoOf: guestPhotoOf });
     if (ph && ph.message) photoMsgs.push(ph.message);
     fitTwoPersonPage_(parts, TWO[w].prefix, map);      // 長いお名前・会社名が下の段に重ならないように
   }
@@ -1346,6 +1643,12 @@ function generateMeetingSlides(kind, values, meetingDateVal, opts) {
         o.mainPageNote = '後半の1枚目にメインプレゼンのページを入れられませんでした（前半のテンプレートを開けません: '
           + (e && e.message ? e.message : e) + '）。';
       }
+    }
+    // 後半で、1枚目のページは入れずに抽選だけにディレクター（名簿に無い方）を選んだときも、
+    // その方の写真・会社名・カテゴリーは前半のテンプレートのその方のページから入れる（前半のテンプレートを開いておく）
+    if (kind === 'meetingSecond' && !o.mainPageSource && twoPersonNonMembers_(o.lottery, o).length) {
+      try { o.guestSource = bigTemplateParts_('meetingFirst'); }
+      catch (e) { console.warn('[MEETING] 前半のテンプレートを開けません（抽選のディレクターの写真）: ' + (e && e.message ? e.message : e)); }
     }
 
     var r = editPptxOnServer_(kind, outName, function (parts) {

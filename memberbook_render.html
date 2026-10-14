@@ -7,6 +7,7 @@
 //   2ページ目以降 … メンバーのカードを3列×6行（ページいっぱい。罫線で区切る）
 // 文字の大きさ・位置は、そのPDFから測った値（pt）。長い文字は、書体を読み込んだあとに枠に収まるまで小さくする
 // （まず1行のまま小さく、それでも入らない欄は2行にしてさらに小さく）。はみ出したり、ほかの文字に重なったりしない。
+// 会社名を2行にするときの切れ目は、スライドなどと同じ決め方（company_break.js の CB_。編集画面で include する）。
 // 写真は配布先に閲覧権限がなくても出るよう、実体(base64)を埋め込む（画面のプレビューはサムネイル）。
 
 function mbEsc(x){ var d=document.createElement('span'); d.textContent = x==null?'':x; return d.innerHTML; }
@@ -49,6 +50,8 @@ function mbBookCss(){
   +'.fit{overflow:hidden;display:flex;align-items:center;justify-content:center;text-align:center;line-height:1.2;}'
   +'.fit>span{display:inline-block;white-space:nowrap;}'
   +'.fit.wrap>span{white-space:normal;text-wrap:balance;}'
+  /* 切れ目を決めて2行にした欄（会社名。<br> で分けてある）は、ブラウザに折らせない */
+  +'.fit.wrap.lines>span{white-space:nowrap;}'
   +'.abs{position:absolute;}'
 
   /* --- 表紙（位置は配布版PDFの pt）--- */
@@ -106,6 +109,8 @@ function mbBookCss(){
   +'.c .mid.low{top:34.8pt;height:30.2pt;}'
   /* 業種・会社名が1行に入らないときは2行（行の間を詰める）*/
   +'.c .cat.wrap,.c .co.wrap{line-height:1.08;}'
+  /* 会社名をブラウザに折らせるとき（決めた切れ目ではどれも入らないとても長い名前）も、ー・小さいかなで行を始めない */
+  +'.c .co.wrap>span{line-break:strict;}'
   +'.c .bn>span{background:'+MB_RED+';color:#fff;border-radius:1.5pt;padding:0 2.5pt;line-height:1.35;}'
   +'.c .nm{height:19pt;letter-spacing:.02em;}'
   +'.c .cm{position:absolute;left:6pt;right:6pt;top:67pt;height:20.5pt;}'
@@ -170,6 +175,17 @@ function mbCoverHtml(cv, presidentPhoto, usedCats){
  +'</div>';
 }
 
+// 会社名の欄。名簿の書き方にそろえ（セルの中の改行を外す・㈱を開くなど）、2行にするときの切れ目の候補（良い順に3つまで）を
+// 文字（span）の data-l2 に持たせる。候補は company_break.js（CB_）の決め方なので、スライドなどと同じ会社は同じ切れ目になる。
+// 以前はブラウザに折らせていたため「株式会社見本コン／サルティング」のように語の途中で折れ、ほかの出力とも切れ目が違った。
+// 候補を属性に入れておくのは、冊子のHTML（配布用・印刷）の中の mbFitAll が、CB_ の無いところでも同じ切れ目で収められるように
+//（CB_ が読めていない画面では、以前と同じくブラウザに折らせる）
+function mbCompanyBox(company){
+ var cb = typeof CB_ !== 'undefined' ? CB_ : null, s = cb ? cb.normalize(company) : company;
+ var box = mbFitBox(mbEsc(s), 'co', 7, 4.5, 3.8), opts = cb && s ? cb.twoLineOptions(s, 3) : [];
+ return opts.length ? box.replace('<span>', '<span data-l2="'+mbEsc(JSON.stringify(opts)).replace(/"/g, '&quot;')+'">') : box;
+}
+
 // メンバーカード1枚。idx … 画面のプレビューで押したときに開く方（印刷では付けない）
 function mbCardHtml(m, no, photo, idx){
  var c = catOf(m.cat), bg = (c && c.bg) ? c.bg : '#E7E6E6';
@@ -178,7 +194,7 @@ function mbCardHtml(m, no, photo, idx){
   +(photo ? '<img class="ph" src="'+photo+'">' : '')
   +'<div class="no">'+mbEsc(no)+'</div>'
   +mbFitBox(mbEsc(m.title), 'cat', 7, 4.5, 3.8)
-  +mbFitBox(mbEsc(m.company), 'co', 7, 4.5, 3.8)
+  +mbCompanyBox(m.company)
   +'<div class="mid'+(m.position && m.role ? ' full' : '')+'">'
     +(m.position ? mbFitBox(mbEsc(m.position), 'ps', 7, 4.25, 0, MB_NO_AVOID) : '')
     +(m.role ? mbFitBox(mbEsc(m.role), 'bn', 6, 3.8, 0, MB_NO_AVOID).replace(' data-avoid=', m.position ? ' data-avoid=' : ' data-lower="1" data-avoid=') : '')
@@ -197,16 +213,37 @@ function mbCardHtml(m, no, photo, idx){
 //   data-avoid … 左からこの幅（pt）には文字を置かない（会社での役職・BNIの役職の行は、左上の番号の四角にかかる）。
 //                真ん中に置いて四角に重なるときだけ、四角の右に寄せて収め直す
 //   data-lower … （BNIの役職だけの方）四角の右に入らなければ、お名前ごと四角の下に下げる（親の .mid に low）
+//   文字の data-l2 … （会社名）2行にするときの切れ目の候補 [[1行目, 2行目], …]（良い順。mbCompanyBox）。
+//                    1行のまま小さくしても入らなければ、候補を順に data-min〜data-min2 の大きさで試し、入った最初のものにする
+//                    （語の途中で折るより、良い切れ目で少し小さくする）。どれも入らなければ、ブラウザに折らせる。
+//                    この関数は CB_ の無い冊子のHTMLでも動くよう、候補は属性から読む。1行の文字は data-l1 に控えて、呼ぶたびに戻す
 function mbFitAll(doc){
   var q = function(sel){ return Array.prototype.slice.call(doc.querySelectorAll(sel)); };
   var fit = function(el, t){
     var max = parseFloat(el.getAttribute('data-max')), min = parseFloat(el.getAttribute('data-min'));
     var min2 = parseFloat(el.getAttribute('data-min2') || '0'), cs = doc.defaultView.getComputedStyle(el);
-    var W = el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight), H = el.clientHeight, s;
-    el.classList.remove('wrap'); t.style.maxWidth = '';
+    var W = el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight), H = el.clientHeight, s, k, opts = null;
+    el.classList.remove('wrap'); el.classList.remove('lines'); t.style.maxWidth = '';
+    if(t.hasAttribute('data-l2')){
+      if(!t.hasAttribute('data-l1')) t.setAttribute('data-l1', t.textContent);
+      t.textContent = t.getAttribute('data-l1');
+      try{ opts = JSON.parse(t.getAttribute('data-l2')); }catch(e){ opts = null; }
+    }
     for(s = max; s >= min - 0.001; s -= 0.25){
       el.style.fontSize = s + 'pt';
       if(t.offsetWidth <= W + 0.5 && t.offsetHeight <= H + 0.5) return true;
+    }
+    if(min2 && opts && opts.length){
+      el.classList.add('wrap'); el.classList.add('lines');
+      for(k = 0; k < opts.length; k++){
+        t.textContent = '';
+        t.appendChild(doc.createTextNode(opts[k][0])); t.appendChild(doc.createElement('br')); t.appendChild(doc.createTextNode(opts[k][1]));
+        for(s = min; s >= min2 - 0.001; s -= 0.25){
+          el.style.fontSize = s + 'pt';
+          if(t.offsetWidth <= W + 0.5 && t.offsetHeight <= H + 0.5) return true;
+        }
+      }
+      el.classList.remove('lines'); t.textContent = t.getAttribute('data-l1');
     }
     if(min2){
       el.classList.add('wrap'); t.style.maxWidth = W + 'px';

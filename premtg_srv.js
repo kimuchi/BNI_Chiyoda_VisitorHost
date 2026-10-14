@@ -217,7 +217,7 @@ function premtgData_(target) {
 
   // 新入会の方（熱烈歓迎のページを作る。welcome_srv.js）
   var newText = sheet(/^新入会$/, null, '');
-  out.newMembers = welcomeMembers_(newText);
+  out.newMembers = welcomeMembers_(newText, target);
   if (routineUnread_(newText, out.newMembers)) out.newMembersUnread = newText.replace(/\n+/g, '　');
   // 割り振り表（ビジターホストコーディネーターのページのあと）
   out.allocation = premtgAllocation_(target);
@@ -297,10 +297,11 @@ function premtgAllocation_(target) {
 }
 
 // 列の幅（pt。合わせて 910pt）・寄せ方・見出しの色（割り振り表のシートと同じ色）。知らない見出しは幅を分け合う
+// （入会確度の列が無い、前の版の割り振り表のときは、残りの列で 910pt に広げる）
 var PREMTG_ALLOC_COLS_ = {
-  'No.': { w: 52, algn: 'ctr' }, 'お名前': { w: 100, algn: 'l' }, 'カテゴリー': { w: 150, algn: 'l' }, '招待者': { w: 96, algn: 'l' },
-  'つなげたいメンバー': { w: 128, algn: 'ctr' }, 'ファシリテーター': { w: 112, algn: 'ctr', fill: 'FFF2CC' },
-  'ルームメンバー': { w: 128, algn: 'ctr', fill: 'E6F2FF' }, 'オリエンテーション': { w: 144, algn: 'ctr', fill: 'D9EAD3' }
+  'No.': { w: 52, algn: 'ctr' }, 'お名前': { w: 100, algn: 'l' }, 'カテゴリー': { w: 132, algn: 'l' }, '入会確度': { w: 60, algn: 'ctr' },
+  '招待者': { w: 90, algn: 'l' }, 'つなげたいメンバー': { w: 118, algn: 'ctr' }, 'ファシリテーター': { w: 106, algn: 'ctr', fill: 'FFF2CC' },
+  'ルームメンバー': { w: 120, algn: 'ctr', fill: 'E6F2FF' }, 'オリエンテーション': { w: 132, algn: 'ctr', fill: 'D9EAD3' }
 };
 var PREMTG_ALLOC_HEAD_FILL_ = 'F3F3F3', PREMTG_ALLOC_PAD_PT_ = 3.6, PREMTG_ALLOC_LINE_ = 1.5;
 function premtgAllocCols_(heads, totalPt) {
@@ -650,6 +651,25 @@ function premtgFitLine_(xml, id, minPt) {
   return premtgSetSize_(xml, id, Math.max(minPt, Math.floor(m.widthPt * 0.95 / em * 2) / 2));
 }
 
+// 会社名の枠（熱烈歓迎の {{会社名}}）：会社名だけの段落を、会社名の改行の決め方（company_break.js の CB_）で入れる。
+// いつもの1行のまま、枠の内側（左右の余白を引いた幅）に入る大きさまで小さくする（minPt まで。見積もりは CB_.lineWidthPt で、
+// PowerPoint が勝手に折り返さない）。minPt でも1行に入らないときだけ、元の大きさの半分（minPt より小さくはしない）から
+// minPt までの大きさで、自然な切れ目の2行にする（2行目は同じ段落の中の改行 <a:br>。半分の字の2行は元の1行とほぼ同じ高さ
+// なので、枠からはみ出さない）。会社名が、ほかの字と同じ段落にあるひな形は、これまでどおり枠ごと1行に収める（premtgFitLine_）
+function premtgFitCompany_(xml, id, company, minPt) {
+  var r = id ? findShapeRange_(xml, id) : null, m = r ? premtgBoxMetrics_(xml, id) : null, text = String(company || '').trim();
+  if (!m || !text) return premtgFitLine_(xml, id, minPt);
+  var seg = xml.substring(r.start, r.end), ps = findTagRanges_(seg, 'a:p'), done = 0;
+  for (var i = ps.length - 1; i >= 0; i--) {
+    var p = seg.substring(ps[i].start, ps[i].end), pt = slideText_(p).trim() === text ? riParaPt_(seg, p) : 0;
+    if (!pt) continue;
+    var lay = riCompanyOneLine_(text, m.widthPt, pt, minPt, pt / 2);
+    seg = seg.substring(0, ps[i].start) + riParaLines_(p, lay.lines, lay.pt, pt) + seg.substring(ps[i].end);
+    done++;
+  }
+  return done ? xml.substring(0, r.start) + seg + xml.substring(r.end) : premtgFitLine_(xml, id, minPt);
+}
+
 // 枠の高さに収まる大きさにする（共有事項など）。収まらなければ下限の大きさ
 function premtgFitBody_(xml, id, minPt) {
   var m = id ? premtgBoxMetrics_(xml, id) : null;
@@ -959,6 +979,7 @@ function getPreMeetingPreview(dateStr) {
     // 熱烈歓迎のページ（新入会の方ごと）と、そのひな形
     var welcome = data.newMembers.map(function (m) {
       return { name: m.name, raw: m.raw, company: m.company, category: m.category, matched: m.matched, byCategory: !!m.byCategory,
+               byDate: !!m.byDate, candidates: m.candidates || [], oldNamesakes: m.oldNamesakes || [],
                photo: !!findPhotoIdForName_(m.name) };
     });
     var wtpl = data.newMembers.length ? welcomeTemplateInfo_() : null, wchk = null;
@@ -1011,6 +1032,17 @@ function generatePreMeetingSlides(dateStr) {
     if (welcomeErr) msg += '\n熱烈歓迎のひな形を開けませんでした: ' + welcomeErr;
     if (data.newMembersUnread) msg += '\n熱烈歓迎のページ: ルーティンチェックシートの「新入会」の欄（' + data.newMembersUnread
       + '）からお名前を読み取れなかったので、作っていません。お名前（漢字かふりがな）を「、」で区切って書き直すと入ります。';
+    var byDate = data.newMembers.filter(function (m) { return m.byDate; });
+    if (byDate.length) msg += '\n熱烈歓迎のページ: ' + byDate.map(function (m) { return '「' + m.raw + '」→ ' + m.name + 'さん'; }).join('、')
+      + ' は、同じ名字の方が名簿にいるので、入会日から新しく入会した方にしました。違うときは「新入会」の欄をフルネームで書いてください。';
+    var amb = data.newMembers.filter(function (m) { return (m.candidates || []).length; });
+    if (amb.length) msg += '\n熱烈歓迎のページ: ' + amb.map(function (m) { return '「' + m.raw + '」（' + m.candidates.join('・') + '）'; }).join('、')
+      + ' は、同じ名字の方が名簿に2人以上いて決められなかったので、書いてあったお名前のまま作りました。'
+      + '「新入会」の欄をフルネームで書くか、名簿の入会日を確かめて作り直してください。';
+    var oldS = data.newMembers.filter(function (m) { return !(m.candidates || []).length && (m.oldNamesakes || []).length; });
+    if (oldS.length) msg += '\n熱烈歓迎のページ: ' + oldS.map(function (m) { return '「' + m.raw + '」（' + m.oldNamesakes.join('・') + '）'; }).join('、')
+      + ' は、名簿の同じ名字の方が前からのメンバー（新入会に上がらない方）なので、名簿にまだ無い方として、書いてあったお名前で作りました。'
+      + '名簿に新しい方を入れてから作り直すと、会社名・写真も入ります。';
     var byCat = data.newMembers.filter(function (m) { return m.byCategory; });
     if (byCat.length) msg += '\n熱烈歓迎のページ: ' + byCat.map(function (m) { return '「' + m.raw + '」→ ' + m.name + 'さん'; }).join('、')
       + ' は、カテゴリーで名簿の方に合わせました。違うときは、「新入会」の欄のお名前を漢字で書くか、名簿のふりがなを確かめて作り直してください。';

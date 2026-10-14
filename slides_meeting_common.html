@@ -138,19 +138,99 @@
  }
 
  function memberOf(name){ return ((ctx&&ctx.members)||[]).filter(function(x){return x.name===name;})[0]||{}; }
- function memberOptions(){
+ // withGuests … メインプレゼン①②・抽選の欄。名簿の方のあとに、アンバサダー・ディレクターも並べる
+ // （ディレクターがメインプレゼンを担当する週がある）。（なし）は1人の週に選ぶ
+ function memberOptions(withGuests){
    var mh='<option value="">（なし）</option>';
    ((ctx&&ctx.members)||[]).forEach(function(m){ mh+='<option value="'+esc(m.name)+'">'+esc(m.name)+'</option>'; });
+   if(withGuests && guests && guests.length){
+     mh+='<optgroup label="アンバサダー・ディレクター">';
+     guests.forEach(function(g){ mh+='<option value="'+esc(g.name)+'">'+esc(g.name)+(g.role?'（'+esc(g.role)+'）':'')+'</option>'; });
+     mh+='</optgroup>';
+   }
    return mh;
  }
- // 左右にお2人が並ぶページ（氏名・会社名・カテゴリーは名簿から引く）
+ // 欄の選択肢を入れ直す（アンバサダー・ディレクターの一覧が届いたとき）。選んである方はそのまま
+ function presenterOptions(ids){
+   var mh=memberOptions(true);
+   ids.forEach(function(id){ var e=document.getElementById(id); if(!e) return; var v=e.value; e.innerHTML=mh; e.value=v; });
+ }
+ // 左右にお2人が並ぶページ（氏名・会社名・カテゴリーは名簿から引く）。
+ // アンバサダー・ディレクターは、前半テンプレートのその方のページから（会社名の枠・カテゴリーの枠の文字。
+ // カテゴリーの枠には「BNI東京千代田リージョン」のようにリージョンの名前が入っている）
  function twoPersonValues(m, prefix, idPrefix){
    [1,2].forEach(function(n){
-     var name=get(idPrefix+n), who=memberOf(name), title=flatCell(who.title);
+     var name=get(idPrefix+n), g=guestOf(name);
      m[prefix+n+'氏名']=name;
+     if(g){
+       m[prefix+n+'会社名']=CB_.normalize(g.company||'');
+       m[prefix+n+'カテゴリー']=roleInBrackets(g.role);
+       return;
+     }
+     var who=memberOf(name), title=flatCell(who.title);
      m[prefix+n+'会社名']=flatCell(who.company);
      m[prefix+n+'カテゴリー']=title?('【'+title+'】'):'';
    });
+ }
+ function roleInBrackets(role){ var r=flatCell(role); return !r ? '' : (/^【[\s\S]*】$/.test(r) ? r : '【'+r+'】'); }
+
+ // --- アンバサダー・ディレクター（前半テンプレートのその方のページ。getWeeklyGuests）---
+ // guests … [{ name, role（カテゴリーの枠の文字）, company, hasPhoto, hidden, intro }]（届くまでは null）
+ var guests=null;
+ function nameKey(s){ return String(s||'').normalize('NFKC').replace(/[\s　]/g,''); }
+ // 名簿の方でない、アンバサダー・ディレクターのその方（欄で選んだ氏名から）
+ function guestOf(name){
+   if(!name || memberOf(name).name) return null;
+   return (guests||[]).filter(function(g){ return g.name===name; })[0]||null;
+ }
+ // ルーティンチェックシートの書き方（「空想ED」の役職を外した「空想」、または氏名）に当たる方。サーバーの guestByName_ と同じ決め方：
+ // 氏名がそのまま同じ方 → 名字（氏名の頭）が同じ方が1人だけ のとき。当たらなければ null
+ function guestByText(text){
+   var t=nameKey(String(text||'').replace(/(さん|様)$/,''));
+   if(!t || !guests) return null;
+   var same=guests.filter(function(g){ return nameKey(g.name)===t; });
+   if(same.length) return same[0];
+   var head=guests.filter(function(g){ return nameKey(g.name).indexOf(t)===0; });
+   return head.length===1 ? head[0] : null;
+ }
+
+ // --- メインプレゼン①②をルーティンチェックシートから（R.mainPresenters。routine_srv.js の routineMainPresenters_）---
+ // [{ raw, name, matched, kind: 'member'|'director', guest }]（2人まで。「②なし」は入っていない＝1人の週）。
+ //   メンバー … 名簿の氏名。ディレクター … アンバサダー・ディレクターのページの方（guest＝役職を外した呼び名で探す）
+ // → { names: [①, ②], members: [メンバーの方], directors: [入れたディレクター], unknown: [名簿に無い書き方],
+ //     missingDir: [ページの見つからないディレクター], waiting: 一覧がまだ届いていないディレクターがいるか, count: 人数 }
+ function mainPresenterPlan(mp){
+   var p={ names:['',''], members:[], directors:[], unknown:[], missingDir:[], waiting:false, count:0 };
+   (mp||[]).slice(0,2).forEach(function(x,i){
+     p.count++;
+     if(x.kind==='director'){
+       var g=guestByText(x.guest||x.raw) || guestByText(x.raw);
+       if(g){ p.names[i]=g.name; p.directors.push(g.name); }
+       else if(!guests) p.waiting=true;
+       else p.missingDir.push(x.raw);
+       return;
+     }
+     p.names[i]=x.name||'';
+     if(x.name) p.members.push(x.name);
+     else if(x.raw) p.unknown.push(x.raw);
+   });
+   return p;
+ }
+ // メインプレゼンの欄の下の知らせ（1人の週・ディレクターの週は、落ち着いた知らせ。合わない書き方だけ色を付ける）
+ function mainPresenterNote(R, p){
+   var raw=R.mainPresentersRaw||'';
+   if(p.unknown.length || p.missingDir.length){
+     var t=[];
+     if(p.unknown.length) t.push(esc(p.unknown.join('・'))+' は名簿の氏名と一致しませんでした');
+     if(p.missingDir.length) t.push(esc(p.missingDir.join('・'))+' は、前半テンプレートのアンバサダー・ディレクターのページに見つかりませんでした');
+     return '<span style="color:#c60;">ルーティンチェックシートの「'+esc(raw)+'」から、'+t.join('。')+'。手で選んでください。</span>';
+   }
+   if(!raw) return '';
+   var s='記載：'+esc(raw);
+   if(p.count===1) s+='（1人の週です。②は（なし）にしました）';
+   if(p.directors.length) s+='<br>ディレクター：'+esc(p.directors.join('さん・'))+'さん（会社名・カテゴリー・写真は、前半テンプレートのその方のページから入れます）';
+   if(p.waiting) s+='<br>ディレクターの方は、アンバサダー・ディレクターのページを読み込んでから入れます。';
+   return s;
  }
  // 名簿のセルの中の改行を外す（英数字のあいだだけ空白に）。改行が残ると、ページの行が増えて下の段に重なる
  function flatCell(s){

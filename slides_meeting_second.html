@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html><head><base target="_top">
 <?!= include('slides_meeting_common') ?>
+<?!= include('company_break') ?>
 <?!= include('slides_layout') ?>
 </head>
 <body>
@@ -51,7 +52,9 @@
      <div class="row" style="margin-top:4px;">メインプレゼン：<select id="mp1"></select>　<select id="mp2"></select></div>
      <div id="mpNote" style="font-size:11px;color:#888;"></div>
      <div style="font-size:11px;color:#888;line-height:1.7;">前半のテンプレートのメインプレゼンのページを写して、
-       お名前・会社名・【カテゴリー】・写真を入れます（前半のテンプレートを登録してあるとき）。</div>
+       お名前・会社名・【カテゴリー】・写真を入れます（前半のテンプレートを登録してあるとき）。
+       1人の週は、もう1人を<b>（なし）</b>にすると、その方をページのまん中に置きます。
+       ディレクターは<b>「アンバサダー・ディレクター」</b>から選びます（会社名・カテゴリー・写真は前半テンプレートのその方のページから）。</div>
    </div>
    <h5 style="margin:0 0 4px;font-size:12px;color:#555;">推薦のことば（定例会中）… 推薦のことばのページの場所に、組の数だけ並べます</h5>
    <div id="recoDuring"></div>
@@ -70,7 +73,8 @@
    <div class="mk">
      <h5>抽選コーナー</h5>
      <select id="lt1"></select>　<select id="lt2"></select>
-     <div style="font-size:11px;color:#888;">通常はメインプレゼンのお2人と同じです</div>
+     <div id="ltNote" style="font-size:11px;color:#888;"></div>
+     <div style="font-size:11px;color:#888;">通常はメインプレゼンのメンバーの方と同じです（ディレクターは入れません。1人のときは②を（なし）に）</div>
    </div>
  </div>
 
@@ -119,7 +123,7 @@
    ctx=c;
    if(c.seconds && c.seconds.referral) document.getElementById('rfSec').value=c.seconds.referral;
    initMeetings(c);
-   var mh=memberOptions();
+   var mh=memberOptions(true);                       // アンバサダー・ディレクターは、一覧が届いたら足す（loadGuests）
    ['lt1','lt2','mp1','mp2'].forEach(function(id){ document.getElementById(id).innerHTML=mh; });
    renderPairs();
    applyRoutine(c.routine);
@@ -130,6 +134,7 @@
    }
    if(templateWarn('meetingSecond','定例会スライド（後半）')) loadTemplate();
    else document.getElementById('audio').innerHTML='';
+   if(c.templates && c.templates.meetingFirst) loadGuests();
    renderReferral();
    refreshGen();
  }
@@ -194,13 +199,12 @@
      // その日の列が無い：前に選んでいた開催日の推薦のことば・抽選を残さない
      pairs={ during:[{ g:'', r:'' }], after:[] }; renderPairs();
      val('lt1',''); val('lt2',''); val('mp1',''); val('mp2',''); document.getElementById('rcNote').innerHTML='';
-     document.getElementById('mpNote').innerHTML='';
+     document.getElementById('mpNote').innerHTML=''; document.getElementById('ltNote').innerHTML=''; mpAuto=null;
      note.innerText = ((R&&R.message) ? R.message : 'ルーティンチェックシートに該当する開催日が見つかりません。')
        + '（メインプレゼン・推薦のことば・抽選の欄は空にしました。手で入れてください）';
      note.style.color='#c60'; return;
    }
    if(R.meetingNo) val('no', R.meetingNo);
-   var mp=R.mainPresenters||[];
    // 推薦のことば（推薦する人 → 推薦される人）。定例会中とアフター・定例会後に分けて入れる
    var rs=R.recommendations||[];
    var pick=function(when){ return rs.filter(function(x){ return x.when===when; })
@@ -209,16 +213,9 @@
    if(!pairs.during.length) pairs.during.push({ g:'', r:'' });
    renderPairs();
    recoLoadSaved();                                  // 置いてある受け取ったスライドを、同じ組に付ける
-   // 1枚目のメインプレゼンのページ・抽選コーナー（通常はメインプレゼンと同じ）
-   ['mp','lt'].forEach(function(id){
-     document.getElementById(id+'1').value = (mp[0] && mp[0].name) || '';
-     document.getElementById(id+'2').value = (mp[1] && mp[1].name) || '';
-   });
-   var mpUn=mp.filter(function(x){ return x.raw && !x.name; });
-   document.getElementById('mpNote').innerHTML = mpUn.length
-     ? '<span style="color:#c60;">「'+esc(R.mainPresentersRaw)+'」から、'+esc(mpUn.map(function(x){return x.raw;}).join('・'))
-       +' は名簿の氏名と一致しませんでした。手で選んでください。</span>'
-     : (R.mainPresentersRaw ? '記載：'+esc(R.mainPresentersRaw) : '');
+   // 1枚目のメインプレゼンのページ（ディレクターも）・抽選コーナー（メインプレゼンのメンバーの方だけ）
+   mpAuto={ routine:R };
+   mpFill(mpAuto, false);
    var notes=[];
    if(R.recommendationsRaw) notes.push('記載：'+esc(String(R.recommendationsRaw).replace(/\n+/g,' ／ ')));
    var un=[];
@@ -236,6 +233,33 @@
    loadFrom('lists','更新状況','computeRenewalLists',[d],function(L){
      if(L.ok){ applyLists(L); show('開催日にあわせて更新しました。',true); }
      else show(L.message,false);
+   });
+ }
+
+ // --- 1枚目のメインプレゼン・抽選コーナーを、ルーティンチェックシートの「メインプレゼン」から ---
+ // メインプレゼン … 1人の週は②を（なし）、ディレクターはアンバサダー・ディレクターのその方（前半テンプレートのページ）。
+ // 抽選 … メインプレゼンのうちメンバーの方だけ（ディレクターは入れない。入れるときは選ぶ）。1人なら①だけ。
+ // mpAuto … 入れたもとの記載 { routine: R }。アンバサダー・ディレクターの一覧があとから届いたら、ディレクターの欄を入れ直す
+ // （keep … 選んである欄はそのまま。抽選はメンバーだけなので入れ直さない）
+ var mpAuto=null;
+ function mpFill(a, keep){
+   var p=mainPresenterPlan(a.routine.mainPresenters);
+   ['mp1','mp2'].forEach(function(id,i){ if(!keep || (!get(id) && p.names[i])) val(id, p.names[i]); });
+   if(!keep){ val('lt1', p.members[0]||''); val('lt2', p.members[1]||''); }
+   document.getElementById('mpNote').innerHTML=mainPresenterNote(a.routine, p);
+   document.getElementById('ltNote').innerHTML = !p.count ? ''
+     : p.directors.length || p.waiting || p.missingDir.length
+       ? 'メインプレゼンのうち、メンバーの方'+(p.members.length ? '（'+esc(p.members.join('さん・'))+'さん）' : '')+'だけにしました'
+         +(p.members.length ? '' : '（メンバーの方がいないので空です）')+'。ディレクターは入れていません。'
+       : (p.members.length===1 ? '1人です（②は（なし））。' : '');
+ }
+ // 前半テンプレートのアンバサダー・ディレクター（メインプレゼン・抽選の欄で選べるように）
+ function loadGuests(){
+   loadFrom('guests','前半テンプレート（アンバサダー・ディレクターのページ）','getWeeklyGuests',[],function(r){
+     if(!r || !r.ok) return;                         // 読めなければ、名簿の方だけ（ディレクターは選べない）
+     guests=r.guests||[];
+     presenterOptions(['mp1','mp2','lt1','lt2']);
+     if(mpAuto) mpFill(mpAuto, true);
    });
  }
 
@@ -290,9 +314,11 @@
  }
  function addPair(w){ syncPairs(); pairs[w].push({ g:'', r:'' }); renderPairs(); }
  function delPair(w,i){ syncPairs(); pairs[w].splice(i,1); renderPairs(); }
+ // 会社名は CB_.normalize で名簿の書き方をそろえて渡す（セルの中の改行を外す・㈱を開く・空白をまとめる）。
+ // メンバーのページ・リファーラル発表（layoutCompany）と同じ文字にするため。1行に収めるのはサーバー
  function personValue(name){
    var who=memberOf(name);
-   return { name:name||'', company:who.company||'', category:who.title?('【'+who.title+'】'):'' };
+   return { name:name||'', company:CB_.normalize(who.company||''), category:who.title?('【'+who.title+'】'):'' };
  }
  // 作成に渡す組（2人とも空の組は入れない）。受け取ったスライドはドライブのファイルのIDで渡す
  function collectPairs(){

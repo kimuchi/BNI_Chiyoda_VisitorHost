@@ -33,14 +33,14 @@ run "ビジターリスト・割り振り表のシートとPDF（作った日は
 run "CSVから名簿・PDF作成の画面（ブラウザ：過ぎた回の再編集はその回に書き戻す・Shift_JIS のCSV・リンクで共有できなかったとき）" node tools/check_csv_dialog.js
 run "メールの確認・一括送信の画面（ブラウザ：リンク・キャンセル・記号・二重に送らない・代理送信が動かないとき・返事を受け取れないとき・Web App のテスト）" node tools/check_email_dialog.js
 run "ビジター情報の投稿文" node tools/check_visitor_post.js
-run "割り振り表のAI（待機リストに居ないビジターホスト・知らない番号・確度とメモ）" node tools/check_allocation_ai.js
-run "割り振り表の画面（ブラウザ：読み込んだ回に書き込む・Spreadingの文字を動かさない）" node tools/check_allocation_dialog.js
+run "割り振り表のAI（待機リストに居ないビジターホスト・知らない番号・確度とメモ・入会確度（☆）の順番）" node tools/check_allocation_ai.js
+run "割り振り表の画面（ブラウザ：読み込んだ回に書き込む・Spreadingの文字を動かさない・入会確度（☆）を選ぶ・読み込み直すと戻る・CSVの確度から☆）" node tools/check_allocation_dialog.js
 run "期の替わり目の担当者と名簿の役職（未登録の期で役職を消さない・取り込みを前の期に戻さない・設定の保存で期をずらさない）" node tools/check_role_terms.js
 run "スピーカーローテーション（保存していないとき：見た日で発表者が変わらない）" node tools/check_rotation_unsaved.js
 run "メインプレゼンターの画像（ブラウザ：写真・お名前・ご紹介して欲しいカテゴリー・回を替える・保存・書体は Meiryo UI）" node tools/check_mp_image.js
 run "スピーカーローテーションの画面で定例会を変える（ブラウザ：画面はそのまま・ご案内する回と画像がその日の回に・戻ると選んだ日の書記兼会計の入力・続けて変えたとき）" node tools/check_rotation_meeting.js
 run "事前MTGのパワポの役職のページ（「書記兼会計より」などの行からも作る・入力済みの数え方・XMLに書けない文字）" node tools/check_premtg_roles.js
-run "事前MTGのパワポの割り振り表のページ（ビジターホストコーディネーターのすぐあと・ビジターの表だけ・字を小さく／ページを分ける・割り振り表が無い日）" node tools/check_premtg_allocation.js
+run "事前MTGのパワポの割り振り表のページ（ビジターホストコーディネーターのすぐあと・ビジターの表だけ・字を小さく／ページを分ける・割り振り表が無い日・入会確度の列）" node tools/check_premtg_allocation.js
 run "本日の招待者を参加者シートから（ビジター・ゲストの招待者・代理とキャンセルの方は入れない・トークスクリプト）" node tools/check_inviters.js
 run "事前MTGの熱烈歓迎のページ（新入会の方ごと・まとめのあと・写真・土台の違うひな形はマスターごと写す・pptxとして壊れていない）" node tools/check_welcome.js
 run "ルーティンチェックシートの名前の照合（同じ名字・似た氏名・名簿に無い新メンバー・かなのお名前・カテゴリーの書き方）" node tools/check_routine_names.js
@@ -58,6 +58,13 @@ run "推薦のことばの受け取ったスライド（ブラウザ：pptx・pd
 run "後半の音楽を推薦のことばで止める（前のサウンドを停止・鳴らす枚数を直す・非表示のページは数えない）" node tools/check_music_stop.js
 run "後半の1枚目のメインプレゼンのページ（前半のテンプレートから見た目ごと写す・お名前・会社名・カテゴリー）" node tools/check_second_main_page.js
 run "新メンバー・更新メンバーのページ" node tools/check_member_pages.js
+run "会社名の改行の決め方（法人の種類・空白・語の切れ目で折る・語の途中で折らない・画面とサーバーが同じ計算）" node tools/check_company_break.js
+run "会社名の改行：メンバーのページ・リファーラル発表（どのパソコンでも同じ・両方のページで同じ）" node tools/check_company_lines_client.js
+run "会社名の改行：ビジタープレゼン・2人のページ（メインプレゼン・推薦のことば・抽選）" node tools/check_company_lines_server_slides.js
+run "会社名の改行：新メンバー・ネットワーキングリーダー・役職のメンバー紹介・熱烈歓迎" node tools/check_company_lines_server_pages.js
+run "会社名の改行：メンバーブック・ビジター様リストのPDF" node tools/check_company_lines_html_pdf.js
+run "メインプレゼンの1人の回・ディレクターの回（ローテーション・表・Facebookの文・画像・トークスクリプト）" node tools/check_main_presen_rotation.js
+run "メインプレゼンの1人の週・ディレクターの週のスライド（1人をまん中に・ディレクターの写真とリージョンの名前）" node tools/check_main_presen_slides.js
 run "ウィークリープレゼンの送り方（業種区分の扉ページは1秒で次へ・前半の「保存済みのタイミングを使用」）" node tools/check_weekly_timing.js
 run "ネットワーキングリーダーのページ（見出しをお名前の枠と取り違えない・お2人の部門・まとめのページで該当者のいない部門は見出しも出さない）" node tools/check_networking_leaders.js
 run "役職のメンバー紹介（学習コーナーのお名前の大きさも）" node tools/check_role_intro.js

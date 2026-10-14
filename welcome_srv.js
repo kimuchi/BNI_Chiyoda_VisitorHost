@@ -11,6 +11,8 @@
 //          （図形・文字の大きさも同じ割合で。splice_srv.js の fitSourceToTargetSize_）。
 // 差し込み口 … {{氏名}} {{名字}} {{よみがな}} {{会社名}} {{カテゴリー}} {{チャプター}} {{月日}} {{開催日}} {{開催回}}
 //          文字の「お名前」も {{氏名}} と同じに扱う（画像からひな形を作ったときなど、ふつうの言葉で置けるように）
+//          お名前・カテゴリーは1行に入る大きさに。会社名は会社名の改行の決め方（company_break.js）で、1行に入る大きさ
+//          （12ptまで）に、それでも入らなければ自然な切れ目の2行に（premtg_srv.js の premtgFitCompany_）
 // 写真 … 名前（または代替テキスト）が「写真」「写真1」の画像。無ければ「お写真」（または「写真」）とだけ書いた図形
 //        （その図形の位置・大きさ・形のまま写真の画像にする）。それも無ければ、お名前の文字箱にいちばん近い画像。
 //        メンバー写真（02_メンバー写真）に差し替えて枠に合わせて切り抜く。見つからなければ仮の画像のまま
@@ -67,8 +69,9 @@ function exportWelcomeTemplate() {
 // 新入会の方（ルーティンチェックシートの「新入会」の欄）→ [{ name, raw, matched, company, category, kana, byCategory }]
 // 名簿の方は名簿の会社名・カテゴリー・よみがな。名簿に無い方は、書いてあったお名前とかっこの中（「カテゴリー」のうしろ）のカテゴリー。
 // byCategory … かなで書かれたお名前を、カテゴリーで名簿の方に合わせた（routineRosterKana_）
-function welcomeMembers_(raw) {
-  var list = routineMemberList_(raw), roster = [];
+// date … 開催日（名字だけの書き方で同じ名字の方が2人以上いるとき、入会日で新しいメンバーに決めるため）
+function welcomeMembers_(raw, date) {
+  var list = routineMemberList_(raw, date ? { kind: 'new', date: date } : null), roster = [];
   if (!list.length) return [];
   try { roster = getMemberMaster({ membersOnly: true }).members || []; } catch (e) {}
   var out = [], seen = {};
@@ -81,10 +84,13 @@ function welcomeMembers_(raw) {
     var name = x.name || String(x.raw || '').replace(/[（(].*$/, '').trim().replace(/(さん|様|さま|氏)$/, '').trim();
     if (!name || seen[normName_(name)]) continue;
     seen[normName_(name)] = true;
+    // 会社名は、どの出力でも同じそろえ方（セルの中の改行・㈱ など。company_break.js の CB_.normalize）
     out.push({ name: name, raw: x.raw || '', matched: !!x.name,
-               company: m ? String(m.company || '').trim() : '',
+               company: m && m.company ? CB_.normalize(m.company) : '',
                category: m ? String(m.title || '').trim() : String(x.category || '').trim(),
-               kana: m ? String(m.kana || '').trim() : '', byCategory: !!(x.name && x.byCategory) });
+               kana: m ? String(m.kana || '').trim() : '', byCategory: !!(x.name && x.byCategory),
+               byDate: !!(x.name && x.byDate), candidates: x.name ? [] : (x.candidates || []),
+               oldNamesakes: x.name ? [] : (x.oldNamesakes || []) });
   }
   return out;
 }
@@ -183,7 +189,7 @@ function premtgWelcomePages_(parts, src, members, common, cache, afterPath) {
     var m = members[i], path = imp.slides[i].path;
     var xml = welcomeNameMarks_(xmlOf_(parts, path)), rels = xmlOf_(parts, partRelsPath_(path)) || '';
     var nameId = premtgShapeWith_(xml, '{{氏名}}') || premtgShapeWith_(xml, '{{名字}}');
-    var fitIds = [nameId, premtgShapeWith_(xml, '{{会社名}}'), premtgShapeWith_(xml, '{{カテゴリー}}')];
+    var fitIds = [nameId, premtgShapeWith_(xml, '{{カテゴリー}}')], companyId = premtgShapeWith_(xml, '{{会社名}}');
     var slot = welcomePhotoSlot_(xml, nameId);
     if (slot) {
       var photo = null;
@@ -207,6 +213,9 @@ function premtgWelcomePages_(parts, src, members, common, cache, afterPath) {
     vals['会社名'] = m.company || ''; vals['カテゴリー'] = m.category || '';
     xml = replaceTokensInXml_(xml, vals);
     for (var f = 0; f < fitIds.length; f++) if (fitIds[f]) xml = premtgFitLine_(xml, fitIds[f], 12);   // 1行に収まる大きさに
+    // 会社名は、会社名の改行の決め方で（1行に入る大きさに。12ptでも入らなければ自然な切れ目の2行）。
+    // お名前・カテゴリーと同じ枠のときもあるので、そちらをそろえたあとに
+    if (companyId) xml = premtgFitCompany_(xml, companyId, vals['会社名'], 12);
     putXml_(parts, path, xml);
     putXml_(parts, partRelsPath_(path), rels);
     res.pages.push(m.name);

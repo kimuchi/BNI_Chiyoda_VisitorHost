@@ -48,7 +48,8 @@ const ROUTINE = [
 ];
 const SHEET = '【24期】ルーティンチェックシート';
 
-// ---- 割り振り表（3. ルーム・オリエン割り振り表 で作るシートと同じ並び：saveAllocationSheet）----
+// ---- 割り振り表（前の版の 3. ルーム・オリエン割り振り表 で作ったシートと同じ8列の並び。入会確度の列が無い）----
+// いまの版（入会確度の列あり）は、5) で本物の saveAllocationSheet に作らせて確かめる
 // 12名。ルームメンバーなどは改行で何人も（いただいた画面と同じくらいの量）
 const VIS = Array.from({ length: 12 }, (_, i) => {
   const no = i < 10 ? 'V' + String(i + 1).padStart(2, '0') : '代理' + (20 + i);
@@ -200,10 +201,39 @@ setup(false, '・ビジターは12名の予定です。');
      '3) 画面に「割り振り表がまだありません」が出ない: ' + page.els.premtgOut.innerHTML.replace(/<[^>]+>/g, '').slice(0, 300));
 }
 
+// ===== 5) いまの割り振り表（入会確度の列あり。本物の saveAllocationSheet で作る）：☆の列も入る =====
+setup(false, '・ビジターは3名の予定です。');
+{
+  const visitors = [
+    { no: 'V01', name: '訪問甲 太郎', cat: '見本の業種', inviter: NAMES[0], details: {} },
+    { no: 'V02', name: '訪問乙 花子', cat: '自動車用品の製造・販売（見本の長い業種名）', inviter: '', details: {} },
+    { no: 'G01', name: '訪問丙 次郎', cat: '見本の業種', inviter: NAMES[1], details: {} }];
+  const pool = NAMES.slice(2).map((n, i) => ({ no: String(i + 3), name: n }));
+  F.saveAllocationSheet(DATE, '2026/10/7(水)', visitors, pool, { V01: '3' }, { V01: ['3'], V02: ['4'] }, { V01: ['5'], V02: ['6', '7'] },
+    { V02: '見本の方' }, {}, { V01: 3, V02: 1 });
+  const pv = F.getPreMeetingPreview(DATE);
+  const HEADS9 = ['No.', 'お名前', 'カテゴリー', '入会確度', '招待者', 'つなげたいメンバー', 'ファシリテーター', 'ルームメンバー', 'オリエンテーション'];
+  ck(pv.ok && pv.allocation && pv.allocation.found && pv.allocation.rows === 3 && J(pv.allocation.heads) === J(HEADS9),
+     '5) 作る前の確かめに、入会確度の列が出ない: ' + J(pv.allocation));
+  const res = F.generatePreMeetingSlides(DATE);
+  const d = deck(), kinds = d.text.map(kindOf), ai = kinds.indexOf('割り振り表');
+  const x = ai >= 0 ? d.xml[ai] : '', rows = tableRows(x);
+  ck(res.ok && ai >= 0 && J(rows[0]) === J(HEADS9), '5) 事前MTGの割り振り表のページに、入会確度の列が無い: ' + J(rows[0]));
+  ck(J(rows.slice(1).map((r) => r[3])) === J(['☆☆☆', '☆', '']) && rows[1][6] === NAMES[2] && rows[2][5] === '見本の方',
+     '5) 入会確度の☆・そのあとの列がずれた: ' + J(rows.slice(1)));
+  // 入会確度の列は細く、真ん中寄せ（☆☆☆ が1行に入る）。表はページに収まる
+  const widths = [...(x.match(/<a:tblGrid>([\s\S]*?)<\/a:tblGrid>/) || ['', ''])[1].matchAll(/<a:gridCol w="(\d+)"/g)].map((m) => +m[1]);
+  const fr = x.match(/<p:graphicFrame>[\s\S]*?<p:xfrm><a:off x="(\d+)" y="(\d+)"\/><a:ext cx="(\d+)" cy="(\d+)"\/>/);
+  const cell4 = ([...x.matchAll(/<a:tr\b[^>]*>([\s\S]*?)<\/a:tr>/g)][1] || ['', ''])[1].split('<a:tc>')[4] || '';
+  ck(widths.length === 9 && widths[3] < widths[2] && widths[3] >= 60 * 12700 * 0.9 && /algn="ctr"/.test(cell4),
+     '5) 入会確度の列の幅・寄せ方: ' + J({ widths, cell4: cell4.slice(0, 120) }));
+  ck(fr && +fr[1] + +fr[3] <= d.W && +fr[2] + +fr[4] <= d.H, '5) 表がページからはみ出す');
+}
+
 if (fails.length) {
   console.log('NG ' + fails.length + '件 / ' + checks + '件の検査');
   fails.forEach((f) => console.log('  - ' + f));
   process.exit(1);
 }
 console.log('事前MTGの割り振り表のページ: 検査 ' + checks + ' 件 OK: ビジターホストコーディネーターのページのすぐあと・ビジターの表だけ（集計・メンバー別の表は入れない）・'
-  + '字を小さく／ページを分ける・共有事項が無い日の場所・割り振り表が無い日・部品のつながり');
+  + '字を小さく／ページを分ける・共有事項が無い日の場所・割り振り表が無い日・部品のつながり・入会確度（☆）の列（前の版の8列の割り振り表も）');

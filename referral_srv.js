@@ -95,8 +95,15 @@ function rfBuildSlide_(tplXml, tplRels, item, photo, SH) {
   item = presenterOneLine_(item);             // 名簿の改行などを外す（画面の古い版から来たときも）
   xml = setParagraphsInShape_(xml, SH.nameBox, [item.name || '']);
 
+  // 会社名：画面で決めた行（company_break.js の CB_。メンバーのページと同じ切れ目）を、1行1段落でそのまま入れる。
+  // 枠の高さを画面が行数から出したとき（companyGeom）は、自動調整を切る（雛形に残った縮小の割合で、
+  // 決めた大きさがさらに縮まないように。member_presen_srv.js の個人ページと同じ）。
+  // 枠を渡さない古い画面のときは、雛形の枠の高さのままなので、雛形の自動調整に任せる
   xml = setParagraphsInShape_(xml, SH.company, item.companyLines || ['']);
-  if (item.companyGeom) xml = setShapeGeomEmu_(xml, SH.company, item.companyGeom);
+  if (item.companyGeom) {
+    xml = setShapeGeomEmu_(xml, SH.company, item.companyGeom);
+    xml = noAutofitInShape_(xml, SH.company);
+  }
   if (item.companyPt) xml = setFontSizeInShape_(xml, SH.company, item.companyPt);
 
   if (item.categoryTop) {

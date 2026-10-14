@@ -231,6 +231,8 @@ function talkEnv_(d) {
       });
     },
     rotation: function () { return once('rotation', function () { var r = getSpeakerRotationWeeks(key); return r && r.ok ? r.weeks : null; }); },
+    // アンバサダー・ディレクターのページの方（メインプレゼンにディレクターが書いてあるときだけ読む。speaker_rotation_srv.js）
+    guests: function () { return once('guests', function () { return rotGuestList_(); }) || []; },
     renewal: function () { return once('renewal', function () { var r = computeRenewalLists(key); return r && r.ok ? r : null; }); },
     weekly: function () { return once('weekly', function () { return talkWeeklyStart_(d, env.members()); }); }
   };
@@ -258,8 +260,15 @@ function talkValue_(key, env) {
     case 'メインプレゼン': case 'メインプレゼン1': case 'メインプレゼン2': {
       var ri = env.routine(), ps = ri ? (ri.mainPresenters || []) : [];
       if (ri && !ps.length && ri.mainPresentersRaw && talkIsNone_(ri.mainPresentersRaw)) return { value: 'なし', state: 'none' };
-      var names = ps.map(function (p) { return p.name ? talkShort_(p.name, env.members()) : talkBare_(p.raw); });
+      // ディレクター（「空想ED」など。名簿の方ではない）は、アンバサダー・ディレクターのページの氏名のまま（名字だけにしない）。
+      // 当たらなければ書いたまま（うしろの「さん」は外す。台本の「さん」と重ならないように）
+      var names = ps.map(function (p) {
+        if (p.kind === 'director') return rotDirectorName_(p, env.guests());
+        return p.name ? talkShort_(p.name, env.members()) : talkBare_(p.raw);
+      });
       if (key === 'メインプレゼン') return ok(names.map(function (n) { return n + 'さん'; }).join('・'));
+      // 1人の回（「①見本さん」だけ・「②なし」）は、2人目を「なし」にする（〇〇 で残さず、台本の「さん」も付けない）
+      if (key === 'メインプレゼン2' && names.length === 1) return { value: 'なし', state: 'none' };
       return ok(names[key === 'メインプレゼン1' ? 0 : 1] || '');
     }
     case 'スタートアッププレゼン': case '2分30秒プレゼン': {       // 「2分30秒プレゼン」は前の呼び名
@@ -461,12 +470,15 @@ function talkPrevMeeting_(env, n) {
   return k === n ? (d.getMonth() + 1) + '月' + d.getDate() + '日' : '';
 }
 
-// 今後4回のメインプレゼン（この回の次から）→ 1回1行
+// 今後4回のメインプレゼン（この回の次から）→ 1回1行。
+// 1人の回は1人だけ。ディレクターは氏名のまま（名字だけにしない）＋「さん」。「なし」・空の欄は出さない
 function talkRotation_(env) {
   var weeks = env.rotation();
   if (!weeks) return { value: '', state: 'missing' };
   var ms = env.members(), lines = weeks.slice(1, 5).map(function (w) {
-    return w.md + (w.no ? ' 第' + w.no + '回' : '') + '　' + w.people.map(function (p) { return talkShort_(p.name, ms) + 'さん'; }).join('・');
+    return w.md + (w.no ? ' 第' + w.no + '回' : '') + '　' + rotShownPeople_(w.people).map(function (p) {
+      return p.kind === 'director' ? (rotHonor_(p.name) || 'ディレクター') : talkShort_(p.name, ms) + 'さん';
+    }).join('・');
   });
   return lines.length ? { value: lines.join('\n'), state: 'ok' } : { value: '', state: 'missing' };
 }
@@ -537,7 +549,8 @@ function talkCatalog_() {
     { key: 'ゲストの人数', desc: '数字' }, { key: 'ゲストの一覧', desc: '「〇〇さんご招待の〇〇様」' },
     { key: '代理の人数', desc: '数字' }, { key: '代理の一覧', desc: '「〇〇さんの代理として〇〇様」' }] });
   g.push({ group: 'チェックシート（その回の列）', items: [
-    { key: 'メインプレゼン', desc: '「〇〇さん・〇〇さん」' }, { key: 'メインプレゼン1', desc: '1人目の名字' }, { key: 'メインプレゼン2', desc: '2人目の名字' },
+    { key: 'メインプレゼン', desc: '「〇〇さん・〇〇さん」' }, { key: 'メインプレゼン1', desc: '1人目の名字（ディレクターは氏名）' },
+    { key: 'メインプレゼン2', desc: '2人目の名字（1人の回は「なし」）' },
     { key: 'スタートアッププレゼン', desc: '名字（前の呼び名 {2分30秒プレゼン} でも同じ）' }, { key: 'ウィークリープレゼンの起点', desc: '「22番 〇〇」（ブレイクアウトルームの起点も同じ）' },
     { key: 'ウィークリープレゼンの業種区分', desc: '始まりの業種区分' }, { key: 'コアバリュー', desc: '「BNI目的と概要」のコアバリュー' },
     { key: '推薦のことば', desc: '「〇〇さんから　〇〇さんに　推薦の言葉を…」を1組1行' }, { key: '推薦のことばの件数', desc: '数字' },

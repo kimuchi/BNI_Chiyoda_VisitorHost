@@ -154,6 +154,7 @@ function makeRoleServer(routinePath, membersPath) {
     getMembersList: () => MEMBERS.map((m) => ({ no: m.no, name: m.name })),
     normName_: (s) => String(s == null ? '' : s).normalize('NFKC').replace(/[\s　]/g, ''),
     findPhotoIdForName_: () => '',
+    requireSheetAccess_: () => {},                         // webapp_srv.js（読み込まない）の、編集者かの確かめ
     SYSTEM_VERSION_: 'test',
   };
   sandbox.global = sandbox;
