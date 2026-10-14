@@ -250,6 +250,60 @@ step('メールのひな形', () => {
   ck(t === "Q$&A 太郎 様 / $'見本 / 9/30", '5) メールのひな形の「$」: ' + t);
 });
 
+step('省略結果の画面にダウンロードリンクを出さない', () => {
+  const { loadPage } = require('./lib_minidom');
+  const page = loadPage('slides_visitor.html', { server: {
+    generateAllIntroSlides: () => ({ ok: true, skipped: true, message: '未登録のため省略しました。' }),
+    generateVisitorSlides: () => ({ ok: true, skipped: true, message: '未登録のため省略しました。' })
+  } });
+  page.els.sheet.innerHTML = '<option value="20260930参加者">20260930参加者</option>';
+  page.els.sheet.value = '20260930参加者';
+  page.run("data={visitors:[{name:'見本'}],guests:[],dairi:[]};refresh()");
+  ck(!page.els.bAll.disabled, '共通テンプレートなしでまとめて作成できない');
+  page.run('genAll()');
+  page.flush();
+  ck(/省略/.test(page.els.msg.innerText) && !/href=/.test(page.els.msg.innerHTML),
+    '全体省略時に無効なリンクを表示した');
+  page.run("gen('presen')");
+  page.flush();
+  ck(/省略/.test(page.els.msg.innerText) && !/href=/.test(page.els.msg.innerHTML),
+    '単体省略時に無効なリンクを表示した');
+  ck(page.fails.length === 0, '画面の例外: ' + J(page.fails));
+});
+
+step('未登録のテンプレートは省略して、登録済みの紹介を生成', () => {
+  const props = srv.PropertiesService.getScriptProperties();
+  const introKey = srv.TEMPLATE_KINDS_.intro.prop;
+  const presenKey = srv.TEMPLATE_KINDS_.presen.prop;
+  const introId = props.getProperty(introKey), presenId = props.getProperty(presenKey);
+  try {
+    ck(srv.saveTemplateBase64('guest', b64(makePptx([INTRO])), 'guest.pptx').ok, 'ゲストひな形の登録');
+    ck(srv.saveTemplateBase64('dairi', b64(makePptx([INTRO])), 'dairi.pptx').ok, '代理ひな形の登録');
+    props.deleteProperty(introKey);
+    props.deleteProperty(presenKey);
+    const single = srv.generateVisitorSlides('20260930参加者', 'presen');
+    ck(single.ok && single.skipped && !single.url, '未登録の単体生成がエラーになった: ' + J(single));
+    const res = srv.generateAllIntroSlides('20260930参加者');
+    ck(res.ok && !res.skipped && res.slideCount === 2 && /省略.*ビジター/.test(res.message),
+      'ビジターを省略してゲスト・代理を生成できない: ' + J(res));
+    const o = outputOf(res, 'available-intro');
+    if (o) {
+      ck(o.slides.length === 2 && o.slides.some(s => /ゲスト 客人/.test(s.text))
+        && o.slides.some(s => /代理 太一/.test(s.text)), '登録済みのゲスト・代理が欠けた');
+      ck(!o.slides.some(s => /Q\$&A 太郎/.test(s.text)), '未登録のビジターが生成された');
+    }
+    props.deleteProperty(srv.TEMPLATE_KINDS_.guest.prop);
+    props.deleteProperty(srv.TEMPLATE_KINDS_.dairi.prop);
+    const empty = srv.generateAllIntroSlides('20260930参加者');
+    ck(empty.ok && empty.skipped && empty.slideCount === 0 && !empty.url, '全ひな形未登録時: ' + J(empty));
+    const invalid = srv.generateAllIntroSlides('存在しないシート');
+    ck(!invalid.ok, '存在しないシートのエラーまで省略した');
+  } finally {
+    props.setProperty(introKey, introId);
+    props.setProperty(presenKey, presenId);
+  }
+});
+
 fs.rmSync(TMP, { recursive: true, force: true });
 if (fails.length) {
   console.log('NG ' + fails.length + '件 / ' + checks + '件の検査');

@@ -65,10 +65,11 @@
    var miss=[];
    if(!c.templates.presen) miss.push('ビジタープレゼン');
    if(!c.templates.intro)  miss.push('ビジター紹介');
+   if(!c.templates.guest)  miss.push('ゲスト紹介');
    if(!c.templates.dairi)  miss.push('代理紹介');
    if(miss.length){
      var w=document.getElementById('warn'); w.style.display='block';
-     w.innerHTML='テンプレート未登録：<b>'+miss.join('、')+'</b><br>メニュー「⚙️ PowerPointテンプレートの登録」から .pptx を登録してください。';
+     w.innerHTML='テンプレート未登録：<b>'+miss.join('、')+'</b><br>まとめて作成では、共通のビジター紹介テンプレートが無い場合、登録済みのゲスト・代理紹介だけを生成します。未登録の部分は省略します。';
    }
    if(c.sheets && c.sheets.length) preview();
  }
@@ -105,7 +106,7 @@
    document.getElementById('bGuest').disabled  = working || !ctx.templates.guest  || !(data.guests||[]).length;
    document.getElementById('bDairi').disabled  = working || !ctx.templates.dairi  || !data.dairi.length;
    // まとめて作成はビジター紹介のテンプレート1つで動く（見出しだけ差し替えるため）
-   document.getElementById('bAll').disabled = working || !ctx.templates.intro
+   document.getElementById('bAll').disabled = working
      || !(data.visitors.length + (data.guests||[]).length + data.dairi.length);
  }
  function setBusy(b,t){ working=b; refresh(); if(t) show(t,null); }
@@ -119,6 +120,7 @@
    google.script.run.withSuccessHandler(function(r){
      setBusy(false);
      if(!r.ok){ show(r.message,false); return; }
+     if(r.skipped){ show(r.message,null); return; }
      document.getElementById('msg').innerHTML='<span style="color:green;">'+esc(r.message).replace(/\n/g,'<br>')+'</span><br>'
        +'<a class="dl" href="'+(r.downloadUrl||r.url)+'" target="_blank">⬇ PowerPointをダウンロード</a> '+'<a href="'+r.url+'" target="_blank" style="font-size:12px;color:#666;">ドライブで見る</a>';
    }).withFailureHandler(fail).generateVisitorSlides(s,type);
@@ -131,6 +133,7 @@
    google.script.run.withSuccessHandler(function(r){
      setBusy(false);
      if(!r.ok){ show(r.message,false); return; }
+     if(r.skipped){ show(r.message,null); return; }
      document.getElementById('msg').innerHTML='<span style="color:green;">'+esc(r.message).replace(/\n/g,'<br>')+'</span><br>'
        +'<a class="dl" href="'+(r.downloadUrl||r.url)+'" target="_blank">⬇ PowerPointをダウンロード</a> '+'<a href="'+r.url+'" target="_blank" style="font-size:12px;color:#666;">ドライブで見る</a>';
    }).withFailureHandler(fail).generateAllIntroSlides(s);

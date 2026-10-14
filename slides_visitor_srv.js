@@ -173,7 +173,7 @@ function generateAllIntroSlides(sheetName) {
   try {
     if (!sheetName) return { ok: false, message: 'シートが選択されていません。' };
     var baseBlob = getTemplateBlob_('intro');
-    if (!baseBlob) return { ok: false, message: '「ビジター紹介（3人1枚）」のテンプレートが未登録です。メニュー「⚙️ 設定」＞「PowerPointテンプレート（ビジター用）」から登録してください。' };
+    if (!baseBlob) return generateAvailableIntroSlides_(sheetName);
 
     var parsed = parseParticipantSheet_(sheetName);
     if (!parsed) return { ok: false, message: 'シート「' + sheetName + '」が見つかりません。' };
@@ -210,6 +210,42 @@ function generateAllIntroSlides(sheetName) {
   }
 }
 
+// 共通のビジター紹介ひな形が無いときは、登録済みの節だけをまとめる。
+function generateAvailableIntroSlides_(sheetName) {
+  var parsed = parseParticipantSheet_(sheetName);
+  if (!parsed) return { ok: false, message: 'シート「' + sheetName + '」が見つかりません。' };
+  var parts = null, counts = [], skipped = [], total = 0;
+  var outName = visitorSlideFileName_(sheetName, '紹介スライド・まとめて');
+  for (var i = 0; i < INTRO_SECTIONS_.length; i++) {
+    var sec = INTRO_SECTIONS_[i], list = parsed[sec.key] || [];
+    if (!list.length) continue;
+    var kind = sec.key === 'visitors' ? 'intro' : sec.key === 'guests' ? 'guest' : 'dairi';
+    var tpl = getTemplateBlob_(kind);
+    if (!tpl) { skipped.push(sec.label); continue; }
+    var groups = makeGroups_(list);
+    var src = unzipToMap_(buildPptxFromTemplate_(tpl, groups, buildGroupXml_, outName));
+    if (!parts) parts = src;
+    else {
+      fitSourceToTargetSize_(parts, src);
+      var entries = slideEntries_(parts), order = slideOrder_(src);
+      for (var j = 0; j < order.length; j++) {
+        entries = entries.concat(importSlideCopies_(parts, src, order[j], 1).slides);
+      }
+      setSlideEntries_(parts, entries);
+    }
+    total += groups.length;
+    counts.push(sec.label + ' ' + list.length + '名（' + groups.length + '枚）');
+  }
+  var note = skipped.length ? '\nテンプレートが未登録、または開けないため省略しました: ' + skipped.join('、') + '。' : '';
+  if (!parts) return { ok: true, skipped: true, slideCount: 0,
+    message: '生成できる紹介スライドがないため、ファイルは作成しませんでした。' + note };
+  syncSections_(parts);
+  var saved = saveOutputFile_(zipFromMap_(parts, outName), outName);
+  return { ok: true, url: saved.url, downloadUrl: saved.downloadUrl, fileName: outName, slideCount: total,
+    message: '紹介スライドをまとめて作成しました（' + counts.join(' / ') + '　合計' + total + '枚）。' + note
+      + (parsed.cancelled.length ? '\nSpreadingでキャンセルの方は入れていません: ' + parsed.cancelled.join('、') : '') };
+}
+
 // type: 'presen' | 'intro' | 'guest' | 'dairi'
 function generateVisitorSlides(sheetName, type) {
   try {
@@ -219,7 +255,7 @@ function generateVisitorSlides(sheetName, type) {
     if (!def) return { ok: false, message: 'スライドの種類が不正です。' };
 
     var tplBlob = getTemplateBlob_(type);
-    if (!tplBlob) return { ok: false, message: '「' + def.label + '」のテンプレートが未登録です。メニュー「⚙️ PowerPointテンプレートの登録」から登録してください。' };
+    if (!tplBlob) return { ok: true, skipped: true, slideCount: 0, message: '「' + def.label + '」のテンプレートが未登録、または開けないため、この部分は生成しませんでした。' };
 
     var parsed = parseParticipantSheet_(sheetName);
     if (!parsed) return { ok: false, message: 'シート「' + sheetName + '」が見つかりません。' };
