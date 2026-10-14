@@ -1457,9 +1457,35 @@ function getWeeklyGuestPhotos() {
 function insertMemberPresen_(parts, items) {
   var anchor = weeklyAnchor_(parts);
   if (!anchor) return { message: '前半スライドに「ウィークリープレゼンテーション」の見出しページが見つかりませんでした。' };
-  var file = getBigTemplateFile_(MP_TEMPLATE_KIND_);
-  var src = unzipToMap_(file.getBlob());
+  var file, embeddedSource = null, embeddedModels = [];
+  try { file = getBigTemplateFile_(MP_TEMPLATE_KIND_); }
+  catch (e) {
+    if (String(e && e.message ? e.message : e).indexOf('テンプレートが未登録') < 0) throw e;
+    var ov = mpFindModelSlide_(parts, [MP_OVERVIEW_.title, MP_OVERVIEW_.nextName, MP_OVERVIEW_.photo, MP_OVERVIEW_.table]);
+    var iv = mpFindModelSlide_(parts, [MP_INDIVIDUAL_.photo, MP_INDIVIDUAL_.nameBox, MP_INDIVIDUAL_.company,
+      MP_INDIVIDUAL_.category, MP_INDIVIDUAL_.nextName, MP_INDIVIDUAL_.nextLabel]);
+    if (ov && iv && rfFindModels_(parts, WEEKLY_TITLE_).some(function (m) { return m.path === iv.path; })) {
+      embeddedSource = {};
+      for (var p in parts) embeddedSource[p] = parts[p];
+      embeddedModels = [ov.path, iv.path];
+    } else {
+      var embeddedCache = { by: {}, seq: 0 };
+      var embedded = expandPresenterSlides_(parts, items.filter(function (it) { return it.kind === 'individual'; }),
+        { title: WEEKLY_TITLE_, label: 'メンバープレゼン', seconds: chapterPresenSeconds_().weekly,
+          photoCache: embeddedCache,
+          excludePaths: weeklyGuestPages_(parts).map(function (g) { return g.path; }) });
+      if (embedded) { embedded.gone = embeddedCache.gone || []; embedded.opened = embeddedCache.opened || 0; }
+      if (embedded && embedded.paths && embedded.paths.length) {
+        embedded.message = '定例会テンプレート内のひな形を使いました。' + embedded.message;
+      }
+      return embedded || { message: 'メンバープレゼンのひな形がないため、個人ページを省略しました。' };
+    }
+  }
+  var src = embeddedSource || unzipToMap_(file.getBlob());
   var built = buildMemberPresenSlides_(src, items);
+  if (embeddedModels.length) setSlideEntries_(parts, slideEntries_(parts).filter(function (e) {
+    return embeddedModels.indexOf(e.path) < 0;
+  }));
   var sp = spliceSlides_(parts, src, slideOrder_(src), anchor);
   // auto … 個人ページがカウントダウンのあと自動で次へ進むか。業種区分の扉ページは、いつも1秒で次へ進む
   // （どちらかがあれば、ファイルの「保存済みのタイミングを使用」を入れる）
@@ -1467,6 +1493,7 @@ function insertMemberPresen_(parts, items) {
   for (var i = 0; i < items.length; i++) { if (items[i].auto) auto = true; if (items[i].kind === 'overview') flip = true; }
   var msg = 'メンバープレゼンのページを ' + sp.paths.length + '枚 差し込みました（'
           + (auto ? '自動で次へ' : 'クリックで次へ') + (flip ? '・業種区分のページは1秒で次へ' : '') + '）。';
+  if (embeddedSource) msg = '定例会テンプレート内のひな形を使いました。' + msg;
   if (built.noPhoto && built.noPhoto.length) msg += '\n写真が見つからない方: ' + built.noPhoto.join('、');
   if (sp.missingLayout.length) msg += '\n※ 同じ名前のレイアウトが無いページがありました（見た目が変わる可能性があります）。';
   return { message: msg, paths: sp.paths, auto: auto || flip, gone: built.gone || [], opened: built.opened || 0 };
@@ -1606,6 +1633,55 @@ function insertMainPresenPage_(parts, src) {
 // ファイル名の（ ）の中
 var MEETING_FILE_PARTS_ = { meetingFirst: '前半', meetingSecond: '後半' };
 
+// 前半のファイルに後半も同梱されている場合は、同じ開催日の材料を補う。
+// 画面や呼び出し元から指定された値は優先する。
+function combinedMeetingOptions_(parts, map, o, date) {
+  var hasSecond = rfFindModels_(parts, RF_TITLE_).length > 0;
+  slideOrder_(parts).forEach(function (p) {
+    var xml = xmlOf_(parts, p) || '';
+    if (/\{\{(?:推薦のことば|抽選|更新90|更新60|更新30|更新超過)/.test(xml)
+        || slideText_(xml).indexOf('更新を迎えるメンバー') >= 0) hasSecond = true;
+  });
+  if (!hasSecond) return;
+  var routine = getRoutineInfo(date);
+  if (!routine || !routine.ok) throw new Error('同梱の後半部分に使うルーティンチェックシートを読み取れませんでした。');
+  var members = getMemberMaster().members || [];
+  var person = function (rec) {
+    var name = rec && (rec.name || rec.raw) || '';
+    var m = members.filter(function (m) { return normName_(m.name) === normName_(name); })[0] || {};
+    return { name: name, company: m.company || '', category: m.title || '' };
+  };
+  if (o.recommendPairs === undefined) o.recommendPairs = (routine.recommendations || [])
+    .filter(function (p) { return p.when !== 'later'; })
+    .map(function (p) { return { giver: person(p.giver), receiver: person(p.receiver), after: p.when === 'after' }; });
+  if (o.lottery === undefined) o.lottery = (routine.mainPresenters || [])
+    .filter(function (p) { return p.kind !== 'director' && p.matched; }).map(function (p) { return p.name; });
+  o.lottery.forEach(function (name, i) {
+    var p = person({ name: name }), prefix = '抽選' + (i + 1);
+    if (map[prefix + '氏名'] === undefined) map[prefix + '氏名'] = p.name;
+    if (map[prefix + '会社名'] === undefined) map[prefix + '会社名'] = p.company;
+    if (map[prefix + 'カテゴリー'] === undefined) map[prefix + 'カテゴリー'] = roleInBrackets_(p.category);
+  });
+  var lists = computeRenewalLists(date);
+  if (!lists.ok) throw new Error(lists.message || '更新状況を読み取れませんでした。');
+  ['90', '60', '30', '超過'].forEach(function (k, i) {
+    var key = '更新' + k;
+    if (map[key] === undefined) map[key] = lists.text[['d90', 'd60', 'd30', 'overdue'][i]];
+  });
+  if (o.referral === undefined && rfFindModels_(parts, RF_TITLE_).length) {
+    var skip = {};
+    // 画面で選び直した欠席の方を優先する。
+    (o.absentNames || ((routine.absentees || {}).names) || []).forEach(function (n) { skip[normName_(n)] = true; });
+    var list = members.filter(function (m) { return m.name && !skip[normName_(m.name)]; })
+      .sort(function (a, b) { return (parseFloat(a.no) || 9999) - (parseFloat(b.no) || 9999); });
+    o.referral = list.map(function (m, i) {
+      return { name: m.name, photoName: m.name, auto: false, seconds: chapterPresenSeconds_().referral,
+        companyLines: [CB_.normalize(m.company || '')], categoryLines: [m.title || ''],
+        nextName: list[i + 1] ? list[i + 1].name : '' };
+    });
+  }
+}
+
 // 定例会スライドを生成する。テンプレート内の {{キー}} を置換する方式。
 // pptxのままサーバー側で加工し、Driveへ保存してURLを返す。
 // opts: { patterns: true/false（差し込み口が無いページの第○回・日付も直す）,
@@ -1652,6 +1728,7 @@ function generateMeetingSlides(kind, values, meetingDateVal, opts) {
     }
 
     var r = editPptxOnServer_(kind, outName, function (parts) {
+      if (kind === 'meetingFirst') combinedMeetingOptions_(parts, map, o, d);
       return editMeetingSlides_(parts, map, rules, o);
     });
 

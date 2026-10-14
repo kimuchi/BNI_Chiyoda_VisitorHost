@@ -241,6 +241,8 @@ function getMemberPresenContext() {
     var boxes = null;
     if (tpl && tpl.registered) {
       try { boxes = templateMemo_(MP_TEMPLATE_KIND_, 'mpLayout', mpLayoutBoxes_); } catch (e) { boxes = null; }
+    } else {
+      try { boxes = templateMemo_('meetingFirst', 'mpLayout', mpLayoutBoxes_); } catch (e) { boxes = null; }
     }
     return { ok: true, members: members, blocks: cycle, candidates: cands,
              template: tpl, rowsPerPage: MP_ROWS_PER_OVERVIEW_,

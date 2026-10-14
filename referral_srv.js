@@ -127,7 +127,9 @@ function rfBuildSlide_(tplXml, tplRels, item, photo, SH) {
   //   auto が true … スライドが出たらすぐ始まり、終わったら自動で次へ
   //   auto が false … クリックで始まり、次のページへもクリックで進む（元のテンプレートと同じ）
   var sec = item.seconds || chapterPresenSeconds_().referral;
-  if (item.auto) {
+  if (!mpCountdownShapes_(xml).length) {
+    xml = mpNoAutoAdvance_(xml);
+  } else if (item.auto) {
     xml = mpSetCountdown_(xml, sec, false);
     xml = mpAdvanceAfterCountdown_(xml, sec);
   } else {
@@ -160,7 +162,8 @@ function expandPresenterSlides_(parts, items, opts) {
   if (!items || !items.length) return null;
   var o = opts || {}, title = o.title || RF_TITLE_, label = o.label || 'リファーラル発表';
   var models = rfFindModels_(parts, title);
-  if (!models.length) return { message: label + 'のひな形ページが見つかりませんでした。' };
+  if (o.excludePaths) models = models.filter(function (m) { return o.excludePaths.indexOf(m.path) < 0; });
+  if (!models.length) return { skipped: true, message: label + 'のひな形ページがないため、個人ページは生成しませんでした。' };
 
   var model = models[0];
   var prsXml = xmlOf_(parts, 'ppt/presentation.xml') || '';
@@ -236,6 +239,12 @@ function expandPresenterSlides_(parts, items, opts) {
   // ひな形のページを片付ける
   for (i = 0; i < models.length; i++) {
     var mp = models[i].path;
+    var note = relTargetOfType_(parts, mp, 'notesSlide');
+    if (note) {
+      delete parts[note];
+      delete parts[partRelsPath_(note)];
+      ct = ct.replace(new RegExp('<Override\\b[^>]*PartName="/' + note + '"[^>]*/>'), '');
+    }
     prsRels = prsRels.replace(new RegExp('<Relationship\\b[^>]*Target="slides/'
       + mp.replace('ppt/slides/', '') + '"[^>]*/>'), '');
     ct = ct.replace(new RegExp('<Override\\b[^>]*PartName="/' + mp.replace(/\//g, '\\/') + '"[^>]*/>'), '');

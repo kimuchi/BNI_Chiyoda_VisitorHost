@@ -304,6 +304,66 @@ step('未登録のテンプレートは省略して、登録済みの紹介を�
   }
 });
 
+step('定例会に同梱されたメンバープレゼンと後半', () => {
+  const wide = (id, text, y) => sp(id, text).replace('cx="5000000"', 'cx="7000000"')
+    .replace('y="' + (id * 150000) + '"', 'y="' + y + '"');
+  const presenter = title => sp(4, title) + wide(10, '苗字 名前', 1500000)
+    + wide(11, '会社名', 2500000) + wide(12, 'カテゴリー', 3500000);
+  const toParts = slides => srv.unzipToMap_(env.globals.Utilities.newBlob([...makePptx(slides)], 'application/zip', 'combined.pptx'));
+  const parts = toParts([sp(4, 'ウィークリープレゼンテーション'), presenter('WEEKLY PRESENTATION'),
+    sp(4, '全員終わりましたか？'), presenter('REFERRAL PRESENTATION'), sp(4, '{{抽選1氏名}}')]);
+  const item = { kind: 'individual', name: '試験 花子', companyLines: ['見本会社'], categoryLines: ['税理士'], seconds: 0, auto: false };
+  const before = srv.slideOrder_(parts).length;
+  const weekly = srv.insertMemberPresen_(parts, [item, { ...item, name: '見本 一郎' }]);
+  ck(weekly.paths && weekly.paths.length === 2 && /定例会テンプレート内/.test(weekly.message),
+    '同梱ひな形を使えない: ' + J(weekly));
+  ck(srv.slideOrder_(parts).length === before + 1, '同梱の元ひな形が重複した、または後半を消した');
+  ck(srv.rfFindModels_(parts, srv.RF_TITLE_).length === 1, '同梱のリファーラルひな形が失われた');
+  const missing = toParts([sp(1, 'ウィークリープレゼンテーション')]);
+  const noWeekly = srv.insertMemberPresen_(missing, [item]);
+  ck(noWeekly.skipped && srv.slideOrder_(missing).length === 1, 'メンバー用ひな形も無いときに停止・生成した');
+  const guests = toParts([sp(4, 'ウィークリープレゼンテーション'), presenter('WEEKLY PRESENTATION'),
+    presenter('WEEKLY PRESENTATION').replace('苗字 名前', 'ゲスト 客人'), sp(4, '全員終わりましたか？')]);
+  srv.insertMemberPresen_(guests, [item]);
+  ck(srv.slideOrder_(guests).some(p => /ゲスト 客人/.test(srv.slideText_(srv.xmlOf_(guests, p)))),
+    '同梱ひな形で生成するとアンバサダー・ディレクターのページを消した');
+  const skipped = srv.expandPresenterSlides_(missing, [item], { title: srv.RF_TITLE_ });
+  ck(skipped.skipped && srv.slideOrder_(missing).length === 1, 'リファーラルひな形なしで個人ページを生成した');
+  const oldRoutine = srv.getRoutineInfo, oldMembers = srv.getMemberMaster, oldLists = srv.computeRenewalLists;
+  try {
+    srv.getRoutineInfo = () => ({ ok: true, found: true, absentees: { names: ['欠席 一郎'] },
+      mainPresenters: [{ name: '試験 花子', matched: true, kind: 'member' }],
+      recommendations: [{ giver: { name: '試験 花子' }, receiver: { name: '見本 一郎' }, when: 'during' }] });
+    srv.getMemberMaster = () => ({ members: [
+      { no: '2', name: '試験 花子', company: '見本会社', title: '税理士' },
+      { no: '1', name: '見本 一郎', company: '見本商事', title: '印刷' },
+      { no: '3', name: '欠席 一郎', company: '欠席会社', title: '保険' }] });
+    srv.computeRenewalLists = () => ({ ok: true, text: { d90: '90日', d60: '60日', d30: '30日', overdue: '超過' } });
+    const map = {}, opts = { absentNames: ['欠席 一郎'] };
+    srv.combinedMeetingOptions_(parts, map, opts, '2026/10/14');
+    ck(opts.referral.length === 2 && opts.referral[0].name === '見本 一郎', '同梱の後半で名簿順・欠席除外が違う');
+    ck(opts.recommendPairs.length === 1 && opts.lottery[0] === '試験 花子'
+      && map['抽選1氏名'] === '試験 花子' && map['更新90'] === '90日', '同梱の後半の材料が欠けた');
+    const info = srv.editMeetingSlides_(parts, map, [], opts);
+    ck(info.referral && info.referral.made === 2, '前半の出力内で後半の個人ページを生成できない');
+    const saved = srv.saveOutputFile_(srv.zipFromMap_(parts, 'combined-output.pptx'), 'combined-output.pptx');
+    const result = outputOf(saved, 'combined-output');
+    if (result) {
+      ck(result.slides.filter(s => /REFERRAL PRESENTATION/.test(s.text)).length === 2,
+        '出力したpptxに後半の個人ページがない');
+      ck(result.slides.some(s => s.text === '試験 花子'), '同梱された抽選ページの氏名が更新されない');
+    }
+    const explicit = { referral: [], recommendPairs: [], lottery: [], absentNames: [] }, values = { 更新90: '手直し' };
+    srv.combinedMeetingOptions_(parts, values, explicit, '2026/10/14');
+    ck(explicit.referral.length === 0 && explicit.recommendPairs.length === 0 && values.更新90 === '手直し', '指定済みの後半設定を上書きした');
+    const noModel = {};
+    srv.combinedMeetingOptions_(toParts([sp(1, '{{抽選1氏名}}')]), {}, noModel, '2026/10/14');
+    ck(noModel.referral === undefined, 'ひな形なしでリファーラル生成を要求した');
+  } finally {
+    srv.getRoutineInfo = oldRoutine; srv.getMemberMaster = oldMembers; srv.computeRenewalLists = oldLists;
+  }
+});
+
 fs.rmSync(TMP, { recursive: true, force: true });
 if (fails.length) {
   console.log('NG ' + fails.length + '件 / ' + checks + '件の検査');

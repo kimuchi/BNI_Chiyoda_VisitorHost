@@ -183,7 +183,8 @@
    applyRoutine(c.routine);
    var tplOk=templateWarn('meetingFirst','定例会スライド（前半）');
    if(!c.templates.memberPresen){
-     templateWarn('memberPresen','メンバープレゼン（メンバーのページを入れるのに使います）');
+     var mw=document.getElementById('warn'); mw.style.display='block';
+     mw.innerHTML+=(mw.innerHTML?'<br>':'')+'メンバープレゼンの専用テンプレートは未登録です。定例会テンプレート内のひな形を使い、ひな形が無い場合は個人ページを省略します。';
    }
    if(!c.memberCount){
      var w=document.getElementById('warn'); w.style.display='block';
@@ -699,6 +700,7 @@
      generalPolicy: parseInt(get('gp'),10) || 0,
      mainPresenters: [get('mp1'), get('mp2')],
      memberPresen: buildMP(),
+     absentNames: Object.keys(absentSkip()),
      // 表示にするアンバサダー・ディレクター（読み込めていなければ null＝テンプレートのまま）
      weeklyGuests: guests ? pickedGuests().map(function(g){ return g.name; }) : null,
      weeklyAuto: document.getElementById('mpAuto').checked,
