@@ -124,8 +124,9 @@
   </div>
 
   <script>
-    // stars … 入会確度（{ ビジターの番号: 1〜3 }）。CSVには来ないので、この画面で決める。割り振り表の「入会確度」の列に ☆ で書く
-    var state = { visitors: [], pool: [], facilAlloc: {}, orienAlloc: {}, roomAlloc: {}, connectReq: {}, hosts: [], mergedWith: {}, priorities: {}, stars: {} };
+    // stars … 入会確度（{ ビジターの番号: 1〜3 }）。この画面で決める。割り振り表の「入会確度」の列に ☆ で書く。
+    //   まだ決めていない方は、CSVの確度が 1〜3 ならサーバーがその数の☆にしてある（starsFromCsv … そうした方）
+    var state = { visitors: [], pool: [], facilAlloc: {}, orienAlloc: {}, roomAlloc: {}, connectReq: {}, hosts: [], mergedWith: {}, priorities: {}, stars: {}, starsFromCsv: {} };
 
     // Spreadingから来た文字（氏名・会社・メモ・URLなど）は、HTMLとして読ませない
     // （「<」や「"」で表示が崩れる・書かれたタグが画面の中で動いてしまうため）
@@ -176,6 +177,7 @@
         if(!state.hosts) state.hosts = [];
         if(!state.priorities) state.priorities = {};
         if(!state.stars) state.stars = {};
+        if(!state.starsFromCsv) state.starsFromCsv = {};
         render();
         document.getElementById('workspace').style.display = 'flex';
       }).withFailureHandler(function(err){
@@ -195,6 +197,7 @@
       google.script.run.withSuccessHandler(function(newState) {
         state = newState;
         if(!state.stars) state.stars = {};
+        if(!state.starsFromCsv) state.starsFromCsv = {};
         render();
         document.getElementById('loading').style.display = 'none';
         document.getElementById('workspace').style.display = 'flex';
@@ -306,11 +309,13 @@
     function setStars(visitorNo, value) {
       var n = parseInt(value, 10) || 0;
       if (n >= 1 && n <= 3) state.stars[visitorNo] = n; else delete state.stars[visitorNo];
+      delete state.starsFromCsv[visitorNo];   // 画面で決めたもの（「CSVから」の印は消す）
       document.querySelectorAll('select.star-sel').forEach(function (sel) {
         if (sel.dataset.no !== visitorNo) return;
         sel.value = n ? String(n) : '';
         sel.className = 'star-sel' + (n ? '' : ' unset');
       });
+      document.querySelectorAll('.csv-auto').forEach(function (e) { if (e.dataset.no === visitorNo) e.style.display = 'none'; });
     }
     function starSelectHtml(visitorNo) {
       var n = parseInt(state.stars[visitorNo], 10) || 0, labels = ['－', '☆', '☆☆', '☆☆☆'];
@@ -380,7 +385,7 @@
           </td>
           <td style="font-size:11px;">${esc(v.cat)}</td>
           <td class="info-col">
-            <span class="info-label">入会確度:</span> ${starSelectHtml(v.no)}${kakudo ? ` <span style="font-size:10px; color:#888;">（CSVの確度: ${esc(kakudo)}）</span>` : ''}<br>
+            <span class="info-label">入会確度:</span> ${starSelectHtml(v.no)}${kakudo ? ` <span style="font-size:10px; color:#888;">（CSVの確度: ${esc(kakudo)}${state.starsFromCsv[v.no] ? `<span class="csv-auto" data-no="${esc(v.no)}"> から自動で☆</span>` : ''}）</span>` : ''}<br>
             <span class="info-label">特性:</span> ${esc(shincho)}<br>
             <span class="info-label">メモ:</span> <span style="font-size:10px;">${esc(shortMemo).replace(/\n/g, '<br>') || '-'}</span>
           </td>

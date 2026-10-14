@@ -7,6 +7,7 @@
 //   ・Spreadingから来た文字（氏名・会社・メモ・URL）は、HTMLとして動かない（タグ・javascript: のリンク）
 //   ・確度とメモは、参加者シートの列名（入会見込み・備考・メモ（メンバー向け））でも出る
 //   ・入会確度（☆1〜3）：画面で選ぶ → 割り振り表の「入会確度」の列・PDFに ☆ で入る → 読み込み直すと戻る。
+//     まだ決めていない方は、CSVの確度（入会見込み）が 1〜3 ならその数の☆。画面で変えたもの・「－」にしたもの（シートに「－」）が先
 //     「AIに提案させる」のあとも残る。入力欄から☆に移ったとき、☆の欄を描き直さない（1回目のクリックが消えない）
 // 名前はすべて架空。
 
@@ -56,16 +57,19 @@ env.addFile('A30', new env.FakeBlob('%PDF-1.4\n9/30 の割り振り表（共有�
     await page.waitForFunction(() => document.getElementById('workspace').style.display === 'flex', null, { timeout: 10000 });
     const note = await page.evaluate(() => (document.getElementById('targetNote') || {}).textContent || '');
     ck(/書き込み先：2026\/10\/7\(水\) 第\d+回/.test(note), '1) 書き込み先が画面に出ない: ' + note);
-    // 入会確度：はじめは「－」（決めていない）。☆☆ を選ぶ
-    ck(await page.evaluate(() => { const e = document.getElementById('star_V01'); return !!e && e.value === '' && /unset/.test(e.className)
-         && Array.from(e.options).map((o) => o.textContent).join(',') === '－,☆,☆☆,☆☆☆'; }), '4) 入会確度の欄が無い・はじめから☆が入っている');
+    // 入会確度：CSVの確度（入会見込み 3）がある V01 は、はじめから ☆☆☆（CSVから）。CSVの確度の無い方は「－」。V01 は ☆☆ に変える
+    ck(await page.evaluate(() => { const e = document.getElementById('star_V01'), q = document.querySelector('select[data-no="V\'02"]');
+         return !!e && e.value === '3' && !/unset/.test(e.className) && /CSVの確度: 3 から自動で☆/.test(e.closest('td').textContent)
+           && !!q && q.value === '' && /unset/.test(q.className) && Array.from(e.options).map((o) => o.textContent).join(',') === '－,☆,☆☆,☆☆☆'; }),
+       '4) CSVの確度（3）から☆☆☆が付かない・CSVの確度の無い方に☆が付いた・入会確度の欄が無い');
     // 「つなげたいメンバー」の入力欄から☆の欄に移っても、☆の欄を描き直さない（描き直すと1回目のクリックが消える）
     await page.evaluate(() => { document.getElementById('star_V01').__mark = 1; });
     await page.fill('textarea.connect-input', 'IT関係の方');
     await page.focus('#star_V01');
     ck(await page.evaluate(() => document.getElementById('star_V01').__mark === 1), '4) 入力欄から移ったら、☆の欄を描き直した（クリックが消える）');
     await page.selectOption('#star_V01', '2');
-    ck(await page.evaluate(() => !/unset/.test(document.getElementById('star_V01').className)), '4) ☆を選んでも色が変わらない');
+    ck(await page.evaluate(() => !/unset/.test(document.getElementById('star_V01').className)
+         && getComputedStyle(document.querySelector('.csv-auto[data-no="V01"]')).display === 'none'), '4) ☆を選んでも色が変わらない・「CSVから自動で」が消えない');
     // 番号に「'」が入った方でも選べる。同じ番号の方が2人いるときは、2人とも同じ☆になる（どちらの欄も、そうと分かる）
     await page.selectOption('select[data-no="V\'02"]', '1');
     await page.locator('select[data-no="代理??"]').nth(1).selectOption('3');
@@ -94,7 +98,8 @@ env.addFile('A30', new env.FakeBlob('%PDF-1.4\n9/30 の割り振り表（共有�
     await p3.page.selectOption('#meetingSelect', '2026/10/07');
     await p3.page.click('button:has-text("データを読み込む")');
     await p3.page.waitForFunction(() => document.getElementById('workspace').style.display === 'flex', null, { timeout: 10000 });
-    ck(await p3.page.evaluate(() => document.getElementById('star_V01').value) === '2', '4) 読み込み直したら、☆が戻らない');
+    ck(await p3.page.evaluate(() => document.getElementById('star_V01').value === '2' && !document.querySelector('.csv-auto[data-no="V01"]')),
+       '4) 読み込み直したら、☆が戻らない（画面で選んだ☆より、CSVの確度が先になった）');
     env.props.GEMINI_API_KEY = 'test-key';
     env.onFetch = () => ({ code: 200, type: 'application/json', body: Buffer.from(JSON.stringify({ candidates: [{ content: { parts: [{ text: '{"allocations":[{"visitorNo":"V01","room":["3"]}]}' }] } }] })) });
     await p3.page.click('button:has-text("AIに提案させる")');
@@ -105,10 +110,18 @@ env.addFile('A30', new env.FakeBlob('%PDF-1.4\n9/30 の割り振り表（共有�
     await p3.page.selectOption('#star_V01', '');
     await p3.page.click('button:has-text("この内容でシートとPDFを作成する")');
     await p3.page.waitForFunction(() => /作成完了/.test(document.getElementById('loading').textContent), null, { timeout: 10000 });
-    ck(((env.values('20261007割り振り表') || []).find((r) => r[0] === 'V01') || [])[3] === '', '4) ☆を「－」に戻したのに、割り振り表に☆が残った');
+    ck(((env.values('20261007割り振り表') || []).find((r) => r[0] === 'V01') || [])[3] === '－', '4) CSVに確度がある方を「－」にしたのに、割り振り表が「－」でない');
     delete env.props.GEMINI_API_KEY;
     env.onFetch = null;
     await p3.page.close();
+    // 「－」にした方は、読み込み直してもCSVの☆に戻さない
+    const p4 = await openGasPage(browser, 'allocation.html', srv, { fails, calls });
+    await p4.page.waitForFunction(() => document.querySelectorAll('#meetingSelect option').length === 4, null, { timeout: 10000 });
+    await p4.page.selectOption('#meetingSelect', '2026/10/07');
+    await p4.page.click('button:has-text("データを読み込む")');
+    await p4.page.waitForFunction(() => document.getElementById('workspace').style.display === 'flex', null, { timeout: 10000 });
+    ck(await p4.page.evaluate(() => document.getElementById('star_V01').value) === '', '4) 「－」にした方が、読み込み直したらCSVの☆に戻った');
+    await p4.page.close();
 
     // 9/30：Spreadingの文字はHTMLとして動かない。確度・メモは参加者シートの列名でも出る
     const p2 = await openGasPage(browser, 'allocation.html', srv, { fails, calls });

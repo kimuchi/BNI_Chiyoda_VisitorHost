@@ -415,6 +415,38 @@ step('割り振り表', () => {
      '7) 合同先のお名前の空白が変わったら、合同が外れた: ' + JSON.stringify({ merged: mg.mergedWith, facil: mg.facilAlloc, stars: mg.stars }));
   part._values = partBefore;
   srv.saveAllocationSheet('2026/09/30', cand.display, d.visitors, d.pool, facil, orien, room, conn, {}, stars);
+  // CSVの確度（入会見込み）が 1〜3 の方は、☆を決めていなければ、その数の☆にする（全角・「3（高い）」も。5 は1〜3でないので付けない）。
+  // 割り振り表に入っている☆が先。CSVに確度がある方を「－」にして作ると、割り振り表に「－」と入り、読み込み直してもCSVの☆に戻さない
+  const W = partBefore[0].length, CSVK = { V01: '1', V02: '２', V03: '5', G01: '3（高い）' };
+  part._values = partBefore.map((r, i) => { const x = r.slice(); while (x.length < W) x.push(''); x.push(i ? CSVK[r[pNo]] || '' : '入会見込み'); return x; });
+  const auto = srv.getAllocationData('2026/09/30');
+  ck(JSON.stringify(auto.stars) === JSON.stringify({ V01: 3, V03: 1, V02: 2, G01: 3 }) && JSON.stringify(auto.starsFromCsv) === JSON.stringify({ V02: true, G01: true }),
+     '7) CSVの確度から☆を付けない・割り振り表の☆よりCSVが先になった: ' + JSON.stringify({ stars: auto.stars, fromCsv: auto.starsFromCsv }));
+  srv.saveAllocationSheet('2026/09/30', cand.display, auto.visitors, auto.pool, facil, orien, room, conn, {}, { V01: 3, V03: 1, G01: 3 });   // V02 は「－」にした
+  const av2 = env.values('20260930割り振り表'), cell = (no) => (av2.find((r) => r[0] === no) || [])[3];
+  ck(cell('V02') === '－' && cell('G01') === '☆☆☆' && cell('代理4') === '' && cell('V01') === '☆☆☆',
+     '7) CSVに確度がある方を「－」にしたとき・CSVの☆のまま作ったとき: ' + JSON.stringify(['V01', 'V02', 'V03', 'G01', '代理4'].map(cell)));
+  const kept = srv.getAllocationData('2026/09/30');
+  ck(JSON.stringify(kept.stars) === JSON.stringify({ V01: 3, V03: 1, G01: 3 }) && JSON.stringify(kept.starsFromCsv) === '{}',
+     '7) 「－」にした方が、読み込み直したらCSVの☆に戻った: ' + JSON.stringify({ stars: kept.stars, fromCsv: kept.starsFromCsv }));
+  // 前の版の画面（☆を渡さない呼び方）で作ったときは「－」を書かない（CSVの☆が、読み込み直すと戻る）
+  srv.saveAllocationSheet('2026/09/30', cand.display, auto.visitors, auto.pool, facil, orien, room, conn, {});
+  const av3 = env.values('20260930割り振り表');
+  ck(!av3.some((r) => r[3] === '－'), '7) ☆を渡さない呼び方で「－」を書いた: ' + JSON.stringify(av3.filter((r) => r[3]).map((r) => [r[0], r[3]])));
+  const again = srv.getAllocationData('2026/09/30');
+  ck(JSON.stringify(again.stars) === JSON.stringify({ V01: 1, V02: 2, G01: 3 }) && JSON.stringify(again.starsFromCsv) === JSON.stringify({ V01: true, V02: true, G01: true }),
+     '7) ☆を渡さない呼び方で作ったあと、CSVの☆が戻らない: ' + JSON.stringify({ stars: again.stars, fromCsv: again.starsFromCsv }));
+  // 同じ番号の方が2人（代理??）で、CSVの確度が違う（片方だけ）ときは☆を付けない。同じ確度（3 と ３）なら付ける
+  const csvAt = W, dupBefore = part._values.map((r) => r.slice());
+  part._values.forEach((r, i) => { if (i && (r[pNo] === 'G01' || r[pNo] === '代理4')) r[pNo] = '代理??'; });
+  const dup1 = srv.getAllocationData('2026/09/30');
+  part._values.forEach((r, i) => { if (i && r[pNo] === '代理??' && !r[csvAt]) r[csvAt] = '３'; });
+  const dup2 = srv.getAllocationData('2026/09/30');
+  ck(!('代理??' in dup1.stars) && !('代理??' in dup1.starsFromCsv) && dup2.stars['代理??'] === 3 && dup2.starsFromCsv['代理??'] === true,
+     '7) 同じ番号の方のCSVの確度が違うのに☆を付けた・同じなのに付けない: ' + JSON.stringify([dup1.stars, dup2.stars]));
+  part._values = dupBefore;
+  part._values = partBefore;
+  srv.saveAllocationSheet('2026/09/30', cand.display, d.visitors, d.pool, facil, orien, room, conn, {}, stars);
   // 名前が1字だけ違うメンバー（見本 一郎・見本 二郎）がいても、招待者を取り違えない。待機リストからは本当の招待者を除く
   env.sheet('メンバー名簿').appendRow(MEMBER_HEAD.map((h, i) => (i === 0 ? '9' : i === 2 ? '見本 二郎' : '')));
   env.ss.insertSheet('20261104参加者').getRange(1, 1, 2, 9).setValues([
