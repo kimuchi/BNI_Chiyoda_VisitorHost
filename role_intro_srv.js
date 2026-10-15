@@ -225,7 +225,7 @@ function riShapes_(xml) {
         s.paras = findTagRanges_(seg, 'a:p').map(function (p) { return slideText_(seg.substring(p.start, p.end)); });
         s.lines = [];
         findTagRanges_(seg, 'a:p').forEach(function (p) {
-          seg.substring(p.start, p.end).split(/<a:br\b[^>]*\/>/).forEach(function (q) { s.lines.push(slideText_(q)); });
+          seg.substring(p.start, p.end).split(/<a:br\b[^>]*(?:\/>|>[\s\S]*?<\/a:br>)/).forEach(function (q) { s.lines.push(slideText_(q)); });
         });
         s.text = s.paras.join('');
         s.title = /<p:ph\b[^>]*\stype="(?:title|ctrTitle)"/.test(seg);

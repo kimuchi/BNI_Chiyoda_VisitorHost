@@ -81,6 +81,48 @@ function previewVisitorSlideData(sheetName) {
   }
 }
 
+// 定例会に同梱された「ビジターの紹介（お名前・会社名・事業内容）」。
+// 専用の紹介テンプレートを登録しなくても、その日の参加者から人数ぶん作る。
+function expandNativeVisitorPages_(parts, date) {
+  if (!date) return null;
+  var model = slideOrder_(parts).filter(function (p) {
+    var t = slideText_(xmlOf_(parts, p) || '').replace(/[\s　]/g, '');
+    return t.indexOf('ビジターの紹介') >= 0 && t.indexOf('お名前') >= 0
+      && t.indexOf('会社名') >= 0 && t.indexOf('事業内容') >= 0;
+  })[0];
+  if (!model) return null;
+  var ss = getSS_(), key = Utilities.formatDate(date, 'Asia/Tokyo', 'yyyyMMdd');
+  var name = key + '参加者';
+  if (!ss.getSheetByName(name)) name = key.slice(4) + '参加者';
+  var data = parseParticipantSheet_(name), list = [];
+  if (data) {
+    [['visitors', 'ビジター'], ['guests', 'ゲスト'], ['dairi', '代理出席']].forEach(function (pair) {
+      (data[pair[0]] || []).forEach(function (p) { list.push({ person: p, label: pair[1] }); });
+    });
+  }
+  if (!list.length) {
+    putXml_(parts, model, setSlideShow_(xmlOf_(parts, model), false));
+    return { message: data ? '参加者がいないため、ビジター紹介は非表示にしました。'
+      : '開催日の参加者シートがないため、ビジター紹介は非表示にしました。' };
+  }
+  var xml = xmlOf_(parts, model), paths = [model].concat(fpClonePages_(parts, model, list.length - 1, model, xml));
+  paths.forEach(function (p, i) {
+    var x = xml, person = list[i].person;
+    offShapes_(x).forEach(function (s) {
+      if (s.tag !== 'p:sp') return;
+      var t = s.text.replace(/[\s　]/g, '');
+      if (t === 'お名前会社名') x = setParagraphsInShape_(x, s.id, [person.name + ' 様', person.company]);
+      else if (t === 'お名前') x = setParagraphsInShape_(x, s.id, [person.name + ' 様']);
+      else if (t === '会社名') x = setParagraphsInShape_(x, s.id, [person.company]);
+      else if (t === '事業内容') x = setParagraphsInShape_(x, s.id, [person.category]);
+    });
+    if (list[i].label !== 'ビジター') x = offReplaceText_(x, 'ビジターの紹介', list[i].label + 'の紹介');
+    putXml_(parts, p, setSlideShow_(x, true));
+  });
+  syncSections_(parts);
+  return { message: '定例会に同梱の紹介ページを使い、ビジター・ゲスト・代理を ' + list.length + '名ぶん生成しました。', paths: paths };
+}
+
 // 長い文字を枠に収めるときの下限（pt）。これ以上は小さくせず、折り返す。
 var FIT_MIN_ = { presenName: 40, presenCompany: 16, presenCategory: 14,
                  groupName: 16, groupValue: 10 };

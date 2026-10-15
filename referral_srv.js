@@ -77,8 +77,10 @@ function relsPathOf_(slidePath) {
 // ひな形にするページ（複数あればまとめて置き換える）
 function rfFindModels_(parts, title) {
   var out = [], p;
+  var active = parts['ppt/presentation.xml'] ? slideOrder_(parts) : null;
   for (p in parts) {
     if (!/^ppt\/slides\/slide\d+\.xml$/.test(p)) continue;
+    if (active && active.indexOf(p) < 0) continue;
     var xml = xmlOf_(parts, p);
     // 題名の文字か、図形の名前（公式ファイルから作ったひな形は、日本語の題名の図形に REFERRAL PRESENTATION の名前）で見分ける
     if (!xml || (slideText_(xml).indexOf(title || RF_TITLE_) < 0

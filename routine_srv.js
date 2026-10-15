@@ -823,6 +823,8 @@ function routineVpReport_(v) {
   if (routineIsBlank_(s.replace(/\s/g, ''))) return null;
   var out = {}, m, ym = function (y, mo) { return y + '-' + ('0' + mo).slice(-2); };
   if ((m = s.match(/月間リファーラル数の平均\s*(?:は|:)?\s*([\d,]+)\s*件/))) out.avg = routineNum_(m[1]);
+  if ((m = s.match(/月間ビジター数の平均\s*(?:は|:)?\s*([\d,.]+)\s*(?:名|人)/))) out.visitorAvg = routineNum_(m[1]);
+  if ((m = s.match(/累計リファーラル件数\s*(?:は|:)?\s*([\d,]+)\s*件/))) out.total = routineNum_(m[1]);
   if ((m = s.match(/(\d{4})\s*年\s*(\d{1,2})\s*月の月間リファーラル数\s*(?:は|:)?\s*([\d,]+)\s*件(?:\s*\(\s*([\d,]+)\s*件\s*\/\s*週\s*\))?/))) {
     out.month = ym(m[1], m[2]); out.count = routineNum_(m[3]); out.perWeek = m[4] ? routineNum_(m[4]) : '';
   }

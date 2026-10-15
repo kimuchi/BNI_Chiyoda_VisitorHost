@@ -123,6 +123,7 @@
      「バイスプレジデントによる報告」の欄（読み上げる文）から、スライドの数字を拾います。見出しの年月と「○/○速報」の日付も入れ替えます。</div>
    <table>
      <tr><th>月間リファーラル数の平均</th><td>チャプター設立以来 <input type="text" id="vp_avg" size="8"> 件</td></tr>
+     <tr><th>月間ビジター数の平均</th><td><input type="text" id="vp_visitorAvg" size="8"> 名</td></tr>
      <tr><th>月間リファーラル数</th><td><input type="month" id="vp_month"> の月間リファーラル数
          <input type="text" id="vp_count" size="6"> 件（<input type="text" id="vp_perWeek" size="4"> 件/週）</td></tr>
      <tr><th>累計リファーラル数</th><td><input type="month" id="vp_from"> から <input type="month" id="vp_to"> の累計
@@ -495,7 +496,7 @@
  function mdOf(d){ var m=String(d||'').match(/^\d{4}\/(\d{2})\/(\d{2})$/); return m ? (+m[1])+'/'+(+m[2]) : ''; }
  function vpFromRoutine(F){
    var V=F.vpReport||{};
-   val('vp_avg',V.avg); val('vp_month',V.month); val('vp_count',V.count); val('vp_perWeek',V.perWeek);
+   val('vp_avg',V.avg); val('vp_visitorAvg',V.visitorAvg); val('vp_month',V.month); val('vp_count',V.count); val('vp_perWeek',V.perWeek);
    val('vp_from',V.from); val('vp_to',V.to); val('vp_total',V.total); val('vp_thanks',V.thanks);
    val('vp_week',''); val('vp_weekExt','');
    document.getElementById('vp_date').textContent=mdOf(get('meeting'));
@@ -506,7 +507,7 @@
         : 'この日の記載から読みました。');
  }
  function vpForSlides(){
-   var o={avg:'vp_avg', month:'vp_month', count:'vp_count', perWeek:'vp_perWeek', from:'vp_from', to:'vp_to',
+   var o={avg:'vp_avg', visitorAvg:'vp_visitorAvg', month:'vp_month', count:'vp_count', perWeek:'vp_perWeek', from:'vp_from', to:'vp_to',
           total:'vp_total', thanks:'vp_thanks', weekCount:'vp_week', weekExt:'vp_weekExt'};
    Object.keys(o).forEach(function(k){ o[k]=String(get(o[k])||'').trim(); });
    return o;

@@ -20,13 +20,15 @@ function openMeetingSecondDialog() {
 // ファイルを差し替える（別のファイルを登録する・Drive上で更新する）と読み直す。
 function templateMemo_(kind, name, compute) {
   var file = getBigTemplateFile_(kind);
-  var stamp = file.getId() + ':' + file.getLastUpdated().getTime();
+  var stamp = file.getId() + ':' + file.getLastUpdated().getTime() + ':native1';
   var props = PropertiesService.getScriptProperties(), key = 'BNI_TPL_MEMO_' + name;
   try {
     var memo = JSON.parse(props.getProperty(key) || 'null');
     if (memo && memo.stamp === stamp) return memo.value;
   } catch (e) {}
-  var value = compute(unzipToMap_(file.getBlob()));
+  var parts = unzipToMap_(file.getBlob());
+  if (typeof prepareNativeMeetingTemplate_ === 'function') prepareNativeMeetingTemplate_(parts);
+  var value = compute(parts);
   try { props.setProperty(key, JSON.stringify({ stamp: stamp, value: value })); } catch (e) {}   // 大きすぎるときは覚えない
   return value;
 }
@@ -1466,7 +1468,7 @@ function insertMemberPresen_(parts, items) {
       MP_INDIVIDUAL_.category, MP_INDIVIDUAL_.nextName, MP_INDIVIDUAL_.nextLabel]);
     if (ov && iv && rfFindModels_(parts, WEEKLY_TITLE_).some(function (m) { return m.path === iv.path; })) {
       embeddedSource = {};
-      for (var p in parts) embeddedSource[p] = parts[p];
+      for (var p in parts) embeddedSource[p] = parts[p].copyBlob();
       embeddedModels = [ov.path, iv.path];
     } else {
       var embeddedCache = { by: {}, seq: 0 };
@@ -1482,6 +1484,7 @@ function insertMemberPresen_(parts, items) {
     }
   }
   var src = embeddedSource || unzipToMap_(file.getBlob());
+  if (typeof prepareNativeMeetingTemplate_ === 'function') prepareNativeMeetingTemplate_(src);
   var built = buildMemberPresenSlides_(src, items);
   if (embeddedModels.length) setSlideEntries_(parts, slideEntries_(parts).filter(function (e) {
     return embeddedModels.indexOf(e.path) < 0;
@@ -1502,6 +1505,12 @@ function insertMemberPresen_(parts, items) {
 // pptxの中身を書き換える本体。Driveの読み書きから切り離してあるので、
 // 手元で同じ処理を走らせて確かめられる（tools/check_meeting_output.js）。
 function editMeetingSlides_(parts, map, rules, o) {
+  map = Object.assign({}, map || {});
+  if (typeof prepareNativeMeetingTemplate_ === 'function') prepareNativeMeetingTemplate_(parts);
+  if (map['チャプター'] === undefined && typeof chapterLabel_ === 'function') map['チャプター'] = chapterLabel_();
+  if (map['開催年月日'] === undefined && o.meetingDate) {
+    map['開催年月日'] = o.meetingDate.getFullYear() + '年' + (o.meetingDate.getMonth() + 1) + '月' + o.meetingDate.getDate() + '日';
+  }
   var touched = 0, byPattern = 0, path;
   // 発表のページを人数ぶんに増やす（先にページを増やしてから文字を差し替える）
   //   前半 … ウィークリープレゼン（メンバープレゼンと同じ内容）
@@ -1509,6 +1518,7 @@ function editMeetingSlides_(parts, map, rules, o) {
   // 写真は1つの控えで取り込む。同じ方の写真は1枚だけ入れて使い回し、
   // 別の処理が同じ名前の画像を作って上書きし合うこと（写真の取り違い）も起きない。
   var photoCache = { by: {}, seq: 0 };
+  var visitors = typeof expandNativeVisitorPages_ === 'function' ? expandNativeVisitorPages_(parts, o.meetingDate) : null;
   // メインプレゼン・抽選のディレクター（名簿に無く、前半テンプレートにアンバサダー・ディレクターのページがある方）。
   // ページを差し込む・写す前に探す（差し込んだメンバーのページも同じ作りのため）
   var directors = twoPersonDirectors_(parts, o);
@@ -1609,7 +1619,7 @@ function editMeetingSlides_(parts, map, rules, o) {
   return { touched: touched, byPattern: byPattern, core: core, policy: policy, photoGone: gone,
            photos: photos, audio: audio, referral: referral, weekly: weekly, guests: guests,
            reco: reco, musicStop: musicStop, renewal: renewal, rotation: rotation, roles: roles,
-           members: members, vp: vp, leaders: leaders, mainPage: mainPage };
+           members: members, vp: vp, leaders: leaders, mainPage: mainPage, visitors: visitors };
 }
 
 // 後半の1枚目に、メインプレゼンのページ（前半の最後のページ。差し込み口 {{メインプレゼン1氏名}} のあるページ）を入れる。
@@ -1696,7 +1706,7 @@ function combinedMeetingOptions_(parts, map, o, date) {
 function generateMeetingSlides(kind, values, meetingDateVal, opts) {
   try {
     if (!BIG_TEMPLATE_KINDS_[kind]) return { ok: false, message: 'スライドの種類が不正です。' };
-    var map = values || {}, o = opts || {};
+    var map = Object.assign({}, values || {}), o = Object.assign({}, opts || {});
     var d = parseDate_(meetingDateVal);
     var label = BIG_TEMPLATE_KINDS_[kind].label;
     // 「定例会20260930_（前半）09301412.pptx」（開催日と、作った日時）
@@ -1704,7 +1714,7 @@ function generateMeetingSlides(kind, values, meetingDateVal, opts) {
 
     var rules = (o.patterns === false) ? []
               : meetingPatternRules_(String(map['開催回'] || '').replace(/[^\d]/g, ''), d);
-    if (kind === 'meetingFirst') o.meetingDate = d;            // 「○/○速報」の日付
+    o.meetingDate = d;            // 表紙・「○/○速報」の日付
     // 前半の役職のメンバー紹介：その開催日の期の「役職・チーム（半期ごと）」
     if (kind === 'meetingFirst' && o.roleIntro !== false && !o.roleIntroData) {
       try { o.roleIntroData = riDataOfDate_(d || new Date()); }
@@ -1728,6 +1738,7 @@ function generateMeetingSlides(kind, values, meetingDateVal, opts) {
     }
 
     var r = editPptxOnServer_(kind, outName, function (parts) {
+      if (typeof prepareNativeMeetingTemplate_ === 'function') prepareNativeMeetingTemplate_(parts);
       if (kind === 'meetingFirst') combinedMeetingOptions_(parts, map, o, d);
       return editMeetingSlides_(parts, map, rules, o);
     });
@@ -1762,6 +1773,7 @@ function generateMeetingSlides(kind, values, meetingDateVal, opts) {
     if (info.vp && info.vp.message) msg += '\n' + info.vp.message;
     if (info.leaders && info.leaders.message) msg += '\n' + info.leaders.message;
     if (info.mainPage && info.mainPage.message) msg += '\n' + info.mainPage.message;
+    if (info.visitors && info.visitors.message) msg += '\n' + info.visitors.message;
     return { ok: true, message: msg, url: r.saved.url, downloadUrl: r.saved.downloadUrl,
              fileName: outName, touched: info.touched, core: info.core, policy: info.policy,
              timing: r.timing };

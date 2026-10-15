@@ -18,6 +18,76 @@
 var OFF_REL_ = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/';
 var OFF_NUM_RE_ = /^\s*\d+(?::[0-5]\d)?\s*$/;
 
+// 日本語の公式形式を、そのまま定例会テンプレートとして登録した場合。
+// 元のファイルは保存し直さず、展開した生成用の部品だけを整える。
+function prepareNativeMeetingTemplate_(parts) {
+  var raw = {}, p;
+  for (p in parts) raw[p] = parts[p];
+  var src = { parts: raw, cache: {}, order: slideOrder_(raw) };
+  var weeklyPath = null;
+  src.order.some(function (path) {
+    var xml = xmlOf_(raw, path) || '', t = slideText_(xml).replace(/[\s　]/g, '');
+    if (t.indexOf('ウィークリープレゼンテーション') >= 0 && t.indexOf('次のプレゼンター') >= 0
+        && t.indexOf('メールアドレス') >= 0 && mpCountdownShapes_(xml).length >= 5) {
+      weeklyPath = path; return true;
+    }
+    return false;
+  });
+  if (!weeklyPath) return false;
+  var opt = { seconds: chapterPresenSeconds_() }, weekly = offPage_(src, weeklyPath);
+  var iv = offMemberIndividual_(weekly, opt);
+  // 題名は日本語のまま。生成処理は図形名でも個人ページを見分ける。
+  offShapes_(iv.xml).forEach(function (s) {
+    if (s.text.replace(/[\s　]/g, '') === 'ウィークリープレゼンテーション') {
+      iv.xml = offReplaceShape_(iv.xml, s.id, offSetIdName_(s.xml, s.id, WEEKLY_TITLE_));
+    }
+  });
+  var main = null;
+  src.order.some(function (path) {
+    var pg = offPage_(src, path), t = slideText_(pg.xml).replace(/[\s　]/g, '');
+    if (t.indexOf('メインプレゼンテーション') >= 0 && t.indexOf('メンバー名') >= 0) { main = pg; return true; }
+    return false;
+  });
+  src.order.forEach(function (path) {
+    var pg = offPage_(src, path), xml = pg.xml, rels = pg.rels;
+    var t = slideText_(xml).replace(/[\s　]/g, ''), converted = null;
+    if (path === weeklyPath) converted = iv;
+    else if (/<a:tbl>/.test(xml) && t.indexOf('専門分野') >= 0 && t.indexOf('メンバー') >= 0
+        && t.indexOf('氏名') >= 0 && t.indexOf('委員会') < 0) converted = offMemberOverview_(pg, weekly, iv);
+    else if (main && path === main.path) converted = offTwoPersonPage_(pg, main, 'メインプレゼン', '', false);
+    else if (t.indexOf('次の発表者') >= 0 && t.indexOf('メンバー名') >= 0 && t.indexOf('会社名') >= 0) {
+      converted = offReferralPage_(pg, weekly, opt);
+    } else if (main && t.indexOf('推薦のことば') >= 0 && /メンバー[0-9０-９]/.test(t)) {
+      converted = offTwoPersonPage_(pg, main, '推薦のことば', '推薦のことば', true);
+    } else if (t.indexOf('更新を迎えるメンバー') >= 0 && /<a:tbl>/.test(xml)) converted = offRenewalTables_(pg);
+    if (converted) { xml = converted.xml; rels = converted.rels; }
+    else if (t.indexOf('ようこそ') >= 0 && t.indexOf('BNI') >= 0) {
+      offShapes_(xml).forEach(function (s) {
+        if (/^BNI[\s　]+\S/.test(s.text)) xml = setParagraphsInShape_(xml, s.id, ['BNI {{チャプター}}']);
+        if (/20\d{2}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日/.test(s.text)) {
+          xml = setParagraphsInShape_(xml, s.id, ['第{{開催回}}回　{{開催年月日}}']);
+          xml = setShapeGeomEmu_(xml, s.id, { x: 0, cx: 12192000 });
+        }
+      });
+    } else if (t.indexOf('リーダーシップチーム') >= 0) {
+      var ph = offPlaceholderPhotos_(xml, rels, weekly); xml = ph.xml; rels = ph.rels;
+    } else if (t.indexOf('メンバーシップ委員会による報告') >= 0 && /<a:tbl>/.test(xml)) xml = offMembershipTokens_(xml);
+    else if (t.indexOf('スピーカーローテーション') >= 0 && /<a:tbl>/.test(xml)) xml = offRotationArea_(xml);
+    if (t.indexOf('ネットワーキングリーダー') >= 0) {
+      offShapes_(xml).forEach(function (s) {
+        if (s.tag === 'p:sp' && s.text.indexOf('リファーラル数') >= 0 && s.text.indexOf('ビジター数') >= 0) {
+          xml = setParagraphsInShape_(xml, s.id, ['外部リファーラル数 第1位：{{ネットワーキングリファーラル}}',
+            '招待したビジター数 第1位：{{ネットワーキングビジター}}']);
+        }
+      });
+    }
+    xml = riTokenizePage_(xml, 12192000, 6858000);
+    putXml_(parts, path, xml);
+    putXml_(parts, relsPathOf_(path), rels);
+  });
+  return true;
+}
+
 // --- 組み立ての入り口 ---
 function offBuildTemplate_(zip, kind, opt) {
   var src = offSource_(zip), plan;

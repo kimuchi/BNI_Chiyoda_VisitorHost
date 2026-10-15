@@ -498,6 +498,8 @@ function applyVpReport_(parts, vp, date) {
       xml = fpMapParas_(xml, s.id, function (p, text) {
         var n = riNorm_(text), rules = [], label = null, rest = '';
         if (n.indexOf('月間リファーラル数の平均') >= 0) { label = 'avg'; rest = n.split('月間リファーラル数の平均')[1]; }
+        else if (n.indexOf('月間ビジター数の平均') >= 0) { label = 'visitorAvg'; rest = n.split('月間ビジター数の平均')[1]; }
+        else if (n.indexOf('累計リファーラル件数') >= 0) { label = 'total'; rest = n.split('累計リファーラル件数')[1]; }
         else if (/\d{4}年\d{1,2}月から\d{4}年\d{1,2}月/.test(n) && n.indexOf('リファーラル') >= 0) {
           label = 'total'; rest = n.replace(/^.*リファーラル(?:件)?数(?:の合計)?/, '');
           if (from && to) rules.push({ re: /([0-9０-９]{4})(\s*年\s*)([0-9０-９]{1,2})(\s*月から\s*)([0-9０-９]{4})(\s*年\s*)([0-9０-９]{1,2})(\s*月)/,
@@ -509,6 +511,9 @@ function applyVpReport_(parts, vp, date) {
         } else if (n.indexOf('サンキュー額') >= 0) { label = 'thanks'; rest = n.split('サンキュー額')[1].replace(/^[（(][^）)]*[）)]/, ''); }
         var valueRules = function (key) {
           if (key === 'avg' && vp.avg) return [{ re: num('(?=\\s*件)'), value: function () { return vp.avg; } }];
+          if (key === 'visitorAvg' && vp.visitorAvg) return [{
+            re: new RegExp('[0-9０-９][0-9０-９,，.．]*(?=\\s*(?:名|人))'),
+            value: function () { return vp.visitorAvg; } }];
           if (key === 'total' && vp.total) return [{ re: num('(?=\\s*件)'), value: function () { return vp.total; } }];
           if (key === 'month' && vp.count) {
             return [{ re: new RegExp(FP_NUM_ + '\\s*件(?:\\s*[(（]\\s*' + FP_NUM_ + '\\s*件\\s*[\\/／]\\s*週\\s*[)）])?'),
@@ -524,7 +529,7 @@ function applyVpReport_(parts, vp, date) {
           want = label;
           if (/[0-9０-９]/.test(rest)) { rules = rules.concat(valueRules(label)); want = null; }      // 見出しと同じ行に数
           else if (/[:：]$/.test(rest)) {                                                               // 「平均：」のあとに入れる
-            var v = { avg: vp.avg && vp.avg + '件', total: vp.total && vp.total + '件', thanks: vp.thanks,
+            var v = { avg: vp.avg && vp.avg + '件', visitorAvg: vp.visitorAvg && vp.visitorAvg + '名', total: vp.total && vp.total + '件', thanks: vp.thanks,
                       month: vp.count && vp.count + '件' + (vp.perWeek ? '(' + vp.perWeek + '件/週)' : '') }[label];
             if (v) rules.push({ re: /[:：](?=[\s　]*$)/, value: function (m) { return m[0] + v; } });
             want = null;
@@ -555,6 +560,7 @@ function applyVpReport_(parts, vp, date) {
   });
   var items = [];
   if (res.done.avg) items.push('月間リファーラル数の平均 ' + vp.avg + '件');
+  if (res.done.visitorAvg) items.push('月間ビジター数の平均 ' + vp.visitorAvg + '名');
   if (res.done.month) items.push((month ? month.m + '月の' : '') + '月間リファーラル数 ' + vp.count + '件');
   if (res.done.total) items.push('累計 ' + vp.total + '件');
   if (res.done.thanks) items.push('サンキュー額 ' + vp.thanks);
@@ -711,6 +717,24 @@ function applyNetworkingLeaders_(parts, nl, cache) {
   });
   pages.forEach(function (pg) {
     var t = pg.info.type;
+    if (pg.xml.indexOf('{{ネットワーキングリファーラル}}') >= 0) {
+      var tokens = {};
+      [['ext', 'ネットワーキングリファーラル'], ['visitor', 'ネットワーキングビジター']].forEach(function (pair) {
+        var it = items[pair[0]];
+        tokens[pair[1]] = it && it.people.length ? it.people.map(function (p) { return p.name; }).join('・')
+          + (it.value ? '（' + it.value + (it.unit || '') + '）' : '') : '該当者なし';
+        if (it) it.people.forEach(function (p) { res.filled.push({ path: pg.path, kind: pair[0], name: p.name }); });
+      });
+      var nativeXml = replaceTokensInXml_(xmlOf_(parts, pg.path), tokens);
+      riShapes_(pg.xml).forEach(function (s) {
+        if (s.tag === 'p:sp' && s.text.indexOf('{{ネットワーキング') >= 0) {
+          s.paras.forEach(function (_, i) { nativeXml = fpFitPara_(nativeXml, s.id, i, s.acx, 1); });
+        }
+      });
+      putXml_(parts, pg.path, nativeXml);
+      show(pg, true);
+      return;
+    }
     if (t === 'kind') { if (!usedPages[pg.path]) show(pg, false); return; }
     var xml = xmlOf_(parts, pg.path), rules = monthRules();
     if (t === 'title' || t === 'summary') {
@@ -726,7 +750,7 @@ function applyNetworkingLeaders_(parts, nl, cache) {
   res.message = 'ネットワーキングリーダー（' + (yy ? yy + '年' + mm + '月' : '') + '）：'
     + (kinds.length ? kinds.map(function (k) {
         return k.label + ' ' + items[k.key].people.map(function (p) { return p.name; }).join('・');
-      }).join('／') : '受賞者の入力がありません') + '。';
+      }).join('／') : (res.filled.length ? res.filled.map(function (p) { return p.name; }).join('・') : '受賞者の入力がありません')) + '。';
   if (res.pairs.length) res.message += '\nお2人のページを作った部門: ' + res.pairs.join('、');
   if (res.emptyKinds && res.emptyKinds.length) {
     res.message += '\n該当者のいない部門（まとめのページでは見出しも出しません' + (res.emptyPacked ? '。ほかの部門を詰めて並べました' : '') + '）: '

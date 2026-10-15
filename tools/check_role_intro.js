@@ -356,6 +356,12 @@ ck(S5.includes('見本　七子') && S5.includes(vhMembers.join('、')) && F.sli
       color: /1F3864/.test(x) })));
   };
   const lc = F.riLearningCorner_(learnSlide(300), data, W, H);
+  const nativeBox = sp(8, 0, 200, 500, 140, ['氏名学習トピック'], 4800)
+    .replace('氏名学習トピック', '氏名</a:t></a:r><a:br><a:rPr lang="ja-JP"/></a:br><a:r><a:rPr lang="ja-JP"/><a:t>学習トピック');
+  const native = F.riLearningCorner_(slideXml(sp(2, 0, 20, 960, 60, ['ネットワーキング学習コーナー'], 4000, true)
+    + nativeBox + pic(3, 560, 100, 300, 280, 'rId3')), data, W, H);
+  ck(native.done && F.slideText_(native.xml).includes('見本　四郎') && F.slideText_(native.xml).includes('学習トピック'),
+    '学習コーナー：書式を含む改行の氏名を差し替えられない');
   const got = runsOf(lc.xml);
   ck(lc.done && lc.name === '見本　四郎', '学習コーナー：担当（エデュケーションコーディネーター）を入れない: ' + J({ done: lc.done, name: lc.name }));
   ck(J(got) === J([[{ t: 'イベント企画', sz: 2000, b: '0', i: '0', color: true }],
