@@ -2,7 +2,7 @@
 
 // 反映されたか確かめるための版。変更したら日付を更新する。
 // clasp push / デプロイが効いているかは、これを画面で見れば分かる。
-var SYSTEM_VERSION_ = '2026-10-15a';
+var SYSTEM_VERSION_ = '2026-10-16b';
 
 function getSystemVersion() { return SYSTEM_VERSION_; }
 
@@ -54,6 +54,7 @@ function onOpen() {
       .addItem('アーカイブを全て表示に戻す', 'menuUnarchiveAll'))
     .addSubMenu(ui.createMenu('⚙️ 設定')
       .addItem('チャプター（名前・期・定例会の回数・プレゼンの秒数）', 'openChapterSettingsDialog')
+      .addItem('BNI統計情報（月次更新）', 'openBniStatsDialog')
       .addItem('足りないシートを作る（ルーティンチェックシートなど）', 'menuCreateMissingSheets')
       .addSeparator()
       .addItem('BNI 素材フォルダ', 'openAssetSettingsDialog')
@@ -78,6 +79,7 @@ function onOpen() {
       .addItem('メール送信のテスト（代理送信の Web App）', 'menuTestMailSending')
       .addItem('Gemini接続テスト', 'testGeminiConnection')
       .addItem('Googleの権限を確認・許可する', 'authorizeDriveAccess')
+      .addItem('準備状況と実行アカウントを確認', 'diagnoseHomeStatus')
       .addItem('ダイアログが真っ白なときの確認', 'diagnoseDialogFiles'))
     .addSeparator()
     .addItem('❓ 使い方（ヘルプ）', 'openManualDialog')
@@ -312,21 +314,46 @@ function saveAllocationNote(text) {
   return "保存しました。";
 }
 
+function holidayDate_(value) {
+  if (Object.prototype.toString.call(value) === '[object Date]') {
+    return isNaN(value.getTime()) ? '' : Utilities.formatDate(value, 'Asia/Tokyo', 'yyyy/MM/dd');
+  }
+  var s = String(value == null ? '' : value).normalize('NFKC').trim();
+  var m = s.match(/^(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})$/);
+  if (!m) return '';
+  var y = +m[1], mo = +m[2], day = +m[3], d = new Date(Date.UTC(y, mo - 1, day));
+  if (d.getUTCFullYear() !== y || d.getUTCMonth() + 1 !== mo || d.getUTCDate() !== day) return '';
+  return m[1] + '/' + ('0' + mo).slice(-2) + '/' + ('0' + day).slice(-2);
+}
 function getHolidays() {
   var sheet = getSS_().getSheetByName("休会日");
   if (!sheet) return [];
   var data = sheet.getDataRange().getValues(), holidays = [];
   for (var i = 0; i < data.length; i++) {
-    if (data[i][0]) { var d = new Date(data[i][0]); if (!isNaN(d.getTime())) holidays.push(Utilities.formatDate(d, "Asia/Tokyo", "yyyy/MM/dd")); }
+    var date = holidayDate_(data[i][0]);
+    if (date && holidays.indexOf(date) < 0) holidays.push(date);
   }
-  return holidays;
+  return holidays.sort();
 }
 function saveHolidays(holidaysArray) {
+  if (!Array.isArray(holidaysArray)) throw new Error('休会日の一覧を読み取れませんでした。画面を開き直してください。');
+  var dates = [];
+  holidaysArray.forEach(function (h) {
+    var date = holidayDate_(h);
+    if (!date) throw new Error('休会日に正しくない日付があります。日付を選び直してください。');
+    if (dates.indexOf(date) < 0) dates.push(date);
+  });
+  dates.sort();
   var ss = getSS_(), sheet = ss.getSheetByName("休会日");
-  if (!sheet) { sheet = ss.insertSheet("休会日"); sheet.hideSheet(); } else { sheet.clear(); }
-  var data = holidaysArray.map(function(h){ return [h]; });
-  if(data.length > 0) sheet.getRange(1, 1, data.length, 1).setValues(data);
-  return "休会日を保存しました";
+  if (!sheet) { sheet = ss.insertSheet("休会日"); sheet.hideSheet(); }
+  // 日付の文字列として保存し、削除した古い日付も同じ書き込みで空にする。
+  var rows = Math.max(sheet.getLastRow(), dates.length);
+  if (rows) sheet.getRange(1, 1, rows, 1).setNumberFormat('@').setValues(
+    Array.from({ length: rows }, function (_, i) { return [dates[i] || '']; }));
+  SpreadsheetApp.flush();
+  var saved = getHolidays();
+  if (JSON.stringify(saved) !== JSON.stringify(dates)) throw new Error('保存内容を確認できませんでした。休会日の画面を開き直してください。');
+  return { ok: true, holidays: saved, count: saved.length, message: '休会日を保存しました' };
 }
 // 開催回の数え方の基準は、チャプターの設定（chapter_srv.js）にある
 // （Activeチャプターは 2026/3/18(水) が第509回。その曜日に毎週開催として数え、休会日の週は数えない）

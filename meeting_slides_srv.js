@@ -1582,6 +1582,9 @@ function editMeetingSlides_(parts, map, rules, o) {
     fitTwoPersonPage_(parts, TWO[w].prefix, map);      // 長いお名前・会社名が下の段に重ならないように
   }
   var photos = { message: photoMsgs.join('\n') };
+  var stats = (typeof applyBniStats_ === 'function') ? applyBniStats_(parts, o.bniStats) : null;
+  var statsTouched = {};
+  if (stats) stats.paths.forEach(function(p) { statsTouched[p] = true; touched++; });
   for (path in parts) {
     if (!/^ppt\/(slides|notesSlides)\/[^\/]+\.xml$/.test(path)) continue;   // 本文だけ
     var xml = xmlOf_(parts, path), before = xml;
@@ -1591,7 +1594,7 @@ function editMeetingSlides_(parts, map, rules, o) {
       var pr = replacePatternsInXml_(xml, rules);
       if (pr.changed) { xml = pr.xml; byPattern += pr.changed; }
     }
-    if (xml !== before) { putXml_(parts, path, xml); touched++; }
+    if (xml !== before) { putXml_(parts, path, xml); if (!statsTouched[path]) touched++; }
   }
   // 後半の1枚目に写したメインプレゼンのページ：後半で入れる値の無い差し込み口（前半だけのもの）は空にする
   if (mainPage && mainPage.path) {
@@ -1619,7 +1622,7 @@ function editMeetingSlides_(parts, map, rules, o) {
   return { touched: touched, byPattern: byPattern, core: core, policy: policy, photoGone: gone,
            photos: photos, audio: audio, referral: referral, weekly: weekly, guests: guests,
            reco: reco, musicStop: musicStop, renewal: renewal, rotation: rotation, roles: roles,
-           members: members, vp: vp, leaders: leaders, mainPage: mainPage, visitors: visitors };
+           members: members, vp: vp, leaders: leaders, mainPage: mainPage, visitors: visitors, stats: stats };
 }
 
 // 後半の1枚目に、メインプレゼンのページ（前半の最後のページ。差し込み口 {{メインプレゼン1氏名}} のあるページ）を入れる。
@@ -1715,6 +1718,7 @@ function generateMeetingSlides(kind, values, meetingDateVal, opts) {
     var rules = (o.patterns === false) ? []
               : meetingPatternRules_(String(map['開催回'] || '').replace(/[^\d]/g, ''), d);
     o.meetingDate = d;            // 表紙・「○/○速報」の日付
+    if (typeof bniStatsForDate_ === 'function') o.bniStats = bniStatsForDate_(d);
     // 前半の役職のメンバー紹介：その開催日の期の「役職・チーム（半期ごと）」
     if (kind === 'meetingFirst' && o.roleIntro !== false && !o.roleIntroData) {
       try { o.roleIntroData = riDataOfDate_(d || new Date()); }
@@ -1746,9 +1750,9 @@ function generateMeetingSlides(kind, values, meetingDateVal, opts) {
     var info = r.info || {};
     var msg = '「' + label + '」を作成しました（' + r.partCount + 'パーツ／' +
               (r.timing.合計 / 1000).toFixed(1) + '秒）。';
-    if (!info.touched) {
+    if (!info.touched && !(info.stats && info.stats.updated.length)) {
       msg += '\n※ 書き換える箇所が見つかりませんでした（{{ }} も「第○回」も見つかりません）。';
-    } else {
+    } else if (info.touched) {
       msg += '\n' + info.touched + '枚のスライドを書き換えました';
       msg += info.byPattern ? '（うち「第○回・日付」を直した段落 ' + info.byPattern + 'か所）。' : '。';
     }
@@ -1772,6 +1776,7 @@ function generateMeetingSlides(kind, values, meetingDateVal, opts) {
     if (info.members && info.members.message) msg += '\n' + info.members.message;
     if (info.vp && info.vp.message) msg += '\n' + info.vp.message;
     if (info.leaders && info.leaders.message) msg += '\n' + info.leaders.message;
+    if (info.stats && info.stats.message) msg += '\n' + info.stats.message;
     if (info.mainPage && info.mainPage.message) msg += '\n' + info.mainPage.message;
     if (info.visitors && info.visitors.message) msg += '\n' + info.visitors.message;
     return { ok: true, message: msg, url: r.saved.url, downloadUrl: r.saved.downloadUrl,

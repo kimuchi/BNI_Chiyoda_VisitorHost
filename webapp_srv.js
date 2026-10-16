@@ -88,6 +88,7 @@ var WEBAPP_PAGES_ = [
   ]},
   { group: '設定', items: [
     { key: 'chapter_settings',  label: 'チャプター',             desc: '名前・リージョン・期・定例会の回数と曜日' },
+    { key: 'bni_stats',         label: 'BNI統計情報（月次更新）', desc: '世界・日本の数値を月ごとに保存し、スライドと台本へ反映' },
     { key: 'asset_settings',    label: 'BNI 素材フォルダ',       desc: '写真やテンプレートの保存先' },
     { key: 'member_master',     label: 'メンバー名簿',           desc: 'すべての機能が参照する正本' },
     { key: 'member_photos',     label: 'メンバー写真',           desc: '氏名で自動照合されます' },

@@ -69,14 +69,14 @@ function getBigTemplateStatus() {
   for (var k in BIG_TEMPLATE_KINDS_) {
     var def = BIG_TEMPLATE_KINDS_[k], id = props.getProperty(def.prop) || '';
     var row = { kind: k, label: def.label, registered: false, fileName: '', url: '', mimeType: '', isSlides: false, sizeMB: 0,
-                builtin: !!def.builtin };
+                builtin: !!def.builtin, unreadable: '' };
     if (id) {
       try {
         var f = DriveApp.getFileById(id);
         row.registered = true; row.fileName = f.getName(); row.url = f.getUrl();
         row.mimeType = f.getMimeType(); row.isSlides = (row.mimeType === SLIDES_MIME_);
         row.sizeMB = Math.round((f.getSize() || 0) / 104857.6) / 10;
-      } catch (e) {}
+      } catch (e) { row.unreadable = driveHelpHint_(e); }
     }
     list.push(row);
   }
@@ -254,13 +254,17 @@ function authorizeDriveAccess() {
     var folder = getAssetFolder_('output');
     var saved = saveOutputFile_(Utilities.newBlob('ok', 'text/plain', testName), testName);
     try { DriveApp.getFileById(saved.id).setTrashed(true); } catch (e) {}
-    var msg = '✅ 準備できています。\n\n保存先フォルダ: ' + folder.getName()
-            + '\nファイルの作成' + (saved.shared ? 'とリンク共有' : '') + 'まで確認しました。';
+    var msg = '✅ ファイルの作成を確認しました。\n\n保存先フォルダ: ' + folder.getName()
+            + '\n「リンクを知っている全員が閲覧」の設定: ' + (saved.shared ? '成功' : '失敗');
     if (!saved.shared) {
-      msg += '\n\n⚠ リンク共有だけ設定できませんでした。\n'
-           + '組織のドライブ設定で、リンクでの共有が制限されている可能性があります。\n'
-           + 'ファイルの保存自体はできるので、共有が必要な場合はドライブ側で個別に設定してください。';
+      msg += '\n\n⚠ リンク共有を設定できませんでした。\n'
+           + '組織の共有制限、または共有設定を変更する権限が原因の可能性があります。\n'
+           + 'ファイルは保存できますが、閲覧権限のない相手はリンクを開けません。\n'
+           + '必要な相手にファイルや保存先フォルダを共有できるか、所有者・管理者に確認してください。';
     }
+    msg += '\n\nこの確認はファイルの作成と共有設定だけです。\n'
+         + '画面内の読み書き、PDF・スライドの生成、メール送信、Gemini接続は別途確認が必要です。\n\n'
+         + homeExecutionSummary_(homeExecutionInfo_());
     ui.alert('Googleの権限確認', msg, ui.ButtonSet.OK);
   } catch (e) {
     ui.alert('Googleの権限確認',

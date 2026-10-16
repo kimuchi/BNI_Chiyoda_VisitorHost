@@ -14,15 +14,15 @@
 </head>
 <body>
   <h3>休会日の設定</h3>
-  <p style="font-size:13px; color:#555;">休会となる日（定例会の曜日の日。曜日は「⚙️ 設定」の「チャプター」で決めます）を選択して追加してください。回数のカウントから除外されます。</p>
+  <p style="font-size:13px; color:#555;">休会となる日（定例会の曜日の日。曜日は「⚙️ 設定」の「チャプター」で決めます）を選んで保存してください。複数の日を登録する場合は「追加」で一覧に入れます。選択中の日付も保存され、回数のカウントから除外されます。</p>
   <div style="display:flex; gap:10px; margin-bottom:20px;">
     <input type="date" id="newHoliday" style="padding:6px; flex-grow:1;">
-    <button class="add-btn" onclick="addHoliday()">追加</button>
+    <button class="add-btn" id="addBtn" onclick="addHoliday()" disabled>追加</button>
   </div>
   
   <ul id="holidayList"></ul>
   
-  <button class="save-btn" id="saveBtn" onclick="save()">保存する</button>
+  <button class="save-btn" id="saveBtn" onclick="save()" disabled>保存する</button>
   <div id="saveNote" style="margin-top:14px;font-weight:bold;white-space:pre-wrap;line-height:1.7;"></div>
 
   <script>
@@ -41,13 +41,25 @@
       m.innerHTML = String(text == null ? '' : text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/\n/g, '<br>') + back;
     }
 
-    var loaded = false;   // 読み込めたか（読めないまま保存すると、休会日が消えて開催回の番号が全部ずれるため）
+    var loaded = false, saving = false;   // 読めないまま保存すると、今の休会日が消えるため
+    function setBusy(b) {
+      document.getElementById('saveBtn').disabled = b || !loaded;
+      document.getElementById('addBtn').disabled = b || !loaded;
+      document.getElementById('newHoliday').disabled = b || !loaded;
+      var buttons = document.querySelectorAll('#holidayList button');
+      for (var i = 0; i < buttons.length; i++) buttons[i].disabled = b || !loaded;
+    }
     window.onload = function() {
+      setBusy(true);
+      saveNote('休会日を読み込み中です...');
       google.script.run.withSuccessHandler(function(data){
         holidays = data || [];
         loaded = true;
         render();
+        setBusy(false);
+        saveNote('登録済みの休会日 ' + holidays.length + '日。変更したら「保存する」を押してください。');
       }).withFailureHandler(function(e){
+        setBusy(false);
         saveNote('読み込めませんでした: ' + (e && e.message ? e.message : e) + '\n画面を開き直してください（読み込めるまで保存はできません。空のまま保存すると、今の設定が消えるため）。', '#c00');
       }).getHolidays();
     };
@@ -62,8 +74,10 @@
         var btn = document.createElement('button');
         btn.innerText = '削除';
         btn.className = 'del-btn';
+        btn.disabled = saving || !loaded;
         btn.onclick = (function(index) {
           return function() {
+            if (!loaded || saving) return;
             holidays.splice(index, 1);
             render();
           };
@@ -74,29 +88,41 @@
     }
 
     function addHoliday() {
+      if (!loaded || saving) return false;
       var dateVal = document.getElementById('newHoliday').value;
-      if(!dateVal) return;
-      var d = new Date(dateVal);
-      var formatted = d.getFullYear() + '/' + ('0'+(d.getMonth()+1)).slice(-2) + '/' + ('0'+d.getDate()).slice(-2);
+      if(!dateVal) return true;
+      // date入力の値は暦の日付。UTCの時刻として解釈すると海外で前日にずれる。
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dateVal)) {
+        saveNote('正しい休会日を選択してください。', '#c00'); return false;
+      }
+      var formatted = dateVal.replace(/-/g, '/');
       if(holidays.indexOf(formatted) === -1) {
         holidays.push(formatted);
         render();
       }
       document.getElementById('newHoliday').value = '';
+      return true;
     }
 
     function save() {
       if (!loaded) { saveNote('休会日を読み込めていないため、保存できません。画面を開き直してください。', '#c00'); return; }
-      var btn = document.getElementById('saveBtn');
-      btn.disabled = true;
+      if (saving) return;
+      if (!addHoliday()) return;
+      var submitted = holidays.slice();
+      saving = true;
+      setBusy(true);
       saveNote('保存しています...');
-      google.script.run.withSuccessHandler(function(){
-        btn.disabled = false;
+      google.script.run.withSuccessHandler(function(result){
+        holidays = result && Array.isArray(result.holidays) ? result.holidays : submitted;
+        saving = false;
+        render();
+        setBusy(false);
         saveNote('保存しました（休会日 ' + holidays.length + '日）。', 'green');
       }).withFailureHandler(function(e){
-        btn.disabled = false;
+        saving = false;
+        setBusy(false);
         saveNote('保存できませんでした: ' + (e && e.message ? e.message : e), '#c00');
-      }).saveHolidays(holidays);
+      }).saveHolidays(submitted);
     }
   </script>
 </body>

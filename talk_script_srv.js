@@ -154,7 +154,10 @@ function talkBuild_(d, overrides) {
     var src = tpl[i], row = {}, notes = [], missing = false, none = false;
     for (var j = 0; j < TALK_FIELDS_.length; j++) {
       var f = TALK_FIELDS_[j];
-      row[f] = talkFill_(src[f], resolve, function (key, r) {
+      var text = f === 'talk' && typeof bniStatsTalkText_ === 'function'
+        ? bniStatsTalkText_(src[f], src.slide, env.stats()) : src[f];
+      if (f === 'slide' && typeof bniStatsTalkSlide_ === 'function') text = bniStatsTalkSlide_(text, env.stats());
+      row[f] = talkFill_(text, resolve, function (key, r) {
         if (r.state === 'missing') missing = true;
         if (r.state === 'none') { none = true; if (notes.indexOf(key) < 0) notes.push(key); }
       });
@@ -234,7 +237,8 @@ function talkEnv_(d) {
     // アンバサダー・ディレクターのページの方（メインプレゼンにディレクターが書いてあるときだけ読む。speaker_rotation_srv.js）
     guests: function () { return once('guests', function () { return rotGuestList_(); }) || []; },
     renewal: function () { return once('renewal', function () { var r = computeRenewalLists(key); return r && r.ok ? r : null; }); },
-    weekly: function () { return once('weekly', function () { return talkWeeklyStart_(d, env.members()); }); }
+    weekly: function () { return once('weekly', function () { return talkWeeklyStart_(d, env.members()); }); },
+    stats: function () { return once('stats', function () { return bniStatsForDate_(d); }); }
   };
   return env;
 }
@@ -242,6 +246,13 @@ function talkEnv_(d) {
 // 差し込み1つの値 → { value, state: 'ok'|'none'|'missing'|'unknown' }
 function talkValue_(key, env) {
   var ok = function (v) { v = String(v == null ? '' : v).trim(); return v ? { value: v, state: 'ok' } : { value: '', state: 'missing' }; };
+  if (typeof BNI_STATS_FIELDS_ !== 'undefined') {
+    var statField = BNI_STATS_FIELDS_.filter(function(f) { return f.label === key; })[0];
+    if (statField || key === '統計情報の適用月') {
+      var statRecord = env.stats();
+      return ok(statRecord ? (statField ? statRecord.values[statField.key] : statRecord.month) : '');
+    }
+  }
   var c = chapterInfo_(), m, i;
   switch (key) {
     case 'チャプター': return ok(chapterLabel_());
@@ -520,6 +531,9 @@ function talkMeetings_() {
 // --- 差し込みの一覧（画面のボタンと、マニュアルの表のもと）---
 function talkCatalog_() {
   var g = [];
+  if (typeof BNI_STATS_FIELDS_ !== 'undefined') g.push({ group: 'BNI統計情報（月次更新）', items:
+    BNI_STATS_FIELDS_.map(function(f) { return { key: f.label, desc: '開催月に適用する統計情報（単位を含む）' }; })
+      .concat([{ key: '統計情報の適用月', desc: '使用する統計情報の適用月（例: 2026-10）' }]) });
   g.push({ group: 'チャプター・開催回', items: [
     { key: 'チャプター', desc: '「' + chapterLabel_() + '」' }, { key: 'チャプター名', desc: '「' + chapterInfo_().name + '」' },
     { key: 'リージョン', desc: 'チャプターの設定のリージョン' }, { key: '回', desc: '定例会の回数（数字）' },

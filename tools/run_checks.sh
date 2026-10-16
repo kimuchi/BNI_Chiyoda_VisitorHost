@@ -28,6 +28,7 @@ run() {
 }
 
 echo "── 毎週の流れ（名簿・PDF・メール・割り振り表）"
+run "休会日（選択して保存・読み戻し・開催日の候補から除外・海外のタイムゾーン）" node tools/check_holidays.js
 run "毎週の流れ（候補→CSV→名簿とPDF→再編集→次の週→抽選ルーレット→メール→割り振り表→PDFの確認）" node tools/check_weekly_flow.js
 run "ビジターリスト・割り振り表のシートとPDF（作った日は隠さない・真っ白のPDFを作らない）" node tools/check_visitor_pdf.js
 run "CSVから名簿・PDF作成の画面（ブラウザ：過ぎた回の再編集はその回に書き戻す・Shift_JIS のCSV・リンクで共有できなかったとき）" node tools/check_csv_dialog.js
@@ -49,6 +50,7 @@ run "PowerPointテンプレートの登録（開けない登録を未登録と�
 run "メンバー写真（アップロードで写真索引を作り直す＝新しい方の写真がすぐ見つかる・同じ方の新しい写真・HEIC・ブラウザの画面の知らせ）" node tools/check_member_photos.js
 
 echo "── スライド"
+run "BNI統計情報（月次保存・1ページと2ページ・書式・過去の開催日・台本・保存の競合）" node tools/check_bni_stats.js
 run "定例会スライド（指示どおりか）" node tools/check_meeting_slides.js
 run "ビジター・代理スライド（「$」の入った名前・テンプレートの2ページ目・消した枠・キャンセルの方・会社名44pt／カテゴリー32pt・どのページも自動で次へ進めない・ファイル名）" node tools/check_visitor_slides.js
 run "会社名・カテゴリーの組版（メンバー・リファーラル：44pt／32ptにそろえる・入らなければ同じ大きさで2行・語の途中で折らない・名簿の改行を外す）" node tools/check_layout_sizes.js
@@ -80,6 +82,7 @@ run "メンバーブック（組版・編集画面）" node tools/check_memberbo
 run "メンバーブックのPDF・ドライブの差し替え" node tools/check_memberbook_pdf.js $FONTS_DIR
 
 echo "── 画面・ウェブアプリ・文書"
+run "メニューの準備状況（承認エラー・実行アカウント・共有制限・再確認）" node tools/check_home_status.js
 run "設定の画面の保存" node tools/check_save_pages.js
 run "ウェブアプリの画面一覧" node tools/check_webapp_pages.js
 run "HTML（divの対応・スクリプトの構文・共通部品）" python3 tools/check_html.py

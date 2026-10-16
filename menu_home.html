@@ -33,6 +33,8 @@
  .lk{display:block;font-size:12px;color:#0f3d91;padding:4px 0;}
  .note{background:#fffbe8;border-left:4px solid #ffc107;padding:9px 11px;font-size:11.5px;border-radius:0 5px 5px 0;line-height:1.6;}
  #msg{margin-top:8px;font-size:12px;font-weight:bold;}
+ #execution{margin-top:10px;font-size:11px;color:#666;white-space:pre-line;overflow-wrap:anywhere;}
+ .retry{margin-top:8px;cursor:pointer;}
 </style></head>
 <body>
  <h2 id="title">BNI 名簿システム</h2>
@@ -87,6 +89,7 @@
      <div class="d">ふだんの作業では触りません。初回や、内容が変わったときだけ。</div>
      <div class="btns">
        <button class="btn" onclick="go('openChapterSettingsDialog')"><b>チャプター</b><span>名前・リージョン・期・定例会の回数と曜日</span></button>
+       <button class="btn" onclick="go('openBniStatsDialog')"><b>BNI統計情報（月次更新）</b><span>世界・日本の数値をスライドと台本に反映</span></button>
        <button class="btn" onclick="go('menuCreateMissingSheets')"><b>足りないシートを作る</b><span>次の期のルーティンチェックシートなど</span></button>
        <button class="btn" onclick="go('openAssetSettingsDialog')"><b>BNI 素材フォルダ</b><span>写真・テンプレ・生成物の保存先</span></button>
        <button class="btn" onclick="go('openMemberMasterDialog')"><b>メンバー名簿</b><span>冊子・スライド用のメンバー情報</span></button>
@@ -109,14 +112,16 @@
    <div class="card">
      <h3>準備の状況</h3>
      <div id="checks" style="font-size:12px;color:#888;">確認中...</div>
+     <button class="retry" type="button" id="retry" onclick="load()">再確認</button>
+     <div id="execution"></div>
    </div>
    <div class="card">
      <h3>直近で作ったPDF</h3>
      <div id="latest" style="font-size:12px;color:#888;">確認中...</div>
    </div>
    <div class="note">
-     うまく動かないときは、メニュー「🔧 動作確認」の
-     <b>Gemini接続テスト</b> と <b>Googleの権限を確認・許可する</b> をお試しください。
+     承認エラーが続くときは、この画面を閉じ、スプレッドシートのメニュー「名簿システム」→「🔧 動作確認」→
+     <b>準備状況と実行アカウントを確認</b> を実行してください。
    </div>
    <div id="msg"></div>
   </div>
@@ -125,15 +130,27 @@
 <script>
  window.onload=load;
  function esc(x){var d=document.createElement('span');d.textContent=x==null?'':x;return d.innerHTML;}
- function load(){ google.script.run.withSuccessHandler(render).withFailureHandler(fail).getHomeStatus(); }
- function fail(e){ document.getElementById('checks').innerHTML='<span style="color:#d00;">確認できませんでした: '+esc((e&&e.message)?e.message:e)+'</span>'; }
+ function load(){
+   document.getElementById('retry').disabled=true;
+   document.getElementById('checks').textContent='確認中...';
+   document.getElementById('latest').textContent='確認中...';
+   document.getElementById('execution').textContent='';
+   google.script.run.withSuccessHandler(render).withFailureHandler(failStatus).getHomeStatus();
+ }
+ function failStatus(e){
+   document.getElementById('retry').disabled=false;
+   document.getElementById('checks').innerHTML='<span style="color:#d00;">準備状況は未確認です。'+esc((e&&e.message)?e.message:e)
+     +'</span><p>このエラーだけでは、各機能が使えるかは判断できません。下の案内からメニューバーの診断を実行してください。</p>';
+   document.getElementById('latest').textContent='未確認（準備状況を取得できませんでした）';
+ }
 
  function render(st){
+   document.getElementById('retry').disabled=false;
    if(st.title) document.getElementById('title').textContent = st.title;
    document.getElementById('checks').innerHTML = st.checks.map(function(c){
-     return '<div class="chk"><span class="mark '+(c.ready?'y':'n')+'">'+(c.ready?'✓':'!')+'</span>'
-       +'<span class="t"><b>'+esc(c.label)+'</b><i>'+esc(c.detail)+'</i></span>'
-       +(c.ready?'':'<a onclick="go(\''+c.fixFn+'\')">'+esc(c.fixLabel)+'</a>')+'</div>';
+     return '<div class="chk"><span class="mark '+(c.ready?'y':'n')+'">'+(c.error?'?':(c.ready?'✓':'!'))+'</span>'
+       +'<span class="t"><b>'+esc(c.label)+(c.error?'（未確認）':'')+'</b><i>'+esc(c.detail)+'</i></span>'
+       +(c.ready||c.error?'':'<a onclick="go(\''+c.fixFn+'\')">'+esc(c.fixLabel)+'</a>')+'</div>';
    }).join('');
 
    var L=st.latest||{}, rows=[];
@@ -141,7 +158,11 @@
    if(L.allocation)  rows.push('<a class="lk" href="'+L.allocation+'" target="_blank">📄 ルーム割り振り表</a>');
    if(L.memberBook)  rows.push('<a class="lk" href="'+L.memberBook+'" target="_blank">📄 メンバーブック</a>');
    if(L.date && L.date!=='未設定') rows.push('<div style="font-size:11px;color:#888;margin-top:5px;">開催日: '+esc(L.date)+'</div>');
-   document.getElementById('latest').innerHTML = rows.length?rows.join(''):'<span style="color:#888;">まだありません</span>';
+   document.getElementById('latest').innerHTML = st.latestError ? '未確認: '+esc(st.latestError)
+     : (rows.length?rows.join(''):'<span style="color:#888;">まだありません</span>');
+   var x=st.execution;
+   if(x) document.getElementById('execution').textContent='版: '+x.version+'\n利用者: '+(x.activeUser||'取得できません')
+     +'\n実行者: '+(x.effectiveUser||'取得できません')+'\nGoogleの承認状態: '+x.authorization;
  }
 
  // ダイアログは1つしか開けないため、この画面を閉じてから目的の画面を開く
@@ -149,7 +170,9 @@
    if(!fn) return;
    document.getElementById('msg').innerHTML='<span style="color:#0055ff;">ひらいています...</span>';
    google.script.run.withSuccessHandler(function(){ google.script.host.close(); })
-     .withFailureHandler(fail)[fn]();
+     .withFailureHandler(function(e){
+       document.getElementById('msg').textContent='この操作を開けませんでした: '+((e&&e.message)?e.message:e);
+     })[fn]();
  }
 </script>
 </body></html>

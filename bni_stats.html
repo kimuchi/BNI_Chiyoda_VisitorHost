@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html><head><base target="_top"><style>
+body{font-family:sans-serif;padding:18px;color:#222;font-size:14px}h3{color:#0055ff;margin-top:0}
+.hint{font-size:12px;color:#666;line-height:1.6}.note{background:#fff7dd;padding:10px;margin:12px 0;font-size:12px}
+label{display:block;margin:12px 0 4px;font-weight:bold}input,select,button{font:inherit;padding:8px;box-sizing:border-box}
+input[type=text]{width:100%;border:1px solid #ccc;border-radius:4px}button{cursor:pointer}button:disabled{cursor:default;opacity:.6}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:16px}.save{margin-top:18px;background:#0055ff;color:white;border:0;border-radius:4px;width:100%;font-weight:bold}
+#msg{white-space:pre-wrap;margin-top:12px;font-size:13px}small{font-weight:normal;color:#888}@media(max-width:480px){.cols{grid-template-columns:1fr}}
+</style></head><body>
+<h3>BNI統計情報（月次更新）</h3>
+<div class="hint">月に一度、公式発表の数値を入れて保存します。定例会スライドと台本に共通で使います。
+統計が1ページでも、世界と日本が2ページに分かれていても、項目名から数値欄を探して更新します。</div>
+<label for="month">適用月 <small>この月の定例会から使用</small></label>
+<input type="month" id="month" disabled onchange="changeMonth()">
+<select id="history" disabled onchange="pickHistory()" aria-label="保存済みの月"><option value="">保存済みの月</option></select>
+<div id="state" class="note">読み込み中...</div>
+<div class="hint">「356,000人超」「約4兆5000億円」のように、表示する単位や「超」「約」も入れてください。
+数字だけなら単位を補います。空欄の項目は、テンプレートの数値をそのまま使います。</div>
+<div class="cols"><div>
+<h4>世界</h4><div id="world"></div>
+</div><div><h4>日本</h4><div id="japan"></div></div></div>
+<label for="source">発表元・メモ <small>任意</small></label><input type="text" id="source" maxlength="300" disabled placeholder="例: 公式月次資料のURL、発表日">
+<button type="button" class="save" id="saveBtn" disabled onclick="save()">この月の数値を保存する</button>
+<button type="button" id="reloadBtn" onclick="reload()">読み込み直す</button>
+<div id="msg" role="status"></div>
+<script>
+var current=null,fields=[],dirty=false,busy=false,request=0;
+function el(id){return document.getElementById(id);}
+function show(t,ok){el('msg').textContent=t||'';el('msg').style.color=ok?'#188038':'#c00';}
+function setBusy(b){busy=b;document.querySelectorAll('input,select,button').forEach(function(e){e.disabled=b;});}
+function esc(t){var d=document.createElement('span');d.textContent=t;return d.innerHTML;}
+function fill(s){
+ if(!s||!s.ok){failed({message:(s&&s.message)||'読み込めませんでした。'});return;}
+ current=s;fields=s.fields;dirty=false;el('month').value=s.month;
+ ['world','japan'].forEach(function(scope){el(scope).innerHTML=fields.filter(function(f){return f.scope===scope;}).map(function(f){
+  return '<label for="'+f.key+'">'+esc(f.label)+'</label><input type="text" id="'+f.key+'" maxlength="60" oninput="dirty=true">';
+ }).join('');});
+ fields.forEach(function(f){el(f.key).value=s.values[f.key]||'';});el('source').value=s.source||'';
+ el('history').innerHTML='<option value="">保存済みの月</option>'+s.months.map(function(m){return '<option value="'+m+'">'+m+'</option>';}).join('');
+ el('state').textContent=s.saved?'この月の保存済みの数値です。':(s.sourceMonth?s.sourceMonth+'の値を引き継いで表示しています。保存するまで、この月の設定にはなりません。':'まだ保存されていません。数値を入れて保存してください。');
+ setBusy(false);
+}
+function failed(e){setBusy(false);el('saveBtn').disabled=true;el('state').textContent='設定を確認できていません。読み込み直してください。';show('読み込めませんでした: '+((e&&e.message)||e),false);}
+function load(month){
+ var n=++request;setBusy(true);show('',true);
+ google.script.run.withSuccessHandler(function(s){if(n===request)fill(s);}).withFailureHandler(function(e){if(n===request)failed(e);}).getBniStatsSettings(month||'');
+}
+function mayDiscard(){return !dirty||confirm('保存していない変更があります。読み込み直しますか？');}
+function changeMonth(){if(busy)return;if(!mayDiscard()){el('month').value=current.month;return;}load(el('month').value);}
+function pickHistory(){if(el('history').value&&mayDiscard())load(el('history').value);}
+function reload(){if(mayDiscard())load(current?current.month:'');}
+function save(){
+ if(busy||!current)return;
+ var s={month:current.month,revision:current.revision,source:el('source').value,values:{}};
+ fields.forEach(function(f){s.values[f.key]=el(f.key).value;});setBusy(true);show('保存中...',true);
+ google.script.run.withSuccessHandler(function(r){
+  setBusy(false);if(!r||!r.ok){show((r&&r.message)||'保存できませんでした。',false);return;}fill(r.settings);show(r.message,true);
+ }).withFailureHandler(function(e){setBusy(false);show('保存できませんでした: '+((e&&e.message)||e),false);}).saveBniStatsSettings(s);
+}
+el('source').oninput=function(){dirty=true;};
+window.onload=function(){load('');};
+window.onbeforeunload=function(e){if(dirty){e.preventDefault();e.returnValue='';}};
+</script></body></html>
