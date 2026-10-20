@@ -261,7 +261,11 @@ function talkValue_(key, env) {
     case '回': return ok(talkMeetingNo_(env));
     case '開催日': return ok(talkDateLabel_(env.date));
     case '期': return ok(roleTermOf_(env.date));
-    case '名簿の先頭': return ok(env.members().length ? talkShort_(env.members()[0].name, env.members()) : '');
+    case '名簿の先頭': {
+      // 貢献発表（リファーラル発表）のいちばん初めの方：名簿のNo.順で、その日の欠席の方を除く（スライドのページと同じ順）
+      var first = talkReferralFirst_(env);
+      return ok(first ? talkShort_(first.name, env.members()) : '');
+    }
     case 'ビジターの人数': case 'ゲストの人数': case '代理の人数':
       return env.people() ? { value: String(talkPeople_(env, { 'ビジターの人数': 'visitor', 'ゲストの人数': 'guest', '代理の人数': 'sub' }[key]).length), state: 'ok' }
                           : { value: '', state: 'missing' };
@@ -348,6 +352,16 @@ function talkRoleOf_(name) {
 
 // --- お名前の書き方 ---
 // 氏名 → 名字（同じ名字の方が名簿にいればフルネーム。空白は詰める）
+// 貢献発表（リファーラル発表）のいちばん初めの方。名簿のNo.順（No.の無い方はうしろ）で、
+// ルーティンチェックシートのその日の欠席の方を除く（後半スライドのリファーラル発表のページと同じ順）
+function talkReferralFirst_(env) {
+  var ri = env.routine(), away = {};
+  ((ri && ri.absentees && ri.absentees.names) || []).forEach(function (n) { away[normName_(n)] = true; });
+  var list = env.members().filter(function (m) { return m.name && !away[normName_(m.name)]; })
+    .map(function (m, i) { return { m: m, i: i }; })
+    .sort(function (a, b) { return ((parseFloat(a.m.no) || 9999) - (parseFloat(b.m.no) || 9999)) || (a.i - b.i); });
+  return list.length ? list[0].m : null;
+}
 function talkShort_(name, members) {
   return roleShortName_(name, members).replace(/さん$/, '');
 }
@@ -578,7 +592,7 @@ function talkCatalog_() {
   g.push({ group: 'その他', items: [
     { key: 'スピーカーローテーション', desc: '今後4回のメインプレゼン（1回1行）' },
     { key: '更新対象者（30日以内）', desc: 'メンバー名簿の更新期限日から' }, { key: '更新対象者（60日以内）', desc: 'メンバー名簿の更新期限日から' },
-    { key: '更新対象者（90日以内）', desc: 'メンバー名簿の更新期限日から' }, { key: '名簿の先頭', desc: 'メンバー名簿のいちばん上の方の名字' }] });
+    { key: '更新対象者（90日以内）', desc: 'メンバー名簿の更新期限日から' }, { key: '名簿の先頭', desc: '貢献発表のいちばん初めの方の名字（名簿のNo.順。その日の欠席の方は飛ばす）' }] });
   return g;
 }
 

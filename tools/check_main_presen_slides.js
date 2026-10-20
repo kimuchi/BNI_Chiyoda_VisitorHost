@@ -9,7 +9,8 @@
 //   ・ディレクターだけの週、テンプレートにページの無いディレクター（手で選ぶ知らせ）、スピーカーローテーションの1人・ディレクターの回
 //   ・後半：①②は同じ。抽選はメンバーの方だけ（1人なら①だけ）。抽選の欄でもディレクターを選べる
 // サーバー（本番の *.js を lib_sheet_fake の上で。メインプレゼンのページは公式ファイルからの雛形と同じ offTwoPersonPage_ で作る）
-//   ・1人の週：もう1人の文字箱と写真の枠を消し、残る方（①でも②でも）の写真の枠と文字箱をまん中に。上下はそのまま。2人の週は前のまま
+//   ・1人の週：もう1人の文字箱と写真の枠を消し、残る方（①でも②でも）の写真の枠と文字箱をまん中に。上下はそのまま。2人の週は前のまま。
+//     1人ずつの後ろの台紙（白いカード）は、残る方のものを一緒にまん中へ・もう1人のものを消す（2人にまたがる帯・端の飾りはそのまま）
 //   ・後半の1枚目（前半のテンプレートから写したページ）・抽選も同じ。抽選の飾りの画像に重なるときは動かさない
 //   ・ディレクターの写真：前半はその方のページの画像を指す。後半は前半のテンプレートから画像を写す（種類の登録も足す）。
 //     画面から会社名・カテゴリーが来なければ、その方のページから入れる。写真の無い方の知らせには、どのページかを付ける
@@ -329,6 +330,41 @@ function runFirst(names, opt) {
   ck(pics(t.xml) === pics(F.xmlOf_(partsOf(FIRST), 'ppt/slides/slide1.xml')) - 1, '10) ' + J(names) + ' もう1人の写真の枠（テンプレートの写真）が残った: '
      + pics(t.xml));
 });
+// 10b) 1人ずつの後ろの台紙（白いカード）：残る方の台紙は一緒にまん中へ、もう1人の台紙は消す
+//      （以前は人だけまん中に動き、2枚の台紙のすき間に乗っていた）。2人にまたがる帯・端の飾りは動かさない。2人の週は前のまま
+{
+  const z = readZip(FIRST);
+  const bx = (list) => ({ x0: Math.min(...list.map((s) => s.x)), x1: Math.max(...list.map((s) => s.x + s.cx)),
+                          y0: Math.min(...list.map((s) => s.y)), y1: Math.max(...list.map((s) => s.y + s.cy)) });
+  const sp = (id, x, y, cx, cy) => `<p:sp><p:nvSpPr><p:cNvPr id="${id}" name="台紙${id}"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr>`
+    + `<a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="roundRect"><a:avLst/></a:prstGeom>`
+    + `<a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></p:spPr></p:sp>`;
+  const card = (id, b) => sp(id, b.x0 - 100000, b.y0 - 100000, b.x1 - b.x0 + 200000, b.y1 - b.y0 + 200000);
+  const b1 = bx(BEFORE[1]), b2 = bx(BEFORE[2]);
+  // 902 2人にまたがる帯・903 左下の飾り・904 題名の後ろの左の帯（欄のまん中に届かない）・905/906 左右半分ずつの背景（高さいっぱい）
+  const extra = sp(905, 0, 0, SLIDE_W / 2, 6858000) + sp(906, SLIDE_W / 2, 0, SLIDE_W / 2, 6858000)
+    + card(900, b1) + card(901, b2) + sp(902, 0, b1.y0 + 200000, SLIDE_W, 300000) + sp(903, 100000, 6100000, 900000, 500000)
+    + sp(904, 0, 200000, 5600000, 1100000);
+  z['ppt/slides/slide1.xml'] = Buffer.from(z['ppt/slides/slide1.xml'].toString('utf8')
+    .replace(/<p:grpSpPr\/>|<p:grpSpPr>[\s\S]*?<\/p:grpSpPr>/, (m) => m + extra), 'utf8');
+  const buf = writeZip(z), before = F.offShapes_(F.xmlOf_(partsOf(buf), 'ppt/slides/slide1.xml'));
+  const geo = (xml, id) => F.offShapes_(xml).find((s) => s.id === id);
+  const same = (xml, id) => { const a = geo(xml, id), b = before.find((s) => s.id === id); return a && b && a.x === b.x && a.y === b.y && a.cx === b.cx; };
+  [[['見本 一郎', ''], '900', '901'], [['', '見本 一郎'], '901', '900']].forEach(([names, keep, gone]) => {
+    const t = runFirst(names, { buf }), kept = geo(t.xml, keep), was = before.find((s) => s.id === keep);
+    const person = keep === '900' ? t.s1 : t.s2;
+    ck(kept && Math.abs(kept.x + kept.cx / 2 - SLIDE_W / 2) <= 2 && kept.y === was.y && kept.cx === was.cx
+       && Math.abs((kept.x + kept.cx / 2) - centerOf(person)) <= 2,
+       '10b) ' + J(names) + ' 残る方の台紙が一緒にまん中へ動かない: ' + J({ kept: kept && [kept.x, kept.cx], person: centerOf(person), mid: SLIDE_W / 2 }));
+    ck(!geo(t.xml, gone), '10b) ' + J(names) + ' もう1人の台紙が残った');
+    ck(['902', '903', '904', '905', '906'].every((id) => same(t.xml, id)),
+       '10b) ' + J(names) + ' 2人にまたがる帯・端の飾り・題名の後ろの帯・半分ずつの背景を動かした・消した: '
+       + J(['902', '903', '904', '905', '906'].filter((id) => !same(t.xml, id))));
+    ck(/メインプレゼンは1人なので、まん中に置きました/.test(t.msg), '10b) ' + J(names) + ' 知らせ: ' + t.msg);
+  });
+  const t2 = runFirst(['見本 一郎', '試験 二郎'], { buf });
+  ck(['900', '901', '902', '903', '904', '905', '906'].every((id) => same(t2.xml, id)), '10b) 2人の週に台紙を動かした');
+}
 // 11) ディレクター＋メンバー：ディレクターの写真は、前半テンプレートのその方のページの画像
 {
   const t = runFirst(['空想 太郎', '試験 二郎']);

@@ -375,8 +375,8 @@ function setTwoPersonPhotos_(parts, path, prefix, names, cache, opt) {
   opt = opt || {};
   var xml = xmlOf_(parts, path), res = { done: [], missing: [], noFrame: false, guests: [], single: null };
   var prs = xmlOf_(parts, 'ppt/presentation.xml') || '';
-  var sz = prs.match(/<p:sldSz\s+cx="(\d+)"/);
-  var slideW = sz ? parseInt(sz[1], 10) : 12192000;
+  var sz = prs.match(/<p:sldSz\s+cx="(\d+)"/), szh = prs.match(/<p:sldSz\b[^>]*\scy="(\d+)"/);
+  var slideW = sz ? parseInt(sz[1], 10) : 12192000, slideH = szh ? parseInt(szh[1], 10) : 6858000;
   // いつも2人ぶん（1人ぶんだけ渡されても、2人目の枠にテンプレートの元の写真を残さない）
   var two = [String(names[0] || ''), String(names[1] || '')];
 
@@ -398,7 +398,7 @@ function setTwoPersonPhotos_(parts, path, prefix, names, cache, opt) {
   var slots = pics.length ? pickPhotoFrames_(xml, prefix, 2, pics) : [];
   // 1人だけのときの置き方は、写真の枠を消す前に決める（写真の無い方も、枠のある形でまん中を決める）
   var one = two[0] ? (two[1] ? -1 : 0) : (two[1] ? 1 : -1);
-  var plan = (opt.single && one >= 0) ? twoPersonSinglePlan_(xml, prefix, one, slots, slideW) : null;
+  var plan = (opt.single && one >= 0) ? twoPersonSinglePlan_(xml, prefix, one, slots, slideW, slideH) : null;
 
   var rp = relsPathOf_(path), rels = xmlOf_(parts, rp);
   cache = cache || { by: {}, seq: 0 };
@@ -433,10 +433,12 @@ function setTwoPersonPhotos_(parts, path, prefix, names, cache, opt) {
 // --- 1人だけの週（メインプレゼン・抽選）---
 // k … 残る方（0＝1人目の欄・1＝2人目の欄）。残る方の文字箱（{{○○N氏名}}・会社名・カテゴリー）と写真の枠をひとまとまりにして、
 // 左右のまん中に来る動かし量（dx）を決め、もう1人の文字箱を消す。上下の位置はそのまま。ほかの飾り（題名・動画など）は動かさない。
+// ただし、1人ずつの後ろにある台紙（白いカードなど。その方の欄だけに重なる図形・画像）は、残る方のものを一緒に動かし、
+// もう1人のものは消す（台紙が残ると、まん中に動かした方が2枚の台紙のすき間に乗ってしまう）。
 // 動かした先が、ほかの画像（抽選コーナーの中央下のプレゼントの絵など）に新しく重なるときは、動かさない（blocked）。
 // 位置の書いていない文字箱（レイアウトから受け継ぐもの）があるときも、動かさない。
 var TWO_PERSON_FIELDS_ = ['氏名', '会社名', 'カテゴリー'];
-function twoPersonSinglePlan_(xml, prefix, k, slots, slideW) {
+function twoPersonSinglePlan_(xml, prefix, k, slots, slideW, slideH) {
   var geo = shapeBoxes_(xml);
   var move = twoPersonSlotShapes_(xml, prefix, k + 1, 2 - k);
   if (slots[k]) move.push(slots[k].id);
@@ -450,10 +452,16 @@ function twoPersonSinglePlan_(xml, prefix, k, slots, slideW) {
     plan.sx[move[i]] = b.sx;
   }
   plan.dx = Math.round(slideW / 2 - (lo + hi) / 2);
+  // 1人ずつの台紙：残る方のものは一緒に動かし、もう1人のものは消す
+  var cards = twoPersonCards_(xml, prefix, slots, slideW, geo, slideH);
+  (cards[k] || []).forEach(function (id) { if (move.indexOf(id) < 0) { move.push(id); plan.sx[id] = geo[id].sx; } });
+  (cards[1 - k] || []).forEach(function (id) { if (plan.remove.indexOf(id) < 0) plan.remove.push(id); });
+  plan.cards = (cards[k] || []).length + (cards[1 - k] || []).length;
   if (!plan.dx) return plan;
-  // ほかの画像（2人の写真の枠でないもの）に、動かしたら新しく重なるか（もともと重なっている背景などは数えない）
+  // ほかの画像（2人の写真の枠・台紙でないもの）に、動かしたら新しく重なるか（もともと重なっている背景などは数えない）
   var skip = {};
   move.forEach(function (id) { skip[id] = true; });
+  plan.remove.forEach(function (id) { skip[id] = true; });
   slots.forEach(function (s) { if (s) skip[s.id] = true; });
   var hit = function (a, dx, c) { return a.x + dx < c.x + c.cx && c.x < a.x + dx + a.cx && a.y < c.y + c.cy && c.y < a.y + a.cy; };
   for (var id in geo) {
@@ -464,6 +472,44 @@ function twoPersonSinglePlan_(xml, prefix, k, slots, slideW) {
   }
   plan.moved = true;
   return plan;
+}
+// 1人ずつの後ろの台紙 → [[1人目の欄の台紙の図形ID], [2人目の]]。
+// その方の欄（写真の枠と文字箱）のまん中（左右・上下とも）を含み、もう1人の欄のまん中を含まない図形・画像
+// （文字の無いもの。ページの幅の6割・高さの9割より小さいもの。2人の写真の枠・文字箱は除く）。
+// 題名の後ろの帯・右上の動画・下の飾り（欄のまん中に届かない）や、左右半分ずつの背景（高さいっぱい）は台紙にしない
+function twoPersonCards_(xml, prefix, slots, slideW, geo, slideH) {
+  geo = geo || shapeBoxes_(xml);
+  var own = [twoPersonSlotShapes_(xml, prefix, 1, 2), twoPersonSlotShapes_(xml, prefix, 2, 1)];
+  slots.forEach(function (s, k) { if (s && k < 2) own[k] = own[k].concat([s.id]); });
+  var area = own.map(function (ids) {
+    var a = null;
+    ids.forEach(function (id) {
+      var b = geo[id];
+      if (!b) return;
+      a = a ? { x0: Math.min(a.x0, b.x), x1: Math.max(a.x1, b.x + b.cx), y0: Math.min(a.y0, b.y), y1: Math.max(a.y1, b.y + b.cy) }
+            : { x0: b.x, x1: b.x + b.cx, y0: b.y, y1: b.y + b.cy };
+    });
+    return a;
+  });
+  var out = [[], []];
+  if (!area[0] || !area[1]) return out;
+  var mid = area.map(function (a) { return (a.x0 + a.x1) / 2; }), skip = {};
+  own.forEach(function (ids) { ids.forEach(function (id) { skip[id] = true; }); });
+  var texts = {};
+  findTagRanges_(xml, 'p:sp').forEach(function (r) {
+    var seg = xml.substring(r.start, r.end), id = (seg.match(/<p:cNvPr[^>]*\sid="(\d+)"/) || [])[1];
+    if (id) texts[id] = slideText_(seg).replace(/[\s　]/g, '');
+  });
+  for (var id in geo) {
+    var b = geo[id];
+    if (skip[id] || texts[id] || b.cx > slideW * 0.6 || b.cy > (slideH || slideW * 9 / 16) * 0.9) continue;
+    for (var k = 0; k < 2; k++) {
+      var a = area[k], other = mid[1 - k], cy = (a.y0 + a.y1) / 2;
+      var hasMine = b.x <= mid[k] && mid[k] <= b.x + b.cx, hasOther = b.x <= other && other <= b.x + b.cx;
+      if (hasMine && !hasOther && b.y <= cy && cy <= b.y + b.cy) out[k].push(id);
+    }
+  }
+  return out;
 }
 // n 人目の欄の文字箱（その方の差し込み口があり、もう1人＝m 人目の差し込み口の無い文字箱）の図形ID
 function twoPersonSlotShapes_(xml, prefix, n, m) {
@@ -630,8 +676,31 @@ function fitTwoPersonText_(xml, prefix, values) {
       var t = TWO_PERSON_FIT_[f], key = prefix + k + t.field;
       if (!values[key]) continue;
       var text = t.company ? CB_.normalize(values[key]) : String(values[key]);
-      xml = fitTokenBox_(xml, '{{' + key + '}}', text, t.lines, t.min, t.company);
+      xml = t.field === 'カテゴリー' ? breakTokenBox_(xml, '{{' + key + '}}', text, t.lines, t.min)
+                                    : fitTokenBox_(xml, '{{' + key + '}}', text, t.lines, t.min, t.company);
     }
+  }
+  return xml;
+}
+// カテゴリー：1行に入らないときは、区切りのよいところ（「・」のあと・「（」の前など。company_break.js の CB_.layout）で折って2行までに収める
+// （PowerPoint に任せると「スタートアッ／プ企業」のように語の途中で折れる）。差し込み口だけの段落を、折った行の段落に置き換える
+// （同じ枠のほかの段落・書式はそのまま）。差し込み口がほかの文字と同じ段落にあるときは、これまでどおり小さくするだけ
+function breakTokenBox_(xml, token, text, maxLines, minPt) {
+  var sps = findTagRanges_(xml, 'p:sp');
+  for (var i = 0; i < sps.length; i++) {
+    var seg = xml.substring(sps[i].start, sps[i].end);
+    if (slideText_(seg).indexOf(token) < 0) continue;
+    var ext = seg.match(/<a:ext cx="(\d+)" cy="\d+"\s*\/>/), ps = findTagRanges_(seg, 'a:p'), p = null;
+    for (var j = 0; j < ps.length && !p; j++) if (slideText_(seg.substring(ps[j].start, ps[j].end)).trim() === token) p = ps[j];
+    if (!p || !ext) return fitTokenBox_(xml, token, text, maxLines, minPt);
+    var pXml = seg.substring(p.start, p.end), pt = riParaPt_(seg, pXml) || 18;
+    var lay = CB_.layout(text, { width: riInnerPt_(seg, parseInt(ext[1], 10)), pt: pt, minPt: Math.min(minPt || 9, pt),
+                                 maxLines: maxLines || 2, linePenalty: 10, latinJoin: true });
+    if (!lay || !lay.lines || !lay.lines.length) return xml;
+    if (lay.lines.length === 1 && lay.pt >= pt) return xml;    // 元の大きさで1行に入る（差し込み口のまま）
+    var out = lay.lines.map(function (l) { var q = oneRunParagraph_(pXml, l); return lay.pt < pt ? riParaSize_(q, lay.pt) : q; }).join('');
+    seg = seg.substring(0, p.start) + out + seg.substring(p.end);
+    return xml.substring(0, sps[i].start) + seg + xml.substring(sps[i].end);
   }
   return xml;
 }
