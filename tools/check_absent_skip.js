@@ -13,7 +13,7 @@
 //   ・前半：欠席の方の個人ページを作らない。扉ページの表・先頭の写真・NEXT にも出さない。
 //     チェックを外せば作る・「欠席の方を足す」で選べば外す。その日の列が無い日は、前の日の欠席の方を残さない
 //   ・後半：欠席の方のリファーラル発表のページを作らない。「次の発表者」も出席の方
-//   ・トークスクリプトの {名簿の先頭}（貢献発表の表紙の「それでは○○さんから」）も、名簿のNo.順で欠席の方を飛ばす
+//   ・トークスクリプトの {名簿の先頭}（貢献発表の表紙の「それでは○○さんから」）も、名簿のNo.順で欠席の方（医療欠席も）を飛ばす
 
 process.env.TZ = 'Asia/Tokyo';
 const fs = require('fs');
@@ -220,6 +220,11 @@ const lastOpts = () => (sent.length ? sent[sent.length - 1][3] || {} : {});
   ck(first([]).value === '見本', '5) 欠席の方がいない日の {名簿の先頭}（No.順のいちばん初め）: ' + J(first([])));
   ck(first(['見本　一郎', '試験 花子']).value === '架空', '5) 欠席の方が2人・空白の違う書き方: ' + J(first(['見本　一郎', '試験 花子'])));
   ck(first(['見本 一郎', '試験 花子', '架空 三郎']).value === '外部', '5) No.の無い方はうしろ: ' + J(first(['見本 一郎', '試験 花子', '架空 三郎'])));
+  // 医療欠席の方も飛ばす（ルーティンチェックシートの「医療欠席」の欄。この日は仮名さん）
+  const R5 = F.getRoutineInfo(DATE);
+  const med = { members: () => [{ no: '1', name: '仮名 四郎' }, { no: '2', name: '例示 五月' }], routine: () => R5, stats: () => null };
+  ck(R5.absentees.names.includes('仮名 四郎') && F.talkValue_('名簿の先頭', med).value === '例示',
+     '5) 医療欠席の方が {名簿の先頭} に出た: ' + J([R5.absentees.names, F.talkValue_('名簿の先頭', med)]));
   const none = { members: () => ms, routine: () => null, stats: () => null };
   ck(F.talkValue_('名簿の先頭', none).value === '見本', '5) ルーティンチェックシートの列が無い日: ' + J(F.talkValue_('名簿の先頭', none)));
 }
