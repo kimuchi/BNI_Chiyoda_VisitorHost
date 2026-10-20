@@ -17,7 +17,9 @@
 //   2) お2人のページ（meeting_slides_srv.js：メインプレゼン・抽選・後半の1枚目・推薦のことば）
 //      ・会社名は1行のまま。名簿の書き方にそろえて入れる（改行が無い・㈱を開く）。画面から改行の残った会社名が来ても
 //      ・縮めた大きさで、CB_.lineWidthPt の幅が枠の内側の幅に入る（英字の多い会社名も）。入る会社名は縮めない
-//      ・お名前・カテゴリーの縮め方は以前のまま
+//      ・お名前の縮め方は以前のまま
+//      ・カテゴリーは、1行に入らなければ区切りのよいところ（CB_.layout。内側の幅・2行まで）で折った段落にする
+//        （PowerPoint に任せると「スタートアッ／プ企業」のように語の途中で折れた）。短いカテゴリーは縮めず1行のまま
 process.env.TZ = 'Asia/Tokyo';
 const fs = require('fs');
 const path = require('path');
@@ -257,10 +259,21 @@ const checkCompany = (label, got, raw) => {
   checkCompany('推薦のことば（推薦される方）', companyOf(reco, 2), CO.r);
   ck(companyOf(reco, 1).text === 'Mihon Design Studio合同会社' && companyOf(reco, 2).text === '有限会社試験工務店' && companyOf(main, 2).text === '株式会社見本エンジニアリング',
      '2) 会社名のそろえ方: ' + J([companyOf(reco, 1).text, companyOf(reco, 2).text, companyOf(main, 2).text]));
-  // お名前・カテゴリーの縮め方は以前のまま
-  const nameSz = sizesOf(shapeOf(main, 4))[0], catSz = sizesOf(shapeOf(main, 7))[0];
+  // お名前の縮め方は以前のまま
+  const nameSz = sizesOf(shapeOf(main, 4))[0];
   ck(nameSz === oldSize('SAMPLE TARO MIHON-YAMADA', 28, 1, 20), '2) お名前の縮め方が変わった: ' + nameSz);
-  ck(catSz === oldSize(map.メインプレゼン1カテゴリー, 18, 2, 9) && catSz < 18, '2) カテゴリーの縮め方が変わった: ' + catSz);
+  // カテゴリー：入らなければ CB_.layout の切れ目で2行までの段落に（語の途中で折らない）。どの行も枠の内側に入る
+  {
+    const seg = shapeOf(main, 7), lines = parasOf(seg), pt = sizesOf(seg)[0];
+    const want = CB.layout(map.メインプレゼン1カテゴリー, { width: INNER, pt: 18, minPt: 9, maxLines: 2, linePenalty: 10 });
+    ck(J(lines) === J(want.lines) && pt === want.pt && lines.length === 2 && lines.every((l) => CB.lineWidthPt(l, pt) <= INNER + 1e-6),
+       '2) 長いカテゴリーの折り方・大きさ: ' + J({ lines, pt, want: [want.lines, want.pt] }));
+    ck(/・$/.test(lines[0]), '2) 長いカテゴリーを区切りのよいところ（「・」のあと）で折っていない: ' + J(lines));
+    const xml = F.fitTwoPersonText_(slideXml(twoPage('メインプレゼン', '今週のメインプレゼンテーション')), 'メインプレゼン',
+      { メインプレゼン1カテゴリー: '【税理士（個人事業主・スタートアップ企業）】' });
+    const two = parasOf(shapeOf(xml, 7));
+    ck(J(two) === J(['【税理士（個人事業主・', 'スタートアップ企業）】']), '2) 「スタートアップ」の途中で折った: ' + J(two));
+  }
   ck(sizesOf(shapeOf(main, 3))[0] === 28 && sizesOf(shapeOf(main, 8))[0] === 18, '2) 短いお名前・カテゴリーを縮めた');
 }
 
@@ -271,4 +284,5 @@ if (fails.length) {
 }
 console.log('サーバーのスライドの会社名: 検査 ' + checks + ' 件 OK: ビジタープレゼンは CB_.layout と同じ行・大きさ（枠の内側の幅・語の途中で折らない・'
   + 'メンバーのページと同じ切れ目・1行も CB_ の見積もりで入る・余地が少なくてもカウントダウンに重ならない・短い会社名を小さな2行にしない）・'
-  + 'お2人のページ（メインプレゼン・抽選・推薦のことば）の会社名は名簿の書き方にそろえて1行・CB_ の見積もりで枠に入る大きさ・お名前とカテゴリーは以前のまま');
+  + 'お2人のページ（メインプレゼン・抽選・推薦のことば）の会社名は名簿の書き方にそろえて1行・CB_ の見積もりで枠に入る大きさ・お名前は以前のまま・'
+  + 'カテゴリーは区切りのよいところで2行まで');
