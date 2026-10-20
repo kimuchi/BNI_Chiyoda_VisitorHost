@@ -121,7 +121,7 @@ function companyBreakLib_() {
   }
 
   // 切れ目ごとの良さ。r[i] … i字目の前で折るときの良さ（0〜6。null は折らない）。空白の位置で折ると、空白は消える
-  function cutRanks(text) {
+  function cutRanks(text, opt) {
     var s = String(text), n = s.length, r = [], i, f = fold(s);
     for (i = 0; i <= n; i++) r.push(null);
     var lock = {}, force = {};
@@ -168,7 +168,8 @@ function companyBreakLib_() {
       if (ka === 'lat' && kb === 'lat') continue;                        // 英単語・数字の途中
       if (/[・･／\/]/.test(a)) v = 1;
       else if (/[（(「『【〔［]/.test(b) || /[）)」』】〕］]/.test(a)) v = 1;
-      else if (ka === 'lat' || kb === 'lat') v = 1;
+      // opt.latinJoin（カテゴリー）：「DX推進」「IT導入」のような英字＋日本語の語は、「（」の前・「・」のあとより折りにくく
+      else if (ka === 'lat' || kb === 'lat') v = opt && opt.latinJoin && ka === 'lat' && (kb === 'kan' || kb === 'kat') ? 2 : 1;
       else if (/[＆&＋+]/.test(a)) v = 2;
       else if (/[＆&＋+]/.test(b)) v = 3;
       else if (ka !== kb) {
@@ -235,6 +236,7 @@ function companyBreakLib_() {
   //   o.shrinkFirst … 行を増やす前に、1行のまま小さくしてよいか（既定 false：いつもの大きさのまま2行にする）
   //   o.linePenalty … 3行目からの1行ごとの減点（既定 3。大きくすると、行を増やすより字を小さくする）
   //   o.accept(lines, pt) … ほかの決まり（下の図形まで入るかなど）。false を返した分け方・大きさは使わない
+  //   o.latinJoin … 英字のあとに漢字・カタカナが続くところ（「DX推進」）を折りにくくする（カテゴリー。会社名では使わない）
   // → { lines: [...], pt, natural（語の途中で折っていない）}
   function layout(raw, o) {
     o = o || {};
@@ -243,7 +245,7 @@ function companyBreakLib_() {
     var step = o.step || (base >= 30 ? 2 : base >= 16 ? 1 : 0.5), lineCost = o.linePenalty == null ? 3 : o.linePenalty;
     if (!s) return { lines: [''], pt: base, natural: true };
     if (fits(s, base, w1) && (!o.accept || o.accept([s], base))) return { lines: [s], pt: base, natural: true };
-    var ranks = cutRanks(s), best = null;
+    var ranks = cutRanks(s, o), best = null;
     var consider = function (lines, pt, cost, worst) {
       if (o.accept && !o.accept(lines, pt)) return;
       if (!best || cost < best.cost - 1e-9) best = { lines: lines, pt: pt, cost: cost, worst: worst };

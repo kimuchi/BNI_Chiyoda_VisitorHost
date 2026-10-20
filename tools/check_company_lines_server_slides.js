@@ -265,7 +265,7 @@ const checkCompany = (label, got, raw) => {
   // カテゴリー：入らなければ CB_.layout の切れ目で2行までの段落に（語の途中で折らない）。どの行も枠の内側に入る
   {
     const seg = shapeOf(main, 7), lines = parasOf(seg), pt = sizesOf(seg)[0];
-    const want = CB.layout(map.メインプレゼン1カテゴリー, { width: INNER, pt: 18, minPt: 9, maxLines: 2, linePenalty: 10 });
+    const want = CB.layout(map.メインプレゼン1カテゴリー, { width: INNER, pt: 18, minPt: 9, maxLines: 2, linePenalty: 10, latinJoin: true });
     ck(J(lines) === J(want.lines) && pt === want.pt && lines.length === 2 && lines.every((l) => CB.lineWidthPt(l, pt) <= INNER + 1e-6),
        '2) 長いカテゴリーの折り方・大きさ: ' + J({ lines, pt, want: [want.lines, want.pt] }));
     ck(/・$/.test(lines[0]), '2) 長いカテゴリーを区切りのよいところ（「・」のあと）で折っていない: ' + J(lines));
@@ -273,6 +273,32 @@ const checkCompany = (label, got, raw) => {
       { メインプレゼン1カテゴリー: '【税理士（個人事業主・スタートアップ企業）】' });
     const two = parasOf(shapeOf(xml, 7));
     ck(J(two) === J(['【税理士（個人事業主・', 'スタートアップ企業）】']), '2) 「スタートアップ」の途中で折った: ' + J(two));
+    // 英字＋日本語の語（「DX推進」「IT導入」）の途中でも折らない
+    const cat = (v) => parasOf(shapeOf(F.fitTwoPersonText_(slideXml(twoPage('メインプレゼン', '今週のメインプレゼンテーション')), 'メインプレゼン',
+      { メインプレゼン1カテゴリー: v }), 7));
+    ck(J(cat('【ITコンサルタント（DX推進・業務効率化）】')) === J(['【ITコンサルタント', '（DX推進・業務効率化）】'])
+       && J(cat('【中小企業のDX推進支援・IT導入支援】')) === J(['【中小企業のDX推進支援・', 'IT導入支援】']),
+       '2) 英字＋日本語の語の途中で折った: ' + J([cat('【ITコンサルタント（DX推進・業務効率化）】'), cat('【中小企業のDX推進支援・IT導入支援】')]));
+    ck(J(CB.layout('SAMPLE見本コンサルティング株式会社', { width: 300, pt: 44, minPt: 28, maxLines: 2 }))
+       === J(CB.layout('SAMPLE見本コンサルティング株式会社', { width: 300, pt: 44, minPt: 28, maxLines: 2, latinJoin: false })),
+       '2) 会社名の折り方が変わった（latinJoin はカテゴリーだけ）');
+    // 1つの枠に氏名・会社名・カテゴリーの段落があるとき・「カテゴリー：」と同じ段落にあるとき・先頭が空の段落のとき：
+    // ほかの段落・文字を消さない（カテゴリーの段落だけを折った行にする。同じ段落にほかの文字があれば小さくするだけ）
+    const LONG = '【税理士（個人事業主・スタートアップ企業）】';
+    const multi = (paras) => slideXml(`<p:sp><p:nvSpPr><p:cNvPr id="3" name="t3"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr><p:spPr>`
+      + `<a:xfrm><a:off x="0" y="900000"/><a:ext cx="4000000" cy="1600000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr>`
+      + `<p:txBody><a:bodyPr wrap="square"/><a:lstStyle/>${paras}</p:txBody></p:sp>`);
+    const para = (t, sz, b) => `<a:p><a:pPr algn="ctr"/><a:r><a:rPr lang="ja-JP" sz="${sz}"${b ? ' b="1"' : ''}/><a:t>${t}</a:t></a:r></a:p>`;
+    const vals = { メインプレゼン1氏名: '見本 一郎', メインプレゼン1会社名: '見本会計事務所', メインプレゼン1カテゴリー: LONG };
+    const fill = (x) => F.replaceTokensInXml_(F.fitTwoPersonText_(x, 'メインプレゼン', vals), vals);
+    const A = fill(multi(para('{{メインプレゼン1氏名}}', 2800, true) + para('{{メインプレゼン1会社名}}', 2000) + para('{{メインプレゼン1カテゴリー}}', 1800)));
+    ck(J(parasOf(shapeOf(A, 3))) === J(['見本 一郎', '見本会計事務所', '【税理士（個人事業主・', 'スタートアップ企業）】'])
+       && /sz="2800" b="1"\/><a:t>見本 一郎</.test(A) && /sz="1800"\/><a:t>【税理士（個人事業主・</.test(A),
+       '2) 1つの枠の氏名・会社名を消した・書式が変わった: ' + J(parasOf(shapeOf(A, 3))));
+    const B = fill(multi(para('カテゴリー：{{メインプレゼン1カテゴリー}}', 1800)));
+    ck(parasOf(shapeOf(B, 3)).join('') === 'カテゴリー：' + LONG, '2) 「カテゴリー：」の文字を消した: ' + J(parasOf(shapeOf(B, 3))));
+    const C = fill(multi('<a:p><a:endParaRPr lang="ja-JP" sz="1800"/></a:p>' + para('{{メインプレゼン1カテゴリー}}', 1800)));
+    ck(J(parasOf(shapeOf(C, 3))) === J(['', '【税理士（個人事業主・', 'スタートアップ企業）】']), '2) 先頭が空の段落の枠で、カテゴリーが消えた: ' + J(parasOf(shapeOf(C, 3))));
   }
   ck(sizesOf(shapeOf(main, 3))[0] === 28 && sizesOf(shapeOf(main, 8))[0] === 18, '2) 短いお名前・カテゴリーを縮めた');
 }

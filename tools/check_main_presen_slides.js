@@ -341,7 +341,10 @@ function runFirst(names, opt) {
     + `<a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></p:spPr></p:sp>`;
   const card = (id, b) => sp(id, b.x0 - 100000, b.y0 - 100000, b.x1 - b.x0 + 200000, b.y1 - b.y0 + 200000);
   const b1 = bx(BEFORE[1]), b2 = bx(BEFORE[2]);
-  const extra = card(900, b1) + card(901, b2) + sp(902, 0, b1.y0 + 200000, SLIDE_W, 300000) + sp(903, 100000, 6100000, 900000, 500000);
+  // 902 2人にまたがる帯・903 左下の飾り・904 題名の後ろの左の帯（欄のまん中に届かない）・905/906 左右半分ずつの背景（高さいっぱい）
+  const extra = sp(905, 0, 0, SLIDE_W / 2, 6858000) + sp(906, SLIDE_W / 2, 0, SLIDE_W / 2, 6858000)
+    + card(900, b1) + card(901, b2) + sp(902, 0, b1.y0 + 200000, SLIDE_W, 300000) + sp(903, 100000, 6100000, 900000, 500000)
+    + sp(904, 0, 200000, 5600000, 1100000);
   z['ppt/slides/slide1.xml'] = Buffer.from(z['ppt/slides/slide1.xml'].toString('utf8')
     .replace(/<p:grpSpPr\/>|<p:grpSpPr>[\s\S]*?<\/p:grpSpPr>/, (m) => m + extra), 'utf8');
   const buf = writeZip(z), before = F.offShapes_(F.xmlOf_(partsOf(buf), 'ppt/slides/slide1.xml'));
@@ -354,11 +357,13 @@ function runFirst(names, opt) {
        && Math.abs((kept.x + kept.cx / 2) - centerOf(person)) <= 2,
        '10b) ' + J(names) + ' 残る方の台紙が一緒にまん中へ動かない: ' + J({ kept: kept && [kept.x, kept.cx], person: centerOf(person), mid: SLIDE_W / 2 }));
     ck(!geo(t.xml, gone), '10b) ' + J(names) + ' もう1人の台紙が残った');
-    ck(same(t.xml, '902') && same(t.xml, '903'), '10b) ' + J(names) + ' 2人にまたがる帯・端の飾りを動かした・消した');
+    ck(['902', '903', '904', '905', '906'].every((id) => same(t.xml, id)),
+       '10b) ' + J(names) + ' 2人にまたがる帯・端の飾り・題名の後ろの帯・半分ずつの背景を動かした・消した: '
+       + J(['902', '903', '904', '905', '906'].filter((id) => !same(t.xml, id))));
     ck(/メインプレゼンは1人なので、まん中に置きました/.test(t.msg), '10b) ' + J(names) + ' 知らせ: ' + t.msg);
   });
   const t2 = runFirst(['見本 一郎', '試験 二郎'], { buf });
-  ck(['900', '901', '902', '903'].every((id) => same(t2.xml, id)), '10b) 2人の週に台紙を動かした');
+  ck(['900', '901', '902', '903', '904', '905', '906'].every((id) => same(t2.xml, id)), '10b) 2人の週に台紙を動かした');
 }
 // 11) ディレクター＋メンバー：ディレクターの写真は、前半テンプレートのその方のページの画像
 {
