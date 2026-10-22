@@ -8,7 +8,9 @@
 //   1) サーバー
 //      ・アップロードすると写真索引も作り直し、新しい方の写真がすぐ見つかる（「写真が見つからないメンバー」から消える）
 //      ・同じファイル名で入れ直すと、同じファイルの中身を差し替える（索引はそのまま）
-//      ・同じ方の写真を別のファイル名で入れると、新しい方を使う（使わない方を知らせる）
+//      ・同じ方の写真を別のファイル名で入れると、新しい方を使う（使わない方を知らせる）。
+//        ドライブ・アップロード用のリンクから入れた写真（更新日時が古いまま）も、入れた日時で新しい方にする
+//      ・画面の写真の控えは版ごと（同じファイル名で入れ直しても、前の写真を出さない）
 //      ・ファイル名の空白の有無は問わない。HEIC など表示できない形式は保存しない（そのときは索引も作り直さない）
 //      ・素材フォルダを開けない方は保存しない
 //   2) 画面
@@ -50,7 +52,8 @@ const pfile = (id) => {
   const f = photos[id];
   if (!f || f.trashed) throw new Error('No item with the given ID could be found, or you do not have permission to access it. (' + id + ')');
   return { getId: () => id, getName: () => f.name, getBlob: () => f.blob, getMimeType: () => f.blob.getContentType(),
-           getLastUpdated: () => new Date(f.updated), setTrashed: (t) => { f.trashed = !!t; } };
+           getLastUpdated: () => new Date(f.updated), getDateCreated: () => new Date(f.created || f.updated), setTrashed: (t) => { f.trashed = !!t; },
+           getThumbnail: () => f.blob };
 };
 const iter = (ids) => { let i = 0; return { hasNext: () => i < ids.length, next: () => pfile(ids[i++]) }; };
 const live = () => Object.keys(photos).filter((id) => !photos[id].trashed);
@@ -96,6 +99,25 @@ r = F.uploadMemberPhotosBase64([item('見本一郎__2026.png', 'image/png')]);
 const idNewer = live().find((id) => photos[id].name === '見本一郎__2026.png');
 ck(r.ok && F.findPhotoIdForName_('見本 一郎') === idNewer && idNewer !== idOld, '1) 同じ方の新しい写真を使わない: ' + J(F.findPhotoIdForName_('見本 一郎')));
 ck(/新しい方を採用/.test(r.message) && /見本 一郎\.jpg/.test(r.message), '1) 使わない写真の知らせ: ' + J(r.message));
+
+// ドライブの画面・アップロード用のリンクから入れた写真：更新日時は手元のファイルの日時（古い）のまま。入れた日時で新しい方にする
+{
+  const id = 'P' + (++seq);
+  photos[id] = { name: '見本一郎（新）.jpg'.replace('（新）', '__drive'), blob: F.Utilities.newBlob('見本の写真:リンクから', 'image/jpeg', 'x.jpg'),
+                 updated: Date.UTC(2020, 0, 1), created: (clock += 60000) };
+  const ri = F.rebuildPhotoIndex();
+  ck(ri.ok && F.findPhotoIdForName_('見本 一郎') === id, '1) リンクから入れた写真（更新日時が古い）より、前の写真を使った: ' + J(F.findPhotoIdForName_('見本 一郎')));
+}
+// 画面の写真の控え（キャッシュ）は版ごと：同じファイル名で入れ直すと、ファイルIDが同じでも新しい写真を出す
+{
+  const store = {};
+  F.CacheService = { getScriptCache: () => ({ get: (k) => (k in store ? store[k] : null), put: (k, v) => { store[k] = v; } }) };
+  const show = () => Buffer.from(F.getMemberPhotoThumbs(['架空 三郎']).map['架空 三郎'].split(',')[1], 'base64').toString();
+  const first = show();
+  F.uploadMemberPhotosBase64([item('架空 三郎.jpg', 'image/jpeg', '見本の写真:また撮り直し')]);
+  ck(first === '見本の写真:撮り直し' && show() === '見本の写真:また撮り直し' && F.findPhotoIdForName_('架空 三郎') === idNew,
+     '1) 入れ直したのに、前の写真の控えを出した: ' + J([first, show()]));
+}
 
 // 表示できない形式だけ → 保存しない・索引も作り直さない
 const before = live().length;
