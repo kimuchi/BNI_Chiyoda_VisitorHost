@@ -295,7 +295,10 @@ var PHOTO_EXT_ = /\.(jpe?g|png|gif|webp)$/i;
 var NON_DISPLAY_IMAGE_EXT_ = /\.(heic|heif|bmp|tiff?|avif|raw|cr2|nef|arw|psd)$/i;
 
 // 写真フォルダを走査して「写真索引」シートを作り直す。
-// 同じ人に複数の写真がある場合は、更新日時が新しいものを採用する（毎回同じ結果になるように）。
+// 同じ人に複数の写真がある場合は、新しいものを採用する（毎回同じ結果になるように）。
+// 新しさは「フォルダに入れた日時」と「更新日時」の新しい方で比べる。ドライブの画面やアップロード用のリンクから入れた写真は、
+// 更新日時が手元のファイルの日時（撮った日など）のままになり、前からある写真より古く見えることがあるため。
+// 4列目の「版」（更新日時）は、画面の写真の控え（キャッシュ）の見分けに使う（同じファイル名で入れ直すとファイルIDが変わらないため）
 function rebuildPhotoIndex() {
   try {
     // 素材フォルダを開けない方が作り直すと、別のフォルダ（写真の無いフォルダ）を調べて、みんなの索引を空にしてしまう
@@ -315,7 +318,9 @@ function rebuildPhotoIndex() {
       var base = fn.replace(/\.[^.]+$/, '');
       var nm = normName_(base.split('__')[0]);
       if (!nm) continue;
-      cand.push({ name: fn, key: nm, id: f.getId(), updated: f.getLastUpdated().getTime() });
+      var upd = f.getLastUpdated().getTime(), made = 0;
+      try { made = f.getDateCreated().getTime(); } catch (e) {}
+      cand.push({ name: fn, key: nm, id: f.getId(), updated: Math.max(upd, made || 0), stamp: upd });
     }
 
     // 同一人物の重複は「更新日時が新しい順」に並べ、先頭を採用する
@@ -328,14 +333,14 @@ function rebuildPhotoIndex() {
       var c = cand[i];
       if (seen[c.key]) { dups.push(c.name); continue; }   // 2枚目以降は索引に入れない
       seen[c.key] = true;
-      rows.push([c.name, c.key, c.id]);
+      rows.push([c.name, c.key, c.id, String(c.stamp)]);
     }
 
     var ss = getSS_(), sh = ss.getSheetByName('写真索引');
     if (!sh) { sh = ss.insertSheet('写真索引'); sh.hideSheet(); }
     sh.clear();
-    sh.appendRow(['ファイル名', '氏名(正規化)', 'ファイルID']);
-    if (rows.length) sh.getRange(2, 1, rows.length, 3).setValues(rows);
+    sh.appendRow(['ファイル名', '氏名(正規化)', 'ファイルID', '版']);
+    if (rows.length) sh.getRange(2, 1, rows.length, 4).setValues(rows);
 
     var msg = '写真索引を作り直しました（' + rows.length + '件）。';
     if (dups.length) msg += '\n同じ人に複数の写真がありました。新しい方を採用しています（未使用 ' + dups.length + '件: ' + dups.slice(0, 5).join('、') + '）。';
@@ -350,14 +355,19 @@ function rebuildPhotoIndex() {
 
 // 氏名から写真のファイルIDを引く（索引優先、無ければフォルダ走査）
 function findPhotoIdForName_(name) {
+  var e = photoIndexEntry_(name);
+  return e ? e.id : '';
+}
+// 写真索引のその方の行 → { id, stamp（版。無い前の索引は ''）}。無ければ null
+function photoIndexEntry_(name) {
   var key = normName_(name);
-  if (!key) return '';
+  if (!key) return null;
   var ss = getSS_(), sh = ss.getSheetByName('写真索引');
   if (sh) {
     var data = sh.getDataRange().getValues();
-    for (var i = 1; i < data.length; i++) if (String(data[i][1]) === key) return String(data[i][2]);
+    for (var i = 1; i < data.length; i++) if (String(data[i][1]) === key) return { id: String(data[i][2]), stamp: String(data[i][3] == null ? '' : data[i][3]) };
   }
-  return '';
+  return null;
 }
 
 // 氏名配列 → {氏名: dataURI} のマップ（重いのでクライアントから20件ずつ呼ぶ）
@@ -373,9 +383,10 @@ function getMemberPhotoThumbs(names) {
   try {
     var cache = CacheService.getScriptCache(), map = {}, miss = [];
     for (var i = 0; i < (names || []).length; i++) {
-      var name = names[i], id = findPhotoIdForName_(name);
+      var name = names[i], ent = photoIndexEntry_(name), id = ent ? ent.id : '';
       if (!id) { miss.push(name); continue; }
-      var key = 'thumb_' + id, hit = null;
+      // 控えは写真の版ごと（同じファイル名で入れ直すと、ファイルIDは同じまま中身が変わる。版を入れないと前の写真の控えが6時間出ていた）
+      var key = 'thumb_' + id + (ent.stamp ? '_' + ent.stamp : ''), hit = null;
       try { hit = cache.get(key); } catch (e) {}
       if (hit) { map[name] = hit; continue; }
       try {
