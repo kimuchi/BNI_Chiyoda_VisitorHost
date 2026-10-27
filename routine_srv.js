@@ -949,10 +949,18 @@ function routineAbsentTokens_(text) {
   for (var k = 0; k < items.length; k++) {
     if (/遅刻|復帰|出席/.test(items[k])) continue;           // 「○○さん遅刻」「○○さん復帰」
     if (!honor) { names.push(items[k]); continue; }
-    var re = /(.+?)(さん|様|さま|氏|くん|君|ちゃん)/g, m;
+    var re = /(.+?)(さん|様|さま|氏|くん|君|ちゃん)/g, m, tailAt = 0;
     while ((m = re.exec(items[k])) !== null) {
       var nm = m[1].replace(/^[\s　]+|[\s　]+$/g, '');
       if (nm) names.push(nm);
+      tailAt = re.lastIndex;
+    }
+    // 敬称のうしろに続けて書いた、敬称の無いお名前（「○○さん　見本 太郎」）。名簿の方に当たるものだけ（書き足しの文は読まない）
+    var tail = items[k].substring(tailAt).trim();
+    if (tail) {
+      try {
+        routineAbsentSplit_(tail).forEach(function (t) { if (routineMemberName_(t).matched) names.push(t); });
+      } catch (e) {}
     }
   }
   return names;
