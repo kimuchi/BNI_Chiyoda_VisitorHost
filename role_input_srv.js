@@ -722,13 +722,19 @@ function roleExtraId_(title) { return roleNorm_(ROLE_EXTRA_GROUP_) + '>>' + role
 // その役職が朝一MTG（事前MTG）で話すことを書く、ルーティンチェックシートの行（「書記兼会計より」「プレジデントより」など）の id。
 // 項目名が「（役職の呼び名）より」の行（前に「（朝一MTG）」のようなかっこ書きがあってもよい）。無ければ ''。
 // 事前MTGのパワポでは、「今週の共有事項（役職）」と一緒に、その役職のページに入れる（premtg_srv.js）
+// 役職の名前の書き方の違い（「＆」「・」の有無・「委員」の有無）をそろえる（「イベント促進委員より」「イベント・1to1促進より」など）
+function roleCanon_(s) { return roleNorm_(s).replace(/[&＆・\/／,、+＋]|委員会|委員|及び/g, ''); }
 function roleFromItemId_(ctx, def) {
-  var names = [def.label, def.sheet].concat(def.alias || []).map(roleNorm_);
+  var names = [def.label, def.sheet].concat(def.alias || []).map(roleCanon_);
   for (var i = 0; i < ctx.order.length; i++) {
     var it = ctx.items[ctx.order[i]];
     if (!it || it.virtual) continue;
     var t = roleNorm_(it.title).replace(/^[(【\[][^)】\]]*[)】\]]/, '');
-    if (t.length > 2 && t.slice(-2) === 'より' && names.indexOf(t.slice(0, -2)) >= 0) return it.id;
+    if (t.length <= 2 || t.slice(-2) !== 'より') continue;
+    var who = roleCanon_(t.slice(0, -2));
+    if (names.indexOf(who) >= 0) return it.id;
+    // イベント委員＆1to1促進委員：「イベント促進」「イベント担当」など、イベントで始まる書き方もこの役職
+    if (def.key === 'event' && /^イベント/.test(who)) return it.id;
   }
   return '';
 }
