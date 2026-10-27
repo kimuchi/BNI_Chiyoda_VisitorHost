@@ -230,6 +230,15 @@ setup(false, '・ビジターは3名の予定です。');
   ck(fr && +fr[1] + +fr[3] <= d.W && +fr[2] + +fr[4] <= d.H, '5) 表がページからはみ出す');
 }
 
+// ===== 6) 役職の「○○より」の行：書き方の違い（「イベント促進委員より」など）でも、その役職のページに入る =====
+{
+  const ev = F.ROLE_DEFS_.find((d) => d.key === 'event'), pr = F.ROLE_DEFS_.find((d) => d.key === 'president');
+  const ctx = (t) => ({ order: ['a'], items: { a: { id: 'a', title: t } } });
+  ['イベント促進委員より', 'イベント・1to1促進委員より', 'イベント委員＆1to1促進委員より', 'イベント委員より', '1to1促進委員より']
+    .forEach((t) => ck(!!F.roleFromItemId_(ctx(t), ev) && !F.roleFromItemId_(ctx(t), pr), '6) 「' + t + '」がイベント委員＆1to1促進委員の行にならない'));
+  ck(!F.roleFromItemId_(ctx('プレジデントより'), ev) && !!F.roleFromItemId_(ctx('プレジデントより'), pr), '6) プレジデントの行');
+}
+
 if (fails.length) {
   console.log('NG ' + fails.length + '件 / ' + checks + '件の検査');
   fails.forEach((f) => console.log('  - ' + f));
