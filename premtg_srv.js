@@ -212,7 +212,8 @@ function premtgData_(target) {
     '・新入会：' + oneLine(sheet(/^新入会$/, null, '新入会'))
       + '　／　更新：' + oneLine(sheet(/^更新式/, null, '更新式'))
       + '　／　退会：' + oneLine(sheet(/^退会者$/, null, '退会者')),
-    '・卒業コメント：' + oneLine(extra('卒業コメント', ''))
+    '・卒業コメント：' + oneLine(extra('卒業コメント', '')),
+    '・パスポートプログラム卒業コメント：' + oneLine(extra('パスポートプログラム卒業コメント', ''))
   ];
 
   // 新入会の方（熱烈歓迎のページを作る。welcome_srv.js）
