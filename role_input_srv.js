@@ -797,6 +797,16 @@ function getRoleInputContext(dateStr, roleKey) {
   }
 }
 
+// 入会日が開催日から4か月以内の方（パスポートプログラム卒業コメントで選べる方）。入会日が無い方は入れない
+function roleRecentMembers_(roster, target) {
+  var from = new Date(target.getFullYear(), target.getMonth() - 4, target.getDate());
+  var to = new Date(target.getFullYear(), target.getMonth(), target.getDate(), 23, 59, 59);
+  return (roster || []).filter(function (m) {
+    if (!m.joinDate) return false;
+    var d = parseDate_(m.joinDate);
+    return d && !isNaN(d.getTime()) && d >= from && d <= to;
+  }).map(function (m) { return m.name; });
+}
 function roleBuildContext_(target, roleKey) {
   var key = fmtDate_(target), idx = routineIndexFor_(key), hit = idx[key] || null;
   var today = new Date(); today.setHours(0, 0, 0, 0);
@@ -808,7 +818,11 @@ function roleBuildContext_(target, roleKey) {
               found: !!hit, sheetName: hit ? hit.name : '', roles: [], items: {}, order: [], unknown: [],
               holderTerm: holderTerm, holderTerms: roleHolderTermList_(holderAll, holderTerm.term, teamAll),
               members: [], version: (typeof SYSTEM_VERSION_ === 'string') ? SYSTEM_VERSION_ : '' };
-  try { ctx.members = (getMemberMaster({ membersOnly: true }).members || []).map(function (m) { return m.name; }); } catch (e) {}
+  try {
+    var roster = getMemberMaster({ membersOnly: true }).members || [];
+    ctx.members = roster.map(function (m) { return m.name; });
+    ctx.recentMembers = roleRecentMembers_(roster, target);
+  } catch (e) {}
   if (!hit) {
     ctx.message = 'ルーティンチェックシートに ' + key + ' の列が見つかりません。'
       + '「【NN期】ルーティンチェックシート」の1行目に開催日があるか確かめてください。';

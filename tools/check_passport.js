@@ -36,6 +36,14 @@ F.HtmlService = { createHtmlOutputFromFile: (n) => ({ getContent: () => fs.readF
   ck(/it\.kind==='members'/.test(html) && /function memberPicks\(/.test(html), '1) 入力の画面に、メンバーを選ぶ欄が無い');
 }
 
+// 選べるのは入会日から4か月以内の方（入会日が無い方・先の入会日の方は選べない）
+{
+  const r = F.roleRecentMembers_([{ name: 'A', joinDate: '2026/06/08' }, { name: 'B', joinDate: '2026/06/06' }, { name: 'C', joinDate: '' },
+                                  { name: 'D', joinDate: '2026/10/07' }, { name: 'E', joinDate: '2026/10/08' }], new Date(2026, 9, 7));
+  ck(J(r) === J(['A', 'D']), '1) 入会日から4か月以内の方: ' + J(r));
+  ck(/ctx\.recentMembers/.test(fs.readFileSync(path.join(ROOT, 'role_input.html'), 'utf8')), '1) 画面が4か月以内の方から選ばない');
+}
+
 // ===== 2) 入力の値から名簿の方 =====
 F.getMemberMaster = () => ({ members: [{ name: '見本 一郎', company: '見本会計事務所', title: '税理士' },
                                        { name: '試験 二郎', company: '株式会社試験', title: '【工務店】' }] });
