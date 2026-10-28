@@ -57,7 +57,7 @@ var ROLE_HOLDERS_KEEP_TERMS_ = 10;                        // 保存しておく�
 // 事前MTGのフォームにあって、ルーティンチェックシートに無い項目。
 // 初めて保存するときに、シートの項目の下へ「事前MTG 共有事項」のまとまりとして行を足す。
 //   due/weekday … 足した行の「期日」「曜日目安」（期日があるものが必須）
-//   kind        … 'count' は人数（数字）
+//   kind        … 'count' は人数（数字）／'members' は名簿のメンバーを選ぶ（お名前を「、」でつなげて入れる）
 //   init        … 'carry' は前回の内容を初期値にする
 // フォームの「欠席人数・代理人数・医療欠席人数」は、シートの「代理・欠席」の欄（お名前）から数える。
 // 「ウィークリープレゼン担当者」「スタートアッププレゼン担当者」「メインプレゼン担当者」「新入会・更新・退会」
@@ -70,6 +70,8 @@ var ROLE_EXTRA_ITEMS_ = [
   { role: 'secretary', title: 'お願い事項（書記兼会計から）', init: 'carry' },
   { role: 'secretary', title: '直近のイベント', init: 'carry' },
   { role: 'secretary', title: '卒業コメント' },
+  // 選んだメンバーごとに、後半スライドの最後にパスポートプログラム卒業コメントのページを作る（passport_srv.js）
+  { role: 'secretary', title: 'パスポートプログラム卒業コメント', kind: 'members' },
   { role: 'vice', title: '人数：ビジター', due: '2日前', weekday: '月曜まで', kind: 'count' },
   { role: 'vice', title: '人数：ゲスト', due: '2日前', weekday: '月曜まで', kind: 'count' },
   { role: 'vice', title: '人数：見学', due: '2日前', weekday: '月曜まで', kind: 'count' },
