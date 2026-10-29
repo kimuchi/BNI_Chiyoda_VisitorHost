@@ -142,7 +142,7 @@ F.assetRootUnreachable_ = () => '';
   const iter2 = (a) => { let i = 0; return { hasNext: () => i < a.length, next: () => a[i++] }; };
   const sub = folder('SUB', [mk('S1', '架空 三郎.jpg', { updated: 5000 })]);
   const main = folder('MAIN', [mk('T1', '見本 一郎.jpg', { updated: 9000, trashed: true }), mk('M1', '見本一郎__old.jpg', { updated: 2000 }),
-                               mk('M2', '髙橋 次郎.jpg'), mk('M3', '名簿にいない人.jpg')], [sub]);
+                               mk('M2', '髙橋 次郎.jpg'), mk('M4', '架空四郎_261029.jpg'), mk('M5', '架空 五郎 20261029.png'), mk('M3', '名簿にいない人.jpg')], [sub]);
   const trashedDup = folder('TR', [mk('X1', '試験 花子.jpg', { updated: 99999 })], [], { isTrashed: () => true });
   const dup = folder('DUP', [mk('D1', '試験 花子.jpg', { updated: 3000 })]);
   const keep = { a: F.getAssetFolder_, r: F.getAssetRootFolder_, m: F.getMemberMaster };
@@ -153,7 +153,8 @@ F.assetRootUnreachable_ = () => '';
   ck(F.findPhotoIdForName_('架空 三郎') === 'S1', '1) 中のフォルダの写真が見つからない');
   ck(F.findPhotoIdForName_('試験 花子') === 'D1', '1) 同じ名前の別のフォルダの写真が見つからない／ゴミ箱のフォルダを使った: ' + J(F.findPhotoIdForName_('試験 花子')));
   ck(F.findPhotoIdForName_('高橋 次郎') === 'M2', '1) 異体字（髙・高）で合わない');
-  F.getMemberMaster = () => ({ members: [{ name: '見本 一郎' }, { name: '試験 花子' }, { name: '架空 三郎' }, { name: '高橋 次郎' }] });
+  ck(F.findPhotoIdForName_('架空 四郎') === 'M4' && F.findPhotoIdForName_('架空 五郎') === 'M5', '1) 「氏名_日付.jpg」「氏名 日付.png」で合わない');
+  F.getMemberMaster = () => ({ members: [{ name: '見本 一郎' }, { name: '試験 花子' }, { name: '架空 三郎' }, { name: '高橋 次郎' }, { name: '架空 四郎' }, { name: '架空 五郎' }] });
   const ov2 = F.getPhotoOverview();
   ck(J(ov2.strays) === J(['名簿にいない人.jpg']) && J(ov2.unmatched) === J([]) && ov2.folderUrl === 'https://drive/MAIN', '1) 名簿と合わない写真の知らせ: ' + J(ov2));
   // ゴミ箱の同じ名前のファイルは差し替えず、新しく作る
