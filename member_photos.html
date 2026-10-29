@@ -48,6 +48,11 @@
    if(s.unmatched && s.unmatched.length){
      h+='<div class="miss"><b>写真が見つからないメンバー ('+s.unmatched.length+'名):</b><br>'+s.unmatched.map(esc).join('、')+'</div>';
    } else if(s.memberCount) h+='<div style="color:#188038;margin-top:6px;">全員の写真が見つかりました。</div>';
+   if(s.strays && s.strays.length){
+     h+='<div class="miss"><b>名簿のどなたとも合わない写真 ('+s.strays.length+'枚):</b><br>'+s.strays.map(esc).join('、')
+       +'<br><span style="font-size:11px;">ファイル名を、メンバー名簿と同じお名前（例：<code>見本 一郎.jpg</code>）に直して、もう一度「索引を作り直す」を押してください。</span></div>';
+   }
+   if(s.folderUrl) h+='<div style="font-size:11px;margin-top:4px;">写真のフォルダ：<a href="'+esc(s.folderUrl)+'" target="_blank">02_メンバー写真 を開く</a>（写真はここに置きます）</div>';
    document.getElementById('stat').innerHTML=h;
  }
  function busy(b,t){ ['btnUp','btnIdx','btnFill'].forEach(function(i){document.getElementById(i).disabled=b;});

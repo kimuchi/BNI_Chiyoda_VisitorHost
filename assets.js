@@ -60,10 +60,17 @@ function saveAssetSettings(linkOrId) {
   }
 }
 
+// ゴミ箱のフォルダは使わない（DriveApp はゴミ箱に入れたフォルダも名前で返す。前に消した同じ名前のフォルダを使うと、
+// アップロードした写真がゴミ箱の中に入り、ドライブで見ている写真のフォルダは読まれなかった）
 function findChildFolder_(parent, name) {
   var it = parent.getFoldersByName(name);
-  return it.hasNext() ? it.next() : null;
+  while (it.hasNext()) {
+    var f = it.next();
+    if (!isTrashed_(f)) return f;
+  }
+  return null;
 }
+function isTrashed_(x) { try { return !!(x && x.isTrashed && x.isTrashed()); } catch (e) { return false; } }
 function ensureChildFolder_(parent, name) {
   return findChildFolder_(parent, name) || parent.createFolder(name);
 }
@@ -254,6 +261,34 @@ function normName_(x) {
   return String(x || '').normalize('NFKC').replace(/[\s　]/g, '').trim();
 }
 
+// 写真と名簿の照合に使う形（normName_ に加えて、よくある異体字を同じ字にする。ファイル名を
+// 「高橋」、名簿を「髙橋」と書いても合うように）。名簿のお名前・ファイル名の両方をこの形にして比べる
+var PHOTO_VARIANTS_ = { '髙': '高', '﨑': '崎', '嵜': '崎', '邉': '辺', '邊': '辺', '濵': '浜', '濱': '浜', '齋': '斎', '齊': '斉',
+                        '德': '徳', '槇': '槙', '櫻': '桜', '澤': '沢', '廣': '広', '國': '国', '眞': '真',
+                        '惠': '恵', '曻': '昇', '瀨': '瀬', '藪': '薮', '桒': '桑' };
+function photoKey_(x) {
+  var k = normName_(x).replace(/(さん|様|さま)$/, '');
+  return k.replace(/[\s\S]/g, function (c) { return PHOTO_VARIANTS_[c] || c; });
+}
+// 写真を探すフォルダ：02_メンバー写真（素材フォルダの中に同じ名前のフォルダがいくつもあれば全部）と、その中のフォルダ
+// （アップロード用のリンク・フォームから入れた写真は、中に作られたフォルダに入ることがある）
+function photoFolders_() {
+  var main = getAssetFolder_('photo'), out = [main], seen = {};
+  var idOf = function (f) { try { return f.getId(); } catch (e) { return String(out.length); } };
+  seen[idOf(main)] = true;
+  try {
+    var it = getAssetRootFolder_().getFoldersByName(ASSET_SUB_.photo);
+    while (it.hasNext()) { var f = it.next(); if (!isTrashed_(f) && !seen[idOf(f)]) { seen[idOf(f)] = true; out.push(f); } }
+  } catch (e) {}
+  for (var i = 0, n = out.length; i < n; i++) {
+    try {
+      var sub = out[i].getFolders();
+      while (sub.hasNext()) { var g = sub.next(); if (!isTrashed_(g) && !seen[idOf(g)]) { seen[idOf(g)] = true; out.push(g); } }
+    } catch (e) {}
+  }
+  return out;
+}
+
 // 写真を 02_メンバー写真 に保存。items = [{name, base64, mimeType}]
 function uploadMemberPhotosBase64(items) {
   try {
@@ -268,8 +303,9 @@ function uploadMemberPhotosBase64(items) {
       // HEIC等、ブラウザで表示できない形式は受け付けない（保存しても表示されないため）
       if (!PHOTO_EXT_.test(fname)) { rejected.push(fname); continue; }
       var blob = Utilities.newBlob(Utilities.base64Decode(it.base64), it.mimeType || 'image/jpeg', fname);
-      var ex = folder.getFilesByName(blob.getName());
-      if (ex.hasNext()) { var f = ex.next(); try { Drive.Files.update({}, f.getId(), blob); } catch (e) { f.setTrashed(true); folder.createFile(blob); } }
+      var ex = folder.getFilesByName(blob.getName()), f = null;
+      while (ex.hasNext() && !f) { var g = ex.next(); if (!isTrashed_(g)) f = g; }   // ゴミ箱の同じ名前のファイルは差し替えない
+      if (f) { try { Drive.Files.update({}, f.getId(), blob); } catch (e) { f.setTrashed(true); folder.createFile(blob); } }
       else folder.createFile(blob);
       saved++; names.push(blob.getName());
     }
@@ -304,10 +340,12 @@ function rebuildPhotoIndex() {
     // 素材フォルダを開けない方が作り直すと、別のフォルダ（写真の無いフォルダ）を調べて、みんなの索引を空にしてしまう
     var unreachable = assetRootUnreachable_();
     if (unreachable) return { ok: false, message: unreachable };
-    var folder = getAssetFolder_('photo'), it = folder.getFiles();
-    var cand = [], unsupported = [];
+    var folders = photoFolders_(), cand = [], unsupported = [], trashed = 0;
+    for (var fi = 0; fi < folders.length; fi++) {
+    var it = folders[fi].getFiles();
     while (it.hasNext()) {
       var f = it.next(), fn = f.getName();
+      if (isTrashed_(f)) { trashed++; continue; }        // ゴミ箱に入れた写真は使わない（DriveApp はフォルダの中のゴミ箱のファイルも返す）
       if (!PHOTO_EXT_.test(fn)) {
         // 画像として置かれたのに表示できない形式（HEIC等）だけを知らせる。
         // 説明書などの画像以外のファイルが混ざっていても警告は出さない。
@@ -316,11 +354,12 @@ function rebuildPhotoIndex() {
       }
       // 「氏名__ハッシュ.png」「氏名.jpg」どちらにも対応。__ 以降とスペースを落として氏名とする
       var base = fn.replace(/\.[^.]+$/, '');
-      var nm = normName_(base.split('__')[0]);
+      var nm = photoKey_(base.split('__')[0]);
       if (!nm) continue;
       var upd = f.getLastUpdated().getTime(), made = 0;
       try { made = f.getDateCreated().getTime(); } catch (e) {}
       cand.push({ name: fn, key: nm, id: f.getId(), updated: Math.max(upd, made || 0), stamp: upd });
+    }
     }
 
     // 同一人物の重複は「更新日時が新しい順」に並べ、先頭を採用する
@@ -343,6 +382,7 @@ function rebuildPhotoIndex() {
     if (rows.length) sh.getRange(2, 1, rows.length, 4).setValues(rows);
 
     var msg = '写真索引を作り直しました（' + rows.length + '件）。';
+    if (folders.length > 1) msg += '\n（写真のフォルダ ' + folders.length + 'か所から探しました：「' + ASSET_SUB_.photo + '」とその中のフォルダ・同じ名前のフォルダ）';
     if (dups.length) msg += '\n同じ人に複数の写真がありました。新しい方を採用しています（未使用 ' + dups.length + '件: ' + dups.slice(0, 5).join('、') + '）。';
     if (unsupported.length) msg += '\n⚠ 表示できない形式のため除外しました（' + unsupported.length + '件: ' + unsupported.slice(0, 5).join('、') + '）。JPEG・PNG・GIF・WebP のいずれかに変換してください。';
     console.log('[PHOTO] index rebuilt: ' + rows.length + ' dup=' + dups.length + ' unsupported=' + unsupported.length);
@@ -360,12 +400,12 @@ function findPhotoIdForName_(name) {
 }
 // 写真索引のその方の行 → { id, stamp（版。無い前の索引は ''）}。無ければ null
 function photoIndexEntry_(name) {
-  var key = normName_(name);
+  var key = photoKey_(name);
   if (!key) return null;
   var ss = getSS_(), sh = ss.getSheetByName('写真索引');
   if (sh) {
     var data = sh.getDataRange().getValues();
-    for (var i = 1; i < data.length; i++) if (String(data[i][1]) === key) return { id: String(data[i][2]), stamp: String(data[i][3] == null ? '' : data[i][3]) };
+    for (var i = 1; i < data.length; i++) if (photoKey_(data[i][1]) === key) return { id: String(data[i][2]), stamp: String(data[i][3] == null ? '' : data[i][3]) };
   }
   return null;
 }
@@ -441,5 +481,16 @@ function getPhotoOverview() {
     members = getMemberMaster().members || [];
     for (var i = 0; i < members.length; i++) if (!findPhotoIdForName_(members[i].name)) unmatched.push(members[i].name);
   } catch (e) {}
-  return { ok: true, indexed: idx.total, memberCount: members.length, unmatched: unmatched, assets: getAssetSettings() };
+  // 名簿のどなたとも合わない写真（ファイル名のお名前が名簿と違う。これがあると「写真が見つからない」になる）
+  var strays = [], folderUrl = '';
+  try {
+    var keys = {};
+    members.forEach(function (m) { keys[photoKey_(m.name)] = true; });
+    var sh2 = getSS_().getSheetByName('写真索引');
+    var rows = sh2 ? sh2.getDataRange().getValues().slice(1) : [];
+    rows.forEach(function (r) { if (r[0] && !keys[photoKey_(r[1])]) strays.push(String(r[0])); });
+  } catch (e) {}
+  try { folderUrl = getAssetFolder_('photo').getUrl(); } catch (e) {}
+  return { ok: true, indexed: idx.total, memberCount: members.length, unmatched: unmatched, strays: strays,
+           folderUrl: folderUrl, assets: getAssetSettings() };
 }
