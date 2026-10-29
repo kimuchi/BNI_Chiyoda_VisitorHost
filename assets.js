@@ -354,7 +354,9 @@ function rebuildPhotoIndex() {
       }
       // 「氏名__ハッシュ.png」「氏名.jpg」どちらにも対応。__ 以降とスペースを落として氏名とする
       var base = fn.replace(/\.[^.]+$/, '');
-      var nm = photoKey_(base.split('__')[0]);
+      // 「氏名_261029.jpg」のように _ が1つ・お名前のうしろに日付の数字のものも、お名前の部分だけで照合する
+      // （お名前に _ や数字は入らないため）
+      var nm = photoKey_(base.split('_')[0].replace(/[\s　]*[-－‐]?[0-9０-９]+$/, ''));
       if (!nm) continue;
       var upd = f.getLastUpdated().getTime(), made = 0;
       try { made = f.getDateCreated().getTime(); } catch (e) {}
