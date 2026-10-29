@@ -131,6 +131,43 @@ r = F.uploadMemberPhotosBase64([item('見本 二郎.jpg', 'image/jpeg')]);
 ck(!r.ok && /開けません/.test(r.message) && live().length === before, '1) 素材フォルダを開けない方: ' + J(r));
 F.assetRootUnreachable_ = () => '';
 
+// ゴミ箱・同じ名前のフォルダ・中のフォルダ・異体字・名簿と合わない写真
+{
+  const mk = (id, name, o) => Object.assign({ id, name, updated: 1000, trashed: false }, o || {});
+  const fileObj = (x) => ({ getId: () => x.id, getName: () => x.name, getMimeType: () => 'image/jpeg', isTrashed: () => x.trashed,
+                            getLastUpdated: () => new Date(x.updated), getDateCreated: () => new Date(x.updated), getBlob: () => null });
+  const folder = (id, files, subs, o) => Object.assign({ getId: () => id, getUrl: () => 'https://drive/' + id, isTrashed: () => false,
+    getFiles: () => iter2(files.map(fileObj)), getFolders: () => iter2(subs || []),
+    getFilesByName: (n) => iter2(files.filter((x) => x.name === n).map(fileObj)) }, o || {});
+  const iter2 = (a) => { let i = 0; return { hasNext: () => i < a.length, next: () => a[i++] }; };
+  const sub = folder('SUB', [mk('S1', '架空 三郎.jpg', { updated: 5000 })]);
+  const main = folder('MAIN', [mk('T1', '見本 一郎.jpg', { updated: 9000, trashed: true }), mk('M1', '見本一郎__old.jpg', { updated: 2000 }),
+                               mk('M2', '髙橋 次郎.jpg'), mk('M3', '名簿にいない人.jpg')], [sub]);
+  const trashedDup = folder('TR', [mk('X1', '試験 花子.jpg', { updated: 99999 })], [], { isTrashed: () => true });
+  const dup = folder('DUP', [mk('D1', '試験 花子.jpg', { updated: 3000 })]);
+  const keep = { a: F.getAssetFolder_, r: F.getAssetRootFolder_, m: F.getMemberMaster };
+  F.getAssetFolder_ = () => main;
+  F.getAssetRootFolder_ = () => ({ getFoldersByName: () => iter2([trashedDup, main, dup]) });
+  const ri = F.rebuildPhotoIndex();
+  ck(ri.ok && F.findPhotoIdForName_('見本 一郎') === 'M1', '1) ゴミ箱の写真を使った: ' + J(F.findPhotoIdForName_('見本 一郎')));
+  ck(F.findPhotoIdForName_('架空 三郎') === 'S1', '1) 中のフォルダの写真が見つからない');
+  ck(F.findPhotoIdForName_('試験 花子') === 'D1', '1) 同じ名前の別のフォルダの写真が見つからない／ゴミ箱のフォルダを使った: ' + J(F.findPhotoIdForName_('試験 花子')));
+  ck(F.findPhotoIdForName_('高橋 次郎') === 'M2', '1) 異体字（髙・高）で合わない');
+  F.getMemberMaster = () => ({ members: [{ name: '見本 一郎' }, { name: '試験 花子' }, { name: '架空 三郎' }, { name: '高橋 次郎' }] });
+  const ov2 = F.getPhotoOverview();
+  ck(J(ov2.strays) === J(['名簿にいない人.jpg']) && J(ov2.unmatched) === J([]) && ov2.folderUrl === 'https://drive/MAIN', '1) 名簿と合わない写真の知らせ: ' + J(ov2));
+  // ゴミ箱の同じ名前のファイルは差し替えず、新しく作る
+  let created = 0, updated = 0;
+  main.createFile = () => { created++; return fileObj(mk('N1', '見本 一郎.jpg')); };
+  const du = F.Drive.Files.update;
+  F.Drive.Files.update = () => { updated++; };
+  F.rebuildPhotoIndex = () => ({ ok: true, message: '' });
+  F.uploadMemberPhotosBase64([item('見本 一郎.jpg', 'image/jpeg')]);
+  ck(created === 1 && updated === 0, '1) ゴミ箱の同じ名前のファイルを差し替えた: ' + J({ created, updated }));
+  F.Drive.Files.update = du;
+  Object.assign(F, { getAssetFolder_: keep.a, getAssetRootFolder_: keep.r, getMemberMaster: keep.m });
+}
+
 // ===== 2) 画面（Chromium）=====
 // google.script.run の代わり。アップロードは HEIC を保存しない・写真索引の件数は保存した枚数ぶん増やす（window.__indexFail で失敗にする）
 const STUB = '<script>(function(){window.__calls=[];window.__indexed=2;window.__unmatched=["架空 三郎"];window.__indexFail="";'
