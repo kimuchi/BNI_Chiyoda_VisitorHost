@@ -304,8 +304,12 @@ function mpAddPhoto_(map, cache, name) {
   if (!id) { cache.by[key] = null; return null; }
   // 写真の索引にあるのにファイルを開けない（ドライブで消した・入れ替えた・その写真を見る権限が無い）ときは、
   // その方だけ写真なしにする（以前は1枚開けないだけで、スライド全体が作れなくなっていた）
-  var blob;
-  try { blob = DriveApp.getFileById(id).getBlob(); }
+  var blob, stamp = '';
+  try {
+    var file = DriveApp.getFileById(id);
+    blob = file.getBlob();
+    try { stamp = String(file.getLastUpdated().getTime()); } catch (e) {}
+  }
   catch (e) {
     console.warn('[MPRESEN] 写真のファイルを開けませんでした: ' + name + ' ' + (e && e.message ? e.message : e));
     cache.gone = cache.gone || [];
@@ -321,7 +325,9 @@ function mpAddPhoto_(map, cache, name) {
   // 展開することになる。何十人ぶんも抱えるとメモリが足りなくなるので、
   //  ・読み終えたバイト列はすぐ捨て、zipには元のBlobをそのまま入れる
   //  ・一度測った大きさは覚えておき、次からはバイト列を触らない
-  var size = null, ck = 'mpsize_' + id, cs = null;
+  // 控えは写真の版ごと（同じファイル名で入れ直すとファイルIDは同じまま中身が変わる。版を入れないと、
+  // 縦横比の違う写真に入れ替えたとき、前の写真の大きさで最大6時間切り抜いていた）
+  var size = null, ck = 'mpsize_' + id + (stamp ? '_' + stamp : ''), cs = null;
   try { cs = CacheService.getScriptCache(); } catch (e) {}
   if (cs) { try { var hit = cs.get(ck); if (hit) size = JSON.parse(hit); } catch (e) {} }
   if (!size) {
