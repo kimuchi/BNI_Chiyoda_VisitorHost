@@ -157,14 +157,17 @@ F.assetRootUnreachable_ = () => '';
   F.getMemberMaster = () => ({ members: [{ name: '見本 一郎' }, { name: '試験 花子' }, { name: '架空 三郎' }, { name: '高橋 次郎' }, { name: '架空 四郎' }, { name: '架空 五郎' }] });
   const ov2 = F.getPhotoOverview();
   ck(J(ov2.strays) === J(['名簿にいない人.jpg']) && J(ov2.unmatched) === J([]) && ov2.folderUrl === 'https://drive/MAIN', '1) 名簿と合わない写真の知らせ: ' + J(ov2));
+  const mt = F.matchPhotoFileNames(['架空四郎_261029.jpg', 'IMG_0001.jpg', '髙橋次郎.png']);
+  ck(J(mt.items.map((x) => x.member)) === J(['架空 四郎', '', '高橋 次郎']) && mt.members.length === 6, '1) アップロード前の照らし合わせ: ' + J(mt));
   // ゴミ箱の同じ名前のファイルは差し替えず、新しく作る
   let created = 0, updated = 0;
   main.createFile = () => { created++; return fileObj(mk('N1', '見本 一郎.jpg')); };
   const du = F.Drive.Files.update;
   F.Drive.Files.update = () => { updated++; };
   F.rebuildPhotoIndex = () => ({ ok: true, message: '' });
-  F.uploadMemberPhotosBase64([item('見本 一郎.jpg', 'image/jpeg')]);
-  ck(created === 1 && updated === 0, '1) ゴミ箱の同じ名前のファイルを差し替えた: ' + J({ created, updated }));
+  const ur = F.uploadMemberPhotosBase64([item('見本 一郎.jpg', 'image/jpeg'), item('IMG_0009.jpg', 'image/jpeg')]);
+  ck(J(ur.stray) === J(['IMG_0009.jpg']) && /名簿のどなたとも合わないファイル名でした（1件: IMG_0009\.jpg）/.test(ur.message), '1) 合わないファイル名の知らせ: ' + J(ur));
+  ck(created === 2 && updated === 0, '1) ゴミ箱の同じ名前のファイルを差し替えた: ' + J({ created, updated }));
   F.Drive.Files.update = du;
   Object.assign(F, { getAssetFolder_: keep.a, getAssetRootFolder_: keep.r, getMemberMaster: keep.m });
 }
@@ -173,6 +176,8 @@ F.assetRootUnreachable_ = () => '';
 // google.script.run の代わり。アップロードは HEIC を保存しない・写真索引の件数は保存した枚数ぶん増やす（window.__indexFail で失敗にする）
 const STUB = '<script>(function(){window.__calls=[];window.__indexed=2;window.__unmatched=["架空 三郎"];window.__indexFail="";'
   + 'function answer(n,a){'
+  + 'if(n==="matchPhotoFileNames"){var ms=["見本 一郎","試験 花子","架空 三郎"];return {ok:true,members:ms,items:a[0].map(function(f){'
+  + 'var k=f.replace(/\\.[^.]+$/,"").replace(/\\s/g,"");return {file:f,member:ms.filter(function(m){return m.replace(/\\s/g,"")===k;})[0]||""};})};}'
   + 'if(n==="getPhotoOverview")return {ok:true,indexed:window.__indexed,memberCount:3,unmatched:window.__unmatched.slice(),assets:{}};'
   + 'if(n==="uploadMemberPhotosBase64"){var b=a[0]||[],ok=b.filter(function(x){return !/\\.heic$/i.test(x.name);}),'
   + 'rej=b.filter(function(x){return /\\.heic$/i.test(x.name);}).map(function(x){return x.name;});'
@@ -234,6 +239,21 @@ const STUB = '<script>(function(){window.__calls=[];window.__indexed=2;window.__
   msg = await upload(page, [file('a.HEIC', 'image/heic')], '2) HEICだけ:');
   ck(/^0枚の写真を保存しました。/.test(msg) && /a\.HEIC/.test(msg) && !/写真索引/.test(msg), '2) HEICだけの知らせ: ' + J(msg));
   ck((await page.evaluate(() => getComputedStyle(document.getElementById('msg')).color)) === 'rgb(221, 0, 0)', '2) HEICだけのとき赤で知らせない');
+  await page.close();
+
+  // 名簿と合わないファイル：どなたの写真かを選ぶと、そのお名前のファイル名で送る。「入れない」は送らない
+  page = await start();
+  await page.setInputFiles('#files', [file('IMG_0001.jpg', 'image/jpeg'), file('IMG_0002.JPG', 'image/jpeg'), file('見本一郎.png', 'image/png')]);
+  await page.waitForSelector('#sel_0', { timeout: 5000 }).catch(() => fails.push('2) 合わないファイルの選ぶ欄が出ない'));
+  const pickText = await text(page, 'pick');
+  ck(/名簿のどなたとも合わないファイルが 2枚/.test(pickText) && /→ 見本 一郎/.test(pickText) && !(await page.$('#sel_2')), '2) 照らし合わせの表示: ' + J(pickText));
+  await page.selectOption('#sel_0', '試験 花子');
+  await page.selectOption('#sel_1', '__skip');
+  await page.click('#btnUp');
+  await page.waitForFunction(() => /枚の写真を保存しました/.test(document.getElementById('msg').innerText), null, { timeout: 8000 }).catch(() => fails.push('2) 選んだあとのアップロードが終わらない'));
+  const sent = (await page.evaluate(() => window.__calls)).filter((c) => c[0] === 'uploadMemberPhotosBase64').map((c) => c[1][0]);
+  ck(J(sent.flat().sort()) === J(['見本一郎.png', '試験 花子.jpg'].sort()), '2) 選んだお名前のファイル名で送らない・「入れない」を送った: ' + J(sent));
+  ck((await text(page, 'pick')) === '', '2) アップロードのあと、照らし合わせの表示が残る');
   await page.close();
 
   // 写真索引を作り直せなかった → 「索引を作り直す」を押すよう知らせる

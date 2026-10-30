@@ -17,6 +17,7 @@
  <div class="hint">
    写真は共有フォルダの <b>02_メンバー写真</b> に保存され、<b>氏名で自動照合</b>されます（アップロードすると、写真索引も作り直します）。<br>
    ファイル名は「氏名.jpg」または「氏名__識別子.png」の形式にしてください（氏名はメンバー名簿と同じ字で。空白の有無・全角半角は問いません）。<br>
+   写真を選ぶと名簿と照らし合わせます。<b>名簿のどなたとも合わないファイル</b>は、どなたの写真かを選ぶと、そのお名前のファイル名にして入れます。<br>
    形式は <b>JPEG・PNG・GIF・WebP</b> に対応（拡張子の大文字小文字は問いません）。
    同じ人の写真が複数あるときは<b>更新日時が新しいもの</b>が使われます。<br>
    iPhoneの <b>HEIC</b> は表示できないため、JPEGかPNGに変換してください。
@@ -25,7 +26,8 @@
 
  <div class="box">
    <b>写真をアップロード</b>（複数選択できます）
-   <div style="margin-top:8px;"><input type="file" id="files" accept="image/*" multiple></div>
+   <div style="margin-top:8px;"><input type="file" id="files" accept="image/*" multiple onchange="picked()"></div>
+   <div id="pick" style="margin-top:8px;font-size:12px;"></div>
    <div style="margin-top:10px;"><button id="btnUp" onclick="up()">アップロード</button></div>
    <div style="font-size:11px;color:#888;margin-top:6px;">枚数が多いときは自動で分割送信します。</div>
  </div>
@@ -39,7 +41,7 @@
  <div id="msg"></div>
 
 <script>
- var queue=[], done=0, rejected=[], indexMsg='';
+ var queue=[], done=0, rejected=[], stray=[], indexMsg='';
  window.onload=load;
  function load(){ google.script.run.withSuccessHandler(render).withFailureHandler(fail).getPhotoOverview(); }
  function esc(x){var d=document.createElement('span');d.textContent=x==null?'':x;return d.innerHTML;}
@@ -58,35 +60,77 @@
  function busy(b,t){ ['btnUp','btnIdx','btnFill'].forEach(function(i){document.getElementById(i).disabled=b;});
    if(t){document.getElementById('msg').style.color='#0055ff';document.getElementById('msg').innerText=t;} }
  function fail(e){ document.getElementById('msg').innerText='エラー: '+((e&&e.message)?e.message:e); document.getElementById('msg').style.color='#d00'; busy(false); }
+ function finishUp(){ plan=null; document.getElementById('pick').innerHTML=''; try{ document.getElementById('files').value=''; }catch(e){} }
  function finish(r){ document.getElementById('msg').innerText=r.message; document.getElementById('msg').style.color=r.ok?'green':'#d00'; busy(false); load(); }
 
+ // ファイルを選んだら、名簿のどなたの写真かを確かめる。合わないファイルは、どなたの写真かを選んでもらい、
+ // 選んだお名前のファイル名（氏名.拡張子）にして入れる
+ var plan=null, planMembers=[];
+ function picked(){
+   var fs=document.getElementById('files').files, names=[];
+   for(var i=0;i<fs.length;i++) names.push(fs[i].name);
+   plan=null; document.getElementById('pick').innerHTML=names.length?'ファイル名を名簿と照らし合わせています...':'';
+   if(!names.length) return;
+   google.script.run.withSuccessHandler(function(r){
+     plan=r.items; planMembers=r.members||[]; renderPick();
+   }).withFailureHandler(fail).matchPhotoFileNames(names);
+ }
+ function renderPick(){
+   if(!plan){ document.getElementById('pick').innerHTML=''; return; }
+   var opts='<option value="">― どなたの写真か選んでください ―</option><option value="__skip">（この写真は入れない）</option>'
+     +planMembers.map(function(n){ return '<option value="'+esc(n).replace(/"/g,'&quot;')+'">'+esc(n)+'</option>'; }).join('');
+   var bad=plan.filter(function(p){ return !p.member; }).length;
+   var h=bad?'<div style="color:#c00;font-weight:bold;">⚠ 名簿のどなたとも合わないファイルが '+bad+'枚あります。どなたの写真かを選んでください（選んだお名前のファイル名にして入れます）。</div>'
+            :'<div style="color:#188038;">選んだ写真は、すべて名簿の方と合いました。</div>';
+   h+='<table style="border-collapse:collapse;margin-top:4px;">'+plan.map(function(p,i){
+     return '<tr><td style="padding:2px 8px 2px 0;">'+esc(p.file)+'</td><td>'
+       +(p.member?'→ <b>'+esc(p.member)+'</b>':'<select id="sel_'+i+'" onchange="plan['+i+'].choice=this.value">'+opts+'</select>')+'</td></tr>';
+   }).join('')+'</table>';
+   document.getElementById('pick').innerHTML=h;
+   plan.forEach(function(p,i){ var s=document.getElementById('sel_'+i); if(s && p.choice) s.value=p.choice; });
+ }
+ // 送るときのファイル名（合わないファイルで選んだ方がいれば「氏名.拡張子」）。null は入れない
+ function sendName(f, i){
+   var p=plan&&plan[i];
+   if(!p || p.member) return f.name;
+   if(p.choice==='__skip') return null;
+   var ext=(f.name.match(/\.[^.]+$/)||['.jpg'])[0].toLowerCase();
+   return p.choice ? p.choice+ext : f.name;
+ }
  function up(){
    var fs=document.getElementById('files').files;
    if(!fs.length){ alert('写真を選択してください。'); return; }
-   queue=[]; done=0; rejected=[]; indexMsg='';
+   if(plan){
+     var left=plan.filter(function(p){ return !p.member && !p.choice; }).map(function(p){ return p.file; });
+     if(left.length && !confirm('名簿のどなたとも合わないファイルがあります（'+left.join('、')+'）。\nこのまま入れても写真として使われません。どなたの写真かを選ばずに入れますか？')) return;
+   }
+   queue=[]; done=0; rejected=[]; stray=[]; indexMsg='';
    busy(true,'読み込み中...');
    var pend=fs.length;
-   for(var i=0;i<fs.length;i++){ (function(f){
+   for(var i=0;i<fs.length;i++){ (function(f, nm){
+     if(nm===null){ if(--pend===0) sendNext(); return; }
      var r=new FileReader();
-     r.onload=function(){ queue.push({name:f.name, mimeType:f.type||'image/jpeg', base64:String(r.result).split(',')[1]});
+     r.onload=function(){ queue.push({name:nm, mimeType:f.type||'image/jpeg', base64:String(r.result).split(',')[1]});
        if(--pend===0) sendNext(); };
      r.onerror=function(){ if(--pend===0) sendNext(); };
      r.readAsDataURL(f);
-   })(fs[i]); }
+   })(fs[i], sendName(fs[i], i)); }
  }
  // 20枚ずつ再帰送信（1回のリクエストを軽く保つ）。保存するたびにサーバーで写真索引を作り直す（最後の結果を出す）
  function sendNext(){
    if(!queue.length){
      var m=done+'枚の写真を保存しました。';
      if(rejected.length) m+='\n⚠ 表示できない形式のため保存しませんでした（'+rejected.length+'件: '+rejected.slice(0,5).join('、')+'）。JPEG・PNG・GIF・WebP のいずれかに変換してください。';
+     if(stray.length) m+='\n⚠ 名簿のどなたとも合わないファイル名でした（'+stray.length+'件: '+stray.slice(0,5).join('、')+'）。このままでは使われません。';
      if(indexMsg) m+='\n'+indexMsg;
+     finishUp();
      finish({ok:done>0 || !rejected.length, message:m}); return;
    }
    var batch=queue.splice(0,20);
    busy(true,'アップロード中... ('+done+'枚完了 / 残り'+(queue.length+batch.length)+'枚)');
    google.script.run.withSuccessHandler(function(r){
      if(!r.ok){ finish(r); return; }
-     done+=r.saved; rejected=rejected.concat(r.rejected||[]);
+     done+=r.saved; rejected=rejected.concat(r.rejected||[]); stray=stray.concat(r.stray||[]);
      if(r.index) indexMsg = r.index.ok ? r.index.message : '⚠ 写真索引を作り直せませんでした（'+(r.index.message||'')+'）。「索引を作り直す」を押してください。';
      sendNext();
    }).withFailureHandler(fail).uploadMemberPhotosBase64(batch);
