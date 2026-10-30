@@ -270,6 +270,22 @@ function photoKey_(x) {
   var k = normName_(x).replace(/(さん|様|さま)$/, '');
   return k.replace(/[\s\S]/g, function (c) { return PHOTO_VARIANTS_[c] || c; });
 }
+// ファイル名 → 照合に使うお名前の形。「氏名.jpg」「氏名__識別子.png」のほか、「氏名_261029.jpg」のように
+// _ が1つ・お名前のうしろに日付の数字のものも、お名前の部分だけで照合する（お名前に _ や数字は入らないため）
+function photoFileKey_(fn) {
+  var base = String(fn || '').replace(/\.[^.]+$/, '');
+  return photoKey_(base.split('_')[0].replace(/[\s　]*[-－‐]?[0-9０-９]+$/, ''));
+}
+// アップロードの前の確かめ：ファイル名ごとに、名簿のどなたの写真か（合わなければ ''）と、名簿のお名前の一覧
+function matchPhotoFileNames(fileNames) {
+  var members = [];
+  try { members = (getMemberMaster({ membersOnly: true }).members || []).map(function (m) { return m.name; }); } catch (e) {}
+  var byKey = {};
+  members.forEach(function (n) { byKey[photoKey_(n)] = n; });
+  return { ok: true, members: members,
+           items: (fileNames || []).map(function (f) { return { file: f, member: byKey[photoFileKey_(f)] || '' }; }) };
+}
+
 // 写真を探すフォルダ：02_メンバー写真（素材フォルダの中に同じ名前のフォルダがいくつもあれば全部）と、その中のフォルダ
 // （アップロード用のリンク・フォームから入れた写真は、中に作られたフォルダに入ることがある）
 function photoFolders_() {
@@ -295,7 +311,9 @@ function uploadMemberPhotosBase64(items) {
     if (!items || !items.length) return { ok: false, message: '写真が選択されていません。' };
     var unreachable = assetRootUnreachable_();   // 開けないと、みんなの見えない別のフォルダに入れてしまうため
     if (unreachable) return { ok: false, message: unreachable };
-    var folder = getAssetFolder_('photo'), saved = 0, names = [], rejected = [];
+    var folder = getAssetFolder_('photo'), saved = 0, names = [], rejected = [], stray = [];
+    var known = {};
+    try { (getMemberMaster({ membersOnly: true }).members || []).forEach(function (m) { known[photoKey_(m.name)] = true; }); } catch (e) { known = null; }
     for (var i = 0; i < items.length; i++) {
       var it = items[i];
       if (!it || !it.base64) continue;
@@ -308,17 +326,20 @@ function uploadMemberPhotosBase64(items) {
       if (f) { try { Drive.Files.update({}, f.getId(), blob); } catch (e) { f.setTrashed(true); folder.createFile(blob); } }
       else folder.createFile(blob);
       saved++; names.push(blob.getName());
+      if (known && !known[photoFileKey_(blob.getName())]) stray.push(blob.getName());
     }
     console.log('[PHOTO] saved=' + saved + ' rejected=' + rejected.length);
     var m = saved + '枚の写真を保存しました。';
     if (rejected.length) m += '\n⚠ 表示できない形式のため保存しませんでした（' + rejected.length + '件: ' + rejected.slice(0, 5).join('、') + '）。JPEG・PNG・GIF・WebP のいずれかに変換してください。';
+    if (stray.length) m += '\n⚠ 名簿のどなたとも合わないファイル名でした（' + stray.length + '件: ' + stray.slice(0, 5).join('、')
+      + '）。このままでは使われません。ファイル名を名簿と同じお名前にしてください。';
     // 保存した写真をすぐ使えるように、写真索引も作り直す（写真は索引から探すので、作り直すまでは「写真が見つからない方」のままだった）
     var index = null;
     if (saved) {
       index = rebuildPhotoIndex();
       m += '\n' + (index.ok ? index.message : '⚠ 写真索引を作り直せませんでした（' + index.message + '）。「索引を作り直す」を押してください。');
     }
-    return { ok: true, message: m, saved: saved, names: names, rejected: rejected, index: index };
+    return { ok: true, message: m, saved: saved, names: names, rejected: rejected, stray: stray, index: index };
   } catch (e) {
     console.error('[PHOTO] ' + (e && e.stack ? e.stack : e));
     return { ok: false, message: '写真の保存中にエラーが発生しました: ' + (e && e.message ? e.message : e) };
@@ -354,9 +375,7 @@ function rebuildPhotoIndex() {
       }
       // 「氏名__ハッシュ.png」「氏名.jpg」どちらにも対応。__ 以降とスペースを落として氏名とする
       var base = fn.replace(/\.[^.]+$/, '');
-      // 「氏名_261029.jpg」のように _ が1つ・お名前のうしろに日付の数字のものも、お名前の部分だけで照合する
-      // （お名前に _ や数字は入らないため）
-      var nm = photoKey_(base.split('_')[0].replace(/[\s　]*[-－‐]?[0-9０-９]+$/, ''));
+      var nm = photoFileKey_(fn);
       if (!nm) continue;
       var upd = f.getLastUpdated().getTime(), made = 0;
       try { made = f.getDateCreated().getTime(); } catch (e) {}
