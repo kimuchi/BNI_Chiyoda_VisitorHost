@@ -75,6 +75,10 @@ const SERVER = {
   }),
   getRoutineInfo: () => routine,
   getWeeklyGuests: () => ({ ok: true, guests: GUESTS }),
+  // スーパーサポーター（他チャプターの方。架空）
+  getSuperSupporters: () => ({ ok: true, supporters: [
+    { name: '他所　一子', chapter: '見本チャプター', company: '他所印刷株式会社', category: '印刷', hasPhoto: true },
+    { name: '遠方　二郎', chapter: '試験チャプター', company: '', category: '保険', hasPhoto: false }] }),
   getMemberPresenContext: () => ({
     ok: true, members: mm, blocks, rowsPerPage: 7, unusedCategories: ['研修・教育'], seconds: { weekly: 45, startup: 180 },
     candidates: [{ dateValue: DATE, start: gk('建築・住まい'), longPresenter: '', longPresenterRaw: '',
@@ -182,6 +186,19 @@ const shown = (el) => !!el && el.style.display !== 'none' && el.style.display !=
   const last = pagesOf(o)[pagesOf(o).length - 1] || {};
   ck(last.kind === 'individual' && last.nextName === '大庭　まり子', '最後の方の NEXT が ' + last.nextName);
   ck((pagesOf(o)[0] || {}).block === '建築・住まい', '最初のページが「建築・住まい」の扉ではない');
+  // スーパーサポーター：「リージョン参加者」に名字が無い方は初めは選ばない。選ぶと、メンバーのあとに1人1枚
+  ck(els.ss_0 && !els.ss_0.checked && els.ss_1 && !els.ss_1.checked && /写真なし/.test(els.ssList.innerHTML),
+     'スーパーサポーターの初めの選び方・写真なしの表示: ' + (els.ssList && els.ssList.innerHTML));
+  ck(!pagesOf(o).some((x) => /他所|遠方/.test(x.name || '')), '選んでいないスーパーサポーターのページが入る');
+  step('スーパーサポーターを選ぶ', () => { els.ss_0.checked = true; els.ss_1.checked = true; run('renderMP()'); run('gen()'); });
+  {
+    const ps = pagesOf(lastOpts()), n = ps.length, a = ps[n - 2] || {}, b = ps[n - 1] || {}, before = ps[n - 3] || {};
+    ck(a.name === '他所　一子' && b.name === '遠方　二郎' && a.kind === 'individual' && a.photoName === '他所　一子'
+       && a.countdownSec === 45 && a.nextName === '遠方　二郎' && b.nextName === GUESTS[1].name && before.nextName === '他所　一子',
+       'スーパーサポーターのページ（メンバーのあと・NEXT）: ' + J([before.nextName, a.name, a.nextName, b.name, b.nextName]));
+    ck(/他所印刷株式会社/.test(J(a.companyLines)) && /印刷 ／ 見本チャプター/.test(J(a.categoryLines)), 'スーパーサポーターの会社名・カテゴリー: ' + J([a.companyLines, a.categoryLines]));
+  }
+  step('スーパーサポーターを外す', () => { els.ss_0.checked = false; els.ss_1.checked = false; run('renderMP()'); });
   ck(o.referral === undefined && o.music === undefined, '前半なのにリファーラル発表・音楽が渡っている');
   // スピーカーローテーション：ルーティンにメインプレゼンが無い日は、ローテーションの2名が入り、表も渡る
   ck(els.mp1.value === MEMBERS[0].name && els.mp2.value === MEMBERS[1].name && /スピーカーローテーションのお2人/.test(els.mpNote.innerHTML),

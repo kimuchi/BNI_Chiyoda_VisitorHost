@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html><head><base target="_top">
+<style>
+ body{font-family:sans-serif;padding:20px;font-size:14px;margin:0;}
+ h3{margin:0 0 6px;color:#0055ff;}
+ .hint{font-size:12px;color:#666;line-height:1.7;margin-bottom:12px;}
+ table{border-collapse:collapse;width:100%;}
+ th{font-size:12px;text-align:left;color:#555;padding:4px;}
+ td{padding:3px 4px;}
+ td input{width:100%;box-sizing:border-box;padding:5px;font-size:13px;}
+ button{border:none;padding:8px 14px;border-radius:4px;cursor:pointer;font-weight:bold;font-size:13px;background:#0055ff;color:#fff;}
+ button.sub{background:#fff;color:#0055ff;border:1px solid #0055ff;}
+ button.del{background:#fff;color:#c00;border:1px solid #c00;padding:4px 8px;font-size:12px;}
+ button:disabled{opacity:.5;cursor:default;}
+ .ph{font-size:11px;white-space:nowrap;}
+ #msg{margin-top:12px;font-weight:bold;white-space:pre-wrap;}
+</style></head>
+<body>
+ <h3>スーパーサポーター（他チャプターのメンバー）</h3>
+ <div class="hint">
+   リージョン参加者として来られる、他チャプターのスーパーサポーターを登録します。<br>
+   <b>写真</b>は「⚙️ 設定 ＞ メンバー写真」で、メンバーと同じく <code>氏名.jpg</code> のファイル名で入れてください（ここに登録したお名前と照合します）。<br>
+   定例会スライド（前半）を作る画面で、<b>その回に来られる方を選ぶ</b>と、メンバーのウィークリープレゼンのあとにその方のページを入れます
+   （ルーティンチェックシートの「リージョン参加者」に名字が書いてある方は、初めから選んであります）。
+ </div>
+ <table>
+   <thead><tr><th style="width:20%;">お名前</th><th style="width:20%;">チャプター</th><th style="width:26%;">会社名</th><th style="width:22%;">カテゴリー</th><th>写真</th><th></th></tr></thead>
+   <tbody id="rows"><tr><td colspan="6">読み込み中...</td></tr></tbody>
+ </table>
+ <div style="margin-top:10px;">
+   <button class="sub" onclick="addRow()">＋ 1名ふやす</button>
+   <button id="btnSave" onclick="save()">保存する</button>
+ </div>
+ <div id="msg"></div>
+<script>
+ var list=[];
+ function esc(x){var d=document.createElement('span');d.textContent=x==null?'':String(x);return d.innerHTML.replace(/"/g,'&quot;');}
+ function msg(t,ok){ var m=document.getElementById('msg'); m.innerText=t; m.style.color=ok===false?'#d00':ok?'green':'#0055ff'; }
+ function fail(e){ msg('エラー: '+((e&&e.message)?e.message:e), false); document.getElementById('btnSave').disabled=false; }
+ function load(){ google.script.run.withSuccessHandler(function(r){ if(!r.ok){ msg(r.message,false); } list=r.supporters||[]; render(); }).withFailureHandler(fail).getSuperSupporters(); }
+ function read(){
+   list=list.map(function(s,i){ var g=function(k){ var e=document.getElementById(k+'_'+i); return e?e.value:''; };
+     return {name:g('name'),chapter:g('chapter'),company:g('company'),category:g('category'),hasPhoto:s.hasPhoto}; });
+ }
+ function render(){
+   var h=list.map(function(s,i){
+     return '<tr><td><input id="name_'+i+'" value="'+esc(s.name)+'" placeholder="見本 一郎"></td>'
+       +'<td><input id="chapter_'+i+'" value="'+esc(s.chapter)+'" placeholder="○○チャプター"></td>'
+       +'<td><input id="company_'+i+'" value="'+esc(s.company)+'"></td>'
+       +'<td><input id="category_'+i+'" value="'+esc(s.category)+'"></td>'
+       +'<td class="ph">'+(s.name?(s.hasPhoto?'<span style="color:#188038;">あり</span>':'<span style="color:#c60;">なし</span>'):'')+'</td>'
+       +'<td><button class="del" onclick="delRow('+i+')">消す</button></td></tr>';
+   }).join('');
+   document.getElementById('rows').innerHTML=h||'<tr><td colspan="6" style="color:#888;font-size:12px;">まだ登録がありません。「＋ 1名ふやす」から入れてください。</td></tr>';
+ }
+ function addRow(){ read(); list.push({name:'',chapter:'',company:'',category:'',hasPhoto:false}); render(); }
+ function delRow(i){ read(); list.splice(i,1); render(); }
+ function save(){
+   read();
+   document.getElementById('btnSave').disabled=true; msg('保存しています...');
+   google.script.run.withSuccessHandler(function(r){
+     document.getElementById('btnSave').disabled=false;
+     msg(r.message, r.ok);
+     if(r.ok){ list=r.supporters||[]; render(); }
+   }).withFailureHandler(fail).saveSuperSupporters(list.map(function(s){ return {name:s.name,chapter:s.chapter,company:s.company,category:s.category}; }));
+ }
+ window.onload=load;
+</script>
+</body></html>

@@ -280,6 +280,7 @@ function photoFileKey_(fn) {
 function matchPhotoFileNames(fileNames) {
   var members = [];
   try { members = (getMemberMaster({ membersOnly: true }).members || []).map(function (m) { return m.name; }); } catch (e) {}
+  members = members.concat(superSupporterNames_());                    // スーパーサポーター（他チャプターの方）の写真も入れられる
   var byKey = {};
   members.forEach(function (n) { byKey[photoKey_(n)] = n; });
   return { ok: true, members: members,
@@ -314,6 +315,7 @@ function uploadMemberPhotosBase64(items) {
     var folder = getAssetFolder_('photo'), saved = 0, names = [], rejected = [], stray = [];
     var known = {};
     try { (getMemberMaster({ membersOnly: true }).members || []).forEach(function (m) { known[photoKey_(m.name)] = true; }); } catch (e) { known = null; }
+    if (known) superSupporterNames_().forEach(function (n) { known[photoKey_(n)] = true; });
     for (var i = 0; i < items.length; i++) {
       var it = items[i];
       if (!it || !it.base64) continue;
@@ -507,11 +509,13 @@ function getPhotoOverview() {
   try {
     var keys = {};
     members.forEach(function (m) { keys[photoKey_(m.name)] = true; });
+    superSupporterNames_().forEach(function (n) { keys[photoKey_(n)] = true; });   // スーパーサポーターの写真は「合わない写真」にしない
     var sh2 = getSS_().getSheetByName('写真索引');
     var rows = sh2 ? sh2.getDataRange().getValues().slice(1) : [];
     rows.forEach(function (r) { if (r[0] && !keys[photoKey_(r[1])]) strays.push(String(r[0])); });
   } catch (e) {}
   try { folderUrl = getAssetFolder_('photo').getUrl(); } catch (e) {}
-  return { ok: true, indexed: idx.total, memberCount: members.length, unmatched: unmatched, strays: strays,
+  var supportersNoPhoto = superSupporterNames_().filter(function (n) { return !findPhotoIdForName_(n); });
+  return { ok: true, indexed: idx.total, memberCount: members.length, unmatched: unmatched, strays: strays, supportersNoPhoto: supportersNoPhoto,
            folderUrl: folderUrl, assets: getAssetSettings() };
 }

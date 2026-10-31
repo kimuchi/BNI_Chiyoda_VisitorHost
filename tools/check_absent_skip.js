@@ -149,6 +149,7 @@ const SERVER = {
   }),
   getRoutineInfo: () => routine,
   getWeeklyGuests: () => ({ ok: true, guests: [] }),
+  getSuperSupporters: () => ({ ok: true, supporters: [] }),
   getMemberPresenContext: () => ({ ok: true, members: mm, blocks, rowsPerPage: 7, unusedCategories: [], seconds: { weekly: 30, startup: 150 },
     candidates: [{ dateValue: DATE, start: gk(CATS[0]), longPresenter: '', longPresenterRaw: '', startFrom: 'routine', startRaw: '企業サポート', startRawDate: DATE, startSteps: 0 }] }),
   getSpeakerRotationWeeks: () => ({ ok: true, header: '', notes: [], weeks: [] }),

@@ -92,6 +92,7 @@ var WEBAPP_PAGES_ = [
     { key: 'asset_settings',    label: 'BNI 素材フォルダ',       desc: '写真やテンプレートの保存先' },
     { key: 'member_master',     label: 'メンバー名簿',           desc: 'すべての機能が参照する正本' },
     { key: 'member_photos',     label: 'メンバー写真',           desc: '氏名で自動照合されます' },
+    { key: 'super_supporters',  label: 'スーパーサポーター',     desc: '他チャプターから来られる方（写真はメンバー写真で）' },
     { key: 'template_files',    label: 'PowerPointテンプレート', desc: 'ビジター用の4種類' },
     { key: 'big_templates',     label: '大きなスライド',         desc: '定例会などDriveリンクで登録' },
     { key: 'spreading',         label: 'Spreadingから名簿を更新', desc: 'MCPで取得した内容を貼り付け' },

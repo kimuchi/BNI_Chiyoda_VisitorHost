@@ -50,6 +50,9 @@
    if(s.unmatched && s.unmatched.length){
      h+='<div class="miss"><b>写真が見つからないメンバー ('+s.unmatched.length+'名):</b><br>'+s.unmatched.map(esc).join('、')+'</div>';
    } else if(s.memberCount) h+='<div style="color:#188038;margin-top:6px;">全員の写真が見つかりました。</div>';
+   if(s.supportersNoPhoto && s.supportersNoPhoto.length){
+     h+='<div class="miss" style="color:#c60;"><b>写真が見つからないスーパーサポーター ('+s.supportersNoPhoto.length+'名):</b><br>'+s.supportersNoPhoto.map(esc).join('、')+'</div>';
+   }
    if(s.strays && s.strays.length){
      h+='<div class="miss"><b>名簿のどなたとも合わない写真 ('+s.strays.length+'枚):</b><br>'+s.strays.map(esc).join('、')
        +'<br><span style="font-size:11px;">ファイル名を、メンバー名簿と同じお名前（例：<code>見本 一郎.jpg</code>）に直して、もう一度「索引を作り直す」を押してください。</span></div>';
