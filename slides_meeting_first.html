@@ -112,6 +112,12 @@
      <div id="gsNote" style="font-size:11px;color:#888;margin-top:4px;"></div>
    </div>
    <div class="mk">
+     <h5>スーパーサポーター（他チャプターの方。メンバーのあとに1人1枚）
+       <span class="auto">ルーティンチェックシート</span></h5>
+     <div id="ssList" style="font-size:12px;"></div>
+     <div id="ssNote" style="font-size:11px;color:#888;margin-top:4px;">登録は ⚙️ 設定 ＞ スーパーサポーター、写真は ⚙️ 設定 ＞ メンバー写真 で入れます。</div>
+   </div>
+   <div class="mk">
      <label><input type="checkbox" id="mpAuto" checked onchange="renderMP()">
        カウントダウンが終わったら<b>自動で次へ進む</b>（メンバー・アンバサダー・ディレクターのページ）</label>
      <div style="font-size:11px;color:#888;margin-top:2px;">業種区分の扉ページは、チェックに関わらず<b>1秒で次へ</b>進みます。</div>
@@ -194,6 +200,7 @@
    }
    // 前半テンプレート（アンバサダー・ディレクターのページ）と、メンバーのページの材料を読む
    if(tplOk) loadGuests(); else document.getElementById('gsList').innerHTML='<span style="color:#888;">前半テンプレートを登録すると選べます。</span>';
+   loadSupporters();
    loadRotation();
    loadRoles();
    toggleMP();
@@ -203,7 +210,7 @@
  function applyRoutine(R){
    var note=document.getElementById('coreNote');
    guestRaw = (R && R.ok && R.found) ? (R.regionGuestsRaw||'') : '';
-   renderGuests();
+   renderGuests(); renderSupporters();
    absentFromRoutine(R); renderMP();                 // 欠席の方（見つからない日は、いない）
    // 新メンバー・更新メンバー／バイスプレジデントによる報告／ネットワーキングリーダー（見つからない日は空に）
    var F=(R && R.ok && R.found) ? (R.firstHalf||{}) : {};
@@ -321,6 +328,8 @@
    if(!mpCtx || !document.getElementById('mpOn').checked) return [];
    // 欠席の方のページは作らない（扉ページの表・NEXT にも出さない）
    var items=memberPresenItems(mpCtx, get('mpStart'), get('mpLong'), document.getElementById('mpAuto').checked, absentSkip());
+   // スーパーサポーター（その回に来られる方）のページを、メンバーのあとに1人1枚
+   items=items.concat(supporterItems(items));
    // 後ろにアンバサダー・ディレクターが続くときは、最後の方のページの「NEXT」にその方を出す
    var gs=pickedGuests(), last=items[items.length-1];
    if(gs.length && last && last.kind==='individual' && !last.nextName) last.nextName=gs[0].name;
@@ -405,6 +414,44 @@
    note.innerHTML = guestRaw ? ('ルーティンチェックシートの「リージョン参加者」：'+esc(guestRaw))
      : 'ルーティンチェックシートの「リージョン参加者」は空欄です。';
    renderMP();
+ }
+ // --- スーパーサポーター（他チャプターの方。⚙️ 設定 ＞ スーパーサポーター）---
+ // 初めは、ルーティンチェックシートの「リージョン参加者」に名字が書いてある方を選ぶ（空欄の日は選ばない）
+ var supporters=null;
+ function loadSupporters(){
+   google.script.run.withSuccessHandler(function(r){ supporters=(r&&r.ok)?(r.supporters||[]):[]; renderSupporters(); })
+     .withFailureHandler(function(){ supporters=[]; renderSupporters(); }).getSuperSupporters();
+ }
+ function renderSupporters(){
+   var box=document.getElementById('ssList');
+   if(!box || !supporters) return;
+   if(!supporters.length){ box.innerHTML='<span style="color:#888;">登録されたスーパーサポーターはいません。</span>'; renderMP(); return; }
+   box.innerHTML=supporters.map(function(p,i){
+     var on = guestRaw ? guestListed(p) : false;
+     return '<label style="display:block;padding:2px 0;"><input type="checkbox" id="ss_'+i+'"'+(on?' checked':'')+' onchange="renderMP()"> <b>'
+       +esc(p.name)+'</b>さん'+(p.chapter?'（'+esc(p.chapter)+'）':'')+'のページを入れる'
+       +(p.hasPhoto?'':' <span style="color:#c60;">写真なし</span>')+'</label>';
+   }).join('');
+   renderMP();
+ }
+ function pickedSupporters(){
+   return (supporters||[]).filter(function(p,i){ var e=document.getElementById('ss_'+i); return !!(e&&e.checked); });
+ }
+ // メンバーのページのあとに入れる、スーパーサポーターの個人ページ（メンバーのページと同じ作り）
+ function supporterItems(memberItems){
+   var ps=pickedSupporters(), S=memberPresenSeconds(mpCtx), auto=document.getElementById('mpAuto').checked;
+   if(!ps.length) return [];
+   var last=memberItems[memberItems.length-1];
+   if(last && last.kind==='individual' && !last.nextName) last.nextName=ps[0].name;
+   return withLayoutBoxes(mpCtx.layoutBoxes || null, function(){
+     return ps.map(function(p,i){
+       var co=layoutCompany(p.company||''), ca=layoutCategory([p.category, p.chapter].filter(Boolean).join(' ／ '));
+       return { kind:'individual', photoName:p.name, name:p.name, countdownSec:S.weekly, auto:!!auto,
+         companyLines:co.lines, companyPt:co.fontPt, companyGeom:co.geom, categoryTop:co.categoryTop,
+         companyTall:(co.geom!==COMPANY_DEFAULT), categoryLines:ca.lines, categoryPt:ca.fontPt, categoryTight:ca.tight,
+         nextName:(ps[i+1]?ps[i+1].name:'') };
+     });
+   });
  }
  function pickedGuests(){
    return (guests||[]).filter(function(g,i){ var e=document.getElementById('gs_'+i); return !!(e&&e.checked); });

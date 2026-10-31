@@ -45,6 +45,7 @@ run "事前MTGのパワポの割り振り表のページ（ビジターホスト
 run "本日の招待者を参加者シートから（ビジター・ゲストの招待者・代理とキャンセルの方は入れない・トークスクリプト）" node tools/check_inviters.js
 run "事前MTGの熱烈歓迎のページ（新入会の方ごと・まとめのあと・写真・土台の違うひな形はマスターごと写す・pptxとして壊れていない）" node tools/check_welcome.js
 run "後半のパスポートプログラム卒業コメントのページ（書記兼会計の入力で選んだ方ごと・推薦のことばのあと・お名前とカテゴリー）" node tools/check_passport.js
+run "スーパーサポーター（登録・名簿のメンバーと同じお名前を止める・写真の照合と知らせ）" node tools/check_supporters.js
 run "ルーティンチェックシートの名前の照合（同じ名字・似た氏名・名簿に無い新メンバー・かなのお名前・カテゴリーの書き方）" node tools/check_routine_names.js
 run "メンバー名簿の画面（ブラウザ：読み込めていないときは保存させない・ほかの方の変更を消さない・列を足したシート・貼り付けの改行）" node tools/check_member_master_dialog.js
 run "PowerPointテンプレートの登録（開けない登録を未登録と出さない・素材フォルダを開けない方は止める）" node tools/check_template_files.js
