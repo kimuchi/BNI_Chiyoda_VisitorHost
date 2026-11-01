@@ -75,6 +75,8 @@ const SERVER = {
   }),
   getRoutineInfo: () => routine,
   getWeeklyGuests: () => ({ ok: true, guests: GUESTS }),
+  // パスポートプログラム卒業コメント（事前MTGで選んであった方・入会日から4か月以内の方・名簿の全員）
+  getPassportChoices: () => ({ ok: true, selected: [MEMBERS[1].name], recent: [MEMBERS[0].name], all: MEMBERS.map((m) => m.name) }),
   // スーパーサポーター（他チャプターの方。架空）
   getSuperSupporters: () => ({ ok: true, supporters: [
     { name: '他所　一子', chapter: '見本チャプター', company: '他所印刷株式会社', category: '印刷', hasPhoto: true },
@@ -395,6 +397,14 @@ const shown = (el) => !!el && el.style.display !== 'none' && el.style.display !=
   ck(JSON.stringify(o.music) === JSON.stringify({ 'slide1.xml#3': { fileId: 'f1' }, 'slide21.xml#3': { volume: 50 } }),
      '音楽の指定: ' + JSON.stringify(o.music));
   ck(o.memberPresen === undefined && o.weeklyGuests === undefined, '後半なのにメンバーのページが渡っている');
+  // パスポートプログラム卒業コメント：事前MTGで選んであった方にチェック。入会日から4か月以内の方も並び、ほかのメンバーも足せる
+  ck(J(o.passportMembers) === J([MEMBERS[1].name]) && els.pp_0 && !els.pp_0.checked && els.pp_1 && els.pp_1.checked,
+     '卒業コメントの方の初めの選び方: ' + J(o.passportMembers));
+  step('卒業コメントの方を選び直す', () => {
+    els.pp_0.checked = true; run('ppToggle(0)'); els.pp_1.checked = false; run('ppToggle(1)');
+    els.ppAdd.value = MEMBERS[5].name; run('ppAddOne()'); run('gen()');
+  });
+  ck(J(lastOpts().passportMembers) === J([MEMBERS[0].name, MEMBERS[5].name]), '選び直した卒業コメントの方: ' + J(lastOpts().passportMembers));
   ck(lastCall()[1]['更新90'] === 'Aさん' && lastCall()[1]['新メンバー'] === undefined, '後半の差し込む値がおかしい');
   // 1枚目のメインプレゼンのページ：既定で入れる。お2人はルーティンチェックシートの「22 メインプレゼン」から
   const mpWant = (routine.mainPresenters || []).map((x) => x.name);

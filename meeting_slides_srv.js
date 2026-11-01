@@ -1630,6 +1630,14 @@ function editMeetingSlides_(parts, map, rules, o) {
   // 後半：リファーラル発表のあと、推薦のことばのページに入ったところで音楽を止める（ページの並びが決まってから）
   var recoPath = (reco && reco.paths && reco.paths[0]) || findSlideWithText_(parts, RECO_PREFIX_ + '1氏名');
   var musicStop = recoPath ? stopMusicAt_(parts, recoPath) : null;
+  // 後半の最後：パスポートプログラム卒業コメントのページ（推薦のことばのページのあと。無ければ最後。passport_srv.js）
+  var passport = null;
+  if (o.passportSource && o.passportMembers && o.passportMembers.length) {
+    var recoAll = reco && reco.paths ? reco.paths.concat(reco.slides || []) : (recoPath ? [recoPath] : []), lastReco = '';
+    slideEntries_(parts).forEach(function (e) { if (recoAll.indexOf(e.path) >= 0) lastReco = e.path; });
+    passport = passportPages_(parts, o.passportSource, o.passportMembers, photoCache, lastReco);
+    syncSections_(parts);                     // PowerPoint のセクションも並びに合わせる（どこにも無いページがあると修復を求められる）
+  } else if (o.passportNote) passport = { message: o.passportNote };
   // 書記兼会計による報告（更新状況一覧）
   var renewal = applyRenewalStatus_(parts, map);
   var photoMsgs = [], TWO = [
@@ -1691,7 +1699,8 @@ function editMeetingSlides_(parts, map, rules, o) {
   return { touched: touched, byPattern: byPattern, core: core, policy: policy, photoGone: gone,
            photos: photos, audio: audio, referral: referral, weekly: weekly, guests: guests,
            reco: reco, musicStop: musicStop, renewal: renewal, rotation: rotation, roles: roles,
-           members: members, vp: vp, leaders: leaders, mainPage: mainPage, visitors: visitors, stats: stats };
+           members: members, vp: vp, leaders: leaders, mainPage: mainPage, visitors: visitors, stats: stats,
+           passport: passport };
 }
 
 // 後半の1枚目に、メインプレゼンのページ（前半の最後のページ。差し込み口 {{メインプレゼン1氏名}} のあるページ）を入れる。
@@ -1803,6 +1812,19 @@ function generateMeetingSlides(kind, values, meetingDateVal, opts) {
           + (e && e.message ? e.message : e) + '）。';
       }
     }
+    // 後半の最後：パスポートプログラム卒業コメント（画面で選んだ方。画面から来なければ、事前MTGの書記兼会計の入力。passport_srv.js）
+    if (kind === 'meetingSecond' && o.passport !== false) {
+      try {
+        o.passportMembers = Array.isArray(o.passportMembers) ? passportMembersOf_(o.passportMembers.join('、')) : passportMembers_(d);
+      } catch (e) { console.warn('[MEETING] パスポートプログラム卒業コメントを読めませんでした: ' + (e && e.message ? e.message : e)); o.passportMembers = []; }
+      if (o.passportMembers.length) {
+        try { o.passportSource = bigTemplateParts_(PASSPORT_KIND_); }
+        catch (e) {
+          o.passportNote = '⚠ パスポートプログラム卒業コメントのページを入れられませんでした（' + (e && e.message ? e.message : e)
+            + '）。⚙️ 設定 ＞ 大きなスライド で「パスポートプログラム卒業コメント（後半）」のひな形を登録してください。';
+        }
+      }
+    }
     // 後半で、1枚目のページは入れずに抽選だけにディレクター（名簿に無い方）を選んだときも、
     // その方の写真・会社名・カテゴリーは前半のテンプレートのその方のページから入れる（前半のテンプレートを開いておく）
     if (kind === 'meetingSecond' && !o.mainPageSource && twoPersonNonMembers_(o.lottery, o).length) {
@@ -1848,6 +1870,7 @@ function generateMeetingSlides(kind, values, meetingDateVal, opts) {
     if (info.stats && info.stats.message) msg += '\n' + info.stats.message;
     if (info.mainPage && info.mainPage.message) msg += '\n' + info.mainPage.message;
     if (info.visitors && info.visitors.message) msg += '\n' + info.visitors.message;
+    if (info.passport && info.passport.message) msg += '\n' + info.passport.message;
     return { ok: true, message: msg, url: r.saved.url, downloadUrl: r.saved.downloadUrl,
              fileName: outName, touched: info.touched, core: info.core, policy: info.policy,
              timing: r.timing };

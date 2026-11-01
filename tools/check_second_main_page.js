@@ -146,6 +146,51 @@ const sectionIds = (parts) => [...F.xmlOf_(parts, 'ppt/presentation.xml').matchA
   ck(res.ok && s.n === 3 && /前半のテンプレートを開けません/.test(res.message), '4) 前半のテンプレートが未登録のとき: ' + J(res.message));
 }
 
+// ===== 5) パスポートプログラム卒業コメント：後半の最後に1人1枚（セクションも並びに合わせる・壊れていない）=====
+{
+  const z = readZip(tpl('BNI_テンプレート_熱烈歓迎.pptx')), sp = 'ppt/slides/slide1.xml';
+  z[sp] = Buffer.from(z[sp].toString('utf8').replace('{{氏名}}', '苗字　 名前').replace('{{カテゴリー}}', '【カテゴリー】')
+    .replace(/<a:rPr\b([^>]*)\/>/g, '<a:rPr$1><a:solidFill><a:srgbClr val="000000"/></a:solidFill><a:sym typeface="Source Han Sans JP"/></a:rPr>')
+    // ほかのソフトで書き出したひな形：無い図形（消した動画など）を再生するアニメーションだけが残っている
+    .replace('</p:sld>', '<p:timing><p:tnLst><p:par><p:cTn id="1" dur="indefinite" restart="never" nodeType="tmRoot"><p:childTnLst><p:cmd cmd="playFrom(0.0)"><p:cBhvr><p:cTn id="2"/><p:tgtEl><p:spTgt spid="999"/></p:tgtEl></p:cBhvr></p:cmd></p:childTnLst></p:cTn></p:par></p:tnLst></p:timing></p:sld>'), 'utf8');
+  env.addFile('TPLP', new env.FakeBlob(writeZip(z), 'application/zip', 'p.pptx'), 'p.pptx');
+  env.props.BNI_TPL_MEETING_SECOND_ID = 'TPL2';
+  env.props.BNI_TPL_PASSPORT_ID = 'TPLP';
+  const values = { 開催回: '536', 開催日付: '2026/10/07' };
+  const deck = () => {
+    const zz = readZip(SAVED.blob._buf), xml = (p) => (zz[p] ? zz[p].toString('utf8') : '');
+    const rid2 = {}; xml('ppt/_rels/presentation.xml.rels').replace(/<Relationship\b[^>]*Id="([^"]+)"[^>]*Target="slides\/(slide\d+\.xml)"/g, (q, r, t) => { rid2[r] = 'ppt/slides/' + t; });
+    const ids = [...xml('ppt/presentation.xml').matchAll(/<p:sldId id="(\d+)" r:id="([^"]+)"\/>/g)];
+    const secIds = [...xml('ppt/presentation.xml').matchAll(/<p14:sldId id="(\d+)"/g)].map((m) => m[1]);
+    return { z: zz, xml, order: ids.map((m) => rid2[m[2]]), ids: ids.map((m) => m[1]), secIds,
+             text: (p) => (xml(p).match(/<a:t>([^<]*)<\/a:t>/g) || []).map((t) => t.replace(/<\/?a:t>/g, '')).join('|') };
+  };
+  let res = F.generateMeetingSlides('meetingSecond', values, '2026/10/07', { mainPage: false, passportMembers: ['見本 一郎', '試験 二郎'] });
+  let d = res.ok && deck();
+  ck(res.ok && /パスポートプログラム卒業コメントのページを入れました（見本 一郎、試験 二郎）/.test(res.message), '5) 作成の知らせ: ' + J(res.message));
+  const a1 = d && d.order[d.order.length - 2], a2 = d && d.order[d.order.length - 1];
+  ck(d && d.order.length === 5 && /見本 一郎/.test(d.text(a1)) && /【税理士】/.test(d.text(a1)) && /試験 二郎/.test(d.text(a2)) && !/苗字|【カテゴリー】/.test(d.text(a1) + d.text(a2)),
+     '5) 最後に1人1枚: ' + (d && J(d.order.map((p) => d.text(p).slice(0, 30)))));
+  const x = d ? d.xml(a1) : '';
+  const shapeOf = (t) => (x.match(new RegExp('<p:sp>(?:(?!</p:sp>)[\\s\\S])*' + t + '(?:(?!</p:sp>)[\\s\\S])*</p:sp>')) || [''])[0];
+  for (const t of ['見本 一郎', '【税理士】']) {
+    const seg = shapeOf(t);
+    ck(seg && /wrap="none"/.test(seg) && !/Source Han Sans|<a:sym/.test(seg) && /<a:ea typeface="メイリオ"\/>/.test(seg) && /\ssz="\d+"/.test(seg),
+       '5) ' + t + ' の枠（メイリオ・折り返さない・大きさを決める）: ' + seg.slice(0, 300));
+  }
+  ck(d && !/<p:timing/.test(x), '5) 無い図形を指すアニメーションが残る');
+  ck(d && d.ids.every((i) => d.secIds.indexOf(i) >= 0) && d.secIds.length === d.ids.length, '5) セクションに入っていないページがある: ' + (d && J([d.ids, d.secIds])));
+  const it = d && integrity(d.z, 'passport');
+  ck(it && it.ok, '5) pptxとして壊れている: ' + (it && it.out));
+  // 画面で誰も選ばない → 入れない
+  res = F.generateMeetingSlides('meetingSecond', values, '2026/10/07', { mainPage: false, passportMembers: [] });
+  ck(res.ok && deck().order.length === 3 && !/パスポート/.test(res.message), '5) 選ばないのに入れた: ' + J(res.message));
+  // ひな形が未登録 → 後半は作り、知らせる
+  delete env.props.BNI_TPL_PASSPORT_ID;
+  res = F.generateMeetingSlides('meetingSecond', values, '2026/10/07', { mainPage: false, passportMembers: ['見本 一郎'] });
+  ck(res.ok && deck().order.length === 3 && /パスポートプログラム卒業コメント（後半）」のひな形を登録してください/.test(res.message), '5) 未登録の知らせ: ' + J(res.message));
+}
+
 if (fails.length) {
   console.log('NG ' + fails.length + '件 / ' + checks + '件の検査');
   fails.forEach((f) => console.log('  - ' + f));

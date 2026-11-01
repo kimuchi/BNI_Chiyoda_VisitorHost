@@ -76,6 +76,12 @@
      <div id="ltNote" style="font-size:11px;color:#888;"></div>
      <div style="font-size:11px;color:#888;">通常はメインプレゼンのメンバーの方と同じです（ディレクターは入れません。1人のときは②を（なし）に）</div>
    </div>
+   <div class="mk">
+     <h5>パスポートプログラム卒業コメント（推薦のことばのあと・最後に1人1枚） <span class="auto">事前MTGの書記兼会計の入力</span></h5>
+     <div id="ppList" style="font-size:12px;"></div>
+     <div style="margin-top:4px;font-size:12px;">ほかのメンバーを足す：<select id="ppAdd" onchange="ppAddOne()"></select></div>
+     <div id="ppNote" style="font-size:11px;color:#888;margin-top:4px;">ひな形は ⚙️ 設定 ＞ 大きなスライド の「パスポートプログラム卒業コメント（後半）」に登録します。</div>
+   </div>
  </div>
 
  <div class="sec">
@@ -195,6 +201,7 @@
  function applyRoutine(R){
    var note=document.getElementById('routineNote');
    absentFromRoutine(R); renderReferral();          // 欠席の方（見つからない日は、いない）
+   loadPassport();                                   // パスポートプログラム卒業コメントの方
    if(!R || !R.ok || !R.found){
      // その日の列が無い：前に選んでいた開催日の推薦のことば・抽選を残さない
      pairs={ during:[{ g:'', r:'' }], after:[] }; renderPairs();
@@ -572,6 +579,34 @@
      .withFailureHandler(fail).removeMeetingMusicFile(f.id);
  }
 
+ // --- パスポートプログラム卒業コメント ---
+ // 初めは、事前MTGの書記兼会計の入力で選んだ方にチェック。入会日から4か月以内の方を並べ、ほかのメンバーも足せる
+ var pp={ list:[], on:{}, all:[] };
+ function loadPassport(){
+   var d=get('meeting'); if(!d) return;
+   google.script.run.withSuccessHandler(function(r){
+     if(get('meeting')!==d) return;
+     r=r||{}; var list=(r.recent||[]).slice(), on={};
+     (r.selected||[]).forEach(function(n){ on[n]=true; if(list.indexOf(n)<0) list.push(n); });
+     pp={ list:list, on:on, all:r.all||[], loaded:r.ok!==false }; renderPassport();
+     if(r.ok===false) document.getElementById('ppNote').innerHTML='<span style="color:#c60;">'+esc(r.message||'')+'</span>';
+   }).withFailureHandler(function(){ pp={ list:[], on:{}, all:[] }; renderPassport(); }).getPassportChoices(d);
+ }
+ function renderPassport(){
+   var box=document.getElementById('ppList'); if(!box) return;
+   box.innerHTML = pp.list.length ? pp.list.map(function(n,i){
+     return '<label style="display:inline-block;margin:2px 10px 2px 0;"><input type="checkbox" id="pp_'+i+'"'+(pp.on[n]?' checked':'')
+       +' onchange="ppToggle('+i+')"> '+esc(n)+'</label>'; }).join('')
+     : '<span style="color:#888;">入会日から4か月以内の方はいません（下で足せます）。</span>';
+   var add='<option value="">（選ぶ）</option>';
+   pp.all.forEach(function(n){ if(pp.list.indexOf(n)<0) add+='<option value="'+esc(n)+'">'+esc(n)+'</option>'; });
+   document.getElementById('ppAdd').innerHTML=add;
+ }
+ function ppToggle(i){ var n=pp.list[i], e=document.getElementById('pp_'+i); pp.on[n]=!!(e&&e.checked); }
+ function ppAddOne(){ var n=get('ppAdd'); if(!n) return; pp.list.push(n); pp.on[n]=true; renderPassport(); }
+ // 読み込めていないときは null（サーバーが事前MTGの書記兼会計の入力から読む）
+ function ppPicked(){ return pp.loaded ? pp.list.filter(function(n){ return pp.on[n]; }) : null; }
+
  function gen(){
    if(recoBusy()){ show('受け取ったスライドを準備しています（⏳ の組）。終わってから「後半スライドを作成」を押してください。',false); return; }
    genSlides('meetingSecond', {
@@ -581,7 +616,8 @@
      mainPage: document.getElementById('mpPage').checked,
      mainPresenters: [get('mp1'), get('mp2')],
      music: collectMusic(),
-     referral: buildReferral()
+     referral: buildReferral(),
+     passportMembers: ppPicked()
    });
  }
 </script>

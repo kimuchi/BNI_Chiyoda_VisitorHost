@@ -1,8 +1,8 @@
-// === パスポートプログラム卒業コメント（事前MTGのパワポ）===
+// === パスポートプログラム卒業コメント（後半スライド）===
 //
-// 事前MTGの書記兼会計の入力「パスポートプログラム卒業コメント」で選んだメンバーごとに、
+// 事前MTGの書記兼会計の入力「パスポートプログラム卒業コメント」で選んだメンバー（後半スライドの画面で選び直せる）ごとに、
 // 登録したひな形（⚙️ 設定 ＞ 大きなスライド ＞ パスポートプログラム卒業コメント）のページを写して、
-// 事前MTGのパワポの最後に入れる（premtg_srv.js）。
+// 後半スライドの推薦のことばのあと（無ければ最後）に入れる（meeting_slides_srv.js）。
 // 入れたお名前・カテゴリーの文字は、書体をメイリオにし、1行に収まる大きさにして折り返さない
 // （ひな形の書体のままだと、メイリオの見積もりより広く、変なところで折り返していた）。
 // ひな形の目印：「苗字 名前」（または {{氏名}}）、「【カテゴリー】」（または {{カテゴリー}}）、
@@ -73,6 +73,21 @@ function passportPages_(parts, src, members, cache, afterPath) {
   if (r.pages.length) msgs.unshift('パスポートプログラム卒業コメントのページを入れました（' + r.pages.join('、') + '）。');
   if (r.noPhoto.length) msgs.push('⚠ 写真が見つからなかった方（写真なしで作りました）: ' + r.noPhoto.join('、'));
   return { pages: r.pages, paths: r.paths, noPhoto: r.noPhoto, message: msgs.join('\n') };
+}
+
+// 後半スライドの画面用：その開催日に選んであった方（書記兼会計の入力）と、選べる方（入会日から4か月以内の方・名簿の全員）
+function getPassportChoices(dateVal) {
+  try {
+    var target = parseDate_(dateVal);
+    if (!target) return { ok: false, message: '開催日が分かりません。', selected: [], recent: [], all: [] };
+    var roster = getMemberMaster({ membersOnly: true }).members || [];
+    var selected = [];
+    try { selected = passportMembers_(target).map(function (m) { return m.name; }); } catch (e) {}
+    return { ok: true, selected: selected, recent: roleRecentMembers_(roster, target),
+             all: roster.map(function (m) { return m.name; }) };
+  } catch (e) {
+    return { ok: false, message: '卒業コメントの方を読めませんでした: ' + (e && e.message ? e.message : e), selected: [], recent: [], all: [] };
+  }
 }
 
 // 入れた文字の枠：書体をメイリオにし、枠の幅（左右の余白を引いた幅の9割）に1行で入る大きさ（もとの大きさまで・10ptまで）にして、
