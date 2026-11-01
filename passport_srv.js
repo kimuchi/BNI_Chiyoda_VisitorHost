@@ -87,7 +87,7 @@ function passportOneLine_(xml, id, text) {
   if (!r) return xml;
   var font = '<a:latin typeface="' + PREMTG_FONT_ + '"/><a:ea typeface="' + PREMTG_FONT_ + '"/><a:cs typeface="' + PREMTG_FONT_ + '"/>';
   var seg = xml.substring(r.start, r.end)
-    .replace(/<a:(latin|ea|cs)\b[^>]*\/>/g, '')
+    .replace(/<a:(latin|ea|cs|sym)\b[^>]*\/>/g, '')   // 記号の書体（sym）も外す（残すと書体の指定がその後ろになり、PowerPoint が修復を求める）
     .replace(/<a:(rPr|endParaRPr)\b([^>]*?)\/>/g, '<a:$1$2>' + font + '</a:$1>')
     .replace(/<a:bodyPr\b([^>]*?)(\/?)>/, function (all, attrs, close) {
       return '<a:bodyPr' + (/\swrap="/.test(attrs) ? attrs.replace(/\swrap="\w+"/, ' wrap="none"') : attrs + ' wrap="none"') + close + '>';

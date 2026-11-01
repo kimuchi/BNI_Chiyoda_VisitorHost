@@ -287,7 +287,7 @@ function importSlideCopies_(target, source, slidePath, count) {
       imported = true;
     }
   }
-  var xml = setSlideShow_(xmlOf_(source, slidePath) || '', true), made = [];
+  var xml = dropDanglingTiming_(setSlideShow_(xmlOf_(source, slidePath) || '', true)), made = [];
   for (var i = 0; i < count; i++) {
     var rels = rewritePartRels_(ctx, slidePath, 'ppt/slides', srels, function (type, abs) {
       if (/\/notesSlide$/.test(type)) return null;              // ノートは写さない
@@ -298,6 +298,21 @@ function importSlideCopies_(target, source, slidePath, count) {
   }
   var size = function (parts) { var m = (xmlOf_(parts, 'ppt/presentation.xml') || '').match(/<p:sldSz\b[^>]*\bcx="(\d+)"[^>]*\bcy="(\d+)"/); return m ? m[1] + 'x' + m[2] : ''; };
   return { slides: made, importedMaster: imported, sizeDiffers: !!size(source) && size(source) !== size(target) };
+}
+
+// アニメーション（<p:timing>）が、ページに無い図形を指していたら、アニメーションを外す
+// （ほかのソフトで書き出したひな形に、消した動画などの再生の指定だけが残っていることがある。
+// そのまま写すと PowerPoint が「修復」を求める。パスポートプログラム卒業コメントのひな形で起きた）
+function dropDanglingTiming_(xml) {
+  var t = xml.match(/<p:timing\b[\s\S]*?<\/p:timing>/);
+  if (!t) return xml;
+  var have = {}, m, re = /<p:cNvPr\b[^>]*\sid="(\d+)"/g;
+  while ((m = re.exec(xml)) !== null) have[m[1]] = true;
+  var refs = t[0].match(/\bspid="(\d+)"/g) || [];
+  for (var i = 0; i < refs.length; i++) {
+    if (!have[refs[i].replace(/\D/g, '')]) return xml.replace(t[0], '');
+  }
+  return xml;
 }
 
 // ひな形（source）のページの大きさを、入れる先のパワポ（target）の大きさに合わせる。

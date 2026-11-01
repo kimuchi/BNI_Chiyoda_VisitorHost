@@ -84,6 +84,15 @@ def check(path):
         for ref in set(re.findall(r'\br:(?:embed|link|id|pict)="(rId\d+)"', x)):
             if ref not in rels:
                 probs.append('%s 関係の無いIDを使っている: %s' % (s, ref))
+        # 文字の書式（rPr など）の中の並び：書体（latin・ea・cs・sym）は塗りなどの後、リンクなどの前で、この順
+        order = ['ln', 'noFill', 'solidFill', 'gradFill', 'blipFill', 'pattFill', 'grpFill', 'effectLst', 'effectDag', 'highlight',
+                 'uLnTx', 'uLn', 'uFillTx', 'uFill', 'latin', 'ea', 'cs', 'sym', 'hlinkClick', 'hlinkMouseOver', 'rtl', 'extLst']
+        for body in re.findall(r'<a:(?:rPr|endParaRPr|defRPr)\b(?:[^>]*[^/])?>(.*?)</a:(?:rPr|endParaRPr|defRPr)>', x, re.S):
+            kids = re.findall(r'<a:(\w+)\b', re.sub(r'<(a:\w+)\b(?:[^>]*[^/])?>.*?</\1>', lambda m: '<' + m.group(1) + '/>', body, flags=re.S))
+            pos = [order.index(k) for k in kids if k in order]
+            if pos != sorted(pos):
+                probs.append('%s 文字の書式の並びが違う: %s' % (s, kids))
+                break
         ctn = re.findall(r'<p:cTn id="(\d+)"', x)
         if len(set(ctn)) != len(ctn):
             probs.append('%s アニメーションの番号（cTn）が重なっている' % s)
