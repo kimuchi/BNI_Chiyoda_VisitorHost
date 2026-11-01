@@ -196,7 +196,7 @@ const shown = (el) => !!el && el.style.display !== 'none' && el.style.display !=
     ck(a.name === '他所　一子' && b.name === '遠方　二郎' && a.kind === 'individual' && a.photoName === '他所　一子'
        && a.countdownSec === 45 && a.nextName === '遠方　二郎' && b.nextName === GUESTS[1].name && before.nextName === '他所　一子',
        'スーパーサポーターのページ（メンバーのあと・NEXT）: ' + J([before.nextName, a.name, a.nextName, b.name, b.nextName]));
-    ck(/他所印刷株式会社/.test(J(a.companyLines)) && /印刷 ／ 見本チャプター/.test(J(a.categoryLines)), 'スーパーサポーターの会社名・カテゴリー: ' + J([a.companyLines, a.categoryLines]));
+    ck(/他所印刷株式会社/.test(J(a.companyLines)) && J(a.categoryLines) === J(['【印刷】', '見本チャプター']) && a.categoryPt === 32 && J(b.categoryLines) === J(['【保険】', '試験チャプター']), 'スーパーサポーターの会社名・カテゴリー: ' + J([a.companyLines, a.categoryLines]));
   }
   step('スーパーサポーターを外す', () => { els.ss_0.checked = false; els.ss_1.checked = false; run('renderMP()'); });
   ck(o.referral === undefined && o.music === undefined, '前半なのにリファーラル発表・音楽が渡っている');

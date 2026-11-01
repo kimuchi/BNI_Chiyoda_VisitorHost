@@ -175,6 +175,20 @@ function layoutCategory(rawTitle){
   return { lines:mergeOrphan(lines), fontPt:pt, tight:true };
 }
 
+// カテゴリーとチャプター名を別の行に（スーパーサポーターのページ）。1行目【カテゴリー】・2行目チャプター名。
+// それぞれ1行に収まる大きさまで下げ（下げすぎない）、2行とも同じ大きさにそろえる
+function layoutCategoryChapter(rawTitle, chapter){
+  var ch=oneLine(chapter||'');
+  if(!ch) return layoutCategory(rawTitle);
+  var texts=[(oneLine(rawTitle||'')?'【'+normParens(oneLine(rawTitle))+'】':''), ch].filter(Boolean);
+  var pt=CATEGORY_PT, min=minPtOf(CATEGORY_PT);
+  var fits=function(p){ return texts.every(function(t){ return wrapKinsoku(t,p,true,CATEGORY_W_PT).length<=1; }); };
+  while(!fits(pt) && pt>min) pt-=2;
+  var lines=[];
+  texts.forEach(function(t){ lines=lines.concat(wrapKinsoku(t,pt,true,CATEGORY_W_PT)); });
+  return { lines:lines, fontPt:pt, tight:lines.length>1 };
+}
+
 // ===== 枠の位置を一時的に切り替える =====
 // 1つの画面でメンバープレゼン（既定の枠）とリファーラル発表（別の枠）の両方を
 // 組むことがあるので、切り替えたら必ず元に戻す。

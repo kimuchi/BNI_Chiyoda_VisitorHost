@@ -445,7 +445,7 @@
    if(last && last.kind==='individual' && !last.nextName) last.nextName=ps[0].name;
    return withLayoutBoxes(mpCtx.layoutBoxes || null, function(){
      return ps.map(function(p,i){
-       var co=layoutCompany(p.company||''), ca=layoutCategory([p.category, p.chapter].filter(Boolean).join(' ／ '));
+       var co=layoutCompany(p.company||''), ca=layoutCategoryChapter(p.category, p.chapter);   // カテゴリーとチャプター名は別の行
        return { kind:'individual', photoName:p.name, name:p.name, countdownSec:S.weekly, auto:!!auto,
          companyLines:co.lines, companyPt:co.fontPt, companyGeom:co.geom, categoryTop:co.categoryTop,
          companyTall:(co.geom!==COMPANY_DEFAULT), categoryLines:ca.lines, categoryPt:ca.fontPt, categoryTight:ca.tight,
