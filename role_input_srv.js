@@ -70,7 +70,7 @@ var ROLE_EXTRA_ITEMS_ = [
   { role: 'secretary', title: 'お願い事項（書記兼会計から）', init: 'carry' },
   { role: 'secretary', title: '直近のイベント', init: 'carry' },
   { role: 'secretary', title: '卒業コメント' },
-  // 選んだメンバーごとに、後半スライドの最後にパスポートプログラム卒業コメントのページを作る（passport_srv.js）
+  // 選んだメンバーごとに、事前MTGのパワポの最後にパスポートプログラム卒業コメントのページを作る（passport_srv.js）
   { role: 'secretary', title: 'パスポートプログラム卒業コメント', kind: 'members' },
   { role: 'vice', title: '人数：ビジター', due: '2日前', weekday: '月曜まで', kind: 'count' },
   { role: 'vice', title: '人数：ゲスト', due: '2日前', weekday: '月曜まで', kind: 'count' },

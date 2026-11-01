@@ -1,4 +1,4 @@
-// パスポートプログラム卒業コメントのページ（passport_srv.js）を、実データなしで確かめる。名前はすべて架空。
+// パスポートプログラム卒業コメントのページ（passport_srv.js。事前MTGのパワポの最後に入れる。通しは check_welcome.js の 9）を、実データなしで確かめる。名前はすべて架空。
 //
 //   node tools/check_passport.js
 //

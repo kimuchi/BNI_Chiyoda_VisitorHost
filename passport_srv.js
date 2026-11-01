@@ -1,8 +1,10 @@
-// === パスポートプログラム卒業コメント（後半スライド）===
+// === パスポートプログラム卒業コメント（事前MTGのパワポ）===
 //
 // 事前MTGの書記兼会計の入力「パスポートプログラム卒業コメント」で選んだメンバーごとに、
 // 登録したひな形（⚙️ 設定 ＞ 大きなスライド ＞ パスポートプログラム卒業コメント）のページを写して、
-// 後半スライドの推薦のことばのあと（無ければ最後）に入れる。
+// 事前MTGのパワポの最後に入れる（premtg_srv.js）。
+// 入れたお名前・カテゴリーの文字は、書体をメイリオにし、1行に収まる大きさにして折り返さない
+// （ひな形の書体のままだと、メイリオの見積もりより広く、変なところで折り返していた）。
 // ひな形の目印：「苗字 名前」（または {{氏名}}）、「【カテゴリー】」（または {{カテゴリー}}）、
 // 「メンバー写真」とだけ書いた図形（または「お写真」・名前が「写真」の画像）。
 // ページの作り方（写真・字の大きさ・ページの大きさ合わせ）は熱烈歓迎と同じ（welcome_srv.js の premtgWelcomePages_）。
@@ -57,11 +59,44 @@ function passportPages_(parts, src, members, cache, afterPath) {
   var entries = slideEntries_(parts);
   var after = afterPath || (entries.length ? entries[entries.length - 1].path : '');
   var r = premtgWelcomePages_(parts, passportPrepare_(src), members, {}, cache, after);
+  for (var i = 0; i < r.paths.length; i++) {
+    var m = members.filter(function (x) { return x.name === r.pages[i]; })[0] || {}, xml = xmlOf_(parts, r.paths[i]);
+    [m.name, m.category].forEach(function (t) {
+      var id = t ? premtgShapeWith_(xml, t) : '';
+      if (id) xml = passportOneLine_(xml, id, t);
+    });
+    putXml_(parts, r.paths[i], xml);
+  }
   var msgs = r.messages.map(function (s) {
-    return s.replace(/熱烈歓迎のひな形/g, 'パスポートプログラム卒業コメントのひな形')
-            .replace(/事前MTGのパワポ|事前MTGのひな形/g, '後半のスライド');
+    return s.replace(/熱烈歓迎のひな形/g, 'パスポートプログラム卒業コメントのひな形');
   });
   if (r.pages.length) msgs.unshift('パスポートプログラム卒業コメントのページを入れました（' + r.pages.join('、') + '）。');
   if (r.noPhoto.length) msgs.push('⚠ 写真が見つからなかった方（写真なしで作りました）: ' + r.noPhoto.join('、'));
   return { pages: r.pages, paths: r.paths, noPhoto: r.noPhoto, message: msgs.join('\n') };
+}
+
+// 入れた文字の枠：書体をメイリオにし、枠の幅（左右の余白を引いた幅の9割）に1行で入る大きさ（もとの大きさまで・10ptまで）にして、
+// 折り返さない（wrap="none"。まん中寄せのまま枠の中に収まる）
+function passportOneLine_(xml, id, text) {
+  var m = premtgBoxMetrics_(xml, id);
+  if (m) {
+    var em = textBoxEm_(String(text || '')) || 1;
+    xml = premtgSetSize_(xml, id, Math.max(10, Math.min(m.basePt, Math.floor(m.widthPt * 0.9 / em * 2) / 2)));
+  }
+  var r = findShapeRange_(xml, id);
+  if (!r) return xml;
+  var font = '<a:latin typeface="' + PREMTG_FONT_ + '"/><a:ea typeface="' + PREMTG_FONT_ + '"/><a:cs typeface="' + PREMTG_FONT_ + '"/>';
+  var seg = xml.substring(r.start, r.end)
+    .replace(/<a:(latin|ea|cs)\b[^>]*\/>/g, '')
+    .replace(/<a:(rPr|endParaRPr)\b([^>]*?)\/>/g, '<a:$1$2>' + font + '</a:$1>')
+    .replace(/<a:bodyPr\b([^>]*?)(\/?)>/, function (all, attrs, close) {
+      return '<a:bodyPr' + (/\swrap="/.test(attrs) ? attrs.replace(/\swrap="\w+"/, ' wrap="none"') : attrs + ' wrap="none"') + close + '>';
+    });
+  // 中身のある rPr（<a:rPr …>…</a:rPr>）にも書体を入れる（塗りなどのあと、決まった順の位置に）
+  seg = seg.replace(/(<a:(rPr|endParaRPr)\b[^>]*[^\/]>)([\s\S]*?)(<\/a:\2>)/g, function (all, open, tag, body, close) {
+    if (body.indexOf('typeface="' + PREMTG_FONT_ + '"') >= 0) return all;
+    var at = body.search(/<a:(hlinkClick|hlinkMouseOver|rtl|extLst)\b/);
+    return at < 0 ? open + body + font + close : open + body.slice(0, at) + font + body.slice(at) + close;
+  });
+  return xml.substring(0, r.start) + seg + xml.substring(r.end);
 }
