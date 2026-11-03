@@ -397,6 +397,17 @@ const shown = (el) => !!el && el.style.display !== 'none' && el.style.display !=
   ck(JSON.stringify(o.music) === JSON.stringify({ 'slide1.xml#3': { fileId: 'f1' }, 'slide21.xml#3': { volume: 50 } }),
      '音楽の指定: ' + JSON.stringify(o.music));
   ck(o.memberPresen === undefined && o.weeklyGuests === undefined, '後半なのにメンバーのページが渡っている');
+  // スーパーサポーター：「リージョン参加者」に名字が無い方は初めは選ばない。選ぶと、リファーラル発表のメンバーのあとに1人1枚
+  ck(els.ss_0 && !els.ss_0.checked && !(o.referral || []).some((x) => /他所|遠方/.test(x.name)), '後半：スーパーサポーターの初めの選び方');
+  step('後半：スーパーサポーターを選ぶ', () => { els.ss_0.checked = true; run('renderReferral()'); run('gen()'); });
+  {
+    const rf = lastOpts().referral || [], last = rf[rf.length - 1] || {}, prev = rf[rf.length - 2] || {};
+    ck(rf.length === MEMBERS.length + 1 && last.name === '他所　一子' && last.photoName === '他所　一子' && prev.nextName === '他所　一子'
+       && J(last.categoryLines) === J(['【印刷】', '見本チャプター']) && last.seconds === 9,
+       '後半：スーパーサポーターのリファーラル発表のページ: ' + J([prev.nextName, last.name, last.categoryLines, last.seconds]));
+    ck(/名ぶん/.test(els.rfNote.innerHTML) && els.rfNote.innerHTML.includes(String(MEMBERS.length + 1) + '名ぶん'), '後半：人数の案内にスーパーサポーターが入らない: ' + els.rfNote.innerHTML);
+  }
+  step('後半：スーパーサポーターを外す', () => { els.ss_0.checked = false; run('renderReferral()'); run('gen()'); });
   // パスポートプログラム卒業コメント：事前MTGで選んであった方にチェック。入会日から4か月以内の方も並び、ほかのメンバーも足せる
   ck(J(o.passportMembers) === J([MEMBERS[1].name]) && els.pp_0 && !els.pp_0.checked && els.pp_1 && els.pp_1.checked,
      '卒業コメントの方の初めの選び方: ' + J(o.passportMembers));
