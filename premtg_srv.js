@@ -220,6 +220,9 @@ function premtgData_(target) {
   var newText = sheet(/^新入会$/, null, '');
   out.newMembers = welcomeMembers_(newText, target);
   if (routineUnread_(newText, out.newMembers)) out.newMembersUnread = newText.replace(/\n+/g, '　');
+  // パスポートプログラム卒業コメント（書記兼会計の入力で選んだ方。後半スライドと、このパワポの最後に1人1枚。passport_srv.js）
+  var pp = premtgExtraItem_(ctx, PASSPORT_ITEM_);
+  out.passport = passportMembersOf_(pp ? premtgText_(pp.value) : '');
   // 割り振り表（ビジターホストコーディネーターのページのあと）
   out.allocation = premtgAllocation_(target);
 
@@ -765,8 +768,8 @@ function premtgLayoutBlocks_(xml, ids, info) {
 //   data  … premtgData_ の結果
 //   cache … 写真の控え（mpAddPhoto_ と同じもの { by: {}, seq: 0 }）
 //   welcomeSrc … 熱烈歓迎のひな形を展開したもの（新入会の方がいるときだけ。welcome_srv.js）
-function buildPreMeetingDeck_(parts, data, cache, welcomeSrc) {
-  var models = premtgModels_(parts), info = { summary: false, pages: [], welcome: [], noPhoto: [], overflow: [], messages: [], allocation: null };
+function buildPreMeetingDeck_(parts, data, cache, welcomeSrc, passportSrc) {
+  var models = premtgModels_(parts), info = { summary: false, pages: [], welcome: [], passport: [], noPhoto: [], overflow: [], messages: [], allocation: null };
   var w = ['日', '月', '火', '水', '木', '金', '土'], d = parseDate_(data.date);
   var common = { '月日': data.md, '開催回': data.meetingNo || '',
                  '開催日': d ? d.getFullYear() + '年' + (d.getMonth() + 1) + '月' + d.getDate() + '日（' + w[d.getDay()] + '）' : '' };
@@ -861,6 +864,13 @@ function buildPreMeetingDeck_(parts, data, cache, welcomeSrc) {
       info.noPhoto = info.noPhoto.concat(wel.noPhoto);
       info.messages = info.messages.concat(wel.messages);
     }
+  }
+
+  // パスポートプログラム卒業コメントのページ（選んだ方ごとに1枚。パワポの最後）
+  if (data.passport && data.passport.length && passportSrc) {
+    var ents = slideEntries_(parts);
+    var pr = passportPages_(parts, passportSrc, data.passport, cache, ents.length ? ents[ents.length - 1].path : '');
+    if (pr) { info.passport = pr.pages; if (pr.message) info.messages.push(pr.message); }
   }
 
   // ほかのページ（ひな形に足したページ）の {{月日}} なども
@@ -1018,7 +1028,13 @@ function generatePreMeetingSlides(dateStr) {
       try { welcomeSrc = welcomeTemplateParts_(wtpl); }
       catch (e) { welcomeErr = (e && e.message ? e.message : String(e)); }
     }
-    var info = buildPreMeetingDeck_(parts, data, { by: {}, seq: 0 }, welcomeSrc);
+    // パスポートプログラム卒業コメントの方がいれば、そのひな形も開く（⚙️ 設定 ＞ 大きなスライド。passport_srv.js）
+    var passportSrc = null, passportErr = '';
+    if (data.passport && data.passport.length) {
+      try { passportSrc = bigTemplateParts_(PASSPORT_KIND_); }
+      catch (e) { passportErr = (e && e.message ? e.message : String(e)); }
+    }
+    var info = buildPreMeetingDeck_(parts, data, { by: {}, seq: 0 }, welcomeSrc, passportSrc);
     var outName = slideFileName_(target, '事前MTG');
     var saved = saveOutputFile_(zipFromMap_(parts, outName), outName);
 
@@ -1031,6 +1047,8 @@ function generatePreMeetingSlides(dateStr) {
     if (info.welcome.length) msg += '\n熱烈歓迎のページ: ' + info.welcome.map(function (n) { return n + 'さん'; }).join('、')
       + '（ひな形: ' + (wtpl && wtpl.registered ? '登録したもの（' + wtpl.name + '）' : '既定のもの') + '）';
     if (welcomeErr) msg += '\n熱烈歓迎のひな形を開けませんでした: ' + welcomeErr;
+    if (passportErr) msg += '\n⚠ パスポートプログラム卒業コメントのページを入れられませんでした（' + passportErr
+      + '）。⚙️ 設定 ＞ 大きなスライド で「パスポートプログラム卒業コメント（後半・事前MTG）」のひな形を登録してください。';
     if (data.newMembersUnread) msg += '\n熱烈歓迎のページ: ルーティンチェックシートの「新入会」の欄（' + data.newMembersUnread
       + '）からお名前を読み取れなかったので、作っていません。お名前（漢字かふりがな）を「、」で区切って書き直すと入ります。';
     var byDate = data.newMembers.filter(function (m) { return m.byDate; });
@@ -1055,7 +1073,7 @@ function generatePreMeetingSlides(dateStr) {
     if (info.messages.length) msg += '\n' + info.messages.join('\n');
     msg += '\nひな形: ' + (tpl.registered ? '登録したもの（' + tpl.name + '）' : '既定のもの');
     return { ok: true, message: msg, url: saved.url, downloadUrl: saved.downloadUrl, fileName: outName,
-             pages: info.pages.length + info.welcome.length + (info.summary ? 1 : 0) + (al ? al.pages : 0) };
+             pages: info.pages.length + info.welcome.length + info.passport.length + (info.summary ? 1 : 0) + (al ? al.pages : 0) };
   } catch (e) {
     console.error('[PREMTG] ' + (e && e.stack ? e.stack : e));
     return { ok: false, message: '事前MTGのパワポを作れませんでした: ' + (e && e.message ? e.message : e) };

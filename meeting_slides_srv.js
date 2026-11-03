@@ -1821,7 +1821,7 @@ function generateMeetingSlides(kind, values, meetingDateVal, opts) {
         try { o.passportSource = bigTemplateParts_(PASSPORT_KIND_); }
         catch (e) {
           o.passportNote = '⚠ パスポートプログラム卒業コメントのページを入れられませんでした（' + (e && e.message ? e.message : e)
-            + '）。⚙️ 設定 ＞ 大きなスライド で「パスポートプログラム卒業コメント（後半）」のひな形を登録してください。';
+            + '）。⚙️ 設定 ＞ 大きなスライド で「パスポートプログラム卒業コメント（後半・事前MTG）」のひな形を登録してください。';
         }
       }
     }
