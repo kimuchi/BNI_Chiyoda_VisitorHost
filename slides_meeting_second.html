@@ -96,6 +96,12 @@
      <h5>欠席の方（リファーラル発表のページを作りません） <span class="auto">ルーティンチェックシート</span></h5>
      <div id="abBox" style="font-size:12px;"></div>
    </div>
+   <div class="mk">
+     <h5>スーパーサポーター（他チャプターの方。メンバーのあとに1人1枚） <span class="auto">ルーティンチェックシート</span></h5>
+     <div id="ssList" style="font-size:12px;"></div>
+     <div style="font-size:11px;color:#888;margin-top:4px;">登録は ⚙️ 設定 ＞ スーパーサポーター、写真は ⚙️ 設定 ＞ メンバー写真 で入れます。
+       「リージョン参加者」に名字が書いてある方は、初めから選んであります。</div>
+   </div>
  </div>
 
  <div class="sec">
@@ -120,6 +126,7 @@
  window.onload=function(){
    loadFrom('ctx','開催日とルーティンチェックシート','getMeetingSlideContext',[],init);
    loadFrom('music','登録した音楽','getMeetingMusicFiles',[],renderMusicFiles);
+   loadSupporters();
  };
  // 作成できる状態か（読み込みが済み、後半テンプレートがある）
  function ready(){ return !!(ctx && ctx.templates && ctx.templates.meetingSecond) && !recoBusy(); }
@@ -200,6 +207,8 @@
  // ルーティンチェックシートに書いてある内容を反映する
  function applyRoutine(R){
    var note=document.getElementById('routineNote');
+   ssRaw = (R && R.ok && R.found) ? (R.regionGuestsRaw||'') : '';
+   if(supporters) renderSupporters();               // スーパーサポーター（「リージョン参加者」に名字がある方を選ぶ）
    absentFromRoutine(R); renderReferral();          // 欠席の方（見つからない日は、いない）
    loadPassport();                                   // パスポートプログラム卒業コメントの方
    if(!R || !R.ok || !R.found){
@@ -502,8 +511,11 @@
    var list=referralMembers();
    // 枠の位置はリファーラル発表のひな形の実測値に切り替えて組む（組み終わったら元に戻る）
    return withLayoutBoxes(rfBoxes, function(){
+     // スーパーサポーター（その回に来られる方）は、メンバーのあとに。カテゴリーとチャプター名は別の行
+     list=list.concat(pickedSupporters().map(function(p){
+       return { name:p.name, company:p.company, title:p.category, chapter:p.chapter||'', supporter:true }; }));
      return list.map(function(m,i){
-       var co=layoutCompany(m.company||''), ca=layoutCategory(m.title||'');
+       var co=layoutCompany(m.company||''), ca=m.supporter ? layoutCategoryChapter(m.title, m.chapter) : layoutCategory(m.title||'');
        // auto:false … カウントダウンはクリックで始まり、次のページへもクリックで進む
        return { name:m.name, photoName:m.name, seconds:sec, auto:false,
          companyLines:co.lines, companyPt:co.fontPt, companyGeom:co.geom, categoryTop:co.categoryTop,
@@ -512,13 +524,39 @@
      });
    });
  }
+ // --- スーパーサポーター（他チャプターの方。⚙️ 設定 ＞ スーパーサポーター）---
+ // 初めは、ルーティンチェックシートの「リージョン参加者」に名字が書いてある方を選ぶ（空欄の日は選ばない）
+ var supporters=null, ssRaw='';
+ function loadSupporters(){
+   google.script.run.withSuccessHandler(function(r){ supporters=(r&&r.ok)?(r.supporters||[]):[]; renderSupporters(); })
+     .withFailureHandler(function(){ supporters=[]; renderSupporters(); }).getSuperSupporters();
+ }
+ function ssListed(p){
+   var t=String(ssRaw||'').replace(/[\s　]/g,''), nm=String(p.name||'').trim(), ps=nm.split(/[\s　]+/);
+   var sur = ps.length>1 ? ps[0] : nm.slice(0,2);
+   return !!sur && t.indexOf(sur)>=0;
+ }
+ function renderSupporters(){
+   var box=document.getElementById('ssList');
+   if(!box || !supporters) return;
+   box.innerHTML = supporters.length ? supporters.map(function(p,i){
+     return '<label style="display:block;padding:2px 0;"><input type="checkbox" id="ss_'+i+'"'+(ssRaw&&ssListed(p)?' checked':'')
+       +' onchange="renderReferral()"> <b>'+esc(p.name)+'</b>さん'+(p.chapter?'（'+esc(p.chapter)+'）':'')+'のページを入れる'
+       +(p.hasPhoto?'':' <span style="color:#c60;">写真なし</span>')+'</label>';
+   }).join('') : '<span style="color:#888;">登録されたスーパーサポーターはいません。</span>';
+   renderReferral();
+ }
+ function pickedSupporters(){
+   return (supporters||[]).filter(function(p,i){ var e=document.getElementById('ss_'+i); return !!(e&&e.checked); });
+ }
  function renderReferral(){
    var n=document.getElementById('rfNote'), on=document.getElementById('rfOn');
    if(!ctx || !ctx.templates || !ctx.templates.meetingSecond){ n.innerHTML=''; return; }
    if(loading.tpl){ n.innerHTML='後半テンプレートを読み込み中です…'; return; }
    if(!rfBoxes){ n.innerHTML='<span style="color:#c60;">後半テンプレートに「REFERRAL PRESENTATION」のページが見つかりませんでした。</span>'; return; }
    if(!on.checked){ n.innerHTML='チェックを入れると、テンプレートのひな形ページを人数ぶんに増やします。'; return; }
-   var list=referralMembers(), noPhoto=list.filter(function(m){ return !m.hasPhoto; });
+   var list=referralMembers().concat(pickedSupporters().map(function(p){ return { name:p.name, hasPhoto:p.hasPhoto }; }));
+   var noPhoto=list.filter(function(m){ return !m.hasPhoto; });
    var away=Object.keys(absentSkip()).length;
    n.innerHTML='<b>'+list.length+'名ぶん</b>作ります（'+esc(list[0]?list[0].name:'')+' → … → '
      +esc(list[list.length-1]?list[list.length-1].name:'')+'）。'
