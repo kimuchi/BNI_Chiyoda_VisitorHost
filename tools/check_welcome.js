@@ -391,6 +391,37 @@ else {
   delete env.props.BNI_TPL_WELCOME_ID;
 }
 
+// ===== 9) パスポートプログラム卒業コメント：書記兼会計の入力で選んだ方のページを、事前MTGのパワポの最後に =====
+{
+  const z = readZip(builtin), sp = 'ppt/slides/slide1.xml';
+  z[sp] = Buffer.from(z[sp].toString('utf8').replace('{{氏名}}', '苗字　 名前').replace('{{カテゴリー}}', '【カテゴリー】')
+    .replace(/<a:rPr\b([^>]*)\/>/g, '<a:rPr$1><a:solidFill><a:srgbClr val="000000"/></a:solidFill><a:sym typeface="Source Han Sans JP"/></a:rPr>')
+    // ほかのソフトで書き出したひな形：無い図形（消した動画など）を再生するアニメーションだけが残っている
+    .replace('</p:sld>', '<p:timing><p:tnLst><p:par><p:cTn id="1" dur="indefinite" restart="never" nodeType="tmRoot"><p:childTnLst><p:cmd cmd="playFrom(0.0)"><p:cBhvr><p:cTn id="2"/><p:tgtEl><p:spTgt spid="999"/></p:tgtEl></p:cBhvr></p:cmd></p:childTnLst></p:cTn></p:par></p:tnLst></p:timing></p:sld>'), 'utf8');
+  env.addFile('PASSPORT_TPL_0001', new env.FakeBlob(writeZip(z), 'application/zip', 'p.pptx'), 'パスポート.pptx');
+  env.props.BNI_TPL_PASSPORT_ID = 'PASSPORT_TPL_0001';
+  const c0 = F.getRoleInputContext(DATE, 'secretary');
+  const pid = c0.order.find((k) => c0.items[k].title === 'パスポートプログラム卒業コメント');
+  const sv = F.saveRoleInput(DATE, 'secretary', [{ id: pid, value: '見本 一郎', orig: '' }]);
+  ck(pid && sv.ok, '9) 卒業コメントを保存できない: ' + J(sv && sv.message));
+  const res = F.generatePreMeetingSlides(DATE);
+  const S = slidesOf(), last = S.order[S.order.length - 1], x = S.xml(last);
+  ck(res.ok && /パスポートプログラム卒業コメントのページを入れました（見本 一郎）/.test(res.message), '9) 作成のお知らせ: ' + J(res.message));
+  ck(/見本 一郎/.test(S.text(last)) && /【税理士】/.test(S.text(last)) && !/苗字|【カテゴリー】/.test(S.text(last)), '9) 最後のページにお名前・カテゴリー: ' + S.text(last));
+  const shapeOf = (t) => (x.match(new RegExp('<p:sp>(?:(?!</p:sp>)[\\s\\S])*' + t + '(?:(?!</p:sp>)[\\s\\S])*</p:sp>')) || [''])[0];
+  for (const t of ['見本 一郎', '【税理士】']) {
+    const seg = shapeOf(t);
+    ck(seg && /wrap="none"/.test(seg) && !/Source Han Sans|<a:sym/.test(seg) && /<a:ea typeface="メイリオ"\/>/.test(seg) && /\ssz="\d+"/.test(seg),
+       '9) ' + t + ' の枠（メイリオ・折り返さない・大きさを決める）: ' + seg.slice(0, 400));
+  }
+  ck(!/<p:timing/.test(x), '9) 無い図形を指すアニメーションが残る');
+  ck(integrity(S.z, 'passport').ok, '9) pptxとして壊れている（パスポート）: ' + integrity(S.z, 'passport').out);
+  // ひな形が未登録：パワポは作り、登録してほしいことを知らせる
+  delete env.props.BNI_TPL_PASSPORT_ID;
+  const r2 = F.generatePreMeetingSlides(DATE);
+  ck(r2.ok && /パスポートプログラム卒業コメント（後半・事前MTG）」のひな形を登録してください/.test(r2.message), '9) 未登録の知らせ: ' + J(r2.message));
+}
+
 if (fails.length) {
   console.log('NG ' + fails.length + '件 / ' + checks + '件の検査');
   fails.forEach((f) => console.log('  - ' + f));

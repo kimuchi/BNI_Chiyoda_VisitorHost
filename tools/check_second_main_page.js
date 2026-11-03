@@ -188,7 +188,7 @@ const sectionIds = (parts) => [...F.xmlOf_(parts, 'ppt/presentation.xml').matchA
   // ひな形が未登録 → 後半は作り、知らせる
   delete env.props.BNI_TPL_PASSPORT_ID;
   res = F.generateMeetingSlides('meetingSecond', values, '2026/10/07', { mainPage: false, passportMembers: ['見本 一郎'] });
-  ck(res.ok && deck().order.length === 3 && /パスポートプログラム卒業コメント（後半）」のひな形を登録してください/.test(res.message), '5) 未登録の知らせ: ' + J(res.message));
+  ck(res.ok && deck().order.length === 3 && /パスポートプログラム卒業コメント（後半・事前MTG）」のひな形を登録してください/.test(res.message), '5) 未登録の知らせ: ' + J(res.message));
 }
 
 if (fails.length) {
