@@ -650,7 +650,44 @@ function riFillPhotos_(parts, path, xml, persons, cache, res) {
     res.photos++;
   });
   if (rels) putXml_(parts, rp, rels);
-  return xml;
+  return riDropAnims_(xml, want.map(function (w) { return w.id; }));
+}
+
+// 写真の枠についていたアニメーション（ひな形でその写真だけに付いていた「表示」など）を外す。
+// 役職の写真はみんな同じに出したいので、入れ替えた写真には動きを付けない。
+// その写真を動かす効果を外し、空になった順番（クリック）も外す。動くものが何も残らなければ、アニメーションごと外す
+function riDropAnims_(xml, ids) {
+  var t = xml.match(/<p:timing\b[\s\S]*?<\/p:timing>/);
+  if (!t || !ids.length) return xml;
+  var want = {}, tm = t[0];
+  ids.forEach(function (id) { want[String(id)] = true; });
+  var pars = function (s) {                       // <p:par> の範囲（入れ子を数える）
+    var out = [], stack = [], re = /<p:par>|<\/p:par>/g, m;
+    while ((m = re.exec(s)) !== null) {
+      if (m[0] === '<p:par>') stack.push(m.index);
+      else if (stack.length) out.push({ start: stack.pop(), end: m.index + m[0].length });
+    }
+    return out;
+  };
+  var changed = false, again = true;
+  while (again) {
+    again = false;
+    var list = pars(tm);
+    for (var i = 0; i < list.length; i++) {
+      var seg = tm.substring(list[i].start, list[i].end), head = (seg.match(/<p:cTn\b[^>]*>/) || [''])[0];
+      var tgts = (seg.match(/<p:spTgt spid="(\d+)"/g) || []).map(function (x) { return x.replace(/\D/g, ''); });
+      var effect = /presetClass="/.test(head) && tgts.length && tgts.every(function (x) { return want[x]; });
+      var empty = !/presetClass="/.test(head) && /<p:childTnLst\s*\/>|<p:childTnLst>\s*<\/p:childTnLst>/.test(seg)
+        && !/<p:childTnLst>\s*<p:/.test(seg);
+      if (effect || empty) { tm = tm.substring(0, list[i].start) + tm.substring(list[i].end); changed = again = true; break; }
+    }
+  }
+  tm = tm.replace(/<p:bldP\b[^>]*\bspid="(\d+)"[^>]*\/>/g, function (all, id) { changed = changed || !!want[id]; return want[id] ? '' : all; })
+         .replace(/<p:bldLst>\s*<\/p:bldLst>/, '');
+  if (!changed) return xml;
+  // 動くもの（効果・動画や音の再生）が残っていなければ、アニメーションごと外す
+  if (!/presetClass="|<p:cmd\b|<p:audio\b|<p:video\b/.test(tm)) tm = '';
+  return xml.replace(t[0], tm);
 }
 
 // === ネットワーキング学習コーナー ===
@@ -782,6 +819,8 @@ function applyRoleIntro_(parts, data, cache) {
           if (n > counts[k]) res.overflow.push(riTeamBase_(k, data) + '（' + n + '名のうち' + counts[k] + '名ぶんの枠）');
         });
         if (write.length) xml = riWriteSlots_(xml, write, data, fits);
+        // 役職の写真のアニメーションは外す（替わらなかった方の写真も。ひな形で1人だけに動きが付いていることがある）
+        xml = riDropAnims_(xml, det.slots.map(function (sl) { return sl.photo; }).filter(Boolean));
       }
     }
     // ネットワーキング学習コーナー（担当はその期のエデュケーションコーディネーター）

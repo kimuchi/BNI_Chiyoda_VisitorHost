@@ -390,6 +390,21 @@ ck(S5.includes('見本　七子') && S5.includes(vhMembers.join('、')) && F.sli
   sb.DriveApp = realDrive;
 }
 
+// 入れ替えた写真に、ひな形で付いていたアニメーション（その写真だけ「表示」など）は外す。ほかの図形の動きは残す
+{
+  const eff = (id, sp) => `<p:par><p:cTn id="${id}" presetID="10" presetClass="entr" presetSubtype="0" fill="hold" nodeType="clickEffect"><p:stCondLst><p:cond delay="0"/></p:stCondLst><p:childTnLst><p:set><p:cBhvr><p:cTn id="${id + 1}"/><p:tgtEl><p:spTgt spid="${sp}"/></p:tgtEl></p:cBhvr></p:set></p:childTnLst></p:cTn></p:par>`;
+  const click = (id, inner) => `<p:par><p:cTn id="${id}" fill="hold"><p:stCondLst><p:cond delay="indefinite"/></p:stCondLst><p:childTnLst><p:par><p:cTn id="${id + 1}" fill="hold"><p:stCondLst><p:cond delay="0"/></p:stCondLst><p:childTnLst>${inner}</p:childTnLst></p:cTn></p:par></p:childTnLst></p:cTn></p:par>`;
+  const timing = (groups, blds) => '<p:timing><p:tnLst><p:par><p:cTn id="1" dur="indefinite" restart="never" nodeType="tmRoot"><p:childTnLst><p:seq concurrent="1" nextAc="seek"><p:cTn id="2" dur="indefinite" nodeType="mainSeq"><p:childTnLst>'
+    + groups + '</p:childTnLst></p:cTn><p:prevCondLst/><p:nextCondLst/></p:seq></p:childTnLst></p:cTn></p:par></p:tnLst><p:bldLst>' + blds + '</p:bldLst></p:timing>';
+  const only = '<p:sld><p:cSld/>' + timing(click(3, eff(10, 7)), '<p:bldP spid="7" grpId="0"/>') + '</p:sld>';
+  ck(F.riDropAnims_(only, ['7']) === '<p:sld><p:cSld/></p:sld>', '写真だけに付いたアニメーションが残る: ' + F.riDropAnims_(only, ['7']));
+  const both = '<p:sld>' + timing(click(3, eff(10, 7)) + click(20, eff(30, 9)), '<p:bldP spid="7" grpId="0"/><p:bldP spid="9" grpId="0"/>') + '</p:sld>';
+  const out = F.riDropAnims_(both, ['7']);
+  ck(!/spid="7"/.test(out) && /<p:spTgt spid="9"\/>/.test(out) && /<p:bldP spid="9"/.test(out) && (out.match(/delay="indefinite"/g) || []).length === 1,
+     'ほかの図形のアニメーションまで外した・写真の分が残る: ' + out);
+  ck(F.riDropAnims_(both, ['5']) === both, '写真に付いていないのに変えた');
+}
+
 console.log(`役職のメンバー紹介: 検査 ${checks} 件`);
 if (fails.length) {
   console.log(`NG: ${fails.length} 件`);
