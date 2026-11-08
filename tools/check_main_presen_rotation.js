@@ -318,7 +318,7 @@ function openScreen(F, extra) {
   const clientPlan = () => run('JSON.stringify(rot.weeks.map(function(w){ return w.date.slice(5)+":"+weekPeople(w).map(function(p){ return p.name; }).join("・"); }))');
   const serverPlan = (r) => J(r.weeks.map((w) => w.date.slice(5) + ':' + names(w)));
   ck(rot() && clientPlan() === serverPlan(F.getSpeakerRotation()), '9) 画面とサーバーの割り当てが違う: ' + clientPlan() + ' / ' + serverPlan(F.getSpeakerRotation()));
-  ck((els.rotWeeks.innerHTML.match(/<tr/g) || []).length === 13, '9) 予定の表の行の数');
+  ck((els.rotWeeks.innerHTML.match(/<tr/g) || []).length === 27, '9) 予定の表の行の数（見出し＋26回）');
   const rowOf = (md) => { const m = els.rotWeeks.innerHTML.match(new RegExp(md.replace('/', '\\/') + '\\(水\\)[^]*?<\\/tr>')); return m ? m[0] : ''; };
   ck(/架空 三郎/.test(rowOf('10/14')) && els.rwk_1.value === 'one', '9) 1名の回の行: ' + rowOf('10/14').replace(/<[^>]+>/g, ' '));
   ck(/空想 太郎 <span class="badge">ディレクター<\/span>/.test(rowOf('10/21')) && /BNI見本リージョン/.test(rowOf('10/21')) && !/名簿にいない/.test(rowOf('10/21'))
