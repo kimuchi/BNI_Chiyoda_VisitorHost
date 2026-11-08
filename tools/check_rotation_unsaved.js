@@ -56,6 +56,8 @@ ck(seen.every((x) => x.provisional === true), '保存していないことを、
   const all = srv.getSpeakerRotation();
   ck(all.ok && all.order[all.order.length - 1] === '追加 九郎' && all.provisional === true,
      '保存していないとき、名簿に足した方が並びに入らない・知らせない: ' + J({ order: all.order, provisional: all.provisional }));
+  // これからの予定は約半年ぶん（先の回をご案内する回にしても、表の画像に5回ぶん載るように）
+  ck(all.weeks.length === 26, 'これからの予定の回数: ' + all.weeks.length);
 }
 
 // 並び順を保存したら、知らせない
