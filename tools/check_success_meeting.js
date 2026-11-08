@@ -58,6 +58,19 @@ const v2 = r.blocks.find((b) => b.key === 'vhc');
 ck(r.ok && v2.result === '11月の結果' && v2.action === '新しいアクション' && J(r.conflicts) === J(['【ビジターホストコーディネーター】（結果）']),
    '1) 先に書き換えられていた欄を上書きした: ' + J([v2, r.conflicts]));
 ck(!F.saveSuccessMeeting('11月', []).ok, '1) 月の書き方が違うのに保存した');
+// 月は文字のまま（' を付けて）書く。スプレッドシートが日付に変えてしまっていても読む（前は読めず、取り込んだ月が出なかった）
+{
+  const sh = env.sheet('サクセスミーティング記録'), v = sh.getDataRange().getValues();
+  ck(v.slice(1).every((row) => /^'\d{4}-\d{2}$/.test(String(row[0]))), '1) 月を文字のまま書いていない: ' + J(v.slice(1).map((row) => row[0])));
+  v.forEach((row, i) => { if (i && String(row[0]) === "'2026-10") sh.getRange(i + 1, 1).setValue(new Date(2026, 9, 1)); });
+  const rr = F.getSuccessMeeting('2026-11');
+  ck(rr.blocks.find((b) => b.key === 'vhc').prevAction === '10月のアクション', '1) 日付になった月を読めない');
+  // 選べる月：記録のある月より前（1年前）から来月まで。前の月までの記録
+  ck(rr.months[0].value === '2026-12' && rr.months.some((m) => m.value === '2025-11') && rr.months.find((m) => m.value === '2026-10').saved,
+     '1) 選べる月: ' + J(rr.months.map((m) => m.value)));
+  const hv = rr.blocks.find((b) => b.key === 'vhc').history;
+  ck(J(hv) === J([{ month: '2026-10', label: '2026年10月', result: '10月の結果', action: '10月のアクション' }]), '1) 前の月までの記録: ' + J(hv));
+}
 
 // ===== 2) 推定 =====
 {
@@ -130,7 +143,7 @@ ck(!F.saveSuccessMeeting('11月', []).ok, '1) 月の書き方が違うのに保�
   ck(/10月のアクション/.test(await txt('b_0')) && /入力済み/.test(await txt('b_0')), '5) 前月のアクションアイテム・入力済み: ' + (await txt('b_0')).slice(0, 200));
   const mi = D.blocks.findIndex((b) => b.key === 'mentor');
   ck(/推定：□BNIパスポートプログラム/.test(await txt('b_' + mi)), '5) 推定が出ない');
-  await page.click('#b_' + mi + ' button.chip');
+  await page.click('#b_' + mi + ' .auto button.chip');
   await page.fill('#a_1', 'メンバーシップの次');
   await page.dispatchEvent('#a_1', 'input');
   ck(/未保存/.test(await txt('b_' + mi)) && /保存していない入力があります/.test(await txt('prog')), '5) 未保存の印');
@@ -140,6 +153,13 @@ ck(!F.saveSuccessMeeting('11月', []).ok, '1) 月の書き方が違うのに保�
   const items = sent.length ? sent[0][1] : [];
   ck(sent.length === 1 && J(items.map((x) => x.key).sort()) === J(['membership', 'mentor']) && /パスポート/.test(items.find((x) => x.key === 'mentor').result)
      && sent[0][2].secretary === '試験 二郎' && J(sent[0][2].attendees) === J(['試験 二郎', '架空 三郎']), '5) 保存で送るもの: ' + J(sent));
+  // 前月のアクションアイテムをコピー・過去の記録を見る・まとめてコピー
+  await page.click('#b_0 button:has-text("前月のアクションアイテムをコピー")');
+  ck((await page.inputValue('#a_0')) === '新しいアクション\n10月のアクション', '5) 前月のアクションアイテムをコピー（入力のうしろに足す）: ' + J(await page.inputValue('#a_0')));
+  await page.click('#b_0 button:has-text("過去の記録を見る")');
+  ck(/2026年10月/.test(await txt('b_0')) && /10月の結果/.test(await txt('b_0')), '5) 過去の記録が出ない');
+  await page.click('#b_0 button:has-text("結果の欄にコピー")');
+  ck((await page.inputValue('#r_0')) === '11月の結果\n10月の結果', '5) 過去の記録をコピー: ' + J(await page.inputValue('#r_0')));
   await browser.close();
   if (fails.length) { console.log('NG ' + fails.length + '件 / ' + checks + '件の検査'); fails.forEach((f) => console.log('  - ' + f)); process.exit(1); }
   console.log('チャプターサクセスミーティング: 検査 ' + checks + ' 件 OK');

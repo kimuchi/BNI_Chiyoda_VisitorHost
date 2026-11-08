@@ -76,6 +76,16 @@ function smShiftMonth_(key, n) {
 }
 function smMonthLabel_(key) { var p = smParseMonth_(key); return p ? p.y + '年' + p.m + '月' : String(key || ''); }
 
+// 記録のシートの「月」の欄 → 'YYYY-MM'。スプレッドシートが「2026-10」を日付（10月1日）に変えてしまうことがあるので、
+// 日付になっていても読む（前は読めず、取り込んだ月・保存した月が出なかった）
+function smCellMonth_(x) {
+  if (x && typeof x.getFullYear === 'function' && !isNaN(x.getTime())) return smMonthKey_(x.getFullYear(), x.getMonth() + 1);
+  var p = smParseMonth_(String(x == null ? '' : x).trim().replace(/^'/, ''));
+  return p ? smMonthKey_(p.y, p.m) : '';
+}
+// 書き込む「月」：文字のまま入るように、頭に ' を付ける
+function smMonthCell_(mk) { return "'" + mk; }
+
 // --- 記録のシート ---
 function smSheet_(create) {
   var ss = getSS_(), sh = ss.getSheetByName(SM_SHEET_);
@@ -93,11 +103,11 @@ function smLoad_() {
   if (!sh) return out;
   var v = sh.getDataRange().getValues();
   for (var i = 1; i < v.length; i++) {
-    var mk = String(v[i][0] || '').trim(), key = String(v[i][1] || '').trim();
-    if (!smParseMonth_(mk) || !key) continue;
+    var mk = smCellMonth_(v[i][0]), key = String(v[i][1] || '').trim();
+    if (!mk || !key) continue;
     var mo = out[mk] || (out[mk] = { blocks: {}, meta: {}, order: [] });
     if (key === SM_META_) { try { mo.meta = JSON.parse(String(v[i][2] || '{}')) || {}; } catch (e) {} continue; }
-    var at = v[i][5] instanceof Date ? Utilities.formatDate(v[i][5], 'Asia/Tokyo', 'yyyy/MM/dd HH:mm') : String(v[i][5] || '');
+    var at = v[i][5] && typeof v[i][5].getFullYear === 'function' ? Utilities.formatDate(v[i][5], 'Asia/Tokyo', 'yyyy/MM/dd HH:mm') : String(v[i][5] || '');
     var title = '';
     if (key.indexOf('x:') === 0) title = key.substring(2);           // Excel にあった、ほかの議題
     mo.blocks[key] = { result: String(v[i][2] || ''), action: String(v[i][3] || ''), by: String(v[i][4] || ''), at: at, row: i + 1, title: title };
@@ -136,14 +146,23 @@ function getSuccessMeeting(month) {
     var now = new Date(), cur = smMonthKey_(now.getFullYear(), now.getMonth() + 1);
     var mk = smParseMonth_(month) ? smMonthKey_(smParseMonth_(month).y, smParseMonth_(month).m) : cur;
     var all = smLoad_(), mo = all[mk] || { blocks: {}, meta: {} }, prev = all[smShiftMonth_(mk, -1)] || { blocks: {} };
-    var months = Object.keys(all);
-    [cur, smShiftMonth_(cur, 1), mk].forEach(function (k) { if (months.indexOf(k) < 0) months.push(k); });
-    months.sort().reverse();
+    // 選べる月：記録のあるいちばん前の月（無ければ1年前）から来月まで
+    var keys = Object.keys(all).sort(), first = keys.length && keys[0] < smShiftMonth_(cur, -12) ? keys[0] : smShiftMonth_(cur, -12);
+    var months = [];
+    for (var k = smShiftMonth_(cur, 1); k >= first; k = smShiftMonth_(k, -1)) months.push(k);
+    if (months.indexOf(mk) < 0) { months.push(mk); months.sort().reverse(); }
+    // 前の月までの記録（新しい順。その議題に何か書いてある月だけ、12か月ぶんまで）。参考に見る・コピーする
+    var past = keys.filter(function (k) { return k < mk; }).reverse();
     var auto = {};
     try { auto = smAuto_(mk); } catch (e) { console.warn('[SM] 推定を作れませんでした: ' + (e && e.message ? e.message : e)); }
     var blocks = smBlockList_(all, mk).map(function (b) {
       var x = mo.blocks[b.key] || {}, p = prev.blocks[b.key] || {};
-      return { key: b.key, title: b.title, checks: b.checks, prevAction: p.action || '',
+      var history = [];
+      past.forEach(function (k) {
+        var h = all[k].blocks[b.key];
+        if (history.length < 12 && h && (h.result || h.action)) history.push({ month: k, label: smMonthLabel_(k), result: h.result, action: h.action });
+      });
+      return { key: b.key, title: b.title, checks: b.checks, prevAction: p.action || '', prevResult: p.result || '', history: history,
                result: x.result || '', action: x.action || '', by: x.by || '', at: x.at || '', auto: auto[b.key] || '' };
     });
     var roster = [];
@@ -187,7 +206,7 @@ function saveSuccessMeeting(month, items, meta) {
       if (!okR) { conflicts.push(title + '（結果）'); r = cur.result; }
       if (!okA) { conflicts.push(title + '（アクションアイテム）'); a = cur.action; }
       if (r === cur.result && a === cur.action) return;
-      var row = [mk, key, r, a, user, at];
+      var row = [smMonthCell_(mk), key, r, a, user, at];
       if (cur.row) sh.getRange(cur.row, 1, 1, row.length).setValues([row]);
       else sh.appendRow(row);
       saved++;
@@ -197,10 +216,10 @@ function saveSuccessMeeting(month, items, meta) {
                 attendees: (meta.attendees || []).map(function (n) { return clean(n).slice(0, 60); }).filter(Boolean) };
       var json = JSON.stringify(m), metaRow = 0;
       var v = sh.getDataRange().getValues();
-      for (var i = 1; i < v.length; i++) if (String(v[i][0]) === mk && String(v[i][1]) === SM_META_) { metaRow = i + 1; break; }
+      for (var i = 1; i < v.length; i++) if (smCellMonth_(v[i][0]) === mk && String(v[i][1]) === SM_META_) { metaRow = i + 1; break; }
       if (JSON.stringify(mo.meta || {}) !== json) {
-        if (metaRow) sh.getRange(metaRow, 1, 1, 6).setValues([[mk, SM_META_, json, '', user, at]]);
-        else sh.appendRow([mk, SM_META_, json, '', user, at]);
+        if (metaRow) sh.getRange(metaRow, 1, 1, 6).setValues([[smMonthCell_(mk), SM_META_, json, '', user, at]]);
+        else sh.appendRow([smMonthCell_(mk), SM_META_, json, '', user, at]);
       }
     }
     SpreadsheetApp.flush();
@@ -374,14 +393,14 @@ function importSuccessMeetingXlsx(base64, fileName, overwrite) {
       var all = smLoad_(), sh = smSheet_(true), user = smUser_() || 'Excelから取り込み', at = new Date(), done = [], skipped = [], rows = [];
       months.forEach(function (x) {
         if (all[x.month] && !overwrite) { skipped.push(smMonthLabel_(x.month)); return; }
-        x.grid.order.forEach(function (k) { rows.push([x.month, k, x.grid.blocks[k].result, x.grid.blocks[k].action, user, at]); });
-        if (x.grid.secretary) rows.push([x.month, SM_META_, JSON.stringify({ secretary: x.grid.secretary, attendees: [] }), '', user, at]);
+        x.grid.order.forEach(function (k) { rows.push([smMonthCell_(x.month), k, x.grid.blocks[k].result, x.grid.blocks[k].action, user, at]); });
+        if (x.grid.secretary) rows.push([smMonthCell_(x.month), SM_META_, JSON.stringify({ secretary: x.grid.secretary, attendees: [] }), '', user, at]);
         done.push(x.month);
       });
       if (done.length) {
         // 書き直す月の、前の記録を消してから入れる（下の行から消す）
         var v = sh.getDataRange().getValues();
-        for (var i = v.length - 1; i >= 1; i--) if (done.indexOf(String(v[i][0])) >= 0) sh.deleteRow(i + 1);
+        for (var i = v.length - 1; i >= 1; i--) if (done.indexOf(smCellMonth_(v[i][0])) >= 0) sh.deleteRow(i + 1);
         if (rows.length) sh.getRange(sh.getLastRow() + 1, 1, rows.length, 6).setValues(rows);
       }
       return { ok: true, imported: done, skipped: skipped,
