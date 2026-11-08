@@ -27,6 +27,10 @@
  textarea.changed{border-color:#f0a020;background:#fffaf0;}
  .auto{font-size:11px;color:#555;margin-top:4px;white-space:pre-wrap;background:#f0f6ff;border-radius:4px;padding:4px 6px;}
  .by{font-size:11px;color:#888;}
+ .hist{padding:0 10px 8px;font-size:12px;}
+ .hist table{border-collapse:collapse;width:100%;}
+ .hist td,.hist th{border:1px solid #e3e3e3;padding:4px 6px;vertical-align:top;white-space:pre-wrap;text-align:left;}
+ .hist th{background:#fafafa;font-size:11px;color:#555;}
  .att label{display:inline-block;margin:2px 10px 2px 0;font-size:12px;}
  #msg{margin:8px 0;font-weight:bold;white-space:pre-wrap;}
  .box{border:1px solid #ddd;border-radius:6px;padding:10px;margin-bottom:10px;}
@@ -40,6 +44,7 @@
    月：<select id="month" onchange="pickMonth()"></select>
    <button id="btnSave" onclick="save()">保存する</button>
    <button class="sub" id="btnExport" onclick="exportSheet()">シートに書き出す（画面共有用）</button>
+   <button class="sub" id="btnCopyAll" onclick="copyAllPrev()">前月のアクションアイテムを、空の欄にまとめてコピー</button>
    <span class="prog" id="prog"></span>
  </div>
  <div id="msg"></div>
@@ -62,7 +67,8 @@
  function el(id){ return document.getElementById(id); }
  function norm(s){ return String(s==null?'':s).replace(/\r\n?/g,'\n').trim(); }
  function msg(t,ok){ var m=el('msg'); m.innerText=t||''; m.style.color=ok===false?'#c00':ok?'#188038':'#0055ff'; }
- function busy(b){ ['btnSave','btnExport','btnImport','month'].forEach(function(i){ el(i).disabled=b; }); }
+ function busy(b){ ['btnSave','btnExport','btnImport','btnCopyAll','month'].forEach(function(i){ el(i).disabled=b; }); }
+ var openHist={};
  function fail(e){ busy(false); msg('エラー: '+((e&&e.message)?e.message:e), false); }
  function dirty(){ return metaDirty || (data&&data.blocks||[]).some(function(b){ var f=fields[b.key]; return f && (norm(f.result)!==norm(b.result) || norm(f.action)!==norm(b.action)); }); }
  window.onload=function(){ load(''); };
@@ -109,8 +115,18 @@
      +'<div><div class="cl">'+esc(data.prevLabel)+'のアクションアイテム</div><div class="prev">'+(b.prevAction?esc(b.prevAction):'<span class="by">（前の月の記録はありません）</span>')+'</div></div>'
      +'<div><div class="cl">'+esc(data.prevLabel)+'の結果</div><textarea id="r_'+i+'" class="'+(chR?'changed':'')+'" oninput="edit('+i+',\'result\')">'+esc(f.result)+'</textarea>'
      +(b.auto && norm(b.auto)!==norm(f.result) ? '<div class="auto">推定：'+esc(b.auto)+'<br><button class="chip" onclick="useAuto('+i+')">これを入れる</button></div>' : '')+'</div>'
-     +'<div><div class="cl">'+esc(data.label)+'のアクションアイテム</div><textarea id="a_'+i+'" class="'+(chA?'changed':'')+'" oninput="edit('+i+',\'action\')">'+esc(f.action)+'</textarea></div>'
-     +'</div>';
+     +'<div><div class="cl">'+esc(data.label)+'のアクションアイテム</div><textarea id="a_'+i+'" class="'+(chA?'changed':'')+'" oninput="edit('+i+',\'action\')">'+esc(f.action)+'</textarea>'
+     +(b.prevAction ? '<button class="chip" onclick="copyPrev('+i+')">前月のアクションアイテムをコピー</button> ' : '')
+     +(b.history&&b.history.length ? '<button class="chip" onclick="toggleHist('+i+')">'+(openHist[b.key]?'過去の記録を閉じる':'過去の記録を見る（'+b.history.length+'か月）')+'</button>' : '')
+     +'</div></div>';
+   // 前の月までの記録（参考に見る・コピーする）
+   if(openHist[b.key] && b.history && b.history.length){
+     h+='<div class="hist"><table><tr><th style="width:80px;">月</th><th>その月の結果（前の月をふり返って）</th><th>その月のアクションアイテム</th></tr>'
+       +b.history.map(function(x,j){
+         return '<tr><td>'+esc(x.label)+'</td><td>'+esc(x.result)+(x.result?'<br><button class="chip" onclick="copyHist('+i+','+j+',\'result\')">結果の欄にコピー</button>':'')+'</td>'
+           +'<td>'+esc(x.action)+(x.action?'<br><button class="chip" onclick="copyHist('+i+','+j+',\'action\')">アクションアイテムの欄にコピー</button>':'')+'</td></tr>';
+       }).join('')+'</table></div>';
+   }
    box.innerHTML=h;
  }
  function edit(i, k){
@@ -124,6 +140,21 @@
    var b=data.blocks[i], f=fields[b.key];
    f.result = norm(f.result) ? norm(f.result)+'\n'+b.auto : b.auto;
    renderBlock(i); renderProg();
+ }
+ // コピー：空の欄はそのまま入れ、入力があればうしろに足す
+ function putText(i, k, text){
+   var b=data.blocks[i], f=fields[b.key];
+   f[k] = norm(f[k]) ? norm(f[k])+'\n'+text : text;
+   renderBlock(i); renderProg();
+ }
+ function copyPrev(i){ putText(i, 'action', data.blocks[i].prevAction); }
+ function copyHist(i, j, k){ putText(i, k, data.blocks[i].history[j][k]); }
+ function toggleHist(i){ var key=data.blocks[i].key; openHist[key]=!openHist[key]; renderBlock(i); }
+ function copyAllPrev(){
+   var n=0;
+   data.blocks.forEach(function(b,i){ if(b.prevAction && !norm(fields[b.key].action)){ fields[b.key].action=b.prevAction; n++; renderBlock(i); } });
+   renderProg();
+   msg(n ? n+'件の議題に、前月のアクションアイテムをコピーしました（まだ保存していません）。' : 'コピーする欄はありませんでした（今月のアクションアイテムが空で、前月のアクションアイテムのある議題だけコピーします）。', n?null:false);
  }
  function renderProg(){
    if(!data) return;
