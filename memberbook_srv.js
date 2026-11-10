@@ -115,7 +115,8 @@ function saveMemberBookPdfToDrive(base64, fileName, recreate) {
   try {
     if (!base64) return { ok: false, message: 'PDFのデータが空でした。もう一度お試しください。' };
     if (!lock.tryLock(20000)) return { ok: false, message: 'ほかの方がメンバーブックを更新中です。少し待ってから、もう一度押してください。' };
-    var props = PropertiesService.getScriptProperties(), id = props.getProperty('MEMBER_BOOK_ID') || '';
+    // 差し替えるのは、リンク集・案内メールのリンクのファイル（memberBookTargetId_）
+    var props = PropertiesService.getScriptProperties(), id = memberBookTargetId_();
     var name = String(fileName || 'MemberBook.pdf');
     var blob = Utilities.newBlob(Utilities.base64Decode(base64), 'application/pdf', name);
     if (id && !recreate) {
@@ -126,9 +127,9 @@ function saveMemberBookPdfToDrive(base64, fileName, recreate) {
           + (r.notFound ? '\n「新しく作り直す」を押すと、新しいファイルを作って登録します（URLが変わるので、送ったメールのリンクは古いままになります）。' : '') };
       }
       props.setProperty('MEMBER_BOOK_UPDATED', new Date().toISOString());
-      // 差し替えたファイル（名前・持ち主・ドライブの更新日時）を知らせる。URL は実際のファイルのものにそろえる
+      // 差し替えたファイル（名前・持ち主・ドライブの更新日時）を知らせる。リンクはリンク集・メールと同じもの
       var chk = memberBookAfterReplace_(id, before);
-      var url = chk.info.url || props.getProperty('MEMBER_BOOK_URL') || DriveApp.getFileById(id).getUrl();
+      var url = props.getProperty('MEMBER_BOOK_URL') || chk.info.url || DriveApp.getFileById(id).getUrl();
       return { ok: true, created: false, url: url, downloadUrl: 'https://drive.google.com/uc?export=download&id=' + id, file: chk.info,
                message: 'ドライブのメンバーブック（メールで送るPDF）を差し替えました。URLはそのままです（送ったメールのリンクからも、新しい版が見られます）。\n' + chk.note };
     }
@@ -149,7 +150,7 @@ function saveMemberBookPdfToDrive(base64, fileName, recreate) {
 // 編集画面に出す、ドライブのメンバーブックの様子（登録の有無・URL・最後に差し替えた日時）
 function memberBookDriveInfo_() {
   var props = PropertiesService.getScriptProperties();
-  var id = props.getProperty('MEMBER_BOOK_ID') || '';
+  var id = memberBookTargetId_();
   return { id: id, url: props.getProperty('MEMBER_BOOK_URL') || '',
            updated: props.getProperty('MEMBER_BOOK_UPDATED') || '', file: memberBookFileInfo_(id) };
 }

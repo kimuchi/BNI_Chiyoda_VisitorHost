@@ -5,8 +5,8 @@
 //
 // 確かめること
 //   ・登録してあるファイル（MEMBER_BOOK_ID）の中身を差し替え、差し替えたファイルの名前・持ち主・ドライブの更新日時を知らせる
-//   ・覚えている URL（MEMBER_BOOK_URL）が別のファイルのものでも、差し替えたファイルの URL にそろえる
-//     （同じ名前の「MemberBook.pdf」がいくつもあり、見ているファイルと差し替えたファイルが違っていた）
+//   ・差し替えるのは、リンク集・案内メールのリンク（MEMBER_BOOK_URL）のファイル。覚えているファイルID（MEMBER_BOOK_ID）が
+//     それと違っていたら、リンクの方にそろえる（前は ID の方を差し替え、リンクで見るファイルが替わらなかった）
 //   ・差し替えたのにドライブの更新日時が変わらなければ ⚠ で知らせる
 //   ・画面に出す、登録してあるファイルの様子（getMemberBookFileInfo）
 
@@ -26,10 +26,11 @@ const env = makeEnv({ now: new Date(2026, 10, 10, 10, 0, 0) });
 const F = Object.assign({}, env.globals);
 vm.createContext(F);
 for (const f of fs.readdirSync(ROOT).filter((x) => /\.js$/.test(x)).sort()) vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), F, { filename: f });
-env.reset([], { MEMBER_BOOK_ID: 'MB1', MEMBER_BOOK_URL: 'https://drive.test/file/d/OTHER/view' });
+env.reset([], { MEMBER_BOOK_ID: 'OLDFILE1234567890', MEMBER_BOOK_URL: 'https://drive.google.com/file/d/LINKFILE1234567890/view?usp=drivesdk' });
 
 let clock = Date.UTC(2026, 9, 14, 1, 2, 0), stuck = false, updates = 0;
-const files = { MB1: { name: 'MemberBook.pdf', owner: '見本 一郎', modified: clock, data: 'old' } };
+const files = { LINKFILE1234567890: { name: 'MemberBook.pdf', owner: '見本 一郎', modified: clock, data: 'old' },
+                OLDFILE1234567890: { name: 'MemberBook.pdf', owner: '試験 二郎', modified: clock, data: 'other' } };
 F.Drive = { Files: {
   get: (id) => {
     const f = files[id];
@@ -44,9 +45,11 @@ const b64 = Buffer.from('%PDF-1.4 見本').toString('base64');
 
 // ===== 差し替え =====
 let r = F.saveMemberBookPdfToDrive(b64, 'MemberBook.pdf', false);
-ck(r.ok && files.MB1.data === '%PDF-1.4 見本' && updates === 1, '差し替えていない: ' + J([r, files.MB1, updates]));
-ck(r.url === 'https://drive.test/file/d/MB1/view' && env.props.MEMBER_BOOK_URL === 'https://drive.test/file/d/MB1/view',
-   '覚えている URL が別のファイルのまま: ' + J([r.url, env.props.MEMBER_BOOK_URL]));
+ck(r.ok && files.LINKFILE1234567890.data === '%PDF-1.4 見本' && files.OLDFILE1234567890.data === 'other' && updates === 1,
+   'リンク集のリンクのファイルを差し替えていない: ' + J([r, files, updates]));
+ck(r.url === 'https://drive.google.com/file/d/LINKFILE1234567890/view?usp=drivesdk' && env.props.MEMBER_BOOK_ID === 'LINKFILE1234567890'
+   && env.props.MEMBER_BOOK_URL === 'https://drive.google.com/file/d/LINKFILE1234567890/view?usp=drivesdk',
+   'リンクが変わった・覚えているファイルIDをリンクにそろえない: ' + J([r.url, env.props]));
 ck(/差し替えたファイル：「MemberBook\.pdf」（持ち主 見本 一郎）　ドライブの更新日時 2026\/10\/14 11:02/.test(r.message) && !/⚠/.test(r.message),
    '差し替えたファイルの知らせ: ' + J(r.message));
 ck(r.file && r.file.name === 'MemberBook.pdf' && r.file.modified === '2026/10/14 11:02', '画面に渡すファイルの様子: ' + J(r.file));
@@ -59,14 +62,15 @@ stuck = false;
 
 // ===== アップロードから（メンバーブック(PDF)の更新）=====
 r = F.uploadMemberBookBlob_(F.Utilities.newBlob('%PDF-1.4 アップロード', 'application/pdf', 'x.pdf'));
-ck(!r.error && /更新しました/.test(r.msg) && /差し替えたファイル：「MemberBook\.pdf」/.test(r.msg) && r.url === 'https://drive.test/file/d/MB1/view', 'アップロードからの差し替え: ' + J(r));
+ck(!r.error && /更新しました/.test(r.msg) && /差し替えたファイル：「MemberBook\.pdf」/.test(r.msg) && r.url === 'https://drive.google.com/file/d/LINKFILE1234567890/view?usp=drivesdk' && files.LINKFILE1234567890.data === '%PDF-1.4 アップロード', 'アップロードからの差し替え: ' + J(r));
 
 // ===== 画面に出す様子 =====
 const info = F.getMemberBookFileInfo();
 ck(info.ok && info.file.name === 'MemberBook.pdf' && info.file.owner === '見本 一郎' && /^2026\/10\/14 /.test(info.file.modified) && info.file.size === 2,
    '登録してあるファイルの様子: ' + J(info));
 ck(F.memberBookDriveInfo_().file.name === 'MemberBook.pdf', '編集画面に渡す様子にファイルが無い');
-env.props.MEMBER_BOOK_ID = 'GONE';
+env.props.MEMBER_BOOK_URL = '';
+env.props.MEMBER_BOOK_ID = 'GONEFILE1234567890';
 ck(/not found/.test(F.getMemberBookFileInfo().file.error), '見つからないファイルの様子: ' + J(F.getMemberBookFileInfo()));
 
 if (fails.length) { console.log('NG ' + fails.length + '件 / ' + checks + '件の検査'); fails.forEach((f) => console.log('  - ' + f)); process.exit(1); }

@@ -2,7 +2,7 @@
 
 // 反映されたか確かめるための版。変更したら日付を更新する。
 // clasp push / デプロイが効いているかは、これを画面で見れば分かる。
-var SYSTEM_VERSION_ = '2026-11-10a';
+var SYSTEM_VERSION_ = '2026-11-10b';
 
 function getSystemVersion() { return SYSTEM_VERSION_; }
 
@@ -1057,14 +1057,14 @@ function exportSheetToPdf(sheet, fileName, fileIdPropKey, out) {
 // 差し替えは中身だけ（URLはそのまま）。登録してあるファイルが見つからない（削除した）ときだけ新しく作る（URLが変わる）。
 // 権限が無いなど、ほかの理由で差し替えられないときは新しく作らない（勝手にURLが変わり、送ったメールのリンクが古いままになるため）
 function uploadMemberBookBlob_(blob) {
-  var props = PropertiesService.getScriptProperties(), fileId = props.getProperty('MEMBER_BOOK_ID');
+  var props = PropertiesService.getScriptProperties(), fileId = memberBookTargetId_();
   if (fileId) {
     var before = (memberBookFileInfo_(fileId) || {}).modifiedMs || 0;
     var r = memberBookReplace_(fileId, blob);
     if (r.ok) {
       props.setProperty('MEMBER_BOOK_UPDATED', new Date().toISOString());
       var chk = memberBookAfterReplace_(fileId, before);
-      return { msg: "更新しました（URLはそのままです）。\n" + chk.note, url: chk.info.url || props.getProperty('MEMBER_BOOK_URL') };
+      return { msg: "更新しました（URLはそのままです）。\n" + chk.note, url: props.getProperty('MEMBER_BOOK_URL') || chk.info.url };
     }
     if (!r.notFound) return { error: r.message };
   }
@@ -1089,10 +1089,23 @@ function memberBookFileInfo_(id) {
     return { id: id, error: String(e && e.message ? e.message : e) };
   }
 }
+// 差し替えるファイル：リンク集・案内メールに出しているリンク（MEMBER_BOOK_URL）のファイル。
+// 覚えているファイルID（MEMBER_BOOK_ID）がそれと違っていたら、リンクの方にそろえる
+// （前は ID の方を差し替えていたので、リンク集・メールのリンクで見るファイルが替わらないことがあった）
+function memberBookTargetId_() {
+  var props = PropertiesService.getScriptProperties();
+  var id = props.getProperty('MEMBER_BOOK_ID') || '', fromUrl = extractDriveId_(props.getProperty('MEMBER_BOOK_URL') || '');
+  if (fromUrl && fromUrl !== id) {
+    console.warn('[MBOOK] 覚えているファイルID（' + id + '）がリンクのファイル（' + fromUrl + '）と違うので、リンクの方にそろえます');
+    props.setProperty('MEMBER_BOOK_ID', fromUrl);
+    id = fromUrl;
+  }
+  return id;
+}
 // 画面用：登録してあるメンバーブックのファイル
 function getMemberBookFileInfo() {
   try {
-    var id = PropertiesService.getScriptProperties().getProperty('MEMBER_BOOK_ID') || '';
+    var id = memberBookTargetId_();
     return { ok: true, file: memberBookFileInfo_(id) };
   } catch (e) {
     return { ok: false, message: String(e && e.message ? e.message : e) };
@@ -1102,7 +1115,7 @@ function getMemberBookFileInfo() {
 // 戻り値 { info, note }（note … 知らせる文。更新日時が変わっていなければ ⚠）
 function memberBookAfterReplace_(id, beforeMs) {
   var props = PropertiesService.getScriptProperties(), info = memberBookFileInfo_(id) || {}, note = '';
-  if (info.url && !info.error) props.setProperty('MEMBER_BOOK_URL', info.url);
+  if (info.url && !info.error && !props.getProperty('MEMBER_BOOK_URL')) props.setProperty('MEMBER_BOOK_URL', info.url);
   if (info.error) note = '（差し替えたファイルの様子を確かめられませんでした: ' + info.error + '）';
   else {
     note = '差し替えたファイル：「' + info.name + '」' + (info.owner ? '（持ち主 ' + info.owner + '）' : '') + '　ドライブの更新日時 ' + info.modified
@@ -2436,7 +2449,7 @@ function callGeminiAutoAllocation(currentState, maxRoomSize) {
   var profiles = allocationMemberProfiles_(currentState.pool || []);
   var docParts = [], usedPdf = false;
   if (!profiles.some(function (x) { return x['一言'] || x['紹介してほしい人'] || x['協業したい人']; })) {
-    var memberBookId = props.getProperty('MEMBER_BOOK_ID');
+    var memberBookId = memberBookTargetId_();
     if (memberBookId) {
       try {
         var mbBlob = DriveApp.getFileById(memberBookId).getBlob();
