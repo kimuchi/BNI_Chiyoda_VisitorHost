@@ -2,7 +2,7 @@
 
 // 反映されたか確かめるための版。変更したら日付を更新する。
 // clasp push / デプロイが効いているかは、これを画面で見れば分かる。
-var SYSTEM_VERSION_ = '2026-11-08c';
+var SYSTEM_VERSION_ = '2026-11-10a';
 
 function getSystemVersion() { return SYSTEM_VERSION_; }
 
@@ -1059,10 +1059,12 @@ function exportSheetToPdf(sheet, fileName, fileIdPropKey, out) {
 function uploadMemberBookBlob_(blob) {
   var props = PropertiesService.getScriptProperties(), fileId = props.getProperty('MEMBER_BOOK_ID');
   if (fileId) {
+    var before = (memberBookFileInfo_(fileId) || {}).modifiedMs || 0;
     var r = memberBookReplace_(fileId, blob);
     if (r.ok) {
       props.setProperty('MEMBER_BOOK_UPDATED', new Date().toISOString());
-      return { msg: "更新しました（URLはそのままです）。", url: props.getProperty('MEMBER_BOOK_URL') };
+      var chk = memberBookAfterReplace_(fileId, before);
+      return { msg: "更新しました（URLはそのままです）。\n" + chk.note, url: chk.info.url || props.getProperty('MEMBER_BOOK_URL') };
     }
     if (!r.notFound) return { error: r.message };
   }
@@ -1072,6 +1074,46 @@ function uploadMemberBookBlob_(blob) {
                         : "新規登録しました。")
                + (made.shared ? "" : "\n※ リンクの共有を設定できませんでした（組織の設定など）。ドライブで共有を確かめてください。"), url: made.url };
 }
+// 登録してあるメンバーブックのファイルの様子（ドライブに聞く）→ { id, name, url, modified: 'yyyy/MM/dd HH:mm', modifiedMs, owner, size }
+// 名前が同じ「MemberBook.pdf」がドライブにいくつもあると、見ているファイルと登録してあるファイルが違うことがあるので、画面に出す
+function memberBookFileInfo_(id) {
+  if (!id) return null;
+  try {
+    var f = Drive.Files.get(id, { fields: 'id,name,webViewLink,modifiedTime,size,trashed,owners(displayName,emailAddress)', supportsAllDrives: true });
+    var t = f.modifiedTime ? new Date(f.modifiedTime) : null;
+    return { id: id, name: f.name || '', url: f.webViewLink || ('https://drive.google.com/file/d/' + id + '/view'), trashed: !!f.trashed,
+             modified: t ? Utilities.formatDate(t, 'Asia/Tokyo', 'yyyy/MM/dd HH:mm') : '', modifiedMs: t ? t.getTime() : 0,
+             owner: (f.owners && f.owners[0]) ? (f.owners[0].displayName || f.owners[0].emailAddress || '') : '',
+             size: f.size ? Math.round(Number(f.size) / 104857.6) / 10 : 0 };
+  } catch (e) {
+    return { id: id, error: String(e && e.message ? e.message : e) };
+  }
+}
+// 画面用：登録してあるメンバーブックのファイル
+function getMemberBookFileInfo() {
+  try {
+    var id = PropertiesService.getScriptProperties().getProperty('MEMBER_BOOK_ID') || '';
+    return { ok: true, file: memberBookFileInfo_(id) };
+  } catch (e) {
+    return { ok: false, message: String(e && e.message ? e.message : e) };
+  }
+}
+// 差し替えたあと、ドライブのファイルの更新日時が新しくなったかを確かめ、URL を実際のファイルのものにそろえる。
+// 戻り値 { info, note }（note … 知らせる文。更新日時が変わっていなければ ⚠）
+function memberBookAfterReplace_(id, beforeMs) {
+  var props = PropertiesService.getScriptProperties(), info = memberBookFileInfo_(id) || {}, note = '';
+  if (info.url && !info.error) props.setProperty('MEMBER_BOOK_URL', info.url);
+  if (info.error) note = '（差し替えたファイルの様子を確かめられませんでした: ' + info.error + '）';
+  else {
+    note = '差し替えたファイル：「' + info.name + '」' + (info.owner ? '（持ち主 ' + info.owner + '）' : '') + '　ドライブの更新日時 ' + info.modified
+      + '。ドライブの「版を管理」に新しい版が入っています。';
+    if (beforeMs && info.modifiedMs && info.modifiedMs <= beforeMs) {
+      note = '⚠ 差し替えたはずですが、ドライブのファイルの更新日時が変わっていません（' + info.modified + '）。少し待ってから、もう一度お試しください。\n' + note;
+    }
+  }
+  return { info: info, note: note };
+}
+
 // 登録してあるメンバーブックの中身だけを差し替える（ゴミ箱にあれば戻してから）。
 // 戻り値 { ok } か { ok: false, notFound: 見つからない（削除した）, message: 知らせ }
 function memberBookReplace_(id, blob) {
