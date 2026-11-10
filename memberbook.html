@@ -6,6 +6,7 @@
   <p style="font-size:12px; color:#555; background:#f4f8ff; border:1px solid #d6e2f5; border-radius:4px; padding:8px;">
     「📊 スライド・冊子をつくる」＞「メンバーブックの編集・PDF出力」の <b>「📄 PDFを作ってドライブを更新」</b> を使えば、
     アップロードしなくても、このPDFがその内容に差し替わります。ここは、ほかで作ったPDFを使うときに使ってください。</p>
+  <div id="cur" style="font-size:12px; color:#333; margin-bottom:10px;">登録してあるファイルを確かめています...</div>
   <div>
     <input type="file" id="pdfFile" accept=".pdf" required><br><br>
     <button id="btn" onclick="uploadPdf()" style="padding:8px 16px; background:#0055ff; color:#fff; border:none; font-weight:bold; border-radius:4px;">アップロード</button>
@@ -13,6 +14,19 @@
   <div id="msg" style="margin-top:15px; font-weight:bold; white-space:pre-wrap;"></div>
 
   <script>
+    // いま登録してある（メールで送っている）ファイル。同じ名前の「MemberBook.pdf」がいくつもあっても、どれか分かるように
+    function esc(x){ var d=document.createElement('span'); d.textContent = x==null?'':String(x); return d.innerHTML.replace(/"/g,'&quot;'); }
+    function showCur() {
+      google.script.run.withSuccessHandler(function(r){
+        var f = r && r.file, el = document.getElementById('cur');
+        if (!f) { el.innerHTML = 'まだメンバーブックのファイルは登録されていません。'; return; }
+        if (f.error) { el.innerHTML = '<span style="color:#c00;">登録してあるファイルを確かめられませんでした（' + esc(f.error) + '）</span>'; return; }
+        el.innerHTML = '<b>いまメールで送っているファイル</b>：<a href="' + esc(f.url) + '" target="_blank">「' + esc(f.name) + '」</a>'
+          + (f.owner ? '（持ち主 ' + esc(f.owner) + '）' : '') + '　ドライブの更新日時 ' + esc(f.modified)
+          + (f.trashed ? '　<span style="color:#c00;">ゴミ箱にあります</span>' : '');
+      }).withFailureHandler(function(){}).getMemberBookFileInfo();
+    }
+    window.addEventListener('load', showCur);
     // フォーム送信ではなく base64 文字列で送る
     // （フォーム＋ファイル送信はサーバー関数に到達せず「サーバーエラー」になるため）
     function uploadPdf() {
@@ -30,7 +44,8 @@
             document.getElementById('msg').innerText = res.error;
             document.getElementById('msg').style.color = 'red';
           } else {
-            document.getElementById('msg').innerHTML = res.msg + "<br><br><a href='" + res.url + "' target='_blank'>現在のURLを確認</a>";
+            document.getElementById('msg').innerHTML = esc(res.msg).replace(/\n/g, '<br>') + "<br><br><a href='" + esc(res.url) + "' target='_blank'>現在のURLを確認</a>";
+            showCur();
             document.getElementById('msg').style.color = 'green';
           }
           document.getElementById('btn').disabled = false;

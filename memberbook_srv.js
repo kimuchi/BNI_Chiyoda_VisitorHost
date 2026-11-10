@@ -119,15 +119,18 @@ function saveMemberBookPdfToDrive(base64, fileName, recreate) {
     var name = String(fileName || 'MemberBook.pdf');
     var blob = Utilities.newBlob(Utilities.base64Decode(base64), 'application/pdf', name);
     if (id && !recreate) {
+      var before = (memberBookFileInfo_(id) || {}).modifiedMs || 0;
       var r = memberBookReplace_(id, blob);
       if (!r.ok) {
         return { ok: false, canRecreate: !!r.notFound, message: 'ドライブのメンバーブック（メールで送るPDF）を差し替えられませんでした。\n' + r.message
           + (r.notFound ? '\n「新しく作り直す」を押すと、新しいファイルを作って登録します（URLが変わるので、送ったメールのリンクは古いままになります）。' : '') };
       }
-      var url = props.getProperty('MEMBER_BOOK_URL') || DriveApp.getFileById(id).getUrl();
       props.setProperty('MEMBER_BOOK_UPDATED', new Date().toISOString());
-      return { ok: true, created: false, url: url, downloadUrl: 'https://drive.google.com/uc?export=download&id=' + id,
-               message: 'ドライブのメンバーブック（メールで送るPDF）を差し替えました。URLはそのままです（送ったメールのリンクからも、新しい版が見られます）。' };
+      // 差し替えたファイル（名前・持ち主・ドライブの更新日時）を知らせる。URL は実際のファイルのものにそろえる
+      var chk = memberBookAfterReplace_(id, before);
+      var url = chk.info.url || props.getProperty('MEMBER_BOOK_URL') || DriveApp.getFileById(id).getUrl();
+      return { ok: true, created: false, url: url, downloadUrl: 'https://drive.google.com/uc?export=download&id=' + id, file: chk.info,
+               message: 'ドライブのメンバーブック（メールで送るPDF）を差し替えました。URLはそのままです（送ったメールのリンクからも、新しい版が見られます）。\n' + chk.note };
     }
     var made = memberBookCreate_(blob.setName(name));
     props.setProperty('MEMBER_BOOK_UPDATED', new Date().toISOString());
@@ -146,8 +149,9 @@ function saveMemberBookPdfToDrive(base64, fileName, recreate) {
 // 編集画面に出す、ドライブのメンバーブックの様子（登録の有無・URL・最後に差し替えた日時）
 function memberBookDriveInfo_() {
   var props = PropertiesService.getScriptProperties();
-  return { id: props.getProperty('MEMBER_BOOK_ID') || '', url: props.getProperty('MEMBER_BOOK_URL') || '',
-           updated: props.getProperty('MEMBER_BOOK_UPDATED') || '' };
+  var id = props.getProperty('MEMBER_BOOK_ID') || '';
+  return { id: id, url: props.getProperty('MEMBER_BOOK_URL') || '',
+           updated: props.getProperty('MEMBER_BOOK_UPDATED') || '', file: memberBookFileInfo_(id) };
 }
 
 // 印刷したPDFをDriveに残したい場合の受け口（ブラウザで保存したPDFを送る）

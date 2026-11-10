@@ -82,6 +82,7 @@ run "メンバーリスト(OCR)の取り込み（PDFに無い方はチェック�
 # shellcheck disable=SC2086
 run "メンバーブック（組版・編集画面）" node tools/check_memberbook.js $FONTS_DIR
 # shellcheck disable=SC2086
+run "ドライブのメンバーブックの差し替え（差し替えたファイルを知らせる・URLを実際のファイルにそろえる・更新日時が変わらないとき）" node tools/check_memberbook_drive.js
 run "メンバーブックのPDF・ドライブの差し替え" node tools/check_memberbook_pdf.js $FONTS_DIR
 
 echo "── 画面・ウェブアプリ・文書"
