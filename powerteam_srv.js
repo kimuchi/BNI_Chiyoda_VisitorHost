@@ -4,12 +4,13 @@
 // 「〇〇パワーチームが求める専門分野」のページを入れる。
 // ひな形は ⚙️ 設定 ＞ 大きなスライド ＞ パワーチームが求める専門分野 に登録する（このシステムには同梱しない）。
 // ひな形の目印：「〇〇パワーチーム」（チーム名が入る）と、「カテゴリー」とだけ書いた欄（上から順に専門分野が入る。いくつでも）。
-// パワーチームは、チームごとに名前と専門分野を覚えておく（いくつでも）。回ごとに、入れるチームを0個以上選ぶ
-// （選んだかどうかも覚えておき、次の回の初めの値にする）。
+// パワーチーム（チーム名と専門分野）は ⚙️ 設定 ＞ パワーチーム に登録しておき、回ごとにローテーションで入れる
+// （1回に何チーム入れるか・どの回からどのチームか、を決めておくと、休会日を飛ばして順に回る）。
+// 前半スライドの画面では、ローテーションで選んだチームにチェックが入っていて、その回だけ選び直せる。
 
 var POWERTEAM_KIND_ = 'powerteam';
-var POWERTEAM_PROP_ = 'BNI_POWER_TEAMS';         // 覚えているチーム [{ name, cats: [], on: 前の回に入れたか }]
-var POWERTEAM_MAX_ = 20;                         // 覚えておくチームの数
+var POWERTEAM_PROP_ = 'BNI_POWER_TEAMS';         // { teams: [{ name, cats }], perMeeting, anchor: { date, index } }
+var POWERTEAM_MAX_ = 20;                         // 登録できるチームの数
 var POWERTEAM_CATS_ = 10;                        // 1チームの専門分野の数（ひな形の欄の数までしか入らない）
 
 function powerTeamsClean_(list) {
@@ -20,13 +21,87 @@ function powerTeamsClean_(list) {
     return { name: name, cats: cats, on: !(t && t.on === false) };
   }).filter(function (t) { return t.name || t.cats.length; }).slice(0, POWERTEAM_MAX_);
 }
-// 画面用：覚えているチーム（選んだかどうかも。初めの値）
-function powerTeamsSaved_() {
-  try { return powerTeamsClean_(JSON.parse(PropertiesService.getScriptProperties().getProperty(POWERTEAM_PROP_) || '[]')); }
-  catch (e) { return []; }
+
+// 登録の内容（前の形 … チームの並びだけ、も読む）
+function ptLoad_() {
+  var raw = null;
+  try { raw = JSON.parse(PropertiesService.getScriptProperties().getProperty(POWERTEAM_PROP_) || 'null'); } catch (e) { raw = null; }
+  var st = Array.isArray(raw) ? { teams: raw } : (raw || {});
+  var teams = powerTeamsClean_(st.teams || []).map(function (t) { return { name: t.name, cats: t.cats }; });
+  var per = Math.max(1, Math.min(5, parseInt(st.perMeeting, 10) || 1));
+  var a = st.anchor || {}, ad = parseDate_(a.date);
+  return { teams: teams, perMeeting: per,
+           anchor: { date: ad ? fmtDate_(ad) : '', index: Math.max(0, parseInt(a.index, 10) || 0) } };
 }
-function powerTeamsRemember_(list) {
-  try { PropertiesService.getScriptProperties().setProperty(POWERTEAM_PROP_, JSON.stringify(powerTeamsClean_(list))); } catch (e) {}
+function ptSave_(st) {
+  PropertiesService.getScriptProperties().setProperty(POWERTEAM_PROP_, JSON.stringify(st));
+}
+// 起点の回から、その開催日までの回の数（休会日を除く。その日が起点より前なら負）
+function ptMeetingsBetween_(from, to, holidays) {
+  var sign = 1, a = new Date(from.getFullYear(), from.getMonth(), from.getDate()), b = new Date(to.getFullYear(), to.getMonth(), to.getDate());
+  if (b < a) { var x = a; a = b; b = x; sign = -1; }
+  var n = 0;
+  for (var d = new Date(a.getTime()); d < b; d.setDate(d.getDate() + 7)) if (holidays.indexOf(fmtDate_(d)) < 0) n++;
+  return sign * n;
+}
+// その開催日にローテーションで入れるチームの番号（休会日は無し）
+function ptPicks_(st, d, holidays) {
+  var n = st.teams.length;
+  if (!n || !d || holidays.indexOf(fmtDate_(d)) >= 0) return [];
+  var ad = parseDate_(st.anchor.date) || d;
+  var k = ptMeetingsBetween_(ad, d, holidays), per = Math.min(st.perMeeting, n), out = [];
+  var start = ((st.anchor.index + k * per) % n + n) % n;
+  for (var i = 0; i < per; i++) out.push((start + i) % n);
+  return out;
+}
+function ptHolidays_() { try { return getHolidays(); } catch (e) { return []; } }
+// その開催日のチーム一覧（on … ローテーションで入れるチーム）
+function powerTeamsForDate_(d) {
+  var st = ptLoad_(), picks = ptPicks_(st, d, ptHolidays_());
+  return st.teams.map(function (t, i) { return { name: t.name, cats: t.cats, on: picks.indexOf(i) >= 0 }; });
+}
+// 前半スライドの画面から（開催日を選び直したとき）
+function getPowerTeamsForDate(dateVal) {
+  try { return { ok: true, teams: powerTeamsForDate_(parseDate_(dateVal)) }; }
+  catch (e) { return { ok: false, message: 'パワーチームを読めませんでした: ' + (e && e.message ? e.message : e), teams: [] }; }
+}
+
+// ⚙️ 設定 ＞ パワーチーム の画面：登録の内容と、これからの予定（次の開催日から12回）
+function getPowerTeamSettings() {
+  try {
+    requireSheetAccess_();
+    var st = ptLoad_(), holidays = ptHolidays_(), next = rotNextMeeting_(holidays);
+    if (!st.anchor.date) st.anchor = { date: fmtDate_(next), index: 0 };
+    var w = ['日', '月', '火', '水', '木', '金', '土'];
+    var dates = rotMeetingDates_(next, 12, holidays);
+    return { ok: true, teams: st.teams, perMeeting: st.perMeeting, anchor: st.anchor,
+             dates: dates.map(function (d) { return { value: fmtDate_(d), md: (d.getMonth() + 1) + '/' + d.getDate() + '(' + w[d.getDay()] + ')' }; }),
+             schedule: dates.map(function (d) {
+               return { date: fmtDate_(d), md: (d.getMonth() + 1) + '/' + d.getDate() + '(' + w[d.getDay()] + ')',
+                        teams: ptPicks_(st, d, holidays).map(function (i) { return st.teams[i].name; }) };
+             }) };
+  } catch (e) {
+    console.error('[POWERTEAM] ' + (e && e.stack ? e.stack : e));
+    return { ok: false, message: 'パワーチームを読み込めませんでした: ' + (e && e.message ? e.message : e) };
+  }
+}
+// data … { teams: [{ name, cats }], perMeeting, anchor: { date, index } }（anchor … その開催日に、その番号のチームから）
+function savePowerTeamSettings(data) {
+  try {
+    requireSheetAccess_();
+    var teams = powerTeamsClean_((data && data.teams) || []).map(function (t) { return { name: t.name, cats: t.cats }; });
+    var noName = teams.filter(function (t) { return !t.name; }).length;
+    if (noName) return { ok: false, message: 'チーム名が空のチームがあります（' + noName + 'チーム）。チーム名を入れてください。' };
+    var a = (data && data.anchor) || {}, ad = parseDate_(a.date);
+    var st = { teams: teams, perMeeting: Math.max(1, Math.min(5, parseInt(data && data.perMeeting, 10) || 1)),
+               anchor: { date: ad ? fmtDate_(ad) : '', index: Math.max(0, Math.min(teams.length - 1, parseInt(a.index, 10) || 0)) } };
+    ptSave_(st);
+    var r = getPowerTeamSettings();
+    r.message = 'パワーチームを保存しました（' + teams.length + 'チーム・1回に' + st.perMeeting + 'チーム）。';
+    return r;
+  } catch (e) {
+    return { ok: false, message: '保存できませんでした: ' + (e && e.message ? e.message : e) };
+  }
 }
 
 // ひな形の中の、パワーチームのページ（「パワーチーム」の文字があるページ。無ければ最初のページ）

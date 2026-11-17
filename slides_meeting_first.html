@@ -58,10 +58,9 @@
              <div style="font-size:11px;color:#888;">「、」で区切って並べます（最大12件）</div></td></tr>
      <tr><th>パワーチームが<br>求める専門分野</th>
          <td><div id="ptList"></div>
-             <button class="mkbtn" onclick="ptAdd()">＋ チームを足す</button>
-             <div style="font-size:11px;color:#888;">チームごとに名前と専門分野（「、」区切り）を覚えておきます。<b>この回に入れるチームにチェック</b>を入れてください（0チームでも構いません）。
-               チェックしたチームごとに1枚、「チャプターが求める専門分野」のページのすぐあとに入れます。チェックも次の回の初めの値になります。
-               「削除」はチームを覚えている一覧から消します（作成したときに保存します）。ひな形は ⚙️ 設定 ＞ 大きなスライド で登録します。</div></td></tr>
+             <div style="font-size:11px;color:#888;">チェックしたチームごとに1枚、「チャプターが求める専門分野」のページのすぐあとに入れます。
+               初めは<b>ローテーションで選んだチーム</b>にチェックが入っています（この回だけ選び直せます。0チームでも構いません）。
+               チームと専門分野の登録・ローテーションは <b>⚙️ 設定 ＞ パワーチーム</b>、ひな形は ⚙️ 設定 ＞ 大きなスライド です。</div></td></tr>
      <tr><th>開放カテゴリー</th><td><input type="text" class="wide" id="t_開放カテゴリー"></td></tr>
      <tr><th>審査中の申込み</th><td><input type="text" class="wide" id="t_審査中カテゴリー"></td></tr>
      <tr><th>一般規定</th><td><select id="gp"></select>
@@ -186,7 +185,7 @@
    if(!c.ok){ fail({message:c.message}); return; }
    ctx=c;
    initMeetings(c);
-   ptInit(c.powerTeams||[]);                         // パワーチームが求める専門分野（前に入れた内容）
+   ptInit(c.powerTeams||[]);                         // パワーチームが求める専門分野（その日のローテーション）
    var ch='<option value="">（指定しない）</option>';
    (c.coreValues||[]).forEach(function(v){ ch+='<option value="'+esc(v)+'">'+esc(v)+'</option>'; });
    document.getElementById('core').innerHTML=ch;
@@ -215,6 +214,7 @@
  }
  // ルーティンチェックシートに書いてある内容を反映する
  function applyRoutine(R){
+   if(ptRows) ptForDate(get('meeting'));             // パワーチーム：その日のローテーションのチーム
    var note=document.getElementById('coreNote');
    guestRaw = (R && R.ok && R.found) ? (R.regionGuestsRaw||'') : '';
    renderGuests(); renderSupporters();
@@ -276,29 +276,25 @@
    return m;
  }
 
- // --- パワーチームが求める専門分野（チームごとに1枚。前に入れた内容を初めの値に）---
+ // --- パワーチームが求める専門分野（チームごとに1枚。初めはローテーションで選んだチーム）---
  var ptRows=null;
- function ptInit(list){ ptRows=(list||[]).map(function(t){ return { name:t.name||'', cats:(t.cats||[]).join('、'), on:t.on!==false }; }); ptRender(); }
+ function ptInit(list){ ptRows=(list||[]).map(function(t){ return { name:t.name||'', cats:t.cats||[], on:!!t.on }; }); ptRender(); }
  function ptRender(){
    var box=document.getElementById('ptList'); if(!box) return;
    box.innerHTML=(ptRows||[]).map(function(t,i){
-     return '<div style="margin:3px 0;"><label title="この回に入れる"><input type="checkbox" id="pto_'+i+'"'+(t.on?' checked':'')+' onchange="ptRows['+i+'].on=this.checked"></label>'
-       +' <input type="text" id="ptn_'+i+'" value="'+esc(t.name).replace(/"/g,'&quot;')+'" placeholder="チーム名（〇〇パワーチームの〇〇）" style="width:150px;" oninput="ptRows['+i+'].name=this.value">'
-       +' <input type="text" id="ptc_'+i+'" value="'+esc(t.cats).replace(/"/g,'&quot;')+'" placeholder="例：税理士、webデザイナー" style="width:52%;" oninput="ptRows['+i+'].cats=this.value">'
-       +' <button class="mkbtn" onclick="ptDel('+i+')">削除</button></div>';
-   }).join('') || '<span style="font-size:11px;color:#888;">覚えているチームはありません（「＋ チームを足す」で足します）</span>';
+     return '<label style="display:block;padding:2px 0;font-size:12px;"><input type="checkbox" id="pto_'+i+'"'+(t.on?' checked':'')+' onchange="ptRows['+i+'].on=this.checked"> <b>'
+       +esc(t.name)+'パワーチーム</b>　<span style="color:#666;">'+esc(t.cats.join('、'))+'</span></label>';
+   }).join('') || '<span style="font-size:11px;color:#888;">登録されたパワーチームはありません（⚙️ 設定 ＞ パワーチーム で登録します）</span>';
  }
- function ptAdd(){ if(!ptRows) ptRows=[]; ptRows.push({ name:'', cats:'', on:true }); ptRender(); }
- function ptDel(i){
-   var t=ptRows[i];
-   if((t.name||t.cats) && !confirm('「'+(t.name||'（チーム名なし）')+'パワーチーム」を、覚えている一覧から消します。よろしいですか？\n（この回に入れないだけなら、チェックを外してください）')) return;
-   ptRows.splice(i,1); ptRender();
+ // 開催日を選び直したら、その日のローテーションのチームにする
+ function ptForDate(d){
+   if(!d) return;
+   google.script.run.withSuccessHandler(function(r){ if(get('meeting')===d && r && r.ok) ptInit(r.teams); }).getPowerTeamsForDate(d);
  }
- // 覚えているチームの一覧（on … この回に入れるか）。読み込めていないときは null（サーバーは覚えた内容を変えず、ページも入れない）
+ // チームの一覧（on … この回に入れるか）。読み込めていないときは null（ページを入れない）
  function ptCollect(){
    if(!ptRows) return null;
-   return ptRows.map(function(t){ return { name:String(t.name||'').trim(), cats:String(t.cats||'').split(/[、,，\n]+/).map(function(x){ return x.trim(); }).filter(Boolean), on:!!t.on }; })
-     .filter(function(t){ return t.name || t.cats.length; });
+   return ptRows.map(function(t){ return { name:t.name, cats:t.cats.slice(), on:!!t.on }; });
  }
 
  // --- ウィークリープレゼン：メンバーのページ ---

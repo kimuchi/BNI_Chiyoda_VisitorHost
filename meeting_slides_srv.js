@@ -171,7 +171,7 @@ function getMeetingSlideContext() {
     var routine = first ? getRoutineInfo(first.dateValue, { firstHalf: true }) : null;
     return { ok: true, meetings: candidates, defaultMeeting: first,
              lists: lists.ok ? lists : null, templates: ready,
-             routine: routine, seconds: chapterPresenSeconds_(), powerTeams: powerTeamsSaved_(),
+             routine: routine, seconds: chapterPresenSeconds_(), powerTeams: first ? powerTeamsForDate_(parseDate_(first.dateValue)) : [],
              coreValues: CORE_VALUES_.map(function (c) { return c.label; }),
              memberCount: members.length,
              memberNames: members.map(function (m) { return m.name; }),
@@ -1815,10 +1815,9 @@ function generateMeetingSlides(kind, values, meetingDateVal, opts) {
           + (e && e.message ? e.message : e) + '）。';
       }
     }
-    // 前半：パワーチームが求める専門分野。画面の、覚えているチームの一覧（on … この回に入れるか）をそのまま覚え、
-    // 選んだチームだけページにする
+    // 前半：パワーチームが求める専門分野。画面のチームの一覧（on … この回に入れるか。初めはローテーションで選んだチーム）のうち、
+    // 選んだチームだけページにする（チームの登録・ローテーションは ⚙️ 設定 ＞ パワーチーム。画面で選び直しても変えない）
     if (kind === 'meetingFirst' && Array.isArray(o.powerTeams)) {
-      powerTeamsRemember_(o.powerTeams);
       o.powerTeams = powerTeamsClean_(o.powerTeams).filter(function (t) { return t.on; });
       if (o.powerTeams.length) {
         try { o.powerTeamSource = bigTemplateParts_(POWERTEAM_KIND_); }

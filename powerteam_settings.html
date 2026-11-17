@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html><head><base target="_top">
+<style>
+ body{font-family:sans-serif;padding:20px;font-size:14px;margin:0;}
+ h3{margin:0 0 6px;color:#0055ff;}
+ .hint{font-size:12px;color:#666;line-height:1.7;margin-bottom:12px;}
+ table{border-collapse:collapse;width:100%;}
+ th{font-size:12px;text-align:left;color:#555;padding:4px;}
+ td{padding:3px 4px;vertical-align:top;}
+ td input[type=text]{width:100%;box-sizing:border-box;padding:5px;font-size:13px;}
+ button{border:none;padding:8px 14px;border-radius:4px;cursor:pointer;font-weight:bold;font-size:13px;background:#0055ff;color:#fff;}
+ button.sub{background:#fff;color:#0055ff;border:1px solid #0055ff;}
+ button.mini{background:#fff;color:#333;border:1px solid #bbb;padding:3px 7px;font-size:12px;font-weight:normal;}
+ button.del{background:#fff;color:#c00;border:1px solid #c00;padding:3px 7px;font-size:12px;font-weight:normal;}
+ button:disabled{opacity:.5;cursor:default;}
+ .box{border:1px solid #ddd;border-radius:6px;padding:10px;margin-bottom:12px;}
+ .sch td{border-bottom:1px solid #eee;font-size:13px;padding:4px;}
+ #msg{margin-top:10px;font-weight:bold;white-space:pre-wrap;}
+</style></head>
+<body>
+ <h3>パワーチーム（求める専門分野のローテーション）</h3>
+ <div class="hint">パワーチームごとに、チーム名と求める専門分野を登録します。定例会スライド（前半）では、<b>ローテーションでその回のチーム</b>を選び、
+   「チャプターが求める専門分野」のページのすぐあとに、チームごとに1枚入れます（前半の画面で、その回だけ選び直せます）。
+   休会日は飛ばして、上の並び順に回ります。</div>
+ <div class="box">
+   <b>チーム</b>（上から順に回ります）
+   <table style="margin-top:6px;">
+     <thead><tr><th style="width:24%;">チーム名（〇〇パワーチームの〇〇）</th><th>求める専門分野（「、」区切り。ひな形の欄の数まで）</th><th style="width:140px;"></th></tr></thead>
+     <tbody id="rows"><tr><td colspan="3">読み込み中...</td></tr></tbody>
+   </table>
+   <div style="margin-top:6px;"><button class="sub" onclick="addRow()">＋ チームを足す</button></div>
+ </div>
+ <div class="box">
+   <b>ローテーション</b>
+   <div style="margin-top:6px;font-size:13px;line-height:2;">
+     1回の定例会に入れるチーム：<select id="per" onchange="dirty=true;preview()"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select> チーム<br>
+     <select id="aDate" onchange="dirty=true;preview()"></select> の回は、<select id="aTeam" onchange="dirty=true;preview()"></select> から（そのあとは並び順に回ります）
+   </div>
+   <div style="margin-top:8px;font-size:12px;"><b>これからの予定</b></div>
+   <table class="sch"><tbody id="sch"></tbody></table>
+ </div>
+ <button id="btnSave" onclick="save()">保存する</button>
+ <div id="msg"></div>
+<script>
+ var st=null, rows=[], dirty=false;
+ function esc(x){var d=document.createElement('span');d.textContent=x==null?'':String(x);return d.innerHTML.replace(/"/g,'&quot;');}
+ function el(id){ return document.getElementById(id); }
+ function msg(t,ok){ var m=el('msg'); m.innerText=t||''; m.style.color=ok===false?'#c00':ok?'green':'#0055ff'; }
+ function fail(e){ el('btnSave').disabled=false; msg('エラー: '+((e&&e.message)?e.message:e), false); }
+ window.onload=function(){ google.script.run.withSuccessHandler(set).withFailureHandler(fail).getPowerTeamSettings(); };
+ function set(r){
+   if(!r.ok){ msg(r.message,false); return; }
+   st=r; rows=(r.teams||[]).map(function(t){ return { name:t.name, cats:(t.cats||[]).join('、') }; });
+   el('per').value=String(r.perMeeting||1);
+   var ds=(r.dates||[]).slice();
+   if(r.anchor.date && !ds.some(function(d){ return d.value===r.anchor.date; })) ds.unshift({ value:r.anchor.date, md:r.anchor.date });
+   el('aDate').innerHTML=ds.map(function(d){ return '<option value="'+esc(d.value)+'">'+esc(d.md)+'</option>'; }).join('');
+   el('aDate').value=r.anchor.date;
+   render(); el('aTeam').value=String(r.anchor.index||0); dirty=false; preview();
+ }
+ function read(){ rows.forEach(function(t,i){ var n=el('n_'+i), c=el('c_'+i); if(n) t.name=n.value; if(c) t.cats=c.value; }); }
+ function render(){
+   el('rows').innerHTML=rows.map(function(t,i){
+     return '<tr><td><input type="text" id="n_'+i+'" value="'+esc(t.name)+'" oninput="rows['+i+'].name=this.value;dirty=true;teamOpts();preview()"></td>'
+       +'<td><input type="text" id="c_'+i+'" value="'+esc(t.cats)+'" placeholder="例：税理士、webデザイナー" oninput="rows['+i+'].cats=this.value;dirty=true"></td>'
+       +'<td><button class="mini" onclick="move('+i+',-1)">↑</button> <button class="mini" onclick="move('+i+',1)">↓</button> <button class="del" onclick="delRow('+i+')">削除</button></td></tr>';
+   }).join('') || '<tr><td colspan="3" style="color:#888;font-size:12px;">まだチームがありません。「＋ チームを足す」から入れてください。</td></tr>';
+   teamOpts();
+ }
+ function teamOpts(){
+   var cur=el('aTeam').value;
+   el('aTeam').innerHTML=rows.map(function(t,i){ return '<option value="'+i+'">'+esc(t.name||'（'+(i+1)+'番目）')+'パワーチーム</option>'; }).join('');
+   if(cur!=='' && Number(cur)<rows.length) el('aTeam').value=cur;
+ }
+ function addRow(){ read(); dirty=true; rows.push({ name:'', cats:'' }); render(); preview(); }
+ function delRow(i){ read(); dirty=true; if((rows[i].name||rows[i].cats) && !confirm('「'+(rows[i].name||'（チーム名なし）')+'パワーチーム」を消します。よろしいですか？')) return; rows.splice(i,1); render(); preview(); }
+ function move(i,d){ read(); dirty=true; var j=i+d; if(j<0||j>=rows.length) return; var x=rows[i]; rows[i]=rows[j]; rows[j]=x; render(); preview(); }
+ // これからの予定（サーバーと同じ回し方。休会日は、予定の開催日にもう入っていない）
+ function preview(){
+   if(!st) return;
+   var n=rows.length, per=Math.min(parseInt(el('per').value,10)||1, n||1), dates=(st.dates||[]).map(function(d){ return d.value; });
+   var ai=dates.indexOf(el('aDate').value), idx=parseInt(el('aTeam').value,10)||0;
+   // 変えていないとき・起点が予定より前の回のとき（休会日を数えられない）は、サーバーの予定を出す
+   if(!dirty || ai<0){
+     el('sch').innerHTML=(st.schedule||[]).map(function(x){
+       return '<tr><td style="width:90px;">'+esc(x.md)+'</td><td>'+esc(x.teams.map(function(n){ return n+'パワーチーム'; }).join('・'))+'</td></tr>'; }).join('')
+       +(dirty?'<tr><td colspan="2" style="color:#b45f06;font-size:12px;">保存すると、変えた内容の予定になります。</td></tr>':'');
+     return;
+   }
+   el('sch').innerHTML=(st.dates||[]).map(function(d,k){
+     if(!n) return '';
+     var names=[];
+     if(ai>=0){ var start=((idx+(k-ai)*per)%n+n)%n; for(var i=0;i<per;i++) names.push((rows[(start+i)%n].name||'（'+((start+i)%n+1)+'番目）')+'パワーチーム'); }
+     return '<tr><td style="width:90px;">'+esc(d.md)+'</td><td>'+(ai>=0?esc(names.join('・')):'<span style="color:#888;">保存すると出ます</span>')+'</td></tr>';
+   }).join('');
+ }
+ function save(){
+   read();
+   el('btnSave').disabled=true; msg('保存しています...');
+   google.script.run.withSuccessHandler(function(r){
+     el('btnSave').disabled=false;
+     if(!r.ok){ msg(r.message,false); return; }
+     set(r); msg(r.message,true);
+   }).withFailureHandler(fail).savePowerTeamSettings({
+     teams: rows.map(function(t){ return { name:t.name, cats:String(t.cats||'').split(/[、,，\n]+/).map(function(x){ return x.trim(); }).filter(Boolean) }; }),
+     perMeeting: el('per').value, anchor: { date: el('aDate').value, index: el('aTeam').value } });
+ }
+</script>
+</body></html>

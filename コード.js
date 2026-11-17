@@ -2,7 +2,7 @@
 
 // 反映されたか確かめるための版。変更したら日付を更新する。
 // clasp push / デプロイが効いているかは、これを画面で見れば分かる。
-var SYSTEM_VERSION_ = '2026-11-17c';
+var SYSTEM_VERSION_ = '2026-11-17d';
 
 function getSystemVersion() { return SYSTEM_VERSION_; }
 
@@ -62,6 +62,7 @@ function onOpen() {
       .addItem('メンバー名簿', 'openMemberMasterDialog')
       .addItem('メンバー写真', 'openMemberPhotoDialog')
       .addItem('スーパーサポーター', 'openSuperSupportersDialog')
+      .addItem('パワーチーム', 'openPowerTeamDialog')
       .addSeparator()
       .addItem('PowerPointテンプレート（ビジター用）', 'openTemplateFileDialog')
       .addItem('大きなスライド（定例会など）', 'openBigTemplateDialog')
@@ -219,6 +220,7 @@ function openManualDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService
 function openAssetSettingsDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('asset_settings').setWidth(620).setHeight(560), 'BNI 素材フォルダの設定'); }
 function openTemplateFileDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('template_files').setWidth(620).setHeight(640), 'PowerPointテンプレートの登録'); }
 function openSuccessMeetingDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('success_meeting').setWidth(1100).setHeight(760), 'チャプターサクセスミーティング'); }
+function openPowerTeamDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('powerteam_settings').setWidth(860).setHeight(680), 'パワーチーム'); }
 function openSuperSupportersDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('super_supporters').setWidth(720).setHeight(560), 'スーパーサポーター'); }
 function openMemberPhotoDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('member_photos').setWidth(620).setHeight(620), 'メンバー写真の管理'); }
 function openArchiveDialog() { SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutputFromFile('archive').setWidth(560).setHeight(620), 'シートの整理（アーカイブ）'); }

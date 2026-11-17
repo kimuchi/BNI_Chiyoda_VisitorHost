@@ -67,6 +67,7 @@ const SERVER = {
   getRoutineInfo: () => routine,
   getWeeklyGuests: () => ({ ok: true, guests: guestList }),
   getSuperSupporters: () => ({ ok: true, supporters: [] }),
+  getPowerTeamsForDate: () => ({ ok: true, teams: [] }),
   getPassportChoices: () => ({ ok: true, selected: [], recent: [], all: [] }),
   getMemberPresenContext: () => ({ ok: true, members: mm, blocks: [{ gkey: gk('企業サポート'), block: '企業サポート', order: 1, known: true, count: mm.length }],
     rowsPerPage: 7, unusedCategories: [], seconds: { weekly: 30, startup: 150 },
