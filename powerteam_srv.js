@@ -4,11 +4,12 @@
 // 「〇〇パワーチームが求める専門分野」のページを入れる。
 // ひな形は ⚙️ 設定 ＞ 大きなスライド ＞ パワーチームが求める専門分野 に登録する（このシステムには同梱しない）。
 // ひな形の目印：「〇〇パワーチーム」（チーム名が入る）と、「カテゴリー」とだけ書いた欄（上から順に専門分野が入る。いくつでも）。
-// 入れたチームと専門分野は覚えておき、次の回の初めの値にする（パワーチームは毎週は変わらないため）。
+// パワーチームは、チームごとに名前と専門分野を覚えておく（いくつでも）。回ごとに、入れるチームを0個以上選ぶ
+// （選んだかどうかも覚えておき、次の回の初めの値にする）。
 
 var POWERTEAM_KIND_ = 'powerteam';
-var POWERTEAM_PROP_ = 'BNI_POWER_TEAMS';         // 前に入れたチーム [{ name, cats: [] }]
-var POWERTEAM_MAX_ = 6;                          // チームの数
+var POWERTEAM_PROP_ = 'BNI_POWER_TEAMS';         // 覚えているチーム [{ name, cats: [], on: 前の回に入れたか }]
+var POWERTEAM_MAX_ = 20;                         // 覚えておくチームの数
 var POWERTEAM_CATS_ = 10;                        // 1チームの専門分野の数（ひな形の欄の数までしか入らない）
 
 function powerTeamsClean_(list) {
@@ -16,10 +17,10 @@ function powerTeamsClean_(list) {
   return (list || []).map(function (t) {
     var name = clean(t && t.name, 40).replace(/パワーチーム$/, '').trim();
     var cats = ((t && t.cats) || []).map(function (c) { return clean(c, 60); }).filter(Boolean).slice(0, POWERTEAM_CATS_);
-    return { name: name, cats: cats };
+    return { name: name, cats: cats, on: !(t && t.on === false) };
   }).filter(function (t) { return t.name || t.cats.length; }).slice(0, POWERTEAM_MAX_);
 }
-// 画面用：前に入れたチーム（初めの値）
+// 画面用：覚えているチーム（選んだかどうかも。初めの値）
 function powerTeamsSaved_() {
   try { return powerTeamsClean_(JSON.parse(PropertiesService.getScriptProperties().getProperty(POWERTEAM_PROP_) || '[]')); }
   catch (e) { return []; }
@@ -64,7 +65,7 @@ function chapterWantedPage_(parts) {
 // 前半スライドに入れる。teams … [{ name, cats }]。src … ひな形を展開したもの
 //   戻り値 { pages, paths, message }
 function insertPowerTeamPages_(parts, src, teams) {
-  teams = powerTeamsClean_(teams);
+  teams = powerTeamsClean_(teams).filter(function (t) { return t.on; });
   if (!teams.length) return null;
   var after = chapterWantedPage_(parts);
   var model = src ? powerTeamModel_(src) : '';

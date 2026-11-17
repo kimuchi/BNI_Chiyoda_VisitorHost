@@ -1815,10 +1815,11 @@ function generateMeetingSlides(kind, values, meetingDateVal, opts) {
           + (e && e.message ? e.message : e) + '）。';
       }
     }
-    // 前半：パワーチームが求める専門分野（画面で入れたチーム。入れたものは次の回の初めの値として覚える）
+    // 前半：パワーチームが求める専門分野。画面の、覚えているチームの一覧（on … この回に入れるか）をそのまま覚え、
+    // 選んだチームだけページにする
     if (kind === 'meetingFirst' && Array.isArray(o.powerTeams)) {
       powerTeamsRemember_(o.powerTeams);
-      o.powerTeams = powerTeamsClean_(o.powerTeams);
+      o.powerTeams = powerTeamsClean_(o.powerTeams).filter(function (t) { return t.on; });
       if (o.powerTeams.length) {
         try { o.powerTeamSource = bigTemplateParts_(POWERTEAM_KIND_); }
         catch (e) {
