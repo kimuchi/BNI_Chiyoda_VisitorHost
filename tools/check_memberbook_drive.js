@@ -73,5 +73,34 @@ env.props.MEMBER_BOOK_URL = '';
 env.props.MEMBER_BOOK_ID = 'GONEFILE1234567890';
 ck(/not found/.test(F.getMemberBookFileInfo().file.error), '見つからないファイルの様子: ' + J(F.getMemberBookFileInfo()));
 
+// ===== 03_生成物 への保存（saveOutputFile_）=====
+// ゴミ箱の同じ名前のファイルは使わない。ほかの方の同じ名前のファイルを更新して共有を変えられなくても、もうリンクで見られれば成功
+{
+  const mk = (id, o) => Object.assign({ id, trashed: false, access: 'PRIVATE', canShare: true, data: '' }, o);
+  const store = [mk('T1', { trashed: true }), mk('O1', { access: 'ANYONE_WITH_LINK', canShare: false })];
+  const fobj = (x) => ({ getId: () => x.id, isTrashed: () => x.trashed, getUrl: () => 'https://drive.test/' + x.id,
+    setTrashed: (t) => { x.trashed = t; }, getSharingAccess: () => x.access,
+    setSharing: () => { if (!x.canShare) throw new Error('見本：共有を変える権限がありません'); x.access = 'ANYONE_WITH_LINK'; } });
+  let byName = [];
+  const folder = { getName: () => '03_生成物', getFilesByName: () => { let i = 0; const a = byName.map(fobj); return { hasNext: () => i < a.length, next: () => a[i++] }; },
+                   createFile: () => { const x = mk('N' + store.length, { canShare: false }); store.push(x); return fobj(x); } };
+  F.getAssetFolder_ = () => folder;
+  F.DriveApp.Access = { ANYONE_WITH_LINK: 'ANYONE_WITH_LINK', ANYONE: 'ANYONE' };
+  F.DriveApp.Permission = { VIEW: 'VIEW' };
+  F.Drive.Files.update = (meta, id) => ({ id });
+  byName = [store[0], store[1]];
+  let s1 = F.saveOutputFile_(F.Utilities.newBlob('x', 'text/plain', 'a.txt'), 'a.txt');
+  ck(s1.id === 'O1' && s1.shared === true && s1.shareError === '', 'ゴミ箱のファイルを使った・もうリンクで見られるのに失敗にした: ' + J(s1));
+  // フォルダが「リンクを知っている全員」で共有されている：新しく作ったファイルもそのまま見られるので、共有は変えない
+  folder.createFile = () => { const x = mk('L' + store.length, { canShare: false, access: 'ANYONE_WITH_LINK' }); store.push(x); return fobj(x); };
+  byName = [];
+  s1 = F.saveOutputFile_(F.Utilities.newBlob('x', 'text/plain', 'c.txt'), 'c.txt');
+  ck(/^L/.test(s1.id) && s1.shared === true, 'フォルダの共有を受け継いだファイルなのに失敗にした: ' + J(s1));
+  folder.createFile = () => { const x = mk('N' + store.length, { canShare: false }); store.push(x); return fobj(x); };
+  byName = [store[0]];
+  s1 = F.saveOutputFile_(F.Utilities.newBlob('x', 'text/plain', 'b.txt'), 'b.txt');
+  ck(/^N/.test(s1.id) && s1.shared === false && /見本：共有を変える権限がありません/.test(s1.shareError), '共有できないときの理由: ' + J(s1));
+}
+
 if (fails.length) { console.log('NG ' + fails.length + '件 / ' + checks + '件の検査'); fails.forEach((f) => console.log('  - ' + f)); process.exit(1); }
 console.log('ドライブのメンバーブックの差し替え: 検査 ' + checks + ' 件 OK');
