@@ -251,7 +251,9 @@ function openBigTemplateDialog() {
 function authorizeDriveAccess() {
   // 許可の画面で一部の権限のチェックを外していた方には、足りない権限をもう一度求める（ここで実行が止まり、許可の画面が出る）
   if (typeof ScriptApp.requireAllScopes === 'function') ScriptApp.requireAllScopes(ScriptApp.AuthMode.FULL);
-  var ui = SpreadsheetApp.getUi(), testName = '_権限確認.txt';
+  // 確かめるファイルは毎回べつの名前にする（同じ名前だと、ほかの方が作って残ったファイルを使ってしまい、
+  // その方のファイルの共有は変えられないので「失敗」と出ていた）
+  var ui = SpreadsheetApp.getUi(), testName = '_権限確認_' + Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyyMMddHHmmss') + '.txt';
   try {
     var folder = getAssetFolder_('output');
     var saved = saveOutputFile_(Utilities.newBlob('ok', 'text/plain', testName), testName);
@@ -260,6 +262,7 @@ function authorizeDriveAccess() {
             + '\n「リンクを知っている全員が閲覧」の設定: ' + (saved.shared ? '成功' : '失敗');
     if (!saved.shared) {
       msg += '\n\n⚠ リンク共有を設定できませんでした。\n'
+           + (saved.shareError ? '（Googleの返事: ' + saved.shareError + '）\n' : '')
            + '組織の共有制限、または共有設定を変更する権限が原因の可能性があります。\n'
            + 'ファイルは保存できますが、閲覧権限のない相手はリンクを開けません。\n'
            + '必要な相手にファイルや保存先フォルダを共有できるか、所有者・管理者に確認してください。';

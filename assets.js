@@ -135,10 +135,11 @@ function saveOutputFile_(blob, fileName) {
     throw new Error('保存先フォルダを開けませんでした。' + driveHelpHint_(e));
   }
   // 同名ファイルがあれば置き換えではなく更新（URLを変えない）
-  var it = folder.getFilesByName(fileName), file;
+  // ゴミ箱のファイルは使わない（DriveApp はゴミ箱に入れた同じ名前のファイルも返す）
+  var it = folder.getFilesByName(fileName), file = null;
+  while (it.hasNext() && !file) { var g = it.next(); if (!isTrashed_(g)) file = g; }
   try {
-    if (it.hasNext()) {
-      file = it.next();
+    if (file) {
       try { Drive.Files.update({}, file.getId(), blob); }
       catch (e) { file.setTrashed(true); file = folder.createFile(blob.setName(fileName)); }
     } else {
@@ -149,16 +150,20 @@ function saveOutputFile_(blob, fileName) {
   }
   // リンク共有は組織の設定で禁止されていることがある。
   // 共有できなくてもファイル自体は保存できているので、ここでは止めない。
-  var shared = true;
-  try {
+  // ほかの方が作った同じ名前のファイルを更新したときは、共有を変えられないことがある（フォルダに「リンクを知っている全員」で
+  // 入っている方は、ほかの方のファイルの共有を変えられない）。もうリンクで見られるようになっていれば、それで良い
+  // フォルダが「リンクを知っている全員」で共有されていれば、中のファイルもそのままリンクで見られるので、共有は変えない
+  var shared = true, shareError = '';
+  if (!sharedWithLink_(file)) try {
     file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
   } catch (e) {
-    shared = false;
-    console.warn('[DRIVE] リンク共有を設定できませんでした: ' + (e && e.message ? e.message : e));
+    shareError = String(e && e.message ? e.message : e);
+    shared = sharedWithLink_(file);
+    console.warn('[DRIVE] リンク共有を設定できませんでした: ' + shareError + (shared ? '（もうリンクで見られます）' : ''));
   }
   // getUrl() はドライブのプレビュー画面。pptxだとGoogleスライドで開かれてしまうので、
   // そのままダウンロードできるURLも返す。
-  return { id: file.getId(), url: file.getUrl(), name: fileName, shared: shared,
+  return { id: file.getId(), url: file.getUrl(), name: fileName, shared: shared, shareError: shared ? '' : shareError,
            downloadUrl: 'https://drive.google.com/uc?export=download&id=' + file.getId() };
 }
 

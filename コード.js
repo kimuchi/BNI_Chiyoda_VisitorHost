@@ -2,7 +2,7 @@
 
 // 反映されたか確かめるための版。変更したら日付を更新する。
 // clasp push / デプロイが効いているかは、これを画面で見れば分かる。
-var SYSTEM_VERSION_ = '2026-11-10b';
+var SYSTEM_VERSION_ = '2026-11-17a';
 
 function getSystemVersion() { return SYSTEM_VERSION_; }
 
@@ -981,6 +981,7 @@ function createSharedPdf_(spreadsheetId, blob) {
 // 断られても共有は付いていることがあるので、確かめてから次へ。DriveApp で通らなければ Drive API でも試す
 function shareWithLink_(file) {
   var why = '';
+  if (sharedWithLink_(file)) return '';            // もうリンクで見られる（フォルダの共有を受け継いでいる など）：変えない
   for (var attempt = 0; attempt < 3; attempt++) {
     if (attempt) Utilities.sleep(2000 * attempt);
     try { file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); return ''; }
