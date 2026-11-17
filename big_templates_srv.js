@@ -13,6 +13,8 @@ var BIG_TEMPLATE_KINDS_ = {
   // 事前MTGに入れる、新入会メンバーごとの熱烈歓迎のページ。登録しなければ同梱の既定のひな形（welcome_srv.js）
   welcome:       { prop: 'BNI_TPL_WELCOME_ID',        label: '熱烈歓迎（事前MTG・新入会メンバー）', builtin: true },
   // 後半の最後（推薦のことばのあと）に入れる、パスポートプログラムを卒業したメンバーごとのページ（passport_srv.js）
+  // 前半の「チャプターが求める専門分野」のあとに入れる、パワーチームごとのページ（powerteam_srv.js）
+  powerteam:     { prop: 'BNI_TPL_POWERTEAM_ID',      label: 'パワーチームが求める専門分野（前半）' },
   passport:      { prop: 'BNI_TPL_PASSPORT_ID',       label: 'パスポートプログラム卒業コメント（後半・事前MTG）' }
 };
 // 同梱の既定のひな形（登録しなくても使えるもの）

@@ -71,6 +71,7 @@ const SERVER = {
     templates: { meetingFirst: true, meetingSecond: true, memberPresen: true }, routine,
     seconds: { weekly: 45, startup: 180, visitor: 20, referral: 9 },          // チャプターの設定（既定と違う秒数）
     coreValues: ['Givers Gain', 'Accountability'], memberCount: MEMBERS.length,
+    powerTeams: [{ name: '見本', cats: ['税理士', '印刷'] }],                // 前に入れたパワーチーム
     members: MEMBERS.map((m) => ({ no: m.no, name: m.name, company: m.company, title: m.title, hasPhoto: true })),
   }),
   getRoutineInfo: () => routine,
@@ -179,6 +180,15 @@ const shown = (el) => !!el && el.style.display !== 'none' && el.style.display !=
   step('前半を作り直す', () => run('gen()'));
   o = lastOpts();
   ck(JSON.stringify(o.weeklyGuests) === JSON.stringify(['大庭　まり子']), 'weeklyGuests が ' + JSON.stringify(o.weeklyGuests));
+  // パワーチーム：前に入れた内容が初めから入る。足す・外すと、そのとおりに渡る
+  ck(J(o.powerTeams) === J([{ name: '見本', cats: ['税理士', '印刷'] }]) && els.ptn_0 && els.ptn_0.value === '見本' && els.ptc_0.value === '税理士、印刷',
+     'パワーチームの初めの値: ' + J(o.powerTeams));
+  step('パワーチームを足して作る', () => { run('ptAdd()'); els.ptn_1.value = '試験'; run("ptRows[1].name='試験'"); run("ptRows[1].cats='保険、 不動産'"); run('gen()'); });
+  ck(J(lastOpts().powerTeams) === J([{ name: '見本', cats: ['税理士', '印刷'] }, { name: '試験', cats: ['保険', '不動産'] }]), 'パワーチームを足したとき: ' + J(lastOpts().powerTeams));
+  step('パワーチームを外す', () => { run('ptDel(1)'); run('ptDel(0)'); run('gen()'); });
+  ck(J(lastOpts().powerTeams) === '[]', 'パワーチームを外したとき: ' + J(lastOpts().powerTeams));
+  step('パワーチームを戻す', () => { run('ptInit([{ name: "見本", cats: ["税理士", "印刷"] }])'); run('gen()'); });
+  o = lastOpts();
   ck(o.weeklyAuto === true, '自動送りが渡っていない');
   ck(pagesOf(o).length > 40, 'メンバーのページが ' + pagesOf(o).length);
   // カウントダウンの秒数はチャプターの設定（ウィークリー45秒）。スタートアッププレゼンの方はいない日

@@ -171,7 +171,7 @@ function getMeetingSlideContext() {
     var routine = first ? getRoutineInfo(first.dateValue, { firstHalf: true }) : null;
     return { ok: true, meetings: candidates, defaultMeeting: first,
              lists: lists.ok ? lists : null, templates: ready,
-             routine: routine, seconds: chapterPresenSeconds_(),
+             routine: routine, seconds: chapterPresenSeconds_(), powerTeams: powerTeamsSaved_(),
              coreValues: CORE_VALUES_.map(function (c) { return c.label; }),
              memberCount: members.length,
              memberNames: members.map(function (m) { return m.name; }),
@@ -1588,6 +1588,9 @@ function editMeetingSlides_(parts, map, rules, o) {
   // 別の処理が同じ名前の画像を作って上書きし合うこと（写真の取り違い）も起きない。
   var photoCache = { by: {}, seq: 0 };
   var visitors = typeof expandNativeVisitorPages_ === 'function' ? expandNativeVisitorPages_(parts, o.meetingDate) : null;
+  // 前半：「チャプターが求める専門分野」のすぐあとに、パワーチームが求める専門分野のページ（差し込み口を書き換える前に場所を探す。powerteam_srv.js）
+  var powerTeams = (o.powerTeamSource && o.powerTeams && o.powerTeams.length) ? insertPowerTeamPages_(parts, o.powerTeamSource, o.powerTeams)
+                 : (o.powerTeamNote ? { message: o.powerTeamNote } : null);
   // メインプレゼン・抽選のディレクター（名簿に無く、前半テンプレートにアンバサダー・ディレクターのページがある方）。
   // ページを差し込む・写す前に探す（差し込んだメンバーのページも同じ作りのため）
   var directors = twoPersonDirectors_(parts, o);
@@ -1700,7 +1703,7 @@ function editMeetingSlides_(parts, map, rules, o) {
            photos: photos, audio: audio, referral: referral, weekly: weekly, guests: guests,
            reco: reco, musicStop: musicStop, renewal: renewal, rotation: rotation, roles: roles,
            members: members, vp: vp, leaders: leaders, mainPage: mainPage, visitors: visitors, stats: stats,
-           passport: passport };
+           passport: passport, powerTeams: powerTeams };
 }
 
 // 後半の1枚目に、メインプレゼンのページ（前半の最後のページ。差し込み口 {{メインプレゼン1氏名}} のあるページ）を入れる。
@@ -1812,6 +1815,18 @@ function generateMeetingSlides(kind, values, meetingDateVal, opts) {
           + (e && e.message ? e.message : e) + '）。';
       }
     }
+    // 前半：パワーチームが求める専門分野（画面で入れたチーム。入れたものは次の回の初めの値として覚える）
+    if (kind === 'meetingFirst' && Array.isArray(o.powerTeams)) {
+      powerTeamsRemember_(o.powerTeams);
+      o.powerTeams = powerTeamsClean_(o.powerTeams);
+      if (o.powerTeams.length) {
+        try { o.powerTeamSource = bigTemplateParts_(POWERTEAM_KIND_); }
+        catch (e) {
+          o.powerTeamNote = '⚠ パワーチームが求める専門分野のページを入れられませんでした（' + (e && e.message ? e.message : e)
+            + '）。⚙️ 設定 ＞ 大きなスライド で「パワーチームが求める専門分野（前半）」のひな形を登録してください。';
+        }
+      }
+    }
     // 後半の最後：パスポートプログラム卒業コメント（画面で選んだ方。画面から来なければ、事前MTGの書記兼会計の入力。passport_srv.js）
     if (kind === 'meetingSecond' && o.passport !== false) {
       try {
@@ -1871,6 +1886,7 @@ function generateMeetingSlides(kind, values, meetingDateVal, opts) {
     if (info.mainPage && info.mainPage.message) msg += '\n' + info.mainPage.message;
     if (info.visitors && info.visitors.message) msg += '\n' + info.visitors.message;
     if (info.passport && info.passport.message) msg += '\n' + info.passport.message;
+    if (info.powerTeams && info.powerTeams.message) msg += '\n' + info.powerTeams.message;
     return { ok: true, message: msg, url: r.saved.url, downloadUrl: r.saved.downloadUrl,
              fileName: outName, touched: info.touched, core: info.core, policy: info.policy,
              timing: r.timing };
