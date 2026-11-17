@@ -56,6 +56,11 @@
      <tr><th>チャプターが求める<br>専門分野</th>
          <td><input type="text" class="wide" id="t_求める専門分野">
              <div style="font-size:11px;color:#888;">「、」で区切って並べます（最大12件）</div></td></tr>
+     <tr><th>パワーチームが<br>求める専門分野</th>
+         <td><div id="ptList"></div>
+             <button class="mkbtn" onclick="ptAdd()">＋ チームを足す</button>
+             <div style="font-size:11px;color:#888;">「チャプターが求める専門分野」のページのすぐあとに、チームごとに1枚入れます。専門分野は「、」で区切って並べます。
+               前に入れた内容が初めから入っています（入れないときは「外す」）。ひな形は ⚙️ 設定 ＞ 大きなスライド で登録します。</div></td></tr>
      <tr><th>開放カテゴリー</th><td><input type="text" class="wide" id="t_開放カテゴリー"></td></tr>
      <tr><th>審査中の申込み</th><td><input type="text" class="wide" id="t_審査中カテゴリー"></td></tr>
      <tr><th>一般規定</th><td><select id="gp"></select>
@@ -180,6 +185,7 @@
    if(!c.ok){ fail({message:c.message}); return; }
    ctx=c;
    initMeetings(c);
+   ptInit(c.powerTeams||[]);                         // パワーチームが求める専門分野（前に入れた内容）
    var ch='<option value="">（指定しない）</option>';
    (c.coreValues||[]).forEach(function(v){ ch+='<option value="'+esc(v)+'">'+esc(v)+'</option>'; });
    document.getElementById('core').innerHTML=ch;
@@ -267,6 +273,26 @@
    m['開放カテゴリー']=get('t_開放カテゴリー');
    m['審査中カテゴリー']=get('t_審査中カテゴリー');
    return m;
+ }
+
+ // --- パワーチームが求める専門分野（チームごとに1枚。前に入れた内容を初めの値に）---
+ var ptRows=null;
+ function ptInit(list){ ptRows=(list||[]).map(function(t){ return { name:t.name||'', cats:(t.cats||[]).join('、') }; }); ptRender(); }
+ function ptRender(){
+   var box=document.getElementById('ptList'); if(!box) return;
+   box.innerHTML=(ptRows||[]).map(function(t,i){
+     return '<div style="margin:3px 0;"><input type="text" id="ptn_'+i+'" value="'+esc(t.name).replace(/"/g,'&quot;')+'" placeholder="チーム名（〇〇パワーチームの〇〇）" style="width:150px;" oninput="ptRows['+i+'].name=this.value">'
+       +' <input type="text" id="ptc_'+i+'" value="'+esc(t.cats).replace(/"/g,'&quot;')+'" placeholder="例：税理士、webデザイナー" style="width:52%;" oninput="ptRows['+i+'].cats=this.value">'
+       +' <button class="mkbtn" onclick="ptDel('+i+')">外す</button></div>';
+   }).join('') || '<span style="font-size:11px;color:#888;">入れない（チームを足すと入ります）</span>';
+ }
+ function ptAdd(){ if(!ptRows) ptRows=[]; ptRows.push({ name:'', cats:'' }); ptRender(); }
+ function ptDel(i){ ptRows.splice(i,1); ptRender(); }
+ // 読み込めていないときは null（サーバーは前の内容を変えず、ページも入れない）
+ function ptCollect(){
+   if(!ptRows) return null;
+   return ptRows.map(function(t){ return { name:String(t.name||'').trim(), cats:String(t.cats||'').split(/[、,，\n]+/).map(function(x){ return x.trim(); }).filter(Boolean) }; })
+     .filter(function(t){ return t.name || t.cats.length; });
  }
 
  // --- ウィークリープレゼン：メンバーのページ ---
@@ -752,6 +778,7 @@
      absentNames: Object.keys(absentSkip()),
      // 表示にするアンバサダー・ディレクター（読み込めていなければ null＝テンプレートのまま）
      weeklyGuests: guests ? pickedGuests().map(function(g){ return g.name; }) : null,
+     powerTeams: ptCollect(),
      weeklyAuto: document.getElementById('mpAuto').checked,
      speakerRotation: rotationForSlides(),
      roleIntro: document.getElementById('roleOn').checked,
