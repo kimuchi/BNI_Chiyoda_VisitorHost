@@ -6,7 +6,8 @@
 //   ・チームごとに1枚、「チャプターが求める専門分野」のページのすぐあとに入る（無ければ最後）
 //   ・「〇〇パワーチーム」にチーム名、「カテゴリー」の欄に上から順に専門分野。足りない欄は空・多すぎるときは知らせる
 //   ・セクションも並びに合わせる・pptxとして壊れていない
-//   ・作成（generateMeetingSlides）：入れたチームを覚え、次の回の初めの値にする。ひな形が未登録なら知らせる（前半はふだんどおり）
+//   ・登録とローテーション：これからの予定・休会日を飛ばす・起点より前の回・1回に2チーム・前の形を読む
+//   ・作成（generateMeetingSlides）：選んだチームだけ。画面で選び直しても登録は変えない。ひな形が未登録なら知らせる
 process.env.TZ = 'Asia/Tokyo';
 const fs = require('fs');
 const os = require('os');
@@ -95,27 +96,77 @@ const texts = (parts, p) => F.slideText_(F.xmlOf_(parts, p) || '');
   ck(order[order.length - 1] === r.paths[0] && /見つからないので、最後に入れました/.test(r.message), '1) ページが無いとき: ' + r.message);
 }
 
-// ===== 2) 作成：覚えて次の初めの値に・未登録の知らせ =====
+// ===== 2) 登録とローテーション =====
+{
+  env.reset([['休会日', true, [['2026/12/30']]]], Object.assign({}, env.props, { BNI_CHAPTER: J({ name: '見本', termBase: 23, meetingBaseDate: '2026/03/18', meetingBaseCount: 509 }) }));
+  F.requireSheetAccess_ = () => {};
+  F.rotNextMeeting_ = () => new Date(2026, 10, 18);
+  let r = F.savePowerTeamSettings({ teams: [{ name: '見本', cats: ['税理士'] }, { name: '試験', cats: ['保険'] }, { name: '架空パワーチーム', cats: ['印刷'] }],
+                                    perMeeting: 1, anchor: { date: '2026/11/18', index: 1 } });
+  ck(r.ok && J(r.teams.map((t) => t.name)) === J(['見本', '試験', '架空']), '2) 保存: ' + J(r));
+  ck(J(r.schedule.slice(0, 4).map((x) => x.date + ':' + x.teams.join(''))) === J(['2026/11/18:試験', '2026/11/25:架空', '2026/12/02:見本', '2026/12/09:試験']),
+     '2) これからの予定（起点の回から順に）: ' + J(r.schedule.slice(0, 4)));
+  // 休会日（12/30）は飛ばす。起点より前の回は、さかのぼって数える
+  const on = (d) => F.powerTeamsForDate_(new Date(d[0], d[1] - 1, d[2])).filter((t) => t.on).map((t) => t.name).join('・');
+  ck(on([2026, 12, 23]) === '見本' && on([2026, 12, 30]) === '' && on([2027, 1, 6]) === '試験', '2) 休会日を飛ばす: ' + J([on([2026, 12, 23]), on([2026, 12, 30]), on([2027, 1, 6])]));
+  ck(on([2026, 11, 11]) === '見本' && on([2026, 11, 4]) === '架空', '2) 起点より前の回: ' + J([on([2026, 11, 11]), on([2026, 11, 4])]));
+  // 1回に2チーム
+  r = F.savePowerTeamSettings({ teams: r.teams, perMeeting: 2, anchor: { date: '2026/11/18', index: 0 } });
+  ck(J(r.schedule.slice(0, 3).map((x) => x.teams.join('・'))) === J(['見本・試験', '架空・見本', '試験・架空']), '2) 1回に2チーム: ' + J(r.schedule.slice(0, 3)));
+  ck(!F.savePowerTeamSettings({ teams: [{ name: '', cats: ['税理士'] }] }).ok, '2) チーム名が空なのに保存した');
+  // 前の形（チームの並びだけ）も読む
+  env.props.BNI_POWER_TEAMS = J([{ name: '旧', cats: ['A'], on: true }]);
+  ck(J(F.ptLoad_().teams) === J([{ name: '旧', cats: ['A'] }]), '2) 前の形を読めない: ' + J(F.ptLoad_()));
+}
+
+// ===== 3) 作成：選んだチームだけ・未登録の知らせ =====
 {
   env.addFile('TPLF', new env.FakeBlob(firstHalf(), 'application/zip', 'first.pptx'), 'first.pptx');
   env.addFile('TPLT', new env.FakeBlob(teamTemplate(), 'application/zip', 'team.pptx'), 'team.pptx');
   env.props.BNI_TPL_MEETING_FIRST_ID = 'TPLF';
   env.props.BNI_TPL_POWERTEAM_ID = 'TPLT';
-  // 覚えているチームは3つ。この回は2つ選ぶ（選ばなかったチームも、選ばなかったことと一緒に覚える）
   const list = [{ name: '見本', cats: ['税理士'], on: true }, { name: '試験', cats: ['保険'], on: false }, { name: '架空', cats: ['印刷'], on: true }];
+  const before = env.props.BNI_POWER_TEAMS;
   let res = F.generateMeetingSlides('meetingFirst', { 開催回: '540' }, '2026/11/18', { roleIntro: false, powerTeams: list });
-  ck(res.ok && /パワーチームが求める専門分野のページを入れました（見本パワーチーム、架空パワーチーム）/.test(res.message), '2) 作成の知らせ（選んだチームだけ）: ' + J(res.message));
-  ck(J(F.powerTeamsSaved_()) === J(list), '2) チームごとに覚えていない: ' + J(F.powerTeamsSaved_()));
-  // 0チーム：ページは入れず、チームは覚えたまま
-  const none = list.map((t) => Object.assign({}, t, { on: false }));
-  res = F.generateMeetingSlides('meetingFirst', { 開催回: '540' }, '2026/11/18', { roleIntro: false, powerTeams: none });
-  ck(res.ok && !/パワーチーム/.test(res.message) && F.powerTeamsSaved_().length === 3 && F.powerTeamsSaved_().every((t) => t.on === false), '2) 0チームのとき: ' + J([res.message, F.powerTeamsSaved_()]));
+  ck(res.ok && /パワーチームが求める専門分野のページを入れました（見本パワーチーム、架空パワーチーム）/.test(res.message), '3) 作成の知らせ（選んだチームだけ）: ' + J(res.message));
+  ck(env.props.BNI_POWER_TEAMS === before, '3) 画面で選び直しても、登録は変えない');
+  res = F.generateMeetingSlides('meetingFirst', { 開催回: '540' }, '2026/11/18', { roleIntro: false, powerTeams: list.map((t) => Object.assign({}, t, { on: false })) });
+  ck(res.ok && !/パワーチーム/.test(res.message), '3) 0チームのとき: ' + J(res.message));
   delete env.props.BNI_TPL_POWERTEAM_ID;
-  res = F.generateMeetingSlides('meetingFirst', { 開催回: '540' }, '2026/11/18', { roleIntro: false, powerTeams: [{ name: '見本', cats: ['税理士'] }] });
-  ck(res.ok && /パワーチームが求める専門分野（前半）」のひな形を登録してください/.test(res.message), '2) 未登録の知らせ: ' + J(res.message));
-  res = F.generateMeetingSlides('meetingFirst', { 開催回: '540' }, '2026/11/18', { roleIntro: false, powerTeams: [] });
-  ck(res.ok && !/パワーチーム/.test(res.message) && J(F.powerTeamsSaved_()) === '[]', '2) 削除したのにページ・覚えた内容が残る: ' + J(res.message));
+  res = F.generateMeetingSlides('meetingFirst', { 開催回: '540' }, '2026/11/18', { roleIntro: false, powerTeams: list });
+  ck(res.ok && /パワーチームが求める専門分野（前半）」のひな形を登録してください/.test(res.message), '3) 未登録の知らせ: ' + J(res.message));
 }
 
-if (fails.length) { console.log('NG ' + fails.length + '件 / ' + checks + '件の検査'); fails.forEach((f) => console.log('  - ' + f)); process.exit(1); }
-console.log('パワーチームが求める専門分野: 検査 ' + checks + ' 件 OK');
+// ===== 4) 設定の画面（ブラウザ）=====
+(async () => {
+  const pw = (() => { try { return require('playwright'); } catch (e) { return require('/opt/node22/lib/node_modules/playwright'); } })();
+  env.props.BNI_POWER_TEAMS = J({ teams: [{ name: '見本', cats: ['税理士'] }, { name: '試験', cats: ['保険'] }], perMeeting: 1, anchor: { date: '2026/11/18', index: 0 } });
+  const D = F.getPowerTeamSettings();
+  const STUB = '<script>window.__calls=[];var D=' + J(D) + ';window.google={script:{run:new Proxy({},{get:function(_,n){var ok=null,p=new Proxy({},{get:function(_,m){'
+    + 'if(m==="withSuccessHandler")return function(f){ok=f;return p;};if(m==="withFailureHandler")return function(){return p;};'
+    + 'return function(){var a=[].slice.call(arguments);window.__calls.push([m,a]);var v=m==="savePowerTeamSettings"?Object.assign({},D,{message:"保存しました"}):D;setTimeout(function(){ok&&ok(JSON.parse(JSON.stringify(v)));},5);};}});return p[n];}})}};</script>';
+  const html = fs.readFileSync(path.join(ROOT, 'powerteam_settings.html'), 'utf8').replace(/<head>/i, '<head><meta charset="utf-8">' + STUB);
+  const browser = await pw.chromium.launch(), page = await browser.newPage();
+  page.on('pageerror', (e) => fails.push('4) 画面のエラー: ' + e.message));
+  page.on('dialog', (d) => d.accept());
+  await page.route('https://pt.test/', (rt) => rt.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: html }));
+  await page.goto('https://pt.test/');
+  await page.waitForFunction(() => document.getElementById('n_0'), null, { timeout: 5000 }).catch(() => fails.push('4) チームが出ない'));
+  const sch = () => page.evaluate(() => document.getElementById('sch').innerText);
+  ck(/11\/18.*見本パワーチーム/.test(await sch()) && /11\/25.*試験パワーチーム/.test(await sch()), '4) これからの予定: ' + await sch());
+  await page.click('button:has-text("＋ チームを足す")');
+  await page.fill('#n_2', '架空');
+  await page.dispatchEvent('#n_2', 'input');
+  await page.fill('#c_2', '印刷、 広告');
+  await page.dispatchEvent('#c_2', 'input');
+  await page.selectOption('#aTeam', '2');
+  ck(/11\/18.*架空パワーチーム/.test(await sch()) && /11\/25.*見本パワーチーム/.test(await sch()), '4) 変えたときの予定: ' + await sch());
+  await page.click('#btnSave');
+  await page.waitForTimeout(100);
+  const sv = (await page.evaluate(() => window.__calls)).filter((c) => c[0] === 'savePowerTeamSettings').map((c) => c[1][0]);
+  ck(sv.length === 1 && J(sv[0].teams) === J([{ name: '見本', cats: ['税理士'] }, { name: '試験', cats: ['保険'] }, { name: '架空', cats: ['印刷', '広告'] }])
+     && sv[0].perMeeting === '1' && sv[0].anchor.index === '2' && sv[0].anchor.date === '2026/11/18', '4) 保存で送るもの: ' + J(sv));
+  await browser.close();
+  if (fails.length) { console.log('NG ' + fails.length + '件 / ' + checks + '件の検査'); fails.forEach((f) => console.log('  - ' + f)); process.exit(1); }
+  console.log('パワーチームが求める専門分野: 検査 ' + checks + ' 件 OK');
+})().catch((e) => { console.error(e); process.exit(1); });

@@ -76,6 +76,7 @@ const SERVER = {
   }),
   getRoutineInfo: () => routine,
   getWeeklyGuests: () => ({ ok: true, guests: GUESTS }),
+  getPowerTeamsForDate: () => ({ ok: true, teams: [{ name: '見本', cats: ['税理士', '印刷'], on: true }, { name: '架空', cats: ['保険'], on: false }] }),
   // パスポートプログラム卒業コメント（事前MTGで選んであった方・入会日から4か月以内の方・名簿の全員）
   getPassportChoices: () => ({ ok: true, selected: [MEMBERS[1].name], recent: [MEMBERS[0].name], all: MEMBERS.map((m) => m.name) }),
   // スーパーサポーター（他チャプターの方。架空）
@@ -180,14 +181,11 @@ const shown = (el) => !!el && el.style.display !== 'none' && el.style.display !=
   step('前半を作り直す', () => run('gen()'));
   o = lastOpts();
   ck(JSON.stringify(o.weeklyGuests) === JSON.stringify(['大庭　まり子']), 'weeklyGuests が ' + JSON.stringify(o.weeklyGuests));
-  // パワーチーム：覚えているチームが並び、前の回に入れたチームにチェック。選んだかどうかも一緒に渡る
+  // パワーチーム：登録したチームが並び、ローテーションで選んだチームにチェック。この回だけ選び直せる
   ck(J(o.powerTeams) === J([{ name: '見本', cats: ['税理士', '印刷'], on: true }, { name: '架空', cats: ['保険'], on: false }])
-     && els.pto_0.checked && !els.pto_1.checked && els.ptn_0.value === '見本' && els.ptc_0.value === '税理士、印刷', 'パワーチームの初めの値: ' + J(o.powerTeams));
-  step('パワーチームを足して選び直す', () => { run('ptAdd()'); run("ptRows[2].name='試験'"); run("ptRows[2].cats='保険、 不動産'"); els.pto_0.checked = false; run('ptRows[0].on=false'); run('gen()'); });
-  ck(J(lastOpts().powerTeams) === J([{ name: '見本', cats: ['税理士', '印刷'], on: false }, { name: '架空', cats: ['保険'], on: false }, { name: '試験', cats: ['保険', '不動産'], on: true }]),
-     'パワーチームを足して選び直したとき: ' + J(lastOpts().powerTeams));
-  step('パワーチームを削除する', () => { run('ptDel(2)'); run('gen()'); });
-  ck(lastOpts().powerTeams.length === 2, 'パワーチームを削除したとき: ' + J(lastOpts().powerTeams));
+     && els.pto_0.checked && !els.pto_1.checked && /見本パワーチーム/.test(els.ptList.innerHTML) && /税理士、印刷/.test(els.ptList.innerHTML), 'パワーチームの初めの値: ' + J(o.powerTeams));
+  step('パワーチームを選び直す', () => { els.pto_0.checked = false; run('ptRows[0].on=false'); els.pto_1.checked = true; run('ptRows[1].on=true'); run('gen()'); });
+  ck(J(lastOpts().powerTeams.map((t) => t.on)) === J([false, true]), 'パワーチームを選び直したとき: ' + J(lastOpts().powerTeams));
   step('パワーチームを戻す', () => { run('ptInit([{ name: "見本", cats: ["税理士", "印刷"], on: true }])'); run('gen()'); });
   o = lastOpts();
   ck(o.weeklyAuto === true, '自動送りが渡っていない');
