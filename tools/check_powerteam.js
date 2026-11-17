@@ -85,6 +85,7 @@ const texts = (parts, p) => F.slideText_(F.xmlOf_(parts, p) || '');
   const it = integrity(zipOf(parts), 'ins');
   ck(it.ok, '1) pptxとして壊れている: ' + it.out);
   ck(F.insertPowerTeamPages_(parts, partsOf(teamTemplate()), [{ name: '', cats: [] }]) === null, '1) 空のチームでページを作った');
+  ck(F.insertPowerTeamPages_(parts, partsOf(teamTemplate()), [{ name: '見本', cats: ['税理士'], on: false }]) === null, '1) 選んでいないチームでページを作った');
 }
 // チャプターが求める専門分野のページが無い：最後に入れて知らせる
 {
@@ -100,14 +101,20 @@ const texts = (parts, p) => F.slideText_(F.xmlOf_(parts, p) || '');
   env.addFile('TPLT', new env.FakeBlob(teamTemplate(), 'application/zip', 'team.pptx'), 'team.pptx');
   env.props.BNI_TPL_MEETING_FIRST_ID = 'TPLF';
   env.props.BNI_TPL_POWERTEAM_ID = 'TPLT';
-  let res = F.generateMeetingSlides('meetingFirst', { 開催回: '540' }, '2026/11/18', { roleIntro: false, powerTeams: [{ name: '見本', cats: ['税理士'] }] });
-  ck(res.ok && /パワーチームが求める専門分野のページを入れました（見本パワーチーム）/.test(res.message), '2) 作成の知らせ: ' + J(res.message));
-  ck(J(F.powerTeamsSaved_()) === J([{ name: '見本', cats: ['税理士'] }]), '2) 入れたチームを覚えていない: ' + J(F.powerTeamsSaved_()));
+  // 覚えているチームは3つ。この回は2つ選ぶ（選ばなかったチームも、選ばなかったことと一緒に覚える）
+  const list = [{ name: '見本', cats: ['税理士'], on: true }, { name: '試験', cats: ['保険'], on: false }, { name: '架空', cats: ['印刷'], on: true }];
+  let res = F.generateMeetingSlides('meetingFirst', { 開催回: '540' }, '2026/11/18', { roleIntro: false, powerTeams: list });
+  ck(res.ok && /パワーチームが求める専門分野のページを入れました（見本パワーチーム、架空パワーチーム）/.test(res.message), '2) 作成の知らせ（選んだチームだけ）: ' + J(res.message));
+  ck(J(F.powerTeamsSaved_()) === J(list), '2) チームごとに覚えていない: ' + J(F.powerTeamsSaved_()));
+  // 0チーム：ページは入れず、チームは覚えたまま
+  const none = list.map((t) => Object.assign({}, t, { on: false }));
+  res = F.generateMeetingSlides('meetingFirst', { 開催回: '540' }, '2026/11/18', { roleIntro: false, powerTeams: none });
+  ck(res.ok && !/パワーチーム/.test(res.message) && F.powerTeamsSaved_().length === 3 && F.powerTeamsSaved_().every((t) => t.on === false), '2) 0チームのとき: ' + J([res.message, F.powerTeamsSaved_()]));
   delete env.props.BNI_TPL_POWERTEAM_ID;
   res = F.generateMeetingSlides('meetingFirst', { 開催回: '540' }, '2026/11/18', { roleIntro: false, powerTeams: [{ name: '見本', cats: ['税理士'] }] });
   ck(res.ok && /パワーチームが求める専門分野（前半）」のひな形を登録してください/.test(res.message), '2) 未登録の知らせ: ' + J(res.message));
   res = F.generateMeetingSlides('meetingFirst', { 開催回: '540' }, '2026/11/18', { roleIntro: false, powerTeams: [] });
-  ck(res.ok && !/パワーチーム/.test(res.message) && J(F.powerTeamsSaved_()) === '[]', '2) 外したのにページ・覚えた内容が残る: ' + J(res.message));
+  ck(res.ok && !/パワーチーム/.test(res.message) && J(F.powerTeamsSaved_()) === '[]', '2) 削除したのにページ・覚えた内容が残る: ' + J(res.message));
 }
 
 if (fails.length) { console.log('NG ' + fails.length + '件 / ' + checks + '件の検査'); fails.forEach((f) => console.log('  - ' + f)); process.exit(1); }
