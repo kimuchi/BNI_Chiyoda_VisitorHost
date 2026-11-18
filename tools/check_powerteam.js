@@ -96,6 +96,16 @@ const texts = (parts, p) => F.slideText_(F.xmlOf_(parts, p) || '');
   ck(order[order.length - 1] === r.paths[0] && /見つからないので、最後に入れました/.test(r.message), '1) ページが無いとき: ' + r.message);
 }
 
+// ===== 1b) 「チャプターが求める専門分野」の色：最初の5つは赤字（テンプレートの赤）、6つ目からは黒字 =====
+{
+  const run = (n, col) => '<a:p><a:r><a:rPr lang="ja-JP" sz="1400">' + (col ? '<a:solidFill><a:srgbClr val="' + col + '"/></a:solidFill>' : '') + '</a:rPr><a:t>{{求める専門分野' + n + '}}</a:t></a:r></a:p>';
+  const x = [1, 2, 5, 6, 12].map((n) => run(n, 'C00000')).join('') + '<a:p><a:r><a:t>{{求める専門分野7}}</a:t></a:r></a:p>';
+  const out = F.wantedColors_(x), colOf = (n) => (out.match(new RegExp('<a:srgbClr val="(\\w+)"/></a:solidFill></a:rPr><a:t>\\{\\{求める専門分野' + n + '\\}\\}')) || [])[1];
+  ck(J([1, 2, 5, 6, 7, 12].map(colOf)) === J(['C00000', 'C00000', 'C00000', '000000', '000000', '000000']), '1b) 色: ' + J([1, 2, 5, 6, 7, 12].map(colOf)));
+  const out2 = F.wantedColors_([1, 6].map((n) => run(n, '')).join(''));
+  ck(/FF0000"\/><\/a:solidFill><\/a:rPr><a:t>\{\{求める専門分野1/.test(out2), '1b) テンプレートが赤でないときの赤: ' + out2);
+}
+
 // ===== 2) 登録とローテーション =====
 {
   env.reset([['休会日', true, [['2026/12/30']]]], Object.assign({}, env.props, { BNI_CHAPTER: J({ name: '見本', termBase: 23, meetingBaseDate: '2026/03/18', meetingBaseCount: 509 }) }));

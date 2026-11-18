@@ -1669,6 +1669,7 @@ function editMeetingSlides_(parts, map, rules, o) {
     if (!/^ppt\/(slides|notesSlides)\/[^\/]+\.xml$/.test(path)) continue;   // 本文だけ
     var xml = xmlOf_(parts, path), before = xml;
     if (!xml) continue;
+    if (xml.indexOf('{{求める専門分野') !== -1) xml = wantedColors_(xml);   // 求める専門分野：最初の5つは赤字、あとは黒字
     if (xml.indexOf('{{') !== -1) xml = replaceTokensInXml_(xml, map);
     if (rules && rules.length) {
       var pr = replacePatternsInXml_(xml, rules);
@@ -1704,6 +1705,35 @@ function editMeetingSlides_(parts, map, rules, o) {
            reco: reco, musicStop: musicStop, renewal: renewal, rotation: rotation, roles: roles,
            members: members, vp: vp, leaders: leaders, mainPage: mainPage, visitors: visitors, stats: stats,
            passport: passport, powerTeams: powerTeams };
+}
+
+// 「チャプターが求める専門分野」の表：最初の5つ（{{求める専門分野1}}〜5）は赤字、6つ目からは黒字にする。
+// 赤は、テンプレートの1つ目の欄の赤（赤でなければ FF0000）
+var WANTED_RED_MAX_ = 5;
+function wantedColors_(xml) {
+  var runRe = /<a:r>(<a:rPr\b[^>]*\/>|<a:rPr\b[^>]*>[\s\S]*?<\/a:rPr>)?(\s*<a:t>[^<]*\{\{求める専門分野(\d+)\}\}[^<]*<\/a:t>\s*)<\/a:r>/g;
+  var red = 'FF0000', m, probe = new RegExp(runRe.source, 'g');
+  while ((m = probe.exec(xml)) !== null) {
+    if (m[3] !== '1') continue;
+    var c = ((m[1] || '').match(/<a:solidFill>\s*<a:srgbClr val="([0-9A-Fa-f]{6})"/) || [])[1];
+    if (c) {
+      var r = parseInt(c.substr(0, 2), 16), g = parseInt(c.substr(2, 2), 16), b = parseInt(c.substr(4, 2), 16);
+      if (r > 120 && r > g * 1.6 && r > b * 1.6) red = c.toUpperCase();
+    }
+    break;
+  }
+  return xml.replace(runRe, function (all, rPr, body, n) {
+    var col = parseInt(n, 10) <= WANTED_RED_MAX_ ? red : '000000';
+    var fill = '<a:solidFill><a:srgbClr val="' + col + '"/></a:solidFill>';
+    rPr = rPr || '<a:rPr lang="ja-JP"/>';
+    if (/\/>$/.test(rPr)) rPr = rPr.replace(/\s*\/>$/, '>') + fill + '</a:rPr>';
+    else {
+      var inner = rPr.replace(/^<a:rPr\b[^>]*>/, '').replace(/<\/a:rPr>$/, '').replace(/<a:(solidFill|noFill|gradFill|pattFill)\b[\s\S]*?<\/a:\1>|<a:noFill\/>/, '');
+      var head = rPr.match(/^<a:rPr\b[^>]*>/)[0], lnM = inner.match(/^\s*<a:ln\b[\s\S]*?<\/a:ln>|^\s*<a:ln\b[^>]*\/>/);
+      rPr = head + (lnM ? lnM[0] + fill + inner.substring(lnM[0].length) : fill + inner) + '</a:rPr>';
+    }
+    return '<a:r>' + rPr + body + '</a:r>';
+  });
 }
 
 // 後半の1枚目に、メインプレゼンのページ（前半の最後のページ。差し込み口 {{メインプレゼン1氏名}} のあるページ）を入れる。
