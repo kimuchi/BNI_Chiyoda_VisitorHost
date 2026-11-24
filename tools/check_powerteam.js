@@ -96,6 +96,24 @@ const texts = (parts, p) => F.slideText_(F.xmlOf_(parts, p) || '');
   ck(order[order.length - 1] === r.paths[0] && /見つからないので、最後に入れました/.test(r.message), '1) ページが無いとき: ' + r.message);
 }
 
+// ===== 1a) 「カテゴリー」の欄が無いひな形（生成ツールで専門分野を空のまま作った pptx）：表の空のマスに上から順に =====
+{
+  const z = readZip(teamTemplate()), p = 'ppt/slides/slide1.xml';
+  const tc = (t, attrs) => '<a:tc' + (attrs || '') + '><a:txBody><a:bodyPr/><a:lstStyle/><a:p>' + (t === null ? '' : '<a:r><a:rPr lang="ja-JP" sz="2000"><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill></a:rPr><a:t>' + t + '</a:t></a:r>')
+    + '<a:endParaRPr lang="ja-JP" sz="2000"><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill></a:endParaRPr></a:p></a:txBody><a:tcPr/></a:tc>';
+  const tbl = '<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="950" name="表 1"/><p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr><p:xfrm><a:off x="0" y="0"/><a:ext cx="100" cy="100"/></p:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table"><a:tbl><a:tblGrid><a:gridCol w="50"/><a:gridCol w="50"/></a:tblGrid>'
+    + '<a:tr h="10">' + tc('パワーチームが求める専門分野', ' gridSpan="2"') + tc(null, ' hMerge="1"') + '</a:tr>'
+    + '<a:tr h="10">' + tc('') + tc(null) + '</a:tr><a:tr h="10">' + tc('') + tc('') + '</a:tr></a:tbl></a:graphicData></a:graphic></p:graphicFrame>';
+  z[p] = Buffer.from(z[p].toString('utf8').replace(/<p:sp><p:nvSpPr><p:cNvPr id="901"[\s\S]*?<\/p:sp>/, '').replace('</p:spTree>', tbl + '</p:spTree>'), 'utf8');
+  const parts = partsOf(firstHalf());
+  const r = F.insertPowerTeamPages_(parts, partsOf(writeZip(z)), [{ name: '見本', cats: ['税理士', 'webデザイナー', '印刷'] }]);
+  const x = F.xmlOf_(parts, r.paths[0]), cells = ((x.match(/<a:tbl>[\s\S]*<\/a:tbl>/) || [''])[0].match(/<a:t>[^<]*<\/a:t>/g) || []);
+  ck(J(cells) === J(['<a:t>パワーチームが求める専門分野</a:t>', '<a:t>税理士</a:t>', '<a:t>webデザイナー</a:t>', '<a:t>印刷</a:t>', '<a:t></a:t>']),
+     '1a) 空のマスに上から順に: ' + J(cells));
+  ck(/<a:rPr lang="ja-JP" sz="2000"><a:solidFill><a:srgbClr val="FF0000"\/><\/a:solidFill><\/a:rPr><a:t>webデザイナー/.test(x), '1a) 文字の無いマスの書式（段落の終わりの書式）を使わない');
+  ck(!/入りきらなかった/.test(r.message), '1a) 知らせ: ' + r.message);
+}
+
 // ===== 1b) 「チャプターが求める専門分野」の色：最初の5つは赤字（テンプレートの赤）、6つ目からは黒字 =====
 {
   const run = (n, col) => '<a:p><a:r><a:rPr lang="ja-JP" sz="1400">' + (col ? '<a:solidFill><a:srgbClr val="' + col + '"/></a:solidFill>' : '') + '</a:rPr><a:t>{{求める専門分野' + n + '}}</a:t></a:r></a:p>';
