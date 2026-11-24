@@ -1612,6 +1612,11 @@ function editMeetingSlides_(parts, map, rules, o) {
   var referral = (o.referral && o.referral.length)
     ? expandPresenterSlides_(parts, o.referral,
         { title: RF_TITLE_, label: 'リファーラル発表', seconds: chapterPresenSeconds_().referral, photoCache: photoCache }) : null;
+  // 後半：リファーラル発表の前の表紙に書いてある「最初の発表者」（名簿の先頭の方）を、最初に発表する方（欠席の方を飛ばした先頭）にする
+  if (referral && referral.paths && referral.paths.length) {
+    var rc = referralCoverFirst_(parts, referral.paths[0], o.referral[0].name);
+    if (rc) referral.message = (referral.message ? referral.message + '\n' : '') + rc;
+  }
   // 前半：アンバサダー・ディレクターのページの表示を切り替える（差し込みより先に。同じ作りのため）
   var guests = o.weeklyGuests ? applyWeeklyGuests_(parts, o.weeklyGuests, o.weeklyAuto !== false) : null;
   // 前半：メンバープレゼンのページを差し込む（メンバープレゼンのテンプレートから作る）

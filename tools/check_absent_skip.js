@@ -143,6 +143,20 @@ ck(R2.absentees && R2.absentees.names.length === 0 && /^欠席：なし/.test(R2
   F.saveAbsentSource(DATE, [{ id: ab.id, value: ab.value, orig: '模擬さん、' + ab.value }]);   // 元に戻す
 }
 
+// 後半：リファーラル発表の前の表紙の「最初の発表者」（名簿の先頭の方）を、欠席の方を飛ばした先頭にする
+{
+  const { readZip } = require('./lib_zip');
+  const z = readZip(fs.readFileSync(path.join(ROOT, 'docs', 'templates', 'BNI_テンプレート_事前MTG.pptx'))), parts = {};
+  Object.keys(z).forEach((k) => { parts[k] = new env.FakeBlob(z[k], '', k); });
+  const order = F.slideOrder_(parts);
+  F.putXml_(parts, order[1], F.xmlOf_(parts, order[1]).replace(/<a:t>[^<]*<\/a:t>/, '<a:t>最初の発表者：見本　一郎さん</a:t>'));
+  F.putXml_(parts, order[0], F.xmlOf_(parts, order[0]).replace(/<a:t>[^<]*<\/a:t>/, '<a:t>{{最初の発表者}}</a:t>'));
+  const msg = F.referralCoverFirst_(parts, order[2], '試験 花子');
+  ck(/最初の発表者：試験 花子さん/.test(F.slideText_(F.xmlOf_(parts, order[1]))) && /試験 花子/.test(F.slideText_(F.xmlOf_(parts, order[0])))
+     && /試験 花子さんにしました（名簿の先頭の見本 一郎さんは欠席のため）/.test(msg), '2) 後半の表紙の最初の発表者: ' + msg + ' / ' + F.slideText_(F.xmlOf_(parts, order[1])).slice(0, 80));
+  ck(F.referralCoverFirst_(parts, order[2], '見本 一郎') === '', '2) 先頭の方が出席なのに変えた');
+}
+
 // ===== 3) 前半の画面：欠席の方のメンバーのページを作らない =====
 const gk = (x) => String(x || '').normalize('NFKC').replace(/[\s・･＆&と]/g, '');
 const MEMBERS = NAMES.map((n, i) => ({ no: String(i + 1), name: n, company: '見本会社' + (i + 1), title: 'カテゴリー' + (i + 1), hasPhoto: true }));

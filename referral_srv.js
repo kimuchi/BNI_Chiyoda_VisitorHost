@@ -290,3 +290,28 @@ function rfLayoutBoxes_(parts, title) {
   return { companyTall: co, categoryLow: ca ? ca.y : 0, categoryWidth: ca ? ca.cx : 0,
            hasNext: !!SH.nextName, slides: models.length };
 }
+
+// リファーラル発表の前の表紙（最初のページのすぐ前の2枚まで）に、名簿の先頭（No.のいちばん小さい方）のお名前が書いてあれば、
+// 最初に発表する方（欠席の方を飛ばした先頭。first）のお名前にする（表紙の「最初の発表者」が、欠席の方のままになっていた）。
+// 差し込み口 {{最初の発表者}} があれば、そこにも入れる。戻り値 … 知らせる文（変えなければ ''）
+function referralCoverFirst_(parts, firstPath, first) {
+  if (!first) return '';
+  var roster = [];
+  try { roster = (getMemberMaster({ membersOnly: true }).members || []).slice(); } catch (e) { return ''; }
+  roster = roster.filter(function (m) { return m.name; }).sort(function (a, b) { return (parseFloat(a.no) || 9999) - (parseFloat(b.no) || 9999); });
+  var head = roster.length ? roster[0].name : '';
+  var order = slideOrder_(parts), at = order.indexOf(firstPath), done = 0;
+  if (at < 0) return '';
+  // お名前の字のあいだの空白は問わない（「見本 一郎」「見本　一郎」「見本一郎」）
+  var esc = function (c) { return c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); };
+  var re = head && normName_(head) !== normName_(first)
+    ? new RegExp(normName_(head).split('').map(esc).join('[\\s　]*')) : null;
+  for (var i = Math.max(0, at - 2); i < at; i++) {
+    var xml = xmlOf_(parts, order[i]) || '', before = xml;
+    if (xml.indexOf('{{最初の発表者}}') >= 0) xml = replaceTokensInXml_(xml, { '最初の発表者': first });
+    if (re && re.test(slideText_(xml))) xml = replacePatternsInXml_(xml, [{ re: re, value: function () { return first; } }]).xml;
+    if (xml !== before) { putXml_(parts, order[i], xml); done++; }
+  }
+  return done && head && normName_(head) !== normName_(first)
+    ? 'リファーラル発表の表紙の最初の発表者を、' + first + 'さんにしました（名簿の先頭の' + head + 'さんは欠席のため）。' : '';
+}
