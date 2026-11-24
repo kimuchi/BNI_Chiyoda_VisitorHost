@@ -131,6 +131,18 @@ ck(R.absentees && J(R.absentees.names) === J(ABSENT) && R.absentees.unknown.leng
 const R2 = F.getRoutineInfo(NEXT);
 ck(R2.absentees && R2.absentees.names.length === 0 && /^欠席：なし/.test(R2.absentees.raw), '2) 「なし」の日: ' + J(R2.absentees));
 
+// 名簿の方と結びつかなかった書き方を直す欄（getAbsentSource）と保存（saveAbsentSource）
+{
+  const src = F.getAbsentSource(DATE);
+  const ab = src.items.find((x) => x.title === '欠席');
+  ck(src.ok && ab && src.items.some((x) => x.title === '医療欠席') && /試験さん/.test(ab.value), '2) 欠席の欄: ' + J(src));
+  const sv = F.saveAbsentSource(DATE, [{ id: ab.id, value: '模擬さん、' + ab.value, orig: ab.value }]);
+  ck(sv.ok && sv.absentees && sv.absentees.names.indexOf('模擬 六助') >= 0, '2) 欠席の欄を保存して読み直す: ' + J(sv));
+  const sv2 = F.saveAbsentSource(DATE, [{ id: ab.id, value: 'ちがう', orig: ab.value }]);
+  ck(sv2.ok && sv2.skipped.length === 1, '2) 画面を開いたあとに変わった欄を上書きした: ' + J(sv2));
+  F.saveAbsentSource(DATE, [{ id: ab.id, value: ab.value, orig: '模擬さん、' + ab.value }]);   // 元に戻す
+}
+
 // ===== 3) 前半の画面：欠席の方のメンバーのページを作らない =====
 const gk = (x) => String(x || '').normalize('NFKC').replace(/[\s・･＆&と]/g, '');
 const MEMBERS = NAMES.map((n, i) => ({ no: String(i + 1), name: n, company: '見本会社' + (i + 1), title: 'カテゴリー' + (i + 1), hasPhoto: true }));
@@ -161,6 +173,10 @@ const SERVER = {
   computeRenewalLists: () => SERVER.getMeetingSlideContext().lists,
   getMeetingMusicFiles: () => ({ ok: true, files: [] }),
   getRecommendationSlides: () => ({ ok: true, slides: [] }),          // 受け取った推薦のことばのスライド（無し）
+  // 名簿の方と結びつかなかった書き方を直す：ルーティンチェックシートの「欠席」の欄
+  getAbsentSource: () => ({ ok: true, items: [{ id: 'A1', title: '欠席', value: '見本ｘ、試験さん' }] }),
+  saveAbsentSource: (d, entries) => { sent.push(['saveAbsentSource', d, entries]); return { ok: true, message: '保存しました（1項目）。', skipped: [],
+    absentees: { names: ['見本 一郎', '試験 花子'], unknown: [], raw: '欠席：' + entries[0].value } }; },
   generateMeetingSlides: (...args) => { sent.push(args); return { ok: true, message: '作成しました', url: 'u' }; },
 };
 const lastOpts = () => (sent.length ? sent[sent.length - 1][3] || {} : {});
@@ -192,6 +208,16 @@ const lastOpts = () => (sent.length ? sent[sent.length - 1][3] || {} : {});
   step('模擬さんを足す', () => { els.abAdd.value = '模擬 六助'; run('absentAdd()'); run('gen()'); });
   ck(!ind().some((x) => x.name === '模擬 六助') && html('abBox').includes('模擬 六助'),
      '3) 前半：「欠席の方を足す」で選んだ方のページを作る: ' + J(ind().map((x) => x.name)));
+  // 名簿の方と結びつかなかった書き方：目立つように出し、その場でルーティンチェックシートの欄を直せる
+  routine = Object.assign({}, R, { absentees: { names: ['試験 花子'], unknown: ['見本ｘ'], raw: '欠席：見本ｘ、試験さん' } });
+  step('結びつかない書き方の日に選び直す', () => run('reload()'));
+  ck(/⚠ 名簿の方と結びつかなかった書き方があります：見本ｘ/.test(html('abBox')) && els.abs_0 && els.abs_0.value === '見本ｘ、試験さん',
+     '3) 結びつかない書き方の知らせ・直す欄: ' + html('abBox').replace(/<[^>]+>/g, ' ').slice(0, 300));
+  step('欄を直して保存する', () => { els.abs_0.value = '見本、試験さん'; run('absentSaveSource()'); });
+  const sv = sent.filter((x) => x[0] === 'saveAbsentSource');
+  ck(sv.length === 1 && J(sv[0][2]) === J([{ id: 'A1', value: '見本、試験さん', orig: '見本ｘ、試験さん' }]), '3) シートに保存で送るもの: ' + J(sv));
+  ck(!/⚠ 名簿の方と結びつかなかった/.test(html('abBox')) && els.ab_0 && els.ab_0.checked && html('abBox').includes('見本 一郎'),
+     '3) 直したあと、欠席の方を選び直さない: ' + html('abBox').replace(/<[^>]+>/g, ' ').slice(0, 300));
   // その日の列が無い日に選び直す：前の日の欠席の方を残さない
   routine = { ok: true, found: false, message: 'ルーティンチェックシートに、この開催日の列が見つかりませんでした。' };
   step('列の無い日に選び直す', () => run('reload()'));

@@ -1104,3 +1104,33 @@ function getRoutineInfoFor_(dates) {
   }
   return out;
 }
+
+// --- 欠席の方の欄を、スライドの画面から直す ---
+// 「名簿の方と結びつかなかった書き方」が出たとき、ルーティンチェックシートのその日の「欠席」「医療欠席」の欄を
+// その画面で書き直せるようにする（保存は役職ごとの入力と同じ saveRoleInput。画面を開いたあとに変わっていたら上書きしない）
+//   戻り値 { ok, items: [{ id, title, value }] }
+function getAbsentSource(dateStr) {
+  try {
+    var target = parseDate_(dateStr);
+    if (!target) return { ok: false, message: '開催日が分かりません。', items: [] };
+    routineResetCache_();
+    var ctx = roleBuildContext_(target, ''), items = [];
+    if (!ctx.found) return { ok: false, message: ctx.message || 'ルーティンチェックシートにその日の列がありません。', items: [] };
+    ctx.order.forEach(function (id) {
+      var it = ctx.items[id], t = roleMatchText_(it.title);
+      if (ROUTINE_ABSENT_LABELS_.concat(ROUTINE_MEDICAL_LABELS_).indexOf(t) < 0 || it.readOnly) return;
+      items.push({ id: id, title: it.title, value: it.value || '' });
+    });
+    return { ok: true, items: items };
+  } catch (e) {
+    return { ok: false, message: '欠席の欄を読めませんでした: ' + (e && e.message ? e.message : e), items: [] };
+  }
+}
+// entries … [{ id, value, orig }]。保存したあとの、その日の欠席の方（getRoutineInfo の absentees）も返す
+function saveAbsentSource(dateStr, entries) {
+  var r = saveRoleInput(dateStr, '', entries || []);
+  if (!r || !r.ok) return r;
+  var info = null;
+  try { routineResetCache_(); info = getRoutineInfo(dateStr); } catch (e) {}
+  return { ok: true, message: r.message, skipped: r.skipped || [], absentees: info && info.found ? (info.absentees || null) : null };
+}

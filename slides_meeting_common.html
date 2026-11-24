@@ -121,10 +121,47 @@
    var notes=[];
    if(absent.raw) notes.push('ルーティンチェックシートの記載：'+esc(absent.raw));
    else if(absent.found) notes.push('ルーティンチェックシートの「欠席」「医療欠席」の欄は空です。');
-   if(absent.unknown.length) notes.push('<span style="color:#c60;">名簿の方と結びつかなかった書き方：'+esc(absent.unknown.join('、'))
-     +'（メンバーの方なら「欠席の方を足す」で選んでください）</span>');
    notes.push('チェックの入った方のページは作りません。代理を立てた方は、代理の方が発表するので入れていません。');
-   box.innerHTML=h+'<div style="font-size:11px;color:#888;margin-top:4px;line-height:1.7;">'+notes.join('<br>')+'</div>';
+   // 名簿の方と結びつかなかった書き方：目立つように出し、ルーティンチェックシートの欄をここで直せるようにする
+   var warn='';
+   if(absent.unknown.length){
+     warn='<div style="margin-top:8px;padding:8px 10px;background:#fff4e5;border:2px solid #f0a020;border-radius:6px;font-size:13px;line-height:1.7;">'
+       +'<b style="color:#b45f06;">⚠ 名簿の方と結びつかなかった書き方があります：'+esc(absent.unknown.join('、'))+'</b><br>'
+       +'<span style="font-size:12px;">このままでは、その方のページを作ってしまいます。ルーティンチェックシートの書き方を、名簿と同じお名前（名字だけでも、名簿に同じ名字の方が1人なら大丈夫）に直してください。'
+       +'下の欄で直して「シートに保存」を押すと、ルーティンチェックシートも直ります。</span>'
+       +'<div id="abSrc" style="margin-top:6px;font-size:12px;color:#888;">欄を読み込んでいます...</div></div>';
+   }
+   box.innerHTML=h+warn+'<div style="font-size:11px;color:#888;margin-top:4px;line-height:1.7;">'+notes.join('<br>')+'</div>';
+   if(absent.unknown.length) absentLoadSource();
+ }
+ // ルーティンチェックシートの「欠席」「医療欠席」の欄（その日）を読み、直せるようにする
+ var absentSrc=[];
+ function absentLoadSource(){
+   var d=get('meeting'); if(!d) return;
+   google.script.run.withSuccessHandler(function(r){
+     var el=document.getElementById('abSrc'); if(!el || get('meeting')!==d) return;
+     if(!r || !r.ok || !r.items.length){ el.innerHTML=esc((r&&r.message)||'ルーティンチェックシートの欄が見つかりませんでした。役職ごとの入力の画面で直してください。'); return; }
+     absentSrc=r.items;
+     el.style.color='';
+     el.innerHTML=r.items.map(function(it,i){
+       return '<div style="margin:3px 0;"><b>'+esc(it.title)+'</b>：<input type="text" id="abs_'+i+'" value="'+esc(it.value).replace(/"/g,'&quot;')+'" style="width:70%;"></div>';
+     }).join('')+'<button class="mkbtn" id="absSave" onclick="absentSaveSource()">シートに保存</button> <span id="absMsg"></span>';
+   }).withFailureHandler(function(e){ var el=document.getElementById('abSrc'); if(el) el.innerHTML=esc((e&&e.message)||String(e)); }).getAbsentSource(d);
+ }
+ function absentSaveSource(){
+   var d=get('meeting'), entries=absentSrc.map(function(it,i){ var e=document.getElementById('abs_'+i); return { id:it.id, value:e?e.value:it.value, orig:it.value }; });
+   var b=document.getElementById('absSave'); if(b) b.disabled=true;
+   document.getElementById('absMsg').textContent='保存しています...';
+   google.script.run.withSuccessHandler(function(r){
+     if(b) b.disabled=false;
+     if(!r || !r.ok){ document.getElementById('absMsg').textContent=(r&&r.message)||'保存できませんでした。'; return; }
+     if(get('meeting')!==d) return;
+     // 直したあとの欠席の方で、選び直す（画面で足した方・外した方は、読み直した内容に置き換わる）
+     absentFromRoutine({ ok:true, found:true, absentees:r.absentees||{ names:[], unknown:[], raw:'' } });
+     absentChanged();
+     var m=r.message+(absent.unknown.length?'':'　名簿の方と結びつきました。');
+     show(m, !(r.skipped&&r.skipped.length));
+   }).withFailureHandler(function(e){ if(b) b.disabled=false; document.getElementById('absMsg').textContent=(e&&e.message)||String(e); }).saveAbsentSource(d, entries);
  }
  function absentToggle(i){
    var n=absent.list[i], e=document.getElementById('ab_'+i);
