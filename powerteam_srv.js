@@ -114,7 +114,40 @@ function powerTeamModel_(src) {
 function powerTeamSlots_(xml) {
   var n = 0;
   findTagRanges_(xml, 'a:p').forEach(function (r) { if (/^[\s　]*カテゴリー[\s　]*$/.test(slideText_(xml.substring(r.start, r.end)))) n++; });
-  return n;
+  return n || powerTeamEmptyCells_(xml).length;
+}
+// 「カテゴリー」の欄が無いひな形（生成ツールで専門分野を空のまま作った pptx は、欄が空になっている）：
+// 表の空のマス（見出しの行より下・文字の無いマス）を、上から順に専門分野の欄とみなす → [{ start, end }]（マスの範囲）
+function powerTeamEmptyCells_(xml) {
+  var out = [];
+  findTagRanges_(xml, 'a:tbl').forEach(function (t) {
+    var tbl = xml.substring(t.start, t.end);
+    findTagRanges_(tbl, 'a:tr').forEach(function (tr, ri) {
+      if (ri === 0) return;                                   // 見出しの行
+      var row = tbl.substring(tr.start, tr.end);
+      findTagRanges_(row, 'a:tc').forEach(function (tc) {
+        var cell = row.substring(tc.start, tc.end);
+        if (/\shMerge="1"|\svMerge="1"/.test(cell.match(/^<a:tc\b[^>]*>/)[0])) return;   // つないだマスの続き
+        if (slideText_(cell).replace(/[\s　]/g, '')) return;
+        out.push({ start: t.start + tr.start + tc.start, end: t.start + tr.start + tc.end });
+      });
+    });
+  });
+  return out;
+}
+// 空のマスに文字を入れる（1つ目の段落に。文字の書式は、その段落の終わりの書式 endParaRPr を使う）
+function powerTeamSetCell_(cell, text) {
+  var ps = findTagRanges_(cell, 'a:p');
+  if (!ps.length) return cell;
+  var p = cell.substring(ps[0].start, ps[0].end), t = escapeXml_(text);
+  if (/<a:t>[^<]*<\/a:t>/.test(p)) p = p.replace(/<a:t>[^<]*<\/a:t>/, function () { return '<a:t>' + t + '</a:t>'; });
+  else {
+    var end = p.match(/<a:endParaRPr\b([^>]*?)(\/>|>([\s\S]*?)<\/a:endParaRPr>)/);
+    var rPr = end ? '<a:rPr' + end[1] + (end[3] !== undefined ? '>' + end[3] + '</a:rPr>' : '/>') : '<a:rPr lang="ja-JP"/>';
+    var run = '<a:r>' + rPr + '<a:t>' + t + '</a:t></a:r>';
+    p = end ? p.replace(end[0], function (x) { return run + x; }) : p.replace(/<\/a:p>$/, run + '</a:p>');
+  }
+  return cell.substring(0, ps[0].start) + p + cell.substring(ps[0].end);
 }
 // 1枚に、チーム名と専門分野を入れる（専門分野は「カテゴリー」の欄に上から順に。足りない欄は空にする）
 function powerTeamFill_(xml, team) {
@@ -122,7 +155,14 @@ function powerTeamFill_(xml, team) {
   xml = replacePatternsInXml_(xml, [{ re: /[〇○◯]{1,4}パワーチーム/, value: function () { return name || '〇〇パワーチーム'; } }]).xml;
   // replacePatternsInXml_ は段落を後ろから見るので、後ろの欄から順に入れる
   var total = powerTeamSlots_(xml), k = total;
-  return replacePatternsInXml_(xml, [{ re: /^[\s　]*カテゴリー[\s　]*$/, value: function () { k--; return team.cats[k] || ''; } }]).xml;
+  var marked = replacePatternsInXml_(xml, [{ re: /^[\s　]*カテゴリー[\s　]*$/, value: function () { k--; return team.cats[k] || ''; } }]);
+  if (marked.changed) return marked.xml;
+  // 「カテゴリー」の欄が無い：表の空のマスに上から順に入れる（後ろから書き換える）
+  var cells = powerTeamEmptyCells_(xml);
+  for (var i = Math.min(cells.length, team.cats.length) - 1; i >= 0; i--) {
+    xml = xml.substring(0, cells[i].start) + powerTeamSetCell_(xml.substring(cells[i].start, cells[i].end), team.cats[i]) + xml.substring(cells[i].end);
+  }
+  return xml;
 }
 
 // 前半のテンプレートの「チャプターが求める専門分野」のページ（差し込み口 {{求める専門分野1}}、または「求める専門分野」の文字）
@@ -146,7 +186,7 @@ function insertPowerTeamPages_(parts, src, teams) {
   var model = src ? powerTeamModel_(src) : '';
   if (!model) return { message: '⚠ パワーチームのひな形にページがありません。' };
   var msgs = [], fit = fitSourceToTargetSize_(parts, src);
-  if (fit.scaled) msgs.push('パワーチームのひな形のページの大きさを、前半スライドの大きさに合わせました（' + Math.round(fit.factor * 100) + '%）。');
+  if (fit.scaled && Math.round(fit.factor * 100) !== 100) msgs.push('パワーチームのひな形のページの大きさを、前半スライドの大きさに合わせました（' + Math.round(fit.factor * 100) + '%）。');
   var slots = powerTeamSlots_(xmlOf_(src, model) || '');
   var imp = importSlideCopies_(parts, src, model, teams.length), over = [];
   for (var i = 0; i < teams.length; i++) {
